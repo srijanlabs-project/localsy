@@ -1,0 +1,6 @@
+{
+  "name": "Local Yellow Pages & Moderation Portal",
+  "description": "Multi-locality yellow pages with client-side Android Webview simulator, dynamic business application portal, subdomain mapping logic, and an administrator moderation workflow.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
