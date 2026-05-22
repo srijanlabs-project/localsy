@@ -25,6 +25,7 @@ app.use((_req, res, next) => {
 
 let pgClient = null;
 let pgInitAttempted = false;
+let memoryUsers = null;
 
 const PUBLIC_USER_TYPES = ['buyer', 'seller', 'resource'];
 const ALL_USER_TYPES = ['platform_admin', 'developer', 'buyer', 'seller', 'resource'];
@@ -95,6 +96,7 @@ function normalizeRoleForType(userType) {
 }
 
 async function readUsers() {
+  if (Array.isArray(memoryUsers)) return memoryUsers;
   try {
     const raw = await fs.readFile(usersPath, 'utf8');
     const data = JSON.parse(raw);
@@ -106,7 +108,14 @@ async function readUsers() {
 }
 
 async function writeUsers(users) {
-  await fs.writeFile(usersPath, JSON.stringify(users, null, 2), 'utf8');
+  try {
+    await fs.writeFile(usersPath, JSON.stringify(users, null, 2), 'utf8');
+    memoryUsers = users;
+  } catch (err) {
+    // In some container runtimes the app dir can be read-only. Keep app available.
+    console.warn('users.json write failed, using in-memory user store:', err?.message || err);
+    memoryUsers = users;
+  }
 }
 
 async function ensureBootstrapUsers() {
@@ -353,6 +362,8 @@ ensureBootstrapUsers()
     });
   })
   .catch((err) => {
-    console.error('Failed to initialize users:', err);
-    process.exit(1);
+    console.error('User bootstrap failed, starting without seeded users:', err);
+    app.listen(port, '0.0.0.0', () => {
+      console.log(`Server listening on port ${port} (bootstrap fallback mode)`);
+    });
   });
