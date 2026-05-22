@@ -21,6 +21,7 @@ interface WebPortalProps {
   categories: Category[];
   reviews: Review[];
   activeLocalityId: string;
+  savedPincode?: string | null;
   onLocalityChange: (id: string) => void;
   userSession: UserSession;
   onUserSessionChange: (sess: UserSession) => void;
@@ -47,6 +48,7 @@ export default function WebPortal({
   categories,
   reviews,
   activeLocalityId,
+  savedPincode,
   onLocalityChange,
   userSession,
   onUserSessionChange,
@@ -167,13 +169,30 @@ export default function WebPortal({
     }
   }, [SIMPLE_SEARCH_FORM, searchMode]);
 
+  useEffect(() => {
+    const openApplicationForm = () => setShowApplyModal(true);
+    window.addEventListener('localsy:open-business-application', openApplicationForm);
+    return () => window.removeEventListener('localsy:open-business-application', openApplicationForm);
+  }, []);
+
   // Auto-rotating slider effect
-  const currentLocality = localities.find(l => l.id === activeLocalityId) || localities[0];
+  const selectedLocalityIds = activeLocalityId
+    .split(',')
+    .map((id) => id.trim())
+    .filter(Boolean);
+  const currentLocality =
+    localities.find((l) => l.id === selectedLocalityIds[0]) ||
+    localities.find((l) => l.id === activeLocalityId) ||
+    localities[0];
   const selectedLocalityNames = activeLocalityId
     .split(',')
     .map((id) => id.trim())
     .filter(Boolean)
-    .map((id) => localities.find((l) => l.id === id)?.name || id)
+    .map((id) => {
+      const localityName = localities.find((l) => l.id === id)?.name || id;
+      if (id === 'roadpali') return 'Roadpali & Kalamboli';
+      return localityName;
+    })
     .join(', ');
   const carouselImages = currentLocality.carouselImages || [currentLocality.coverImage];
 
@@ -354,9 +373,16 @@ export default function WebPortal({
   };
 
   // Filter approved listings relevant to search keyword + category ID
-  const approvedInLocality = businesses.filter(
-    b => b.localityId === activeLocalityId && b.status === "approved"
-  );
+  const approvedInLocality = businesses.filter((b) => {
+    if (!selectedLocalityIds.includes(b.localityId) || b.status !== 'approved') return false;
+    if (!savedPincode) return true;
+    const primaryAreaPin = MASTER_AREAS.find((a) => a.id === b.areaId)?.pincode;
+    const opPins = (b.areasOfOperation || [])
+      .map((aid) => MASTER_AREAS.find((a) => a.id === aid)?.pincode)
+      .filter(Boolean);
+    const allPins = new Set([primaryAreaPin, ...opPins].filter(Boolean));
+    return allPins.has(savedPincode);
+  });
 
   const filteredBusinesses = approvedInLocality.filter(b => {
     // Determine query to match
@@ -441,14 +467,14 @@ export default function WebPortal({
 
     // Determine featured state limit
     const numFeaturedInLocalAndCat = businesses.filter(
-      b => b.localityId === activeLocalityId && b.categoryId === categoryId && b.featured && b.status === 'approved'
+      b => selectedLocalityIds.includes(b.localityId) && b.categoryId === categoryId && b.featured && b.status === 'approved'
     ).length;
 
     // Default dynamic properties
     const newBizData = {
       name,
       categoryId,
-      localityId: activeLocalityId,
+      localityId: selectedLocalityIds[0] || activeLocalityId,
       stateId: formStateId,
       cityId: formCityId,
       areaId: formAreaId,
@@ -549,7 +575,7 @@ export default function WebPortal({
   const toggleFeaturedStatus = (biz: Business) => {
     // Admin toggling listing featured state
     const alreadyFeaturedCount = businesses.filter(
-      b => b.localityId === activeLocalityId && b.categoryId === biz.categoryId && b.featured && b.status === 'approved'
+      b => selectedLocalityIds.includes(b.localityId) && b.categoryId === biz.categoryId && b.featured && b.status === 'approved'
     ).length;
 
     if (!biz.featured && alreadyFeaturedCount >= 3) {
@@ -681,7 +707,7 @@ export default function WebPortal({
             <MapPin className="w-3.5 h-3.5 animate-bounce" /> Indian Regional Directory
           </div>
           <h2 className="text-2xl md:text-4xl font-extrabold font-sans tracking-tight text-white leading-tight">
-            Local Business Directory for {selectedLocalityNames || currentLocality.name}
+            Hyper Local Directory for {selectedLocalityNames || currentLocality.name}
           </h2>
           <p className="text-sm text-slate-300 leading-relaxed max-w-xl">
             {currentLocality.description} verified reviews, location-grabbing utilities, and dynamic approval tracking.
@@ -787,8 +813,8 @@ export default function WebPortal({
 
             {/* Render conditional inputs matching active Search Mode */}
             {searchMode === 'keyword' && (
-              <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-                <div className="relative w-full">
+              <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_220px_auto] items-center gap-3">
+                <div className="relative min-w-0">
                   <input
                     type="text"
                     value={searchQuery}
@@ -798,6 +824,17 @@ export default function WebPortal({
                   />
                   <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3.5" />
                 </div>
+                <label className="sr-only" htmlFor="public-category-filter">Category</label>
+                <select
+                  id="public-category-filter"
+                  value={selectedCategory}
+                  onChange={(e) => setSelectedCategory(e.target.value)}
+                  className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition font-sans font-semibold text-slate-700"
+                >
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
                 {searchQuery && (
                   <button
                     onClick={() => setSearchQuery('')}
@@ -1141,26 +1178,6 @@ export default function WebPortal({
                 </button>
               </div>
             )}
-          </div>
-
-          {/* Categories slide horizontal selector bar */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-4.5 shadow-3xs flex items-center gap-3 overflow-x-auto">
-            <span className="text-xs font-mono text-slate-400 font-bold uppercase tracking-tight flex-shrink-0">Filter Category:</span>
-            <div className="flex items-center gap-1.5 pb-1">
-              {categories.map(c => (
-                <button
-                  key={c.id}
-                  onClick={() => setSelectedCategory(c.id)}
-                  className={`text-[11px] px-3 py-1.5 rounded-xl transition duration-150 flex items-center gap-1 whitespace-nowrap font-medium ${
-                    selectedCategory === c.id 
-                      ? 'bg-slate-950 text-white font-bold shadow' 
-                      : 'bg-slate-50 border border-slate-100 text-slate-600 hover:bg-slate-100'
-                  }`}
-                >
-                  <span>{c.name}</span>
-                </button>
-              ))}
-            </div>
           </div>
 
           {/* Bulletin local campaign strip */}
@@ -2285,7 +2302,7 @@ export default function WebPortal({
                   Verify &amp; List
                 </span>
                 <h3 className="text-base font-extrabold tracking-tight font-sans text-white mt-1">
-                  Add Your Business to {currentLocality.name}
+                  Add Your Hyper Local Business to {currentLocality.name}
                 </h3>
               </div>
               <button 
@@ -2314,16 +2331,13 @@ export default function WebPortal({
                   <label className="block font-bold text-slate-700 mb-1">Category Segment *</label>
                   <select
                     value={categoryId}
+                    required
                     onChange={(e) => setCategoryId(e.target.value)}
                     className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500 font-medium"
                   >
-                    <option value="salon">Salons &amp; Wellness</option>
-                    <option value="food">Food &amp; Dining</option>
-                    <option value="tech">Tech &amp; Digital</option>
-                    <option value="health">Health &amp; Wellness</option>
-                    <option value="home">Home Services</option>
-                    <option value="services">Professional Services</option>
-                    <option value="retail">Shops &amp; Retail</option>
+                    {categories.filter((c) => c.id !== 'all').map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
                   </select>
                 </div>
               </div>

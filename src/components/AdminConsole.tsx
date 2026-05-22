@@ -41,6 +41,35 @@ interface AdminConsoleProps {
   }>) => { imported: number; skipped: number };
 }
 
+type BulkImportRow = {
+  businessName: string;
+  address: string;
+  area: string;
+  city: string;
+  state: string;
+  pin: string;
+  mobile: string;
+  rating: string;
+  reviews: string;
+  services: string;
+  latitude: string;
+  longitude: string;
+  importAction?: 'create' | 'update';
+  existingBusinessId?: string;
+  localityId?: string;
+  areaId?: string;
+  categoryId?: string;
+};
+
+type ImportPreviewRow = BulkImportRow & {
+  rowNumber: number;
+  previewStatus: 'ready' | 'update' | 'fail';
+  errors: string[];
+  normalizedPhone: string;
+  resolvedPincode: string;
+  resolvedLocalityId: string;
+};
+
 export default function AdminConsole({
   localities,
   businesses,
@@ -66,21 +95,94 @@ export default function AdminConsole({
   const [newLocSubdomain, setNewLocSubdomain] = useState('');
   const [newLocDesc, setNewLocDesc] = useState('');
   const [newLocImg, setNewLocImg] = useState('');
+  const [newLocPincodes, setNewLocPincodes] = useState('');
   const [rejectionReasons, setRejectionReasons] = useState<Record<string, string>>({});
   const [rejectionActive, setRejectionActive] = useState<Record<string, boolean>>({});
   const [adminNotification, setAdminNotification] = useState<string | null>(null);
   const [editedHrs, setEditedHrs] = useState<Record<string, string>>({});
   const [importResult, setImportResult] = useState<string>('');
+  const [importPreview, setImportPreview] = useState<ImportPreviewRow[]>([]);
+  const [selectedBackendBiz, setSelectedBackendBiz] = useState<Business | null>(null);
+  const [backendDraft, setBackendDraft] = useState<Business | null>(null);
+  const [backendEditMode, setBackendEditMode] = useState(false);
 
   const parseCsvLine = (line: string) => {
     return line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map((s) => s.trim().replace(/^"|"$/g, ''));
   };
+
+  const normalizePhone = (phone: string) => phone.replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '');
+
+  const inferCategory = (services: string) => {
+    const s = services.toLowerCase();
+    if (s.includes('salon') || s.includes('spa') || s.includes('beauty')) return 'salon';
+    if (s.includes('hospital') || s.includes('medical') || s.includes('pharmacy') || s.includes('clinic')) return 'health';
+    if (s.includes('school') || s.includes('preschool') || s.includes('education')) return 'services';
+    if (s.includes('hardware') || s.includes('electrical') || s.includes('plumbing')) return 'home';
+    if (s.includes('restaurant') || s.includes('sweets') || s.includes('food')) return 'food';
+    if (s.includes('fashion') || s.includes('clothing') || s.includes('store') || s.includes('retail')) return 'retail';
+    return 'services';
+  };
+
+  const inferLocality = (area: string) => {
+    const a = area.toLowerCase();
+    if (a.includes('kharghar')) return 'kharghar';
+    if (a.includes('kamothe')) return 'kamothe';
+    if (a.includes('panvel')) return 'panvel';
+    if (a.includes('taloja')) return 'taloja';
+    if (a.includes('kalamboli')) return 'kalamboli';
+    return 'roadpali';
+  };
+
+  const buildImportPreview = (rows: BulkImportRow[]) => rows.map((row, idx): ImportPreviewRow => {
+    const errors: string[] = [];
+    const normalizedPhone = normalizePhone(row.mobile);
+    const areaMatch =
+      MASTER_AREAS.find(a => a.name.toLowerCase().includes((row.area || '').toLowerCase()) && row.area.trim()) ||
+      MASTER_AREAS.find(a => a.pincode === row.pin.replace(/\D/g, ''));
+    const resolvedPincode = row.pin.replace(/\D/g, '') || areaMatch?.pincode || '';
+    const mappedLocality = pincodeMappings.find(m => m.pincode === resolvedPincode)?.localityId;
+    const resolvedLocalityId = mappedLocality || inferLocality(`${row.area} ${row.city}`);
+    const categoryId = inferCategory(row.services || '');
+
+    if (!row.businessName.trim()) errors.push('Business Name is required.');
+    if (normalizedPhone.length !== 10) errors.push('Valid 10-digit Mobile is required.');
+    if (resolvedPincode.length !== 6) errors.push('Valid 6-digit PIN is required or must match a known area.');
+    if (!localities.some(l => l.id === resolvedLocalityId)) errors.push(`Mapped locality "${resolvedLocalityId}" does not exist.`);
+    if (!INITIAL_CATEGORIES.some(c => c.id === categoryId && c.id !== 'all')) errors.push('Could not resolve a valid category.');
+
+    const duplicate = businesses.find((biz) => {
+      const bizPincode = MASTER_AREAS.find(a => a.id === biz.areaId)?.pincode || '';
+      return (
+        biz.name.trim().toLowerCase() === row.businessName.trim().toLowerCase() &&
+        normalizePhone(biz.phone) === normalizedPhone &&
+        bizPincode === resolvedPincode &&
+        biz.localityId === resolvedLocalityId
+      );
+    });
+
+    const previewStatus: ImportPreviewRow['previewStatus'] = errors.length ? 'fail' : duplicate ? 'update' : 'ready';
+    return {
+      ...row,
+      rowNumber: idx + 2,
+      previewStatus,
+      errors,
+      normalizedPhone,
+      resolvedPincode,
+      resolvedLocalityId,
+      importAction: duplicate ? 'update' : 'create',
+      existingBusinessId: duplicate?.id,
+      localityId: resolvedLocalityId,
+      areaId: areaMatch?.id || 'roadpali-sec17',
+      categoryId
+    };
+  });
 
   const handleCsvImport = async (file: File) => {
     const text = await file.text();
     const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
     if (lines.length < 2) {
       setImportResult('CSV appears empty or missing rows.');
+      setImportPreview([]);
       return;
     }
     const headers = parseCsvLine(lines[0]).map((h) => h.toLowerCase());
@@ -106,12 +208,44 @@ export default function AdminConsole({
       };
     }).filter((r) => r.businessName.trim());
 
+    const preview = buildImportPreview(rows);
+    setImportPreview(preview);
+    const ready = preview.filter(r => r.previewStatus === 'ready').length;
+    const updates = preview.filter(r => r.previewStatus === 'update').length;
+    const failed = preview.filter(r => r.previewStatus === 'fail').length;
+    setImportResult(`Preview generated: ${ready} ready, ${updates} existing matches need update confirmation, ${failed} failed.`);
+  };
+
+  const handleApplyImportPreview = () => {
     if (!onBulkImportBusinesses) {
       setImportResult('Bulk import callback is not configured.');
       return;
     }
-    const result = onBulkImportBusinesses(rows);
-    setImportResult(`Imported ${result.imported} businesses, skipped ${result.skipped} duplicates/invalid rows.`);
+    const validRows = importPreview.filter(r => r.previewStatus !== 'fail');
+    const updateRows = validRows.filter(r => r.previewStatus === 'update');
+    if (updateRows.length > 0 && !confirm(`${updateRows.length} listing(s) already exist with the same business name, phone, pincode, and locality. Update those records instead of creating duplicates?`)) {
+      return;
+    }
+    const result = onBulkImportBusinesses(validRows);
+    const failed = importPreview.filter(r => r.previewStatus === 'fail').length;
+    setImportPreview(importPreview.filter(r => r.previewStatus === 'fail'));
+    setImportResult(`Upload complete: ${result.imported} created, ${result.skipped} updated/skipped, ${failed} failed rows kept below with error details.`);
+  };
+
+  const downloadFailedImportCsv = () => {
+    const failedRows = importPreview.filter(r => r.previewStatus === 'fail');
+    const header = ['Row', 'Business Name', 'Address', 'Area', 'City', 'State', 'PIN', 'Mobile', 'Rating', 'Reviews', 'Services', 'Latitude', 'Longitude', 'Error Details'];
+    const escapeCsv = (val: string | number) => `"${String(val ?? '').replace(/"/g, '""')}"`;
+    const body = failedRows.map(r => [
+      r.rowNumber, r.businessName, r.address, r.area, r.city, r.state, r.pin, r.mobile, r.rating, r.reviews, r.services, r.latitude, r.longitude, r.errors.join('; ')
+    ].map(escapeCsv).join(','));
+    const blob = new Blob([[header.map(escapeCsv).join(','), ...body].join('\n')], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'failed-business-imports.csv';
+    link.click();
+    URL.revokeObjectURL(url);
   };
 
   const pendingBusinesses = businesses.filter(b => b.status === 'pending');
@@ -121,6 +255,26 @@ export default function AdminConsole({
   const triggerNotification = (msg: string) => {
     setAdminNotification(msg);
     setTimeout(() => setAdminNotification(null), 3000);
+  };
+
+  const openBackendListing = (biz: Business) => {
+    setSelectedBackendBiz(biz);
+    setBackendDraft({ ...biz, areasOfOperation: [...(biz.areasOfOperation || [])] });
+    setBackendEditMode(false);
+  };
+
+  const closeBackendListing = () => {
+    setSelectedBackendBiz(null);
+    setBackendDraft(null);
+    setBackendEditMode(false);
+  };
+
+  const saveBackendListing = () => {
+    if (!backendDraft || !onUpdateBusiness) return;
+    onUpdateBusiness(backendDraft);
+    setSelectedBackendBiz(backendDraft);
+    setBackendEditMode(false);
+    triggerNotification(`Saved listing: ${backendDraft.name}`);
   };
 
   const handleLocalitySubmit = (e: React.FormEvent) => {
@@ -138,12 +292,20 @@ export default function AdminConsole({
 
     const defaultImg = newLocImg.trim() || 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=400&q=80';
 
+    const newLocalityId = newLocName.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const mappedPins = newLocPincodes
+      .split(/[\s,]+/)
+      .map((pin) => pin.replace(/\D/g, '').trim())
+      .filter((pin, index, arr) => pin.length === 6 && arr.indexOf(pin) === index);
+
     onCreateLocality(newLocName, cleanSub, newLocDesc || 'Dynamic regional yellow pages listings catalog.', defaultImg);
+    mappedPins.forEach((pin) => onAddPincodeMapping?.(pin, newLocalityId));
     triggerNotification(`Successfully spun up locality: ${newLocName}`);
     setNewLocName('');
     setNewLocSubdomain('');
     setNewLocDesc('');
     setNewLocImg('');
+    setNewLocPincodes('');
   };
 
   return (
@@ -158,7 +320,7 @@ export default function AdminConsole({
                 Intake Moderation Queue
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
-                Review submitted business requests from local proprietors. Real-time verification simulator.
+                Review submitted business requests from Hyper Local proprietors. Real-time verification simulator.
               </p>
             </div>
             <span className="bg-amber-100 text-amber-800 text-xs px-2.5 py-1 rounded-full font-mono font-semibold">
@@ -170,7 +332,7 @@ export default function AdminConsole({
             <div className="text-center py-10 bg-slate-50 rounded-xl border border-dashed border-slate-200">
               <Check className="w-10 h-10 text-emerald-500 mx-auto mb-2 opacity-60" />
               <p className="text-sm font-medium text-slate-700">All applications processed!</p>
-              <p className="text-xs text-slate-400 mt-1">No new local businesses waiting in the moderation queue.</p>
+              <p className="text-xs text-slate-400 mt-1">No new Hyper Local businesses waiting in the moderation queue.</p>
             </div>
           ) : (
             <div className="space-y-4">
@@ -337,6 +499,7 @@ export default function AdminConsole({
               <thead>
                 <tr className="border-b border-slate-100 text-[10px] uppercase font-mono tracking-wider font-semibold text-slate-400">
                   <th className="py-2">Business</th>
+                  <th className="py-2">Category</th>
                   <th className="py-2">Subdomain/Region</th>
                   <th className="py-2">Proprietor</th>
                   <th className="py-2">Decision Status</th>
@@ -344,8 +507,26 @@ export default function AdminConsole({
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {activeBusinesses.map(b => (
-                  <tr key={b.id} className="hover:bg-slate-50/50">
+                  <tr key={b.id} onClick={() => openBackendListing(b)} className="hover:bg-slate-50/50 cursor-pointer">
                     <td className="py-2.5 font-semibold text-slate-800">{b.name}</td>
+                    <td className="py-2.5">
+                      {onUpdateBusiness ? (
+                        <select
+                          value={b.categoryId}
+                          required
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => onUpdateBusiness({ ...b, categoryId: e.target.value })}
+                          className="text-[10px] bg-white border border-slate-300 rounded px-2 py-1 font-semibold text-slate-700"
+                          title="Update listing business type/category"
+                        >
+                          {INITIAL_CATEGORIES.filter((c) => c.id !== 'all').map((c) => (
+                            <option key={c.id} value={c.id}>{c.name}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className="font-mono uppercase">{b.categoryId}</span>
+                      )}
+                    </td>
                     <td className="py-2.5 font-mono text-slate-600">{(localities.find(l=>l.id===b.localityId))?.subdomain || 'Unknown'}</td>
                     <td className="py-2.5">{b.ownerName || 'Self-Registered'}</td>
                     <td className="py-2.5">
@@ -359,6 +540,7 @@ export default function AdminConsole({
                 {rejectedBusinesses.map(b => (
                   <tr key={b.id} className="hover:bg-slate-50/50">
                     <td className="py-2.5 font-semibold text-slate-500 line-through">{b.name}</td>
+                    <td className="py-2.5 font-mono text-slate-400 uppercase">{b.categoryId}</td>
                     <td className="py-2.5 font-mono text-slate-400">{(localities.find(l=>l.id===b.localityId))?.subdomain || 'Unknown'}</td>
                     <td className="py-2.5">{b.ownerName || 'Unknown'}</td>
                     <td className="py-2.5">
@@ -476,6 +658,82 @@ export default function AdminConsole({
               {importResult}
             </div>
           )}
+          {importPreview.length > 0 && (
+            <div className="space-y-3 pt-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap gap-2 text-[10px] font-bold">
+                  <span className="bg-emerald-50 text-emerald-700 border border-emerald-100 px-2 py-1 rounded-lg">
+                    Ready: {importPreview.filter(r => r.previewStatus === 'ready').length}
+                  </span>
+                  <span className="bg-blue-50 text-blue-700 border border-blue-100 px-2 py-1 rounded-lg">
+                    Updates: {importPreview.filter(r => r.previewStatus === 'update').length}
+                  </span>
+                  <span className="bg-rose-50 text-rose-700 border border-rose-100 px-2 py-1 rounded-lg">
+                    Failed: {importPreview.filter(r => r.previewStatus === 'fail').length}
+                  </span>
+                </div>
+                <div className="flex gap-2">
+                  {importPreview.some(r => r.previewStatus === 'fail') && (
+                    <button
+                      type="button"
+                      onClick={downloadFailedImportCsv}
+                      className="text-[10px] bg-white border border-slate-200 text-slate-700 px-3 py-1.5 rounded-lg font-bold hover:bg-slate-50"
+                    >
+                      Export Failed CSV
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleApplyImportPreview}
+                    disabled={!importPreview.some(r => r.previewStatus !== 'fail')}
+                    className="text-[10px] bg-indigo-600 disabled:bg-slate-300 text-white px-3 py-1.5 rounded-lg font-bold hover:bg-indigo-700"
+                  >
+                    Upload Ready Items
+                  </button>
+                </div>
+              </div>
+              <div className="overflow-x-auto border border-slate-100 rounded-xl max-h-72">
+                <table className="w-full text-left text-[10px] text-slate-600">
+                  <thead className="bg-slate-50 sticky top-0">
+                    <tr className="uppercase font-mono text-slate-400">
+                      <th className="p-2">Row</th>
+                      <th className="p-2">Business</th>
+                      <th className="p-2">Phone</th>
+                      <th className="p-2">Pincode</th>
+                      <th className="p-2">Locality</th>
+                      <th className="p-2">Category</th>
+                      <th className="p-2">Status</th>
+                      <th className="p-2 min-w-[220px]">Error Details</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {importPreview.map((row) => (
+                      <tr key={`${row.rowNumber}-${row.businessName}`} className="hover:bg-slate-50/60">
+                        <td className="p-2 font-mono">{row.rowNumber}</td>
+                        <td className="p-2 font-semibold text-slate-800">{row.businessName}</td>
+                        <td className="p-2 font-mono">{row.normalizedPhone || row.mobile}</td>
+                        <td className="p-2 font-mono">{row.resolvedPincode || '-'}</td>
+                        <td className="p-2">{localities.find(l => l.id === row.resolvedLocalityId)?.name.split(',')[0] || row.resolvedLocalityId}</td>
+                        <td className="p-2">{INITIAL_CATEGORIES.find(c => c.id === row.categoryId)?.name || row.categoryId}</td>
+                        <td className="p-2">
+                          <span className={`px-2 py-0.5 rounded-full font-bold ${
+                            row.previewStatus === 'ready'
+                              ? 'bg-emerald-50 text-emerald-700'
+                              : row.previewStatus === 'update'
+                                ? 'bg-blue-50 text-blue-700'
+                                : 'bg-rose-50 text-rose-700'
+                          }`}>
+                            {row.previewStatus === 'ready' ? 'Ready' : row.previewStatus === 'update' ? 'Update existing' : 'Fail'}
+                          </span>
+                        </td>
+                        <td className="p-2 text-rose-600">{row.errors.join('; ') || (row.previewStatus === 'update' ? `Existing ID: ${row.existingBusinessId}` : '-')}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -535,10 +793,10 @@ export default function AdminConsole({
         <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
           <h3 className="text-lg font-bold text-slate-950 mb-1 flex items-center gap-2">
             <PlusCircle className="w-5 h-5 text-blue-600" />
-            Create Local Business Region
+            Create Hyper Local Business Page
           </h3>
           <p className="text-xs text-slate-500 mb-4">
-            Provision database shards and auto-map a subdomain for a new municipality.
+            Provision a page, subdomain route, and optional pincode group for a municipality or neighbourhood cluster.
           </p>
 
           {adminNotification && (
@@ -575,7 +833,9 @@ export default function AdminConsole({
                 placeholder="e.g. sf.yellowpages.io"
                 className="w-full text-xs px-3.5 py-2.5 font-mono bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-700"
               />
-              <span className="text-[10px] text-slate-400 mt-1 block">DNS resolves immediately using mock route handler.</span>
+              <span className="text-[10px] text-slate-400 mt-1 block">
+                The subdomain opens this page; mapped pincodes below decide which visitors are routed here after pincode selection.
+              </span>
             </div>
 
             <div>
@@ -598,6 +858,20 @@ export default function AdminConsole({
                 placeholder="https://images.unsplash.com/photo-..."
                 className="w-full text-xs px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-700"
               />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Mapped Pincodes</label>
+              <input
+                type="text"
+                value={newLocPincodes}
+                onChange={(e) => setNewLocPincodes(e.target.value)}
+                placeholder="e.g. 410218, 410101"
+                className="w-full text-xs px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-700 font-mono"
+              />
+              <span className="text-[10px] text-slate-400 mt-1 block">
+                Users entering any mapped pincode will open this Hyper Local page. Separate multiple pincodes with commas or spaces.
+              </span>
             </div>
 
             <button
@@ -650,7 +924,7 @@ export default function AdminConsole({
               Pincode Routing Engine
             </h3>
             <p className="text-[11px] text-slate-500 mt-0.5">
-              Configure 1:1 or many:1 static bindings mapping postal codes to active regional Happy Gifting subdirectories.
+              Configure 1:1 or many:1 static bindings mapping postal codes to active Hyper Local pages and their subdomain routes.
             </p>
           </div>
 
@@ -752,6 +1026,147 @@ export default function AdminConsole({
           </div>
         </div>
       </div>
+      {selectedBackendBiz && backendDraft && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="bg-slate-900 text-white p-4 flex items-center justify-between gap-3">
+              <div>
+                <span className="text-[10px] uppercase tracking-widest text-slate-400 font-mono">Backend Listing</span>
+                <h3 className="font-extrabold text-lg leading-tight">{backendDraft.name}</h3>
+              </div>
+              <button
+                type="button"
+                onClick={closeBackendListing}
+                className="bg-white/10 hover:bg-white/20 text-white rounded-lg px-3 py-1.5 text-xs font-bold"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="p-5 overflow-y-auto space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                <div>
+                  <label className="block font-bold text-slate-500 mb-1">Business Name</label>
+                  <input
+                    value={backendDraft.name}
+                    disabled={!backendEditMode}
+                    onChange={(e) => setBackendDraft({ ...backendDraft, name: e.target.value })}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 disabled:bg-slate-50"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-500 mb-1">Category</label>
+                  <select
+                    value={backendDraft.categoryId}
+                    disabled={!backendEditMode}
+                    onChange={(e) => setBackendDraft({ ...backendDraft, categoryId: e.target.value })}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 disabled:bg-slate-50"
+                  >
+                    {INITIAL_CATEGORIES.filter(c => c.id !== 'all').map(c => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-500 mb-1">Phone</label>
+                  <input
+                    value={backendDraft.phone}
+                    disabled={!backendEditMode}
+                    onChange={(e) => setBackendDraft({ ...backendDraft, phone: e.target.value })}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 disabled:bg-slate-50"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-500 mb-1">Website</label>
+                  <input
+                    value={backendDraft.website}
+                    disabled={!backendEditMode}
+                    onChange={(e) => setBackendDraft({ ...backendDraft, website: e.target.value })}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 disabled:bg-slate-50"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-500 mb-1">Locality</label>
+                  <select
+                    value={backendDraft.localityId}
+                    disabled={!backendEditMode}
+                    onChange={(e) => setBackendDraft({ ...backendDraft, localityId: e.target.value })}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 disabled:bg-slate-50"
+                  >
+                    {localities.map(loc => (
+                      <option key={loc.id} value={loc.id}>{loc.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-500 mb-1">Primary Area / Pincode</label>
+                  <select
+                    value={backendDraft.areaId}
+                    disabled={!backendEditMode}
+                    onChange={(e) => setBackendDraft({ ...backendDraft, areaId: e.target.value })}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 disabled:bg-slate-50"
+                  >
+                    {MASTER_AREAS.map(area => (
+                      <option key={area.id} value={area.id}>{area.name} ({area.pincode})</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block font-bold text-slate-500 mb-1">Address</label>
+                  <input
+                    value={backendDraft.address}
+                    disabled={!backendEditMode}
+                    onChange={(e) => setBackendDraft({ ...backendDraft, address: e.target.value })}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 disabled:bg-slate-50"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block font-bold text-slate-500 mb-1">Description</label>
+                  <textarea
+                    rows={3}
+                    value={backendDraft.description}
+                    disabled={!backendEditMode}
+                    onChange={(e) => setBackendDraft({ ...backendDraft, description: e.target.value })}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 disabled:bg-slate-50"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t border-slate-200 p-4 flex justify-end gap-2 bg-slate-50">
+              {!backendEditMode ? (
+                <button
+                  type="button"
+                  onClick={() => setBackendEditMode(true)}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-4 py-2 rounded-lg"
+                >
+                  Edit
+                </button>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBackendDraft({ ...selectedBackendBiz, areasOfOperation: [...(selectedBackendBiz.areasOfOperation || [])] });
+                      setBackendEditMode(false);
+                    }}
+                    className="bg-white border border-slate-200 text-slate-700 text-xs font-bold px-4 py-2 rounded-lg hover:bg-slate-100"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={saveBackendListing}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2 rounded-lg"
+                  >
+                    Save
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
