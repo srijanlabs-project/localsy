@@ -8,6 +8,7 @@ import { MASTER_AREAS } from '../data';
 import { getBusinessImageUrl, getCategoryFallbackImage } from '../utils/businessImage';
 import {
   BUSINESS_CATEGORIES,
+  BUSINESS_SUBCATEGORIES,
   getCategoryById,
   getSubcategoriesForCategory,
   getSubcategoryById,
@@ -59,6 +60,8 @@ type BulkImportRow = {
   rating: string;
   reviews: string;
   services: string;
+  category?: string;
+  subcategory?: string;
   latitude: string;
   longitude: string;
   importAction?: 'create' | 'update';
@@ -132,6 +135,11 @@ export default function AdminConsole({
     return 'professional-services';
   };
 
+  const resolveCategoryFromImport = (categoryName: string | undefined, services: string) => {
+    const direct = BUSINESS_CATEGORIES.find((category) => category.name.toLowerCase() === String(categoryName || '').trim().toLowerCase());
+    return direct?.id || inferCategory(services);
+  };
+
   const inferSubcategory = (services: string, categoryId: string) => {
     const s = services.toLowerCase();
     if (categoryId === 'beauty-wellness' && s.includes('spa')) return 'spas';
@@ -169,11 +177,15 @@ export default function AdminConsole({
     const resolvedPincode = row.pin.replace(/\D/g, '') || areaMatch?.pincode || '';
     const mappedLocality = pincodeMappings.find(m => m.pincode === resolvedPincode)?.localityId;
     const resolvedLocalityId = mappedLocality || inferLocality(`${row.area} ${row.city}`);
-    const categoryId = inferCategory(row.services || '');
-    const subcategoryId = inferSubcategory(row.services || '', categoryId);
+    const categoryId = resolveCategoryFromImport(row.category, row.services || '');
+    const directSubcategory = BUSINESS_SUBCATEGORIES.find((subcategory) => (
+      subcategory.categoryId === categoryId &&
+      subcategory.name.toLowerCase() === String(row.subcategory || '').trim().toLowerCase()
+    ));
+    const subcategoryId = directSubcategory?.id || inferSubcategory(row.services || '', categoryId);
 
     if (!row.businessName.trim()) errors.push('Business Name is required.');
-    if (normalizedPhone.length !== 10) errors.push('Valid 10-digit Mobile is required.');
+    if (normalizedPhone.length > 0 && normalizedPhone.length !== 10) errors.push('Mobile must be blank or a valid 10-digit number.');
     if (resolvedPincode.length !== 6) errors.push('Valid 6-digit PIN is required or must match a known area.');
     if (!localities.some(l => l.id === resolvedLocalityId)) errors.push(`Mapped locality "${resolvedLocalityId}" does not exist.`);
     if (!BUSINESS_CATEGORIES.some(c => c.id === categoryId)) errors.push('Could not resolve a valid category.');
@@ -183,6 +195,7 @@ export default function AdminConsole({
       const bizPincode = MASTER_AREAS.find(a => a.id === biz.areaId)?.pincode || '';
       return (
         biz.name.trim().toLowerCase() === row.businessName.trim().toLowerCase() &&
+        normalizedPhone.length > 0 &&
         normalizePhone(biz.phone) === normalizedPhone &&
         bizPincode === resolvedPincode &&
         biz.localityId === resolvedLocalityId
@@ -233,6 +246,8 @@ export default function AdminConsole({
         rating: get('Rating'),
         reviews: get('Reviews'),
         services: get('Services'),
+        category: get('Category'),
+        subcategory: get('Subcategory'),
         latitude: get('Latitude'),
         longitude: get('Longitude'),
       };
@@ -264,10 +279,10 @@ export default function AdminConsole({
 
   const downloadFailedImportCsv = () => {
     const failedRows = importPreview.filter(r => r.previewStatus === 'fail');
-    const header = ['Row', 'Business Name', 'Address', 'Area', 'City', 'State', 'PIN', 'Mobile', 'Rating', 'Reviews', 'Services', 'Latitude', 'Longitude', 'Error Details'];
+    const header = ['Row', 'Business Name', 'Address', 'Area', 'City', 'State', 'PIN', 'Mobile', 'Rating', 'Reviews', 'Services', 'Category', 'Subcategory', 'Latitude', 'Longitude', 'Error Details'];
     const escapeCsv = (val: string | number) => `"${String(val ?? '').replace(/"/g, '""')}"`;
     const body = failedRows.map(r => [
-      r.rowNumber, r.businessName, r.address, r.area, r.city, r.state, r.pin, r.mobile, r.rating, r.reviews, r.services, r.latitude, r.longitude, r.errors.join('; ')
+      r.rowNumber, r.businessName, r.address, r.area, r.city, r.state, r.pin, r.mobile, r.rating, r.reviews, r.services, r.category || '', r.subcategory || '', r.latitude, r.longitude, r.errors.join('; ')
     ].map(escapeCsv).join(','));
     const blob = new Blob([[header.map(escapeCsv).join(','), ...body].join('\n')], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -447,7 +462,7 @@ export default function AdminConsole({
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-1 text-xs font-mono text-slate-500 pt-2 bg-slate-100/40 p-2.5 rounded-lg border border-slate-200/50">
-                        <div className="truncate">📞 {biz.phone}</div>
+                        <div className="truncate">📞 {biz.phone || 'Not provided'}</div>
                         <div className="truncate">
                           ✉️ {biz.email ? biz.email : <span className="text-slate-400 italic">No Email Specified</span>}
                         </div>
@@ -777,7 +792,7 @@ export default function AdminConsole({
                       <tr key={`${row.rowNumber}-${row.businessName}`} className="hover:bg-slate-50/60">
                         <td className="p-2 font-mono">{row.rowNumber}</td>
                         <td className="p-2 font-semibold text-slate-800">{row.businessName}</td>
-                        <td className="p-2 font-mono">{row.normalizedPhone || row.mobile}</td>
+                        <td className="p-2 font-mono">{row.normalizedPhone || 'Not provided'}</td>
                         <td className="p-2 font-mono">{row.resolvedPincode || '-'}</td>
                         <td className="p-2">{localities.find(l => l.id === row.resolvedLocalityId)?.name.split(',')[0] || row.resolvedLocalityId}</td>
                         <td className="p-2">{getCategoryById(row.categoryId || '')?.name || row.categoryId}</td>
