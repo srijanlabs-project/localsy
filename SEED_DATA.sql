@@ -4,6 +4,8 @@
 -- Consistently ordered to prevent intermediate Foreign Key constraints failures!
 -- Run this whole block in your Railway Postgres Editor or PGAdmin Query Tool.
 
+SET client_encoding = 'UTF8';
+
 BEGIN;
 
 -- 1. SEED: states_master

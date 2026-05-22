@@ -63,7 +63,7 @@ CREATE TABLE categories (
     id VARCHAR(50) PRIMARY KEY,
     name VARCHAR(100) NOT NULL UNIQUE,
     icon VARCHAR(50) NOT NULL,
-    color VARCHAR(30) NOT NULL
+    color VARCHAR(100) NOT NULL
 );
 
 -- -------------------------------------------------------------
@@ -95,7 +95,7 @@ CREATE TABLE businesses (
     rejection_reason TEXT,
     latitude DECIMAL(9,6),
     longitude DECIMAL(9,6),
-    price_range VARCHAR(5) DEFAULT '₹' CHECK (price_range IN ('₹', '₹₹', '₹₹₹', '₹₹₹₹')),
+    price_range VARCHAR(30) DEFAULT '₹' CHECK (LENGTH(price_range) BETWEEN 1 AND 10),
     delivery_available BOOLEAN DEFAULT FALSE,
     has_offers BOOLEAN DEFAULT FALSE,
     languages_spoken TEXT[] DEFAULT '{}',
