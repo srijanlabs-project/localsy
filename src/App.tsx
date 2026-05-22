@@ -19,11 +19,21 @@ import {
   User, CheckCircle, ShieldAlert, KeyRound, Wrench, Briefcase, HelpCircle,
   Sliders, Settings, X, Database, MapPin
 } from 'lucide-react';
+import { resolveDefaultSubcategoryId, resolveMasterCategoryId } from './categoryMaster';
+
+const normalizeBusinessTaxonomy = (business: Business): Business => {
+  const categoryId = resolveMasterCategoryId(business.categoryId);
+  return {
+    ...business,
+    categoryId,
+    subcategoryId: business.subcategoryId || resolveDefaultSubcategoryId(business.categoryId)
+  };
+};
 
 export default function App() {
   const PRODUCTION_MODE = true;
   // Database version management to clear stale browser caches when definitions evolve
-  const CURRENT_DB_VERSION = 'yp_v11_roadpali_final_railway';
+  const CURRENT_DB_VERSION = 'yp_v12_category_subcategory_master';
   
   // Clean sweep of ancient local storage shards if database version is old
   useState(() => {
@@ -50,7 +60,7 @@ export default function App() {
         const parsed = JSON.parse(saved);
         // Ensure "roadpali" exists in loaded localities, otherwise discard stale developer storage
         if (parsed && parsed.some((l: any) => l.id === 'roadpali')) {
-          return parsed;
+          return parsed.map(normalizeBusinessTaxonomy);
         }
       } catch (e) {
         // Fall through
@@ -81,7 +91,7 @@ export default function App() {
         // Fall through
       }
     }
-    return INITIAL_BUSINESSES;
+    return INITIAL_BUSINESSES.map(normalizeBusinessTaxonomy);
   });
 
   const [reviews, setReviews] = useState<Review[]>(() => {
@@ -624,15 +634,23 @@ export default function App() {
     services: string;
     latitude: string;
     longitude: string;
+    importAction?: 'create' | 'update';
+    existingBusinessId?: string;
+    localityId?: string;
+    areaId?: string;
+    categoryId?: string;
+    subcategoryId?: string;
   }>) => {
     const inferCategory = (services: string) => {
       const s = services.toLowerCase();
-      if (s.includes('hospital') || s.includes('medical') || s.includes('pharmacy') || s.includes('clinic')) return 'health';
-      if (s.includes('school') || s.includes('preschool') || s.includes('education')) return 'services';
-      if (s.includes('hardware') || s.includes('electrical') || s.includes('plumbing')) return 'home';
-      if (s.includes('restaurant') || s.includes('sweets') || s.includes('food')) return 'food';
-      if (s.includes('fashion') || s.includes('clothing') || s.includes('store') || s.includes('retail')) return 'retail';
-      return 'services';
+      if (s.includes('salon') || s.includes('spa') || s.includes('beauty')) return 'beauty-wellness';
+      if (s.includes('hospital') || s.includes('medical') || s.includes('pharmacy') || s.includes('clinic')) return 'health-medical';
+      if (s.includes('school') || s.includes('preschool') || s.includes('education')) return 'education-training';
+      if (s.includes('hardware') || s.includes('electrical') || s.includes('plumbing')) return 'home-services';
+      if (s.includes('restaurant') || s.includes('sweets') || s.includes('food')) return 'food-restaurants';
+      if (s.includes('fashion') || s.includes('clothing') || s.includes('store') || s.includes('retail')) return 'shopping-retail';
+      if (s.includes('software') || s.includes('digital') || s.includes('it service')) return 'digital-technology';
+      return 'professional-services';
     };
 
     const inferLocality = (area: string) => {
@@ -650,30 +668,68 @@ export default function App() {
 
     setBusinesses(prev => {
       const next = [...prev];
-      const keySet = new Set(prev.map((b) => `${b.name.toLowerCase()}|${b.address.toLowerCase()}|${b.phone}`));
+      const normalizePhone = (phone: string) => phone.replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '');
+      const getBusinessPincode = (b: Business) => MASTER_AREAS.find(a => a.id === b.areaId)?.pincode || '';
 
       for (const row of rows) {
         const phone = row.mobile && row.mobile !== '—' ? (row.mobile.startsWith('+91') ? row.mobile : `+91 ${row.mobile}`) : '+91 0000000000';
         const address = row.address && row.address !== '—' ? row.address : `${row.area || 'Unknown Area'}, ${row.city || 'Navi Mumbai'}`;
         const name = row.businessName.trim();
-        const key = `${name.toLowerCase()}|${address.toLowerCase()}|${phone}`;
-        if (!name || keySet.has(key)) {
+        if (!name) {
           skipped++;
           continue;
         }
-        keySet.add(key);
-        const localityId = inferLocality(row.area || row.city || '');
-        const areaMatch = MASTER_AREAS.find(a => a.name.toLowerCase().includes((row.area || '').toLowerCase()));
-        const areaId = areaMatch?.id || 'roadpali-sec17';
+        const localityId = row.localityId || inferLocality(row.area || row.city || '');
+        const areaMatch = MASTER_AREAS.find(a => a.id === row.areaId) || MASTER_AREAS.find(a => a.name.toLowerCase().includes((row.area || '').toLowerCase()));
+        const areaId = row.areaId || areaMatch?.id || 'roadpali-sec17';
         const rating = row.rating && row.rating !== '—' ? parseFloat(row.rating) : 0;
         const reviewCount = row.reviews && row.reviews !== '—' ? parseInt(row.reviews, 10) || 0 : 0;
         const lat = row.latitude && row.latitude !== '—' ? parseFloat(row.latitude) : undefined;
         const lng = row.longitude && row.longitude !== '—' ? parseFloat(row.longitude) : undefined;
 
+        const normalizedPhone = normalizePhone(phone);
+        const resolvedPincode = MASTER_AREAS.find(a => a.id === areaId)?.pincode || row.pin.replace(/\D/g, '');
+        const existingIndex = next.findIndex((b) => (
+          (row.existingBusinessId && b.id === row.existingBusinessId) ||
+          (
+            b.name.trim().toLowerCase() === name.toLowerCase() &&
+            normalizePhone(b.phone) === normalizedPhone &&
+            getBusinessPincode(b) === resolvedPincode &&
+            b.localityId === localityId
+          )
+        ));
+
+        if (row.importAction === 'update' && existingIndex >= 0) {
+          next[existingIndex] = {
+            ...next[existingIndex],
+            name,
+            categoryId: row.categoryId || inferCategory(row.services || ''),
+            subcategoryId: row.subcategoryId || resolveDefaultSubcategoryId(row.categoryId || inferCategory(row.services || '')),
+            localityId,
+            areaId,
+            areasOfOperation: [areaId],
+            address,
+            phone,
+            description: row.services || next[existingIndex].description,
+            rating: Number.isFinite(rating) ? rating : next[existingIndex].rating,
+            reviewCount: Number.isFinite(reviewCount) ? reviewCount : next[existingIndex].reviewCount,
+            tags: (row.services || next[existingIndex].tags.join(',')).split(',').map(t => t.trim()).filter(Boolean).slice(0, 5),
+            gpsCoordinates: lat !== undefined && lng !== undefined ? { lat, lng } : next[existingIndex].gpsCoordinates,
+          };
+          skipped++;
+          continue;
+        }
+
+        if (existingIndex >= 0) {
+          skipped++;
+          continue;
+        }
+
         next.unshift({
           id: `csv_${Date.now()}_${Math.floor(Math.random() * 100000)}`,
           name,
-          categoryId: inferCategory(row.services || ''),
+          categoryId: row.categoryId || inferCategory(row.services || ''),
+          subcategoryId: row.subcategoryId || resolveDefaultSubcategoryId(row.categoryId || inferCategory(row.services || '')),
           localityId,
           stateId: 'mh',
           cityId: 'navimumbai',
@@ -702,6 +758,11 @@ export default function App() {
     return { imported, skipped };
   };
 
+  const activeNodeLabel = (() => {
+    if (activeLocalityId === 'roadpali') return 'Roadpali & Kalamboli';
+    return localities.find((l) => l.id === activeLocalityId)?.name.split(',')[0] || 'Roadpali';
+  })();
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans selection:bg-indigo-600/15 relative">
       
@@ -726,7 +787,7 @@ export default function App() {
             <span>
               Pincode: {savedPincode ? savedPincode : 'None'} 
               <span className="text-indigo-400 font-sans ml-1 text-[10px] font-normal">
-                ({localities.find(l => l.id === activeLocalityId)?.name.split(',')[0]} node)
+                ({activeNodeLabel} node)
               </span>
             </span>
             <span className="text-[10px] text-indigo-600 underline ml-1 font-bold">Change</span>
@@ -734,15 +795,17 @@ export default function App() {
 
           <span className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-700 font-sans font-semibold text-xs py-1.5 px-3 rounded-full border border-emerald-250">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-            Node: {localities.find(l => l.id === activeLocalityId)?.name.split(',')[0]}
+            Node: {activeNodeLabel}
           </span>
           
           <button
             onClick={() => {
-              // Direct access to register as business
-              const seekWebPortal = document.querySelector('[role="explore-dir"]');
+              // Direct access for merchants to submit a listing.
+              window.dispatchEvent(new CustomEvent('localsy:open-business-application'));
+              const seekWebPortal = document.getElementById('web-portal-root');
               if (seekWebPortal) seekWebPortal.scrollIntoView({ behavior: 'smooth' });
             }}
+            title="Open the listing application form for merchants who want to be promoted on the directory"
             className="hidden sm:inline-flex bg-slate-900 hover:bg-slate-800 text-white font-medium text-xs px-4 py-2 rounded-xl transition cursor-pointer"
           >
             Advertise Business
@@ -836,6 +899,7 @@ export default function App() {
             categories={INITIAL_CATEGORIES}
             reviews={reviews}
             activeLocalityId={activeLocalityId}
+            savedPincode={savedPincode}
             onLocalityChange={setActiveLocalityId}
             userSession={userSession}
             onUserSessionChange={setUserSession}
@@ -902,7 +966,7 @@ export default function App() {
         <div className="max-w-7xl mx-auto px-4 md:px-8 flex flex-col md:flex-row items-center justify-between gap-6">
           <div className="space-y-1.5 text-center md:text-left">
             <span className="block text-white font-bold text-sm">Roadpali Businesses</span>
-            <span className="block text-xs text-slate-500">Your trusted neighbourhood local business directory node. Serving Roadpali, Kalamboli, and Navi Mumbai since 2026.</span>
+            <span className="block text-xs text-slate-500">Your trusted neighbourhood Hyper Local directory node. Serving Roadpali, Kalamboli, and Navi Mumbai since 2026.</span>
           </div>
           <div className="flex flex-wrap items-center justify-center gap-4 text-xs">
             <button 

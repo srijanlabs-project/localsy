@@ -14,6 +14,13 @@ import { MASTER_STATES, MASTER_CITIES, MASTER_AREAS } from '../data';
 import OtpVerificationModal from './OtpVerificationModal';
 import GoogleLocationPicker from './GoogleLocationPicker';
 import { getBusinessImageUrl, getCategoryFallbackImage } from '../utils/businessImage';
+import {
+  BUSINESS_CATEGORIES,
+  getCategoryById,
+  getSubcategoriesForCategory,
+  getSubcategoryById,
+  resolveDefaultSubcategoryId
+} from '../categoryMaster';
 
 interface WebPortalProps {
   localities: Locality[];
@@ -21,6 +28,7 @@ interface WebPortalProps {
   categories: Category[];
   reviews: Review[];
   activeLocalityId: string;
+  savedPincode?: string | null;
   onLocalityChange: (id: string) => void;
   userSession: UserSession;
   onUserSessionChange: (sess: UserSession) => void;
@@ -47,6 +55,7 @@ export default function WebPortal({
   categories,
   reviews,
   activeLocalityId,
+  savedPincode,
   onLocalityChange,
   userSession,
   onUserSessionChange,
@@ -71,6 +80,7 @@ export default function WebPortal({
   const SHOW_REFINED_FILTERS = false;
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
+  const [selectedSubcategory, setSelectedSubcategory] = useState('all');
   const [showApplyModal, setShowApplyModal] = useState(false);
   const [selectedBiz, setSelectedBiz] = useState<Business | null>(null);
   
@@ -86,7 +96,8 @@ export default function WebPortal({
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState(''); // Email optional
   const [website, setWebsite] = useState('');
-  const [categoryId, setCategoryId] = useState('food');
+  const [categoryId, setCategoryId] = useState('food-restaurants');
+  const [subcategoryId, setSubcategoryId] = useState('restaurants');
   const [address, setAddress] = useState('');
   const [description, setDescription] = useState('');
   const [ownerName, setOwnerName] = useState('');
@@ -167,13 +178,48 @@ export default function WebPortal({
     }
   }, [SIMPLE_SEARCH_FORM, searchMode]);
 
+  useEffect(() => {
+    const openApplicationForm = () => setShowApplyModal(true);
+    window.addEventListener('localsy:open-business-application', openApplicationForm);
+    return () => window.removeEventListener('localsy:open-business-application', openApplicationForm);
+  }, []);
+
+  useEffect(() => {
+    if (selectedCategory === 'all') {
+      setSelectedSubcategory('all');
+      return;
+    }
+    const allowed = getSubcategoriesForCategory(selectedCategory);
+    if (selectedSubcategory !== 'all' && !allowed.some((s) => s.id === selectedSubcategory)) {
+      setSelectedSubcategory('all');
+    }
+  }, [selectedCategory, selectedSubcategory]);
+
+  useEffect(() => {
+    const allowed = getSubcategoriesForCategory(categoryId);
+    if (!allowed.some((s) => s.id === subcategoryId)) {
+      setSubcategoryId(resolveDefaultSubcategoryId(categoryId));
+    }
+  }, [categoryId, subcategoryId]);
+
   // Auto-rotating slider effect
-  const currentLocality = localities.find(l => l.id === activeLocalityId) || localities[0];
+  const selectedLocalityIds = activeLocalityId
+    .split(',')
+    .map((id) => id.trim())
+    .filter(Boolean);
+  const currentLocality =
+    localities.find((l) => l.id === selectedLocalityIds[0]) ||
+    localities.find((l) => l.id === activeLocalityId) ||
+    localities[0];
   const selectedLocalityNames = activeLocalityId
     .split(',')
     .map((id) => id.trim())
     .filter(Boolean)
-    .map((id) => localities.find((l) => l.id === id)?.name || id)
+    .map((id) => {
+      const localityName = localities.find((l) => l.id === id)?.name || id;
+      if (id === 'roadpali') return 'Roadpali & Kalamboli';
+      return localityName;
+    })
     .join(', ');
   const carouselImages = currentLocality.carouselImages || [currentLocality.coverImage];
 
@@ -354,9 +400,16 @@ export default function WebPortal({
   };
 
   // Filter approved listings relevant to search keyword + category ID
-  const approvedInLocality = businesses.filter(
-    b => b.localityId === activeLocalityId && b.status === "approved"
-  );
+  const approvedInLocality = businesses.filter((b) => {
+    if (!selectedLocalityIds.includes(b.localityId) || b.status !== 'approved') return false;
+    if (!savedPincode) return true;
+    const primaryAreaPin = MASTER_AREAS.find((a) => a.id === b.areaId)?.pincode;
+    const opPins = (b.areasOfOperation || [])
+      .map((aid) => MASTER_AREAS.find((a) => a.id === aid)?.pincode)
+      .filter(Boolean);
+    const allPins = new Set([primaryAreaPin, ...opPins].filter(Boolean));
+    return allPins.has(savedPincode);
+  });
 
   const filteredBusinesses = approvedInLocality.filter(b => {
     // Determine query to match
@@ -368,6 +421,7 @@ export default function WebPortal({
     
     // Check if matching primary category
     const matchesCategory = selectedCategory === 'all' || b.categoryId === selectedCategory;
+    const matchesSubcategory = selectedSubcategory === 'all' || b.subcategoryId === selectedSubcategory;
 
     // Discovery Filter: Distance
     const matchesDistance = filterDistance === 'all' || (b.distance !== undefined && b.distance <= parseFloat(filterDistance));
@@ -399,7 +453,7 @@ export default function WebPortal({
     // Discovery Filter: Experience min years
     const matchesExperience = filterExperience === 'all' || (b.experienceYears !== undefined && b.experienceYears >= parseFloat(filterExperience));
 
-    return matchesSearch && matchesCategory && matchesDistance && matchesRating && matchesOpenNow && matchesPrice && matchesDelivery && matchesOffers && matchesVerified && matchesLanguage && matchesPayment && matchesExperience;
+    return matchesSearch && matchesCategory && matchesSubcategory && matchesDistance && matchesRating && matchesOpenNow && matchesPrice && matchesDelivery && matchesOffers && matchesVerified && matchesLanguage && matchesPayment && matchesExperience;
   });
 
   // Apply sorting rules
@@ -441,14 +495,15 @@ export default function WebPortal({
 
     // Determine featured state limit
     const numFeaturedInLocalAndCat = businesses.filter(
-      b => b.localityId === activeLocalityId && b.categoryId === categoryId && b.featured && b.status === 'approved'
+      b => selectedLocalityIds.includes(b.localityId) && b.categoryId === categoryId && b.featured && b.status === 'approved'
     ).length;
 
     // Default dynamic properties
     const newBizData = {
       name,
       categoryId,
-      localityId: activeLocalityId,
+      subcategoryId,
+      localityId: selectedLocalityIds[0] || activeLocalityId,
       stateId: formStateId,
       cityId: formCityId,
       areaId: formAreaId,
@@ -460,7 +515,7 @@ export default function WebPortal({
       description: description || `${name} is a certified local provider of premium local services.`,
       imageUrl: imageUrl.trim() || 'https://images.unsplash.com/photo-1544197150-b99a580bb7a8?auto=format&fit=crop&w=500&q=80',
       featured: false, // Starts as standard approved, admins can toggle VIP status
-      tags: [categoryId, 'Local', 'Indian-SME'],
+      tags: [categoryId, subcategoryId, 'Local', 'Indian-SME'],
       hours,
       ownerName: ownerName || 'National Proprietor',
       gpsCoordinates: gpsCoords
@@ -473,7 +528,8 @@ export default function WebPortal({
     setPhone('');
     setEmail('');
     setWebsite('');
-    setCategoryId('food');
+    setCategoryId('food-restaurants');
+    setSubcategoryId('restaurants');
     setAddress('');
     setDescription('');
     setOwnerName('');
@@ -549,7 +605,7 @@ export default function WebPortal({
   const toggleFeaturedStatus = (biz: Business) => {
     // Admin toggling listing featured state
     const alreadyFeaturedCount = businesses.filter(
-      b => b.localityId === activeLocalityId && b.categoryId === biz.categoryId && b.featured && b.status === 'approved'
+      b => selectedLocalityIds.includes(b.localityId) && b.categoryId === biz.categoryId && b.featured && b.status === 'approved'
     ).length;
 
     if (!biz.featured && alreadyFeaturedCount >= 3) {
@@ -681,7 +737,7 @@ export default function WebPortal({
             <MapPin className="w-3.5 h-3.5 animate-bounce" /> Indian Regional Directory
           </div>
           <h2 className="text-2xl md:text-4xl font-extrabold font-sans tracking-tight text-white leading-tight">
-            Local Business Directory for {selectedLocalityNames || currentLocality.name}
+            Hyper Local Directory for {selectedLocalityNames || currentLocality.name}
           </h2>
           <p className="text-sm text-slate-300 leading-relaxed max-w-xl">
             {currentLocality.description} verified reviews, location-grabbing utilities, and dynamic approval tracking.
@@ -787,8 +843,8 @@ export default function WebPortal({
 
             {/* Render conditional inputs matching active Search Mode */}
             {searchMode === 'keyword' && (
-              <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-                <div className="relative w-full">
+              <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_210px_210px_auto] items-center gap-3">
+                <div className="relative min-w-0">
                   <input
                     type="text"
                     value={searchQuery}
@@ -798,6 +854,34 @@ export default function WebPortal({
                   />
                   <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3.5" />
                 </div>
+                <label className="sr-only" htmlFor="public-category-filter">Category</label>
+                <select
+                  id="public-category-filter"
+                  value={selectedCategory}
+                  onChange={(e) => {
+                    setSelectedCategory(e.target.value);
+                    setSelectedSubcategory('all');
+                  }}
+                  className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition font-sans font-semibold text-slate-700"
+                >
+                  <option value="all">All Categories</option>
+                  {BUSINESS_CATEGORIES.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+                <label className="sr-only" htmlFor="public-subcategory-filter">Subcategory</label>
+                <select
+                  id="public-subcategory-filter"
+                  value={selectedSubcategory}
+                  disabled={selectedCategory === 'all'}
+                  onChange={(e) => setSelectedSubcategory(e.target.value)}
+                  className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition font-sans font-semibold text-slate-700 disabled:text-slate-400 disabled:bg-slate-100"
+                >
+                  <option value="all">All Subcategories</option>
+                  {getSubcategoriesForCategory(selectedCategory).map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
                 {searchQuery && (
                   <button
                     onClick={() => setSearchQuery('')}
@@ -1143,26 +1227,6 @@ export default function WebPortal({
             )}
           </div>
 
-          {/* Categories slide horizontal selector bar */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-4.5 shadow-3xs flex items-center gap-3 overflow-x-auto">
-            <span className="text-xs font-mono text-slate-400 font-bold uppercase tracking-tight flex-shrink-0">Filter Category:</span>
-            <div className="flex items-center gap-1.5 pb-1">
-              {categories.map(c => (
-                <button
-                  key={c.id}
-                  onClick={() => setSelectedCategory(c.id)}
-                  className={`text-[11px] px-3 py-1.5 rounded-xl transition duration-150 flex items-center gap-1 whitespace-nowrap font-medium ${
-                    selectedCategory === c.id 
-                      ? 'bg-slate-950 text-white font-bold shadow' 
-                      : 'bg-slate-50 border border-slate-100 text-slate-600 hover:bg-slate-100'
-                  }`}
-                >
-                  <span>{c.name}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
           {/* Bulletin local campaign strip */}
           <div className="bg-gradient-to-r from-amber-500/10 via-amber-600/5 to-transparent border-l-4 border-amber-500 rounded-r-2xl p-3.5 flex items-center justify-between gap-4 shadow-2xs">
             <div className="flex items-center gap-3">
@@ -1216,8 +1280,9 @@ export default function WebPortal({
                                 <span className="text-emerald-500" title="Physical KYC Verified Merchant">✓</span>
                               )}
                             </h4>
-                            <span className="text-[10px] bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded font-mono font-bold uppercase">
-                              {biz.categoryId}
+                            <span className="text-[10px] bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded font-mono font-bold">
+                              {getCategoryById(biz.categoryId)?.name || biz.categoryId}
+                              {biz.subcategoryId && ` / ${getSubcategoryById(biz.subcategoryId)?.name || biz.subcategoryId}`}
                             </span>
                           </div>
 
@@ -1348,7 +1413,8 @@ export default function WebPortal({
                             <div className="space-y-1">
                               <div className="flex items-center justify-between">
                                 <span className="text-[10px] uppercase font-mono tracking-wider font-semibold text-slate-400">
-                                  {biz.categoryId.toUpperCase()}
+                                  {getCategoryById(biz.categoryId)?.name || biz.categoryId}
+                                  {biz.subcategoryId && ` / ${getSubcategoryById(biz.subcategoryId)?.name || biz.subcategoryId}`}
                                 </span>
                                 <div className="flex items-center gap-0.5 bg-amber-50 text-amber-600 text-xs px-1.5 rounded font-bold">
                                   ★ {biz.rating}
@@ -1996,7 +2062,8 @@ export default function WebPortal({
                 </div>
                 <div className="flex flex-wrap gap-1.5 pt-1">
                   <span className="text-xs bg-slate-100 text-slate-800 px-2.5 py-0.5 rounded-full font-mono font-medium">
-                    {selectedBiz.categoryId.toUpperCase()}
+                    {getCategoryById(selectedBiz.categoryId)?.name || selectedBiz.categoryId}
+                    {selectedBiz.subcategoryId && ` / ${getSubcategoryById(selectedBiz.subcategoryId)?.name || selectedBiz.subcategoryId}`}
                   </span>
                   {selectedBiz.tags.map(t => (
                     <span key={t} className="text-xs bg-slate-50 text-slate-500 px-2 py-0.5 rounded-full">
@@ -2285,7 +2352,7 @@ export default function WebPortal({
                   Verify &amp; List
                 </span>
                 <h3 className="text-base font-extrabold tracking-tight font-sans text-white mt-1">
-                  Add Your Business to {currentLocality.name}
+                  Add Your Hyper Local Business to {currentLocality.name}
                 </h3>
               </div>
               <button 
@@ -2311,19 +2378,33 @@ export default function WebPortal({
                 </div>
 
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Category Segment *</label>
+                  <label className="block font-bold text-slate-700 mb-1">Category *</label>
                   <select
                     value={categoryId}
-                    onChange={(e) => setCategoryId(e.target.value)}
+                    required
+                    onChange={(e) => {
+                      const nextCategory = e.target.value;
+                      setCategoryId(nextCategory);
+                      setSubcategoryId(resolveDefaultSubcategoryId(nextCategory));
+                    }}
                     className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500 font-medium"
                   >
-                    <option value="salon">Salons &amp; Wellness</option>
-                    <option value="food">Food &amp; Dining</option>
-                    <option value="tech">Tech &amp; Digital</option>
-                    <option value="health">Health &amp; Wellness</option>
-                    <option value="home">Home Services</option>
-                    <option value="services">Professional Services</option>
-                    <option value="retail">Shops &amp; Retail</option>
+                    {BUSINESS_CATEGORIES.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Subcategory *</label>
+                  <select
+                    value={subcategoryId}
+                    required
+                    onChange={(e) => setSubcategoryId(e.target.value)}
+                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500 font-medium"
+                  >
+                    {getSubcategoriesForCategory(categoryId).map((s) => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
                   </select>
                 </div>
               </div>

@@ -8,6 +8,7 @@ import { MASTER_STATES, MASTER_CITIES, MASTER_AREAS } from '../data';
 import OtpVerificationModal from './OtpVerificationModal';
 import GoogleLocationPicker from './GoogleLocationPicker';
 import { getBusinessImageUrl, getCategoryFallbackImage } from '../utils/businessImage';
+import { resolveDefaultSubcategoryId } from '../categoryMaster';
 
 interface AndroidSimulatorProps {
   localities: Locality[];
@@ -167,6 +168,7 @@ export default function AndroidSimulator({
     const newBizData = {
       name: appName,
       categoryId: appCategory,
+      subcategoryId: resolveDefaultSubcategoryId(appCategory),
       localityId: activeLocalityId,
       stateId: appStateId,
       cityId: appCityId,

@@ -1,0 +1,24 @@
+[
+  {
+    "id": "usr_1779453980689_80848",
+    "name": "Platform Admin",
+    "email": "admin@localsy.test",
+    "phone": "+91 9999900000",
+    "userType": "platform_admin",
+    "role": "admin",
+    "passwordHash": "11ddb7a8a7a82cb0628a0a2ee1ed6209:7a850d0be562030006d0c8f9872407dbf9a6147d071e4ca3666ede6eb1dc360ad1b2585b6e2fdd2ee855ca13a2c1be3ae8eaf33b277df85e5010f2ec975b9e33",
+    "createdAt": "2026-05-22T12:46:20.734Z",
+    "status": "active"
+  },
+  {
+    "id": "usr_1779453980735_14232",
+    "name": "Developer User",
+    "email": "dev@localsy.test",
+    "phone": "+91 9999911111",
+    "userType": "developer",
+    "role": "developer",
+    "passwordHash": "96f1824d090893a11dd703e63bda33b2:c5f46ca8e15ee8efc87e59a9fa4bfb2e4c3471559e206d7ffecda93edf8a7f130500ea4d457f7ba68f69b3a9bf3e8368a307995a334c873c534474be749d2f44",
+    "createdAt": "2026-05-22T12:46:20.784Z",
+    "status": "active"
+  }
+]

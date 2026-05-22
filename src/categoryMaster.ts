@@ -1,0 +1,235 @@
+import { BusinessCategory, BusinessSubcategory } from './types';
+
+type CategoryMasterRow = [
+  legacyId: number,
+  parentLegacyId: number | null,
+  level: 1 | 2,
+  name: string,
+  slug: string,
+  icon: string,
+  status: 'Active' | 'Inactive',
+  sortOrder: number
+];
+
+const CATEGORY_MASTER_ROWS: CategoryMasterRow[] = [
+  [1, null, 1, 'Food & Restaurants', 'food-restaurants', 'category_icon', 'Active', 1],
+  [2, 1, 2, 'Restaurants', 'restaurants', 'subcategory_icon', 'Active', 1],
+  [3, 1, 2, 'Cafes', 'cafes', 'subcategory_icon', 'Active', 2],
+  [4, 1, 2, 'Fast Food', 'fast-food', 'subcategory_icon', 'Active', 3],
+  [5, 1, 2, 'Bakeries', 'bakeries', 'subcategory_icon', 'Active', 4],
+  [6, 1, 2, 'Sweet Shops', 'sweet-shops', 'subcategory_icon', 'Active', 5],
+  [7, 1, 2, 'Cloud Kitchens', 'cloud-kitchens', 'subcategory_icon', 'Active', 6],
+  [8, 1, 2, 'Catering', 'catering', 'subcategory_icon', 'Active', 7],
+  [9, 1, 2, 'Juice Centers', 'juice-centers', 'subcategory_icon', 'Active', 8],
+  [10, 1, 2, 'Tiffin Services', 'tiffin-services', 'subcategory_icon', 'Active', 9],
+  [11, 1, 2, 'Ice Cream Parlors', 'ice-cream-parlors', 'subcategory_icon', 'Active', 10],
+  [12, 1, 2, 'Street Food', 'street-food', 'subcategory_icon', 'Active', 11],
+  [13, null, 1, 'Health & Medical', 'health-medical', 'category_icon', 'Active', 2],
+  [14, 13, 2, 'Hospitals', 'hospitals', 'subcategory_icon', 'Active', 1],
+  [15, 13, 2, 'Clinics', 'clinics', 'subcategory_icon', 'Active', 2],
+  [16, 13, 2, 'Dental Clinics', 'dental-clinics', 'subcategory_icon', 'Active', 3],
+  [17, 13, 2, 'Diagnostic Centers', 'diagnostic-centers', 'subcategory_icon', 'Active', 4],
+  [18, 13, 2, 'Physiotherapy', 'physiotherapy', 'subcategory_icon', 'Active', 5],
+  [19, 13, 2, 'Eye Care', 'eye-care', 'subcategory_icon', 'Active', 6],
+  [20, 13, 2, 'Ayurveda', 'ayurveda', 'subcategory_icon', 'Active', 7],
+  [21, 13, 2, 'Homeopathy', 'homeopathy', 'subcategory_icon', 'Active', 8],
+  [22, 13, 2, 'Gyms', 'gyms', 'subcategory_icon', 'Active', 9],
+  [23, 13, 2, 'Yoga Centers', 'yoga-centers', 'subcategory_icon', 'Active', 10],
+  [24, 13, 2, 'Medical Stores', 'medical-stores', 'subcategory_icon', 'Active', 11],
+  [25, null, 1, 'Beauty & Wellness', 'beauty-wellness', 'category_icon', 'Active', 3],
+  [26, 25, 2, 'Salons', 'salons', 'subcategory_icon', 'Active', 1],
+  [27, 25, 2, 'Spas', 'spas', 'subcategory_icon', 'Active', 2],
+  [28, 25, 2, 'Makeup Artists', 'makeup-artists', 'subcategory_icon', 'Active', 3],
+  [29, 25, 2, 'Nail Studios', 'nail-studios', 'subcategory_icon', 'Active', 4],
+  [30, 25, 2, 'Skin Clinics', 'skin-clinics', 'subcategory_icon', 'Active', 5],
+  [31, 25, 2, 'Tattoo Studios', 'tattoo-studios', 'subcategory_icon', 'Active', 6],
+  [32, 25, 2, 'Massage Centers', 'massage-centers', 'subcategory_icon', 'Active', 7],
+  [33, 25, 2, 'Beauty Parlours', 'beauty-parlours', 'subcategory_icon', 'Active', 8],
+  [34, null, 1, 'Home Services', 'home-services', 'category_icon', 'Active', 4],
+  [35, 34, 2, 'Electricians', 'electricians', 'subcategory_icon', 'Active', 1],
+  [36, 34, 2, 'Plumbers', 'plumbers', 'subcategory_icon', 'Active', 2],
+  [37, 34, 2, 'Carpenters', 'carpenters', 'subcategory_icon', 'Active', 3],
+  [38, 34, 2, 'Painters', 'painters', 'subcategory_icon', 'Active', 4],
+  [39, 34, 2, 'Pest Control', 'pest-control', 'subcategory_icon', 'Active', 5],
+  [40, 34, 2, 'House Cleaning', 'house-cleaning', 'subcategory_icon', 'Active', 6],
+  [41, 34, 2, 'AC Repair', 'ac-repair', 'subcategory_icon', 'Active', 7],
+  [42, 34, 2, 'Appliance Repair', 'appliance-repair', 'subcategory_icon', 'Active', 8],
+  [43, null, 1, 'Automotive', 'automotive', 'category_icon', 'Active', 5],
+  [44, 43, 2, 'Car Service', 'car-service', 'subcategory_icon', 'Active', 1],
+  [45, 43, 2, 'Bike Service', 'bike-service', 'subcategory_icon', 'Active', 2],
+  [46, 43, 2, 'Car Wash', 'car-wash', 'subcategory_icon', 'Active', 3],
+  [47, 43, 2, 'Tyre Shops', 'tyre-shops', 'subcategory_icon', 'Active', 4],
+  [48, 43, 2, 'Petrol Pumps', 'petrol-pumps', 'subcategory_icon', 'Active', 5],
+  [49, 43, 2, 'Driving Schools', 'driving-schools', 'subcategory_icon', 'Active', 6],
+  [50, 43, 2, 'Car Rentals', 'car-rentals', 'subcategory_icon', 'Active', 7],
+  [51, 43, 2, 'Towing Services', 'towing-services', 'subcategory_icon', 'Active', 8],
+  [52, null, 1, 'Real Estate', 'real-estate', 'category_icon', 'Active', 6],
+  [53, 52, 2, 'Property Dealers', 'property-dealers', 'subcategory_icon', 'Active', 1],
+  [54, 52, 2, 'Builders', 'builders', 'subcategory_icon', 'Active', 2],
+  [55, 52, 2, 'Rental Properties', 'rental-properties', 'subcategory_icon', 'Active', 3],
+  [56, 52, 2, 'Interior Designers', 'interior-designers', 'subcategory_icon', 'Active', 4],
+  [57, 52, 2, 'Architects', 'architects', 'subcategory_icon', 'Active', 5],
+  [58, 52, 2, 'Construction Contractors', 'construction-contractors', 'subcategory_icon', 'Active', 6],
+  [59, null, 1, 'Education & Training', 'education-training', 'category_icon', 'Active', 7],
+  [60, 59, 2, 'Schools', 'schools', 'subcategory_icon', 'Active', 1],
+  [61, 59, 2, 'Colleges', 'colleges', 'subcategory_icon', 'Active', 2],
+  [62, 59, 2, 'Coaching Institutes', 'coaching-institutes', 'subcategory_icon', 'Active', 3],
+  [63, 59, 2, 'Tuition Centers', 'tuition-centers', 'subcategory_icon', 'Active', 4],
+  [64, 59, 2, 'Music Classes', 'music-classes', 'subcategory_icon', 'Active', 5],
+  [65, 59, 2, 'Dance Classes', 'dance-classes', 'subcategory_icon', 'Active', 6],
+  [66, 59, 2, 'Skill Development', 'skill-development', 'subcategory_icon', 'Active', 7],
+  [67, 59, 2, 'Online Courses', 'online-courses', 'subcategory_icon', 'Active', 8],
+  [68, null, 1, 'Shopping & Retail', 'shopping-retail', 'category_icon', 'Active', 8],
+  [69, 68, 2, 'Grocery Stores', 'grocery-stores', 'subcategory_icon', 'Active', 1],
+  [70, 68, 2, 'Clothing Stores', 'clothing-stores', 'subcategory_icon', 'Active', 2],
+  [71, 68, 2, 'Electronics', 'electronics', 'subcategory_icon', 'Active', 3],
+  [72, 68, 2, 'Furniture', 'furniture', 'subcategory_icon', 'Active', 4],
+  [73, 68, 2, 'Jewellery', 'jewellery', 'subcategory_icon', 'Active', 5],
+  [74, 68, 2, 'Mobile Shops', 'mobile-shops', 'subcategory_icon', 'Active', 6],
+  [75, 68, 2, 'Gift Shops', 'gift-shops', 'subcategory_icon', 'Active', 7],
+  [76, 68, 2, 'Footwear', 'footwear', 'subcategory_icon', 'Active', 8],
+  [77, null, 1, 'Professional Services', 'professional-services', 'category_icon', 'Active', 9],
+  [78, 77, 2, 'Chartered Accountants', 'chartered-accountants', 'subcategory_icon', 'Active', 1],
+  [79, 77, 2, 'Lawyers', 'lawyers', 'subcategory_icon', 'Active', 2],
+  [80, 77, 2, 'Insurance Agents', 'insurance-agents', 'subcategory_icon', 'Active', 3],
+  [81, 77, 2, 'Tax Consultants', 'tax-consultants', 'subcategory_icon', 'Active', 4],
+  [82, 77, 2, 'Recruitment Agencies', 'recruitment-agencies', 'subcategory_icon', 'Active', 5],
+  [83, 77, 2, 'Business Consultants', 'business-consultants', 'subcategory_icon', 'Active', 6],
+  [84, null, 1, 'Travel & Hospitality', 'travel-hospitality', 'category_icon', 'Active', 10],
+  [85, 84, 2, 'Hotels', 'hotels', 'subcategory_icon', 'Active', 1],
+  [86, 84, 2, 'Resorts', 'resorts', 'subcategory_icon', 'Active', 2],
+  [87, 84, 2, 'Travel Agencies', 'travel-agencies', 'subcategory_icon', 'Active', 3],
+  [88, 84, 2, 'Tour Operators', 'tour-operators', 'subcategory_icon', 'Active', 4],
+  [89, 84, 2, 'Homestays', 'homestays', 'subcategory_icon', 'Active', 5],
+  [90, 84, 2, 'Visa Consultants', 'visa-consultants', 'subcategory_icon', 'Active', 6],
+  [91, null, 1, 'Event Services', 'event-services', 'category_icon', 'Active', 11],
+  [92, 91, 2, 'Wedding Planners', 'wedding-planners', 'subcategory_icon', 'Active', 1],
+  [93, 91, 2, 'Photographers', 'photographers', 'subcategory_icon', 'Active', 2],
+  [94, 91, 2, 'Decorators', 'decorators', 'subcategory_icon', 'Active', 3],
+  [95, 91, 2, 'DJs', 'djs', 'subcategory_icon', 'Active', 4],
+  [96, 91, 2, 'Banquet Halls', 'banquet-halls', 'subcategory_icon', 'Active', 5],
+  [97, 91, 2, 'Caterers', 'caterers', 'subcategory_icon', 'Active', 6],
+  [98, null, 1, 'Repair & Maintenance', 'repair-maintenance', 'category_icon', 'Active', 12],
+  [99, 98, 2, 'Mobile Repair', 'mobile-repair', 'subcategory_icon', 'Active', 1],
+  [100, 98, 2, 'Laptop Repair', 'laptop-repair', 'subcategory_icon', 'Active', 2],
+  [101, 98, 2, 'TV Repair', 'tv-repair', 'subcategory_icon', 'Active', 3],
+  [102, 98, 2, 'Refrigerator Repair', 'refrigerator-repair', 'subcategory_icon', 'Active', 4],
+  [103, 98, 2, 'Washing Machine Repair', 'washing-machine-repair', 'subcategory_icon', 'Active', 5],
+  [104, null, 1, 'Financial Services', 'financial-services', 'category_icon', 'Active', 13],
+  [105, 104, 2, 'Loans', 'loans', 'subcategory_icon', 'Active', 1],
+  [106, 104, 2, 'Insurance', 'insurance', 'subcategory_icon', 'Active', 2],
+  [107, 104, 2, 'Mutual Funds', 'mutual-funds', 'subcategory_icon', 'Active', 3],
+  [108, 104, 2, 'Investment Advisors', 'investment-advisors', 'subcategory_icon', 'Active', 4],
+  [109, null, 1, 'Pets & Animals', 'pets-animals', 'category_icon', 'Active', 14],
+  [110, 109, 2, 'Pet Shops', 'pet-shops', 'subcategory_icon', 'Active', 1],
+  [111, 109, 2, 'Veterinary Clinics', 'veterinary-clinics', 'subcategory_icon', 'Active', 2],
+  [112, 109, 2, 'Pet Grooming', 'pet-grooming', 'subcategory_icon', 'Active', 3],
+  [113, 109, 2, 'Pet Boarding', 'pet-boarding', 'subcategory_icon', 'Active', 4],
+  [114, null, 1, 'Industrial & B2B', 'industrial-b2b', 'category_icon', 'Active', 15],
+  [115, 114, 2, 'Manufacturers', 'manufacturers', 'subcategory_icon', 'Active', 1],
+  [116, 114, 2, 'Suppliers', 'suppliers', 'subcategory_icon', 'Active', 2],
+  [117, 114, 2, 'Packaging', 'packaging', 'subcategory_icon', 'Active', 3],
+  [118, 114, 2, 'Logistics', 'logistics', 'subcategory_icon', 'Active', 4],
+  [119, 114, 2, 'Machinery', 'machinery', 'subcategory_icon', 'Active', 5],
+  [120, null, 1, 'Agriculture', 'agriculture', 'category_icon', 'Active', 16],
+  [121, 120, 2, 'Seeds', 'seeds', 'subcategory_icon', 'Active', 1],
+  [122, 120, 2, 'Fertilizers', 'fertilizers', 'subcategory_icon', 'Active', 2],
+  [123, 120, 2, 'Dairy Farms', 'dairy-farms', 'subcategory_icon', 'Active', 3],
+  [124, 120, 2, 'Organic Products', 'organic-products', 'subcategory_icon', 'Active', 4],
+  [125, null, 1, 'Entertainment & Leisure', 'entertainment-leisure', 'category_icon', 'Active', 17],
+  [126, 125, 2, 'Movie Theaters', 'movie-theaters', 'subcategory_icon', 'Active', 1],
+  [127, 125, 2, 'Gaming Zones', 'gaming-zones', 'subcategory_icon', 'Active', 2],
+  [128, 125, 2, 'Sports Clubs', 'sports-clubs', 'subcategory_icon', 'Active', 3],
+  [129, 125, 2, 'Adventure Activities', 'adventure-activities', 'subcategory_icon', 'Active', 4],
+  [130, null, 1, 'Digital & Technology', 'digital-technology', 'category_icon', 'Active', 18],
+  [131, 130, 2, 'Software Companies', 'software-companies', 'subcategory_icon', 'Active', 1],
+  [132, 130, 2, 'Web Development', 'web-development', 'subcategory_icon', 'Active', 2],
+  [133, 130, 2, 'Digital Marketing', 'digital-marketing', 'subcategory_icon', 'Active', 3],
+  [134, 130, 2, 'IT Services', 'it-services', 'subcategory_icon', 'Active', 4],
+  [135, 130, 2, 'AI Solutions', 'ai-solutions', 'subcategory_icon', 'Active', 5],
+  [136, null, 1, 'Government & Public Services', 'government-public-services', 'category_icon', 'Active', 19],
+  [137, 136, 2, 'Government Offices', 'government-offices', 'subcategory_icon', 'Active', 1],
+  [138, 136, 2, 'Utility Services', 'utility-services', 'subcategory_icon', 'Active', 2],
+  [139, 136, 2, 'Public Transport', 'public-transport', 'subcategory_icon', 'Active', 3],
+  [140, 136, 2, 'Post Offices', 'post-offices', 'subcategory_icon', 'Active', 4],
+];
+
+const legacyCategorySlugById = new Map(
+  CATEGORY_MASTER_ROWS
+    .filter(([, , level]) => level === 1)
+    .map(([legacyId, , , , slug]) => [legacyId, slug])
+);
+
+export const BUSINESS_CATEGORIES: BusinessCategory[] = CATEGORY_MASTER_ROWS
+  .filter(([, , level]) => level === 1)
+  .map(([legacyId, , , name, slug, icon, status, sortOrder]) => ({
+    id: slug,
+    legacyId,
+    name,
+    slug,
+    icon,
+    status: status.toLowerCase() as BusinessCategory['status'],
+    sortOrder
+  }));
+
+export const BUSINESS_SUBCATEGORIES: BusinessSubcategory[] = CATEGORY_MASTER_ROWS
+  .filter(([, , level]) => level === 2)
+  .map(([legacyId, parentLegacyId, , name, slug, icon, status, sortOrder]) => ({
+    id: slug,
+    legacyId,
+    parentLegacyId: parentLegacyId as number,
+    categoryId: legacyCategorySlugById.get(parentLegacyId as number) || '',
+    name,
+    slug,
+    icon,
+    status: status.toLowerCase() as BusinessSubcategory['status'],
+    sortOrder
+  }));
+
+export const getSubcategoriesForCategory = (categoryId: string) =>
+  BUSINESS_SUBCATEGORIES.filter((subcategory) => subcategory.categoryId === categoryId);
+
+export const getCategoryById = (categoryId: string) =>
+  BUSINESS_CATEGORIES.find((category) => category.id === categoryId);
+
+export const getSubcategoryById = (subcategoryId: string) =>
+  BUSINESS_SUBCATEGORIES.find((subcategory) => subcategory.id === subcategoryId);
+
+export const DEFAULT_SUBCATEGORY_BY_CATEGORY: Record<string, string> = Object.fromEntries(
+  BUSINESS_CATEGORIES.map((category) => [
+    category.id,
+    BUSINESS_SUBCATEGORIES.find((subcategory) => subcategory.categoryId === category.id)?.id || ''
+  ])
+);
+
+export const LEGACY_CATEGORY_TO_MASTER_CATEGORY: Record<string, string> = {
+  food: 'food-restaurants',
+  health: 'health-medical',
+  salon: 'beauty-wellness',
+  home: 'home-services',
+  services: 'professional-services',
+  retail: 'shopping-retail',
+  tech: 'digital-technology'
+};
+
+export const LEGACY_CATEGORY_TO_DEFAULT_SUBCATEGORY: Record<string, string> = {
+  food: 'restaurants',
+  health: 'clinics',
+  salon: 'salons',
+  home: 'electricians',
+  services: 'business-consultants',
+  retail: 'grocery-stores',
+  tech: 'it-services'
+};
+
+export const resolveMasterCategoryId = (categoryId: string) =>
+  LEGACY_CATEGORY_TO_MASTER_CATEGORY[categoryId] || categoryId;
+
+export const resolveDefaultSubcategoryId = (categoryId: string) => {
+  const masterCategoryId = resolveMasterCategoryId(categoryId);
+  return (
+    LEGACY_CATEGORY_TO_DEFAULT_SUBCATEGORY[categoryId] ||
+    DEFAULT_SUBCATEGORY_BY_CATEGORY[masterCategoryId] ||
+    ''
+  );
+};
