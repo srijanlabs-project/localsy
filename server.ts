@@ -1,5 +1,6 @@
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 
 async function startServer() {
@@ -12,15 +13,18 @@ async function startServer() {
     res.json({ status: 'ok', environment: process.env.NODE_ENV || 'development' });
   });
 
+  const distPath = path.join(process.cwd(), 'dist');
+  // Robust check: if dist exists, we serve static files (production), otherwise we use Vite middleware
+  const isProduction = process.env.NODE_ENV === 'production' || fs.existsSync(distPath);
+
   // Vite middleware setup based on environment
-  if (process.env.NODE_ENV !== 'production') {
+  if (!isProduction) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), 'dist');
     // Serve static files from /dist
     app.use(express.static(distPath));
     // Fallback to index.html for Single-Page Application (SPA) routing
