@@ -488,7 +488,7 @@ export default function WebPortal({
   // Trigger registration submission
   const handleApplySubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !phone || !address || formAreasOfOperation.length === 0) {
+    if (!name || !address || formAreasOfOperation.length === 0) {
       alert("Please fill in the required fields (*), select operational areas, and define address details.");
       return;
     }
@@ -568,6 +568,10 @@ export default function WebPortal({
 
   const initContactUnlockFlow = (biz: Business, e: React.MouseEvent) => {
     e.stopPropagation(); // Avoid triggering card details click
+    if (!biz.phone) {
+      alert('This listing does not have a phone number yet.');
+      return;
+    }
     setOtpTargetBiz(biz);
     
     // If already session-authenticated, immediately unlock and skip modal!
@@ -1294,7 +1298,7 @@ export default function WebPortal({
                             <div className="flex items-center gap-1.5 flex-wrap">
                               {hasViewed ? (
                                 <div className="flex items-center gap-1.5 text-slate-800 font-bold font-mono bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-lg">
-                                  <span>📞 {biz.phone}</span>
+                                  <span>📞 {biz.phone || 'Not provided'}</span>
                                   <span className="bg-emerald-600 text-white text-[9px] px-1.5 py-0.5 rounded-md text-[8px] font-bold">
                                     Viewed
                                   </span>
@@ -1436,7 +1440,7 @@ export default function WebPortal({
                             <div className="flex items-center justify-between font-sans flex-wrap gap-1.5">
                               {hasViewed ? (
                                 <div className="flex items-center gap-1 text-slate-800 font-bold bg-emerald-50 border border-emerald-100 px-1.5 py-0.5 rounded-md">
-                                  <span>📞 {biz.phone}</span>
+                                  <span>📞 {biz.phone || 'Not provided'}</span>
                                   <span className="text-emerald-700 text-[8px] font-bold ml-1">Viewed</span>
                                 </div>
                               ) : (
@@ -2113,7 +2117,11 @@ export default function WebPortal({
                     <span className="block font-bold font-sans text-[10px] text-slate-400 uppercase">Proprietor Contact:</span>
                     {viewedBusinessIds.includes(selectedBiz.id) ? (
                       <div className="flex items-center gap-2">
-                        <a href={`tel:${selectedBiz.phone}`} className="hover:underline text-indigo-600 font-bold">{selectedBiz.phone}</a>
+                        {selectedBiz.phone ? (
+                          <a href={`tel:${selectedBiz.phone}`} className="hover:underline text-indigo-600 font-bold">{selectedBiz.phone}</a>
+                        ) : (
+                          <span className="text-slate-400">Not provided</span>
+                        )}
                         <span className="bg-emerald-500/10 text-emerald-600 text-[9px] px-2 py-0.5 rounded-full font-bold border border-emerald-500/20">
                           ✓ Viewed Previously
                         </span>
@@ -2509,10 +2517,9 @@ export default function WebPortal({
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Phone Number *</label>
+                  <label className="block font-bold text-slate-700 mb-1">Phone Number</label>
                   <input
                     type="tel"
-                    required
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
                     placeholder="e.g. +91 22 5550 4321"

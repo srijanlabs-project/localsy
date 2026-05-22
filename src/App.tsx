@@ -632,6 +632,8 @@ export default function App() {
     rating: string;
     reviews: string;
     services: string;
+    category?: string;
+    subcategory?: string;
     latitude: string;
     longitude: string;
     importAction?: 'create' | 'update';
@@ -672,7 +674,7 @@ export default function App() {
       const getBusinessPincode = (b: Business) => MASTER_AREAS.find(a => a.id === b.areaId)?.pincode || '';
 
       for (const row of rows) {
-        const phone = row.mobile && row.mobile !== '—' ? (row.mobile.startsWith('+91') ? row.mobile : `+91 ${row.mobile}`) : '+91 0000000000';
+        const phone = row.mobile && row.mobile !== '—' ? (row.mobile.startsWith('+91') ? row.mobile : `+91 ${row.mobile}`) : '';
         const address = row.address && row.address !== '—' ? row.address : `${row.area || 'Unknown Area'}, ${row.city || 'Navi Mumbai'}`;
         const name = row.businessName.trim();
         if (!name) {
@@ -693,6 +695,7 @@ export default function App() {
           (row.existingBusinessId && b.id === row.existingBusinessId) ||
           (
             b.name.trim().toLowerCase() === name.toLowerCase() &&
+            normalizedPhone.length > 0 &&
             normalizePhone(b.phone) === normalizedPhone &&
             getBusinessPincode(b) === resolvedPincode &&
             b.localityId === localityId
