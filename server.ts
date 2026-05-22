@@ -8,6 +8,12 @@ async function startServer() {
   // Safe default: dynamic PORT for Railway/production environment, falling back to 3000 for local development in AI Studio
   const PORT = Number(process.env.PORT || 3000);
 
+  // Request logger middleware to help debug incoming traffic
+  app.use((req, res, next) => {
+    console.log(`[HTTP] ${req.method} ${req.url}`);
+    next();
+  });
+
   // Health check API endpoint
   app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', environment: process.env.NODE_ENV || 'development' });
@@ -33,8 +39,9 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server is running on port ${PORT}`);
+  // Omit '0.0.0.0' to listen on IPv4 + IPv6 dual-stack as required by some Railway regions
+  app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT} (IPv4 and IPv6 dual-stack supported)`);
   });
 }
 
