@@ -19,11 +19,21 @@ import {
   User, CheckCircle, ShieldAlert, KeyRound, Wrench, Briefcase, HelpCircle,
   Sliders, Settings, X, Database, MapPin
 } from 'lucide-react';
+import { resolveDefaultSubcategoryId, resolveMasterCategoryId } from './categoryMaster';
+
+const normalizeBusinessTaxonomy = (business: Business): Business => {
+  const categoryId = resolveMasterCategoryId(business.categoryId);
+  return {
+    ...business,
+    categoryId,
+    subcategoryId: business.subcategoryId || resolveDefaultSubcategoryId(business.categoryId)
+  };
+};
 
 export default function App() {
   const PRODUCTION_MODE = true;
   // Database version management to clear stale browser caches when definitions evolve
-  const CURRENT_DB_VERSION = 'yp_v11_roadpali_final_railway';
+  const CURRENT_DB_VERSION = 'yp_v12_category_subcategory_master';
   
   // Clean sweep of ancient local storage shards if database version is old
   useState(() => {
@@ -50,7 +60,7 @@ export default function App() {
         const parsed = JSON.parse(saved);
         // Ensure "roadpali" exists in loaded localities, otherwise discard stale developer storage
         if (parsed && parsed.some((l: any) => l.id === 'roadpali')) {
-          return parsed;
+          return parsed.map(normalizeBusinessTaxonomy);
         }
       } catch (e) {
         // Fall through
@@ -81,7 +91,7 @@ export default function App() {
         // Fall through
       }
     }
-    return INITIAL_BUSINESSES;
+    return INITIAL_BUSINESSES.map(normalizeBusinessTaxonomy);
   });
 
   const [reviews, setReviews] = useState<Review[]>(() => {
@@ -629,15 +639,18 @@ export default function App() {
     localityId?: string;
     areaId?: string;
     categoryId?: string;
+    subcategoryId?: string;
   }>) => {
     const inferCategory = (services: string) => {
       const s = services.toLowerCase();
-      if (s.includes('hospital') || s.includes('medical') || s.includes('pharmacy') || s.includes('clinic')) return 'health';
-      if (s.includes('school') || s.includes('preschool') || s.includes('education')) return 'services';
-      if (s.includes('hardware') || s.includes('electrical') || s.includes('plumbing')) return 'home';
-      if (s.includes('restaurant') || s.includes('sweets') || s.includes('food')) return 'food';
-      if (s.includes('fashion') || s.includes('clothing') || s.includes('store') || s.includes('retail')) return 'retail';
-      return 'services';
+      if (s.includes('salon') || s.includes('spa') || s.includes('beauty')) return 'beauty-wellness';
+      if (s.includes('hospital') || s.includes('medical') || s.includes('pharmacy') || s.includes('clinic')) return 'health-medical';
+      if (s.includes('school') || s.includes('preschool') || s.includes('education')) return 'education-training';
+      if (s.includes('hardware') || s.includes('electrical') || s.includes('plumbing')) return 'home-services';
+      if (s.includes('restaurant') || s.includes('sweets') || s.includes('food')) return 'food-restaurants';
+      if (s.includes('fashion') || s.includes('clothing') || s.includes('store') || s.includes('retail')) return 'shopping-retail';
+      if (s.includes('software') || s.includes('digital') || s.includes('it service')) return 'digital-technology';
+      return 'professional-services';
     };
 
     const inferLocality = (area: string) => {
@@ -691,6 +704,7 @@ export default function App() {
             ...next[existingIndex],
             name,
             categoryId: row.categoryId || inferCategory(row.services || ''),
+            subcategoryId: row.subcategoryId || resolveDefaultSubcategoryId(row.categoryId || inferCategory(row.services || '')),
             localityId,
             areaId,
             areasOfOperation: [areaId],
@@ -715,6 +729,7 @@ export default function App() {
           id: `csv_${Date.now()}_${Math.floor(Math.random() * 100000)}`,
           name,
           categoryId: row.categoryId || inferCategory(row.services || ''),
+          subcategoryId: row.subcategoryId || resolveDefaultSubcategoryId(row.categoryId || inferCategory(row.services || '')),
           localityId,
           stateId: 'mh',
           cityId: 'navimumbai',

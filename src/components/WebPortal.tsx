@@ -14,6 +14,13 @@ import { MASTER_STATES, MASTER_CITIES, MASTER_AREAS } from '../data';
 import OtpVerificationModal from './OtpVerificationModal';
 import GoogleLocationPicker from './GoogleLocationPicker';
 import { getBusinessImageUrl, getCategoryFallbackImage } from '../utils/businessImage';
+import {
+  BUSINESS_CATEGORIES,
+  getCategoryById,
+  getSubcategoriesForCategory,
+  getSubcategoryById,
+  resolveDefaultSubcategoryId
+} from '../categoryMaster';
 
 interface WebPortalProps {
   localities: Locality[];
@@ -73,6 +80,7 @@ export default function WebPortal({
   const SHOW_REFINED_FILTERS = false;
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
+  const [selectedSubcategory, setSelectedSubcategory] = useState('all');
   const [showApplyModal, setShowApplyModal] = useState(false);
   const [selectedBiz, setSelectedBiz] = useState<Business | null>(null);
   
@@ -88,7 +96,8 @@ export default function WebPortal({
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState(''); // Email optional
   const [website, setWebsite] = useState('');
-  const [categoryId, setCategoryId] = useState('food');
+  const [categoryId, setCategoryId] = useState('food-restaurants');
+  const [subcategoryId, setSubcategoryId] = useState('restaurants');
   const [address, setAddress] = useState('');
   const [description, setDescription] = useState('');
   const [ownerName, setOwnerName] = useState('');
@@ -174,6 +183,24 @@ export default function WebPortal({
     window.addEventListener('localsy:open-business-application', openApplicationForm);
     return () => window.removeEventListener('localsy:open-business-application', openApplicationForm);
   }, []);
+
+  useEffect(() => {
+    if (selectedCategory === 'all') {
+      setSelectedSubcategory('all');
+      return;
+    }
+    const allowed = getSubcategoriesForCategory(selectedCategory);
+    if (selectedSubcategory !== 'all' && !allowed.some((s) => s.id === selectedSubcategory)) {
+      setSelectedSubcategory('all');
+    }
+  }, [selectedCategory, selectedSubcategory]);
+
+  useEffect(() => {
+    const allowed = getSubcategoriesForCategory(categoryId);
+    if (!allowed.some((s) => s.id === subcategoryId)) {
+      setSubcategoryId(resolveDefaultSubcategoryId(categoryId));
+    }
+  }, [categoryId, subcategoryId]);
 
   // Auto-rotating slider effect
   const selectedLocalityIds = activeLocalityId
@@ -394,6 +421,7 @@ export default function WebPortal({
     
     // Check if matching primary category
     const matchesCategory = selectedCategory === 'all' || b.categoryId === selectedCategory;
+    const matchesSubcategory = selectedSubcategory === 'all' || b.subcategoryId === selectedSubcategory;
 
     // Discovery Filter: Distance
     const matchesDistance = filterDistance === 'all' || (b.distance !== undefined && b.distance <= parseFloat(filterDistance));
@@ -425,7 +453,7 @@ export default function WebPortal({
     // Discovery Filter: Experience min years
     const matchesExperience = filterExperience === 'all' || (b.experienceYears !== undefined && b.experienceYears >= parseFloat(filterExperience));
 
-    return matchesSearch && matchesCategory && matchesDistance && matchesRating && matchesOpenNow && matchesPrice && matchesDelivery && matchesOffers && matchesVerified && matchesLanguage && matchesPayment && matchesExperience;
+    return matchesSearch && matchesCategory && matchesSubcategory && matchesDistance && matchesRating && matchesOpenNow && matchesPrice && matchesDelivery && matchesOffers && matchesVerified && matchesLanguage && matchesPayment && matchesExperience;
   });
 
   // Apply sorting rules
@@ -474,6 +502,7 @@ export default function WebPortal({
     const newBizData = {
       name,
       categoryId,
+      subcategoryId,
       localityId: selectedLocalityIds[0] || activeLocalityId,
       stateId: formStateId,
       cityId: formCityId,
@@ -486,7 +515,7 @@ export default function WebPortal({
       description: description || `${name} is a certified local provider of premium local services.`,
       imageUrl: imageUrl.trim() || 'https://images.unsplash.com/photo-1544197150-b99a580bb7a8?auto=format&fit=crop&w=500&q=80',
       featured: false, // Starts as standard approved, admins can toggle VIP status
-      tags: [categoryId, 'Local', 'Indian-SME'],
+      tags: [categoryId, subcategoryId, 'Local', 'Indian-SME'],
       hours,
       ownerName: ownerName || 'National Proprietor',
       gpsCoordinates: gpsCoords
@@ -499,7 +528,8 @@ export default function WebPortal({
     setPhone('');
     setEmail('');
     setWebsite('');
-    setCategoryId('food');
+    setCategoryId('food-restaurants');
+    setSubcategoryId('restaurants');
     setAddress('');
     setDescription('');
     setOwnerName('');
@@ -813,7 +843,7 @@ export default function WebPortal({
 
             {/* Render conditional inputs matching active Search Mode */}
             {searchMode === 'keyword' && (
-              <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_220px_auto] items-center gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_210px_210px_auto] items-center gap-3">
                 <div className="relative min-w-0">
                   <input
                     type="text"
@@ -828,11 +858,28 @@ export default function WebPortal({
                 <select
                   id="public-category-filter"
                   value={selectedCategory}
-                  onChange={(e) => setSelectedCategory(e.target.value)}
+                  onChange={(e) => {
+                    setSelectedCategory(e.target.value);
+                    setSelectedSubcategory('all');
+                  }}
                   className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition font-sans font-semibold text-slate-700"
                 >
-                  {categories.map((c) => (
+                  <option value="all">All Categories</option>
+                  {BUSINESS_CATEGORIES.map((c) => (
                     <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+                <label className="sr-only" htmlFor="public-subcategory-filter">Subcategory</label>
+                <select
+                  id="public-subcategory-filter"
+                  value={selectedSubcategory}
+                  disabled={selectedCategory === 'all'}
+                  onChange={(e) => setSelectedSubcategory(e.target.value)}
+                  className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition font-sans font-semibold text-slate-700 disabled:text-slate-400 disabled:bg-slate-100"
+                >
+                  <option value="all">All Subcategories</option>
+                  {getSubcategoriesForCategory(selectedCategory).map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
                   ))}
                 </select>
                 {searchQuery && (
@@ -1233,8 +1280,9 @@ export default function WebPortal({
                                 <span className="text-emerald-500" title="Physical KYC Verified Merchant">✓</span>
                               )}
                             </h4>
-                            <span className="text-[10px] bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded font-mono font-bold uppercase">
-                              {biz.categoryId}
+                            <span className="text-[10px] bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded font-mono font-bold">
+                              {getCategoryById(biz.categoryId)?.name || biz.categoryId}
+                              {biz.subcategoryId && ` / ${getSubcategoryById(biz.subcategoryId)?.name || biz.subcategoryId}`}
                             </span>
                           </div>
 
@@ -1365,7 +1413,8 @@ export default function WebPortal({
                             <div className="space-y-1">
                               <div className="flex items-center justify-between">
                                 <span className="text-[10px] uppercase font-mono tracking-wider font-semibold text-slate-400">
-                                  {biz.categoryId.toUpperCase()}
+                                  {getCategoryById(biz.categoryId)?.name || biz.categoryId}
+                                  {biz.subcategoryId && ` / ${getSubcategoryById(biz.subcategoryId)?.name || biz.subcategoryId}`}
                                 </span>
                                 <div className="flex items-center gap-0.5 bg-amber-50 text-amber-600 text-xs px-1.5 rounded font-bold">
                                   ★ {biz.rating}
@@ -2013,7 +2062,8 @@ export default function WebPortal({
                 </div>
                 <div className="flex flex-wrap gap-1.5 pt-1">
                   <span className="text-xs bg-slate-100 text-slate-800 px-2.5 py-0.5 rounded-full font-mono font-medium">
-                    {selectedBiz.categoryId.toUpperCase()}
+                    {getCategoryById(selectedBiz.categoryId)?.name || selectedBiz.categoryId}
+                    {selectedBiz.subcategoryId && ` / ${getSubcategoryById(selectedBiz.subcategoryId)?.name || selectedBiz.subcategoryId}`}
                   </span>
                   {selectedBiz.tags.map(t => (
                     <span key={t} className="text-xs bg-slate-50 text-slate-500 px-2 py-0.5 rounded-full">
@@ -2328,15 +2378,32 @@ export default function WebPortal({
                 </div>
 
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Category Segment *</label>
+                  <label className="block font-bold text-slate-700 mb-1">Category *</label>
                   <select
                     value={categoryId}
                     required
-                    onChange={(e) => setCategoryId(e.target.value)}
+                    onChange={(e) => {
+                      const nextCategory = e.target.value;
+                      setCategoryId(nextCategory);
+                      setSubcategoryId(resolveDefaultSubcategoryId(nextCategory));
+                    }}
                     className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500 font-medium"
                   >
-                    {categories.filter((c) => c.id !== 'all').map((c) => (
+                    {BUSINESS_CATEGORIES.map((c) => (
                       <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Subcategory *</label>
+                  <select
+                    value={subcategoryId}
+                    required
+                    onChange={(e) => setSubcategoryId(e.target.value)}
+                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500 font-medium"
+                  >
+                    {getSubcategoriesForCategory(categoryId).map((s) => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
                     ))}
                   </select>
                 </div>

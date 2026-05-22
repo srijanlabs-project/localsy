@@ -4,8 +4,15 @@ import {
   Trash2, PlusCircle, Check, Database, Eye, Server, RefreshCw, MapPin
 } from 'lucide-react';
 import { Locality, Business, SubdomainMapping, UserSession, AuditEvent } from '../types';
-import { INITIAL_CATEGORIES, MASTER_AREAS } from '../data';
+import { MASTER_AREAS } from '../data';
 import { getBusinessImageUrl, getCategoryFallbackImage } from '../utils/businessImage';
+import {
+  BUSINESS_CATEGORIES,
+  getCategoryById,
+  getSubcategoriesForCategory,
+  getSubcategoryById,
+  resolveDefaultSubcategoryId
+} from '../categoryMaster';
 
 interface AdminConsoleProps {
   localities: Locality[];
@@ -59,6 +66,7 @@ type BulkImportRow = {
   localityId?: string;
   areaId?: string;
   categoryId?: string;
+  subcategoryId?: string;
 };
 
 type ImportPreviewRow = BulkImportRow & {
@@ -114,13 +122,32 @@ export default function AdminConsole({
 
   const inferCategory = (services: string) => {
     const s = services.toLowerCase();
-    if (s.includes('salon') || s.includes('spa') || s.includes('beauty')) return 'salon';
-    if (s.includes('hospital') || s.includes('medical') || s.includes('pharmacy') || s.includes('clinic')) return 'health';
-    if (s.includes('school') || s.includes('preschool') || s.includes('education')) return 'services';
-    if (s.includes('hardware') || s.includes('electrical') || s.includes('plumbing')) return 'home';
-    if (s.includes('restaurant') || s.includes('sweets') || s.includes('food')) return 'food';
-    if (s.includes('fashion') || s.includes('clothing') || s.includes('store') || s.includes('retail')) return 'retail';
-    return 'services';
+    if (s.includes('salon') || s.includes('spa') || s.includes('beauty')) return 'beauty-wellness';
+    if (s.includes('hospital') || s.includes('medical') || s.includes('pharmacy') || s.includes('clinic')) return 'health-medical';
+    if (s.includes('school') || s.includes('preschool') || s.includes('education')) return 'education-training';
+    if (s.includes('hardware') || s.includes('electrical') || s.includes('plumbing')) return 'home-services';
+    if (s.includes('restaurant') || s.includes('sweets') || s.includes('food')) return 'food-restaurants';
+    if (s.includes('fashion') || s.includes('clothing') || s.includes('store') || s.includes('retail')) return 'shopping-retail';
+    if (s.includes('software') || s.includes('digital') || s.includes('it service')) return 'digital-technology';
+    return 'professional-services';
+  };
+
+  const inferSubcategory = (services: string, categoryId: string) => {
+    const s = services.toLowerCase();
+    if (categoryId === 'beauty-wellness' && s.includes('spa')) return 'spas';
+    if (categoryId === 'beauty-wellness') return 'salons';
+    if (categoryId === 'health-medical' && s.includes('pharmacy')) return 'medical-stores';
+    if (categoryId === 'health-medical' && s.includes('dental')) return 'dental-clinics';
+    if (categoryId === 'health-medical') return 'clinics';
+    if (categoryId === 'food-restaurants' && s.includes('cafe')) return 'cafes';
+    if (categoryId === 'food-restaurants' && s.includes('sweet')) return 'sweet-shops';
+    if (categoryId === 'food-restaurants') return 'restaurants';
+    if (categoryId === 'home-services' && s.includes('plumb')) return 'plumbers';
+    if (categoryId === 'home-services' && s.includes('ac')) return 'ac-repair';
+    if (categoryId === 'home-services') return 'electricians';
+    if (categoryId === 'shopping-retail' && s.includes('cloth')) return 'clothing-stores';
+    if (categoryId === 'shopping-retail') return 'grocery-stores';
+    return resolveDefaultSubcategoryId(categoryId);
   };
 
   const inferLocality = (area: string) => {
@@ -143,12 +170,14 @@ export default function AdminConsole({
     const mappedLocality = pincodeMappings.find(m => m.pincode === resolvedPincode)?.localityId;
     const resolvedLocalityId = mappedLocality || inferLocality(`${row.area} ${row.city}`);
     const categoryId = inferCategory(row.services || '');
+    const subcategoryId = inferSubcategory(row.services || '', categoryId);
 
     if (!row.businessName.trim()) errors.push('Business Name is required.');
     if (normalizedPhone.length !== 10) errors.push('Valid 10-digit Mobile is required.');
     if (resolvedPincode.length !== 6) errors.push('Valid 6-digit PIN is required or must match a known area.');
     if (!localities.some(l => l.id === resolvedLocalityId)) errors.push(`Mapped locality "${resolvedLocalityId}" does not exist.`);
-    if (!INITIAL_CATEGORIES.some(c => c.id === categoryId && c.id !== 'all')) errors.push('Could not resolve a valid category.');
+    if (!BUSINESS_CATEGORIES.some(c => c.id === categoryId)) errors.push('Could not resolve a valid category.');
+    if (!getSubcategoriesForCategory(categoryId).some(s => s.id === subcategoryId)) errors.push('Could not resolve a valid subcategory.');
 
     const duplicate = businesses.find((biz) => {
       const bizPincode = MASTER_AREAS.find(a => a.id === biz.areaId)?.pincode || '';
@@ -173,7 +202,8 @@ export default function AdminConsole({
       existingBusinessId: duplicate?.id,
       localityId: resolvedLocalityId,
       areaId: areaMatch?.id || 'roadpali-sec17',
-      categoryId
+      categoryId,
+      subcategoryId
     };
   });
 
@@ -354,21 +384,39 @@ export default function AdminConsole({
                       <div className="flex flex-wrap items-center gap-2">
                         <h4 className="font-bold text-slate-900 text-sm leading-tight">{biz.name}</h4>
                         <span className="text-[10px] bg-slate-200 text-slate-700 px-2 py-0.5 rounded-full font-semibold">
-                          {biz.categoryId.toUpperCase()}
+                          {getCategoryById(biz.categoryId)?.name || biz.categoryId}
+                          {biz.subcategoryId && ` / ${getSubcategoryById(biz.subcategoryId)?.name || biz.subcategoryId}`}
                         </span>
                         {onUpdateBusiness && (
-                          <select
-                            value={biz.categoryId}
-                            onChange={(e) => onUpdateBusiness({ ...biz, categoryId: e.target.value })}
-                            className="text-[10px] bg-white border border-slate-300 rounded px-2 py-0.5 font-semibold text-slate-700"
-                            title="Change listing category"
-                          >
-                            {INITIAL_CATEGORIES.filter((c) => c.id !== 'all').map((c) => (
-                              <option key={c.id} value={c.id}>
-                                {c.name}
-                              </option>
-                            ))}
-                          </select>
+                          <>
+                            <select
+                              value={biz.categoryId}
+                              onChange={(e) => {
+                                const nextCategory = e.target.value;
+                                onUpdateBusiness({ ...biz, categoryId: nextCategory, subcategoryId: resolveDefaultSubcategoryId(nextCategory) });
+                              }}
+                              className="text-[10px] bg-white border border-slate-300 rounded px-2 py-0.5 font-semibold text-slate-700"
+                              title="Change listing category"
+                            >
+                              {BUSINESS_CATEGORIES.map((c) => (
+                                <option key={c.id} value={c.id}>
+                                  {c.name}
+                                </option>
+                              ))}
+                            </select>
+                            <select
+                              value={biz.subcategoryId}
+                              onChange={(e) => onUpdateBusiness({ ...biz, subcategoryId: e.target.value })}
+                              className="text-[10px] bg-white border border-slate-300 rounded px-2 py-0.5 font-semibold text-slate-700"
+                              title="Change listing subcategory"
+                            >
+                              {getSubcategoriesForCategory(biz.categoryId).map((s) => (
+                                <option key={s.id} value={s.id}>
+                                  {s.name}
+                                </option>
+                              ))}
+                            </select>
+                          </>
                         )}
                         {locality && (
                           <span className="text-[10px] bg-sky-100 text-sky-800 px-2 py-0.5 rounded-full font-medium">
@@ -499,7 +547,7 @@ export default function AdminConsole({
               <thead>
                 <tr className="border-b border-slate-100 text-[10px] uppercase font-mono tracking-wider font-semibold text-slate-400">
                   <th className="py-2">Business</th>
-                  <th className="py-2">Category</th>
+                  <th className="py-2">Category / Subcategory</th>
                   <th className="py-2">Subdomain/Region</th>
                   <th className="py-2">Proprietor</th>
                   <th className="py-2">Decision Status</th>
@@ -511,20 +559,37 @@ export default function AdminConsole({
                     <td className="py-2.5 font-semibold text-slate-800">{b.name}</td>
                     <td className="py-2.5">
                       {onUpdateBusiness ? (
-                        <select
-                          value={b.categoryId}
-                          required
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={(e) => onUpdateBusiness({ ...b, categoryId: e.target.value })}
-                          className="text-[10px] bg-white border border-slate-300 rounded px-2 py-1 font-semibold text-slate-700"
-                          title="Update listing business type/category"
-                        >
-                          {INITIAL_CATEGORIES.filter((c) => c.id !== 'all').map((c) => (
-                            <option key={c.id} value={c.id}>{c.name}</option>
-                          ))}
-                        </select>
+                        <div className="flex flex-col gap-1">
+                          <select
+                            value={b.categoryId}
+                            required
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => {
+                              const nextCategory = e.target.value;
+                              onUpdateBusiness({ ...b, categoryId: nextCategory, subcategoryId: resolveDefaultSubcategoryId(nextCategory) });
+                            }}
+                            className="text-[10px] bg-white border border-slate-300 rounded px-2 py-1 font-semibold text-slate-700"
+                            title="Update listing category"
+                          >
+                            {BUSINESS_CATEGORIES.map((c) => (
+                              <option key={c.id} value={c.id}>{c.name}</option>
+                            ))}
+                          </select>
+                          <select
+                            value={b.subcategoryId}
+                            required
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => onUpdateBusiness({ ...b, subcategoryId: e.target.value })}
+                            className="text-[10px] bg-white border border-slate-300 rounded px-2 py-1 font-semibold text-slate-700"
+                            title="Update listing subcategory"
+                          >
+                            {getSubcategoriesForCategory(b.categoryId).map((s) => (
+                              <option key={s.id} value={s.id}>{s.name}</option>
+                            ))}
+                          </select>
+                        </div>
                       ) : (
-                        <span className="font-mono uppercase">{b.categoryId}</span>
+                        <span>{getCategoryById(b.categoryId)?.name || b.categoryId} / {getSubcategoryById(b.subcategoryId)?.name || b.subcategoryId}</span>
                       )}
                     </td>
                     <td className="py-2.5 font-mono text-slate-600">{(localities.find(l=>l.id===b.localityId))?.subdomain || 'Unknown'}</td>
@@ -540,7 +605,7 @@ export default function AdminConsole({
                 {rejectedBusinesses.map(b => (
                   <tr key={b.id} className="hover:bg-slate-50/50">
                     <td className="py-2.5 font-semibold text-slate-500 line-through">{b.name}</td>
-                    <td className="py-2.5 font-mono text-slate-400 uppercase">{b.categoryId}</td>
+                    <td className="py-2.5 text-slate-400">{getCategoryById(b.categoryId)?.name || b.categoryId} / {getSubcategoryById(b.subcategoryId)?.name || b.subcategoryId}</td>
                     <td className="py-2.5 font-mono text-slate-400">{(localities.find(l=>l.id===b.localityId))?.subdomain || 'Unknown'}</td>
                     <td className="py-2.5">{b.ownerName || 'Unknown'}</td>
                     <td className="py-2.5">
@@ -702,6 +767,7 @@ export default function AdminConsole({
                       <th className="p-2">Pincode</th>
                       <th className="p-2">Locality</th>
                       <th className="p-2">Category</th>
+                      <th className="p-2">Subcategory</th>
                       <th className="p-2">Status</th>
                       <th className="p-2 min-w-[220px]">Error Details</th>
                     </tr>
@@ -714,7 +780,8 @@ export default function AdminConsole({
                         <td className="p-2 font-mono">{row.normalizedPhone || row.mobile}</td>
                         <td className="p-2 font-mono">{row.resolvedPincode || '-'}</td>
                         <td className="p-2">{localities.find(l => l.id === row.resolvedLocalityId)?.name.split(',')[0] || row.resolvedLocalityId}</td>
-                        <td className="p-2">{INITIAL_CATEGORIES.find(c => c.id === row.categoryId)?.name || row.categoryId}</td>
+                        <td className="p-2">{getCategoryById(row.categoryId || '')?.name || row.categoryId}</td>
+                        <td className="p-2">{getSubcategoryById(row.subcategoryId || '')?.name || row.subcategoryId}</td>
                         <td className="p-2">
                           <span className={`px-2 py-0.5 rounded-full font-bold ${
                             row.previewStatus === 'ready'
@@ -1059,11 +1126,27 @@ export default function AdminConsole({
                   <select
                     value={backendDraft.categoryId}
                     disabled={!backendEditMode}
-                    onChange={(e) => setBackendDraft({ ...backendDraft, categoryId: e.target.value })}
+                    onChange={(e) => {
+                      const nextCategory = e.target.value;
+                      setBackendDraft({ ...backendDraft, categoryId: nextCategory, subcategoryId: resolveDefaultSubcategoryId(nextCategory) });
+                    }}
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 disabled:bg-slate-50"
                   >
-                    {INITIAL_CATEGORIES.filter(c => c.id !== 'all').map(c => (
+                    {BUSINESS_CATEGORIES.map(c => (
                       <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-500 mb-1">Subcategory</label>
+                  <select
+                    value={backendDraft.subcategoryId}
+                    disabled={!backendEditMode}
+                    onChange={(e) => setBackendDraft({ ...backendDraft, subcategoryId: e.target.value })}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 disabled:bg-slate-50"
+                  >
+                    {getSubcategoriesForCategory(backendDraft.categoryId).map(s => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
                     ))}
                   </select>
                 </div>

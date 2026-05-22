@@ -127,7 +127,8 @@ export const INITIAL_BUSINESSES: Business[] = [
   {
     id: 's1',
     name: '5 Elements | Family Salon',
-    categoryId: 'salon',
+    categoryId: 'beauty-wellness',
+    subcategoryId: 'salons',
     localityId: 'roadpali',
     stateId: 'mh',
     cityId: 'navimumbai',
@@ -170,7 +171,8 @@ export const INITIAL_BUSINESSES: Business[] = [
   {
     id: 's2',
     name: 'Majestic Salon Spa & Academy',
-    categoryId: 'salon',
+    categoryId: 'beauty-wellness',
+    subcategoryId: 'salons',
     localityId: 'kalamboli',
     stateId: 'mh',
     cityId: 'navimumbai',
@@ -213,7 +215,8 @@ export const INITIAL_BUSINESSES: Business[] = [
   {
     id: 's3',
     name: 'ColorQ International Salon Beauty & Wellness Clinic',
-    categoryId: 'salon',
+    categoryId: 'beauty-wellness',
+    subcategoryId: 'salons',
     localityId: 'roadpali',
     stateId: 'mh',
     cityId: 'navimumbai',
@@ -256,7 +259,8 @@ export const INITIAL_BUSINESSES: Business[] = [
   {
     id: 's4',
     name: 'Cutz N Curlz Unisex Salon & Academy',
-    categoryId: 'salon',
+    categoryId: 'beauty-wellness',
+    subcategoryId: 'salons',
     localityId: 'kalamboli',
     stateId: 'mh',
     cityId: 'navimumbai',
@@ -298,7 +302,8 @@ export const INITIAL_BUSINESSES: Business[] = [
   {
     id: 's5',
     name: 'VRoyal Family Salon',
-    categoryId: 'salon',
+    categoryId: 'beauty-wellness',
+    subcategoryId: 'salons',
     localityId: 'roadpali',
     stateId: 'mh',
     cityId: 'navimumbai',
@@ -340,7 +345,8 @@ export const INITIAL_BUSINESSES: Business[] = [
   {
     id: 's7',
     name: 'Goodfellas Family Salon',
-    categoryId: 'salon',
+    categoryId: 'beauty-wellness',
+    subcategoryId: 'salons',
     localityId: 'roadpali',
     stateId: 'mh',
     cityId: 'navimumbai',
@@ -382,7 +388,8 @@ export const INITIAL_BUSINESSES: Business[] = [
   {
     id: 's8',
     name: 'Barberry Bliss Family Salon',
-    categoryId: 'salon',
+    categoryId: 'beauty-wellness',
+    subcategoryId: 'salons',
     localityId: 'roadpali',
     stateId: 'mh',
     cityId: 'navimumbai',
@@ -424,7 +431,8 @@ export const INITIAL_BUSINESSES: Business[] = [
   {
     id: 's6',
     name: 'Final Touch Unisex Salon',
-    categoryId: 'salon',
+    categoryId: 'beauty-wellness',
+    subcategoryId: 'salons',
     localityId: 'kalamboli',
     stateId: 'mh',
     cityId: 'navimumbai',
@@ -466,7 +474,8 @@ export const INITIAL_BUSINESSES: Business[] = [
   {
     id: 's9',
     name: 'Kaya Ladies Beauty Parlour',
-    categoryId: 'salon',
+    categoryId: 'beauty-wellness',
+    subcategoryId: 'salons',
     localityId: 'kalamboli',
     stateId: 'mh',
     cityId: 'navimumbai',
@@ -508,7 +517,8 @@ export const INITIAL_BUSINESSES: Business[] = [
   {
     id: 's10',
     name: 'Adaa Salon',
-    categoryId: 'salon',
+    categoryId: 'beauty-wellness',
+    subcategoryId: 'salons',
     localityId: 'roadpali',
     stateId: 'mh',
     cityId: 'navimumbai',
@@ -550,7 +560,8 @@ export const INITIAL_BUSINESSES: Business[] = [
   {
     id: 's11',
     name: 'Dieu Unisex Salon',
-    categoryId: 'salon',
+    categoryId: 'beauty-wellness',
+    subcategoryId: 'salons',
     localityId: 'roadpali',
     stateId: 'mh',
     cityId: 'navimumbai',
@@ -592,7 +603,8 @@ export const INITIAL_BUSINESSES: Business[] = [
   {
     id: 's12',
     name: 'Bliss Beauty',
-    categoryId: 'salon',
+    categoryId: 'beauty-wellness',
+    subcategoryId: 'salons',
     localityId: 'kalamboli',
     stateId: 'mh',
     cityId: 'navimumbai',
@@ -634,7 +646,8 @@ export const INITIAL_BUSINESSES: Business[] = [
   {
     id: 's13',
     name: 'Royal Salon',
-    categoryId: 'salon',
+    categoryId: 'beauty-wellness',
+    subcategoryId: 'salons',
     localityId: 'roadpali',
     stateId: 'mh',
     cityId: 'navimumbai',
@@ -676,7 +689,8 @@ export const INITIAL_BUSINESSES: Business[] = [
   {
     id: 's14',
     name: 'RK Skin & Hair Studio',
-    categoryId: 'salon',
+    categoryId: 'beauty-wellness',
+    subcategoryId: 'salons',
     localityId: 'kalamboli',
     stateId: 'mh',
     cityId: 'navimumbai',
@@ -718,7 +732,8 @@ export const INITIAL_BUSINESSES: Business[] = [
   {
     id: 's15',
     name: 'Krishna Beauty Parlour & Boutique',
-    categoryId: 'salon',
+    categoryId: 'beauty-wellness',
+    subcategoryId: 'salons',
     localityId: 'kalamboli',
     stateId: 'mh',
     cityId: 'navimumbai',
@@ -761,7 +776,8 @@ export const INITIAL_BUSINESSES: Business[] = [
   {
     id: 'b11',
     name: 'Utsav Grand pure Veg Restaurant',
-    categoryId: 'food',
+    categoryId: 'food-restaurants',
+    subcategoryId: 'restaurants',
     localityId: 'roadpali',
     stateId: 'mh',
     cityId: 'navimumbai',
@@ -803,7 +819,8 @@ export const INITIAL_BUSINESSES: Business[] = [
   {
     id: 'b12',
     name: 'Apollo Pharmacy Kalamboli',
-    categoryId: 'health',
+    categoryId: 'health-medical',
+    subcategoryId: 'clinics',
     localityId: 'kalamboli',
     stateId: 'mh',
     cityId: 'navimumbai',
@@ -845,7 +862,8 @@ export const INITIAL_BUSINESSES: Business[] = [
   {
     id: 'b_kh1',
     name: 'The Central Perks Cafe & Bakery',
-    categoryId: 'food',
+    categoryId: 'food-restaurants',
+    subcategoryId: 'restaurants',
     localityId: 'kharghar',
     stateId: 'mh',
     cityId: 'navimumbai',
@@ -886,7 +904,8 @@ export const INITIAL_BUSINESSES: Business[] = [
   {
     id: 'b_kh2',
     name: 'Aura Glow Salon & Medi-Spa',
-    categoryId: 'salon',
+    categoryId: 'beauty-wellness',
+    subcategoryId: 'salons',
     localityId: 'kharghar',
     stateId: 'mh',
     cityId: 'navimumbai',
@@ -928,7 +947,8 @@ export const INITIAL_BUSINESSES: Business[] = [
   {
     id: 'b_km1',
     name: 'Kamothe Wellness Dental Clinic',
-    categoryId: 'health',
+    categoryId: 'health-medical',
+    subcategoryId: 'clinics',
     localityId: 'kamothe',
     stateId: 'mh',
     cityId: 'navimumbai',
@@ -969,7 +989,8 @@ export const INITIAL_BUSINESSES: Business[] = [
   {
     id: 'b_km2',
     name: 'Techno Home Appliances & Repair',
-    categoryId: 'home',
+    categoryId: 'home-services',
+    subcategoryId: 'electricians',
     localityId: 'kamothe',
     stateId: 'mh',
     cityId: 'navimumbai',
@@ -1010,7 +1031,8 @@ export const INITIAL_BUSINESSES: Business[] = [
   {
     id: 'b_pv1',
     name: 'Panvel Diagnostic Center & Lab',
-    categoryId: 'health',
+    categoryId: 'health-medical',
+    subcategoryId: 'clinics',
     localityId: 'panvel',
     stateId: 'mh',
     cityId: 'navimumbai',
@@ -1051,7 +1073,8 @@ export const INITIAL_BUSINESSES: Business[] = [
   {
     id: 'b_pv2',
     name: 'Hotel Sharan Fine Dine & Banquet',
-    categoryId: 'food',
+    categoryId: 'food-restaurants',
+    subcategoryId: 'restaurants',
     localityId: 'panvel',
     stateId: 'mh',
     cityId: 'navimumbai',
@@ -1092,7 +1115,8 @@ export const INITIAL_BUSINESSES: Business[] = [
   {
     id: 'b_tj1',
     name: 'Taloja Industrial Tooling Corp',
-    categoryId: 'services',
+    categoryId: 'professional-services',
+    subcategoryId: 'business-consultants',
     localityId: 'taloja',
     stateId: 'mh',
     cityId: 'navimumbai',
@@ -1134,7 +1158,8 @@ export const INITIAL_BUSINESSES: Business[] = [
   {
     id: 'b_tj2',
     name: 'Steel City Building Materials & Tools',
-    categoryId: 'retail',
+    categoryId: 'shopping-retail',
+    subcategoryId: 'grocery-stores',
     localityId: 'taloja',
     stateId: 'mh',
     cityId: 'navimumbai',
@@ -1176,7 +1201,8 @@ export const INITIAL_BUSINESSES: Business[] = [
   {
     id: 'b8_pending',
     name: 'Roadpali Organic Food Store',
-    categoryId: 'retail',
+    categoryId: 'shopping-retail',
+    subcategoryId: 'grocery-stores',
     localityId: 'roadpali',
     stateId: 'mh',
     cityId: 'navimumbai',
@@ -1350,3 +1376,4 @@ export const INITIAL_COUPONS: MarketingCoupon[] = [
     usageCount: 15
   }
 ];
+

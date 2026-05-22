@@ -17,6 +17,7 @@ export interface Business {
   id: string;
   name: string;
   categoryId: string;
+  subcategoryId: string;
   localityId: string; // The primary domain locality
   stateId: string;    // Master State
   cityId: string;     // Master City
@@ -135,6 +136,28 @@ export interface Category {
   name: string;
   icon: string;
   color: string;
+}
+
+export interface BusinessCategory {
+  id: string;
+  legacyId: number;
+  name: string;
+  slug: string;
+  icon: string;
+  status: 'active' | 'inactive';
+  sortOrder: number;
+}
+
+export interface BusinessSubcategory {
+  id: string;
+  legacyId: number;
+  parentLegacyId: number;
+  categoryId: string;
+  name: string;
+  slug: string;
+  icon: string;
+  status: 'active' | 'inactive';
+  sortOrder: number;
 }
 
 export interface SubdomainMapping {
