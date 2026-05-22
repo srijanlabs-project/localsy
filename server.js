@@ -354,7 +354,18 @@ app.get('*', (_req, res) => {
   res.sendFile(path.join(distPath, 'index.html'));
 });
 
-const port = Number(process.env.PORT) || 3000;
+function resolvePort() {
+  const rawPort = Number(process.env.PORT);
+  const rawPgPort = Number(process.env.PGPORT);
+  if (!Number.isFinite(rawPort) || rawPort <= 0) return 3000;
+  // Guard against misconfigured environments where app PORT is set to DB port.
+  if (rawPort === 5432 || (Number.isFinite(rawPgPort) && rawPort === rawPgPort)) {
+    return 3000;
+  }
+  return rawPort;
+}
+
+const port = resolvePort();
 ensureBootstrapUsers()
   .then(() => {
     app.listen(port, '0.0.0.0', () => {
