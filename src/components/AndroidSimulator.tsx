@@ -7,6 +7,7 @@ import { Locality, Business, Category, Review, UserSession } from '../types';
 import { MASTER_STATES, MASTER_CITIES, MASTER_AREAS } from '../data';
 import OtpVerificationModal from './OtpVerificationModal';
 import GoogleLocationPicker from './GoogleLocationPicker';
+import { getBusinessImageUrl, getCategoryFallbackImage } from '../utils/businessImage';
 
 interface AndroidSimulatorProps {
   localities: Locality[];
@@ -407,10 +408,10 @@ export default function AndroidSimulator({
                             className="bg-white p-2.5 rounded-xl border border-slate-200 hover:border-indigo-300 shadow-3xs cursor-pointer transition flex gap-2.5"
                           >
                             <img 
-                              src={biz.imageUrl} 
+                              src={getBusinessImageUrl(biz)}
                               alt={biz.name}
                               onError={(e) => {
-                                (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1544197150-b99a580bb7a8?auto=format&fit=crop&w=400&q=80';
+                                (e.target as HTMLImageElement).src = getCategoryFallbackImage(biz.categoryId);
                               }}
                               className="w-12 h-12 rounded bg-slate-100 object-cover flex-shrink-0"
                             />
@@ -455,8 +456,11 @@ export default function AndroidSimulator({
                   </button>
 
                   <img 
-                    src={selectedBiz.imageUrl} 
+                    src={getBusinessImageUrl(selectedBiz)}
                     alt={selectedBiz.name}
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = getCategoryFallbackImage(selectedBiz.categoryId);
+                    }}
                     className="w-full h-28 object-cover rounded-xl border border-slate-200 bg-slate-100 shadow-sm"
                   />
 

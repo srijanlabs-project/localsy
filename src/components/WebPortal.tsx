@@ -13,6 +13,7 @@ import {
 import { MASTER_STATES, MASTER_CITIES, MASTER_AREAS } from '../data';
 import OtpVerificationModal from './OtpVerificationModal';
 import GoogleLocationPicker from './GoogleLocationPicker';
+import { getBusinessImageUrl, getCategoryFallbackImage } from '../utils/businessImage';
 
 interface WebPortalProps {
   localities: Locality[];
@@ -168,6 +169,12 @@ export default function WebPortal({
 
   // Auto-rotating slider effect
   const currentLocality = localities.find(l => l.id === activeLocalityId) || localities[0];
+  const selectedLocalityNames = activeLocalityId
+    .split(',')
+    .map((id) => id.trim())
+    .filter(Boolean)
+    .map((id) => localities.find((l) => l.id === id)?.name || id)
+    .join(', ');
   const carouselImages = currentLocality.carouselImages || [currentLocality.coverImage];
 
   useEffect(() => {
@@ -674,7 +681,7 @@ export default function WebPortal({
             <MapPin className="w-3.5 h-3.5 animate-bounce" /> Indian Regional Directory
           </div>
           <h2 className="text-2xl md:text-4xl font-extrabold font-sans tracking-tight text-white leading-tight">
-            {currentLocality.name} Businesses
+            Local Business Directory for {selectedLocalityNames || currentLocality.name}
           </h2>
           <p className="text-sm text-slate-300 leading-relaxed max-w-xl">
             {currentLocality.description} verified reviews, location-grabbing utilities, and dynamic approval tracking.
@@ -1193,11 +1200,11 @@ export default function WebPortal({
                         </span>
 
                         <img 
-                          src={biz.imageUrl} 
+                          src={getBusinessImageUrl(biz)}
                           alt={biz.name}
                           className="w-24 h-24 md:w-28 md:h-28 rounded-xl object-cover bg-slate-100 self-center border border-slate-200 flex-shrink-0"
                           onError={(e) => {
-                            (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1544197150-b99a580bb7a8?auto=format&fit=crop&w=400&q=80';
+                            (e.target as HTMLImageElement).src = getCategoryFallbackImage(biz.categoryId);
                           }}
                         />
 
@@ -1324,10 +1331,10 @@ export default function WebPortal({
                           <div className="space-y-3">
                             <div className="relative">
                               <img 
-                                src={biz.imageUrl} 
+                                src={getBusinessImageUrl(biz)}
                                 alt={biz.name}
                                 onError={(e) => {
-                                  (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1544197150-b99a580bb7a8?auto=format&fit=crop&w=400&q=80';
+                                  (e.target as HTMLImageElement).src = getCategoryFallbackImage(biz.categoryId);
                                 }}
                                 className="w-full h-36 object-cover rounded-xl border border-slate-200/60 bg-slate-100"
                               />
@@ -1964,8 +1971,11 @@ export default function WebPortal({
 
             <div className="p-6 space-y-4 overflow-y-auto max-h-[75vh]">
               <img 
-                src={selectedBiz.imageUrl} 
+                src={getBusinessImageUrl(selectedBiz)}
                 alt={selectedBiz.name}
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src = getCategoryFallbackImage(selectedBiz.categoryId);
+                }}
                 className="w-full h-44 object-cover rounded-2xl border border-slate-200 bg-slate-50 shadow-inner"
               />
 

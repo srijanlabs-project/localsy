@@ -4,7 +4,8 @@ import {
   Trash2, PlusCircle, Check, Database, Eye, Server, RefreshCw, MapPin
 } from 'lucide-react';
 import { Locality, Business, SubdomainMapping, UserSession, AuditEvent } from '../types';
-import { MASTER_AREAS } from '../data';
+import { INITIAL_CATEGORIES, MASTER_AREAS } from '../data';
+import { getBusinessImageUrl, getCategoryFallbackImage } from '../utils/businessImage';
 
 interface AdminConsoleProps {
   localities: Locality[];
@@ -180,10 +181,10 @@ export default function AdminConsole({
                 return (
                   <div key={biz.id} className="p-4 bg-slate-50 rounded-xl border border-slate-200 flex flex-col md:flex-row tracking-tight gap-4">
                     <img 
-                      src={biz.imageUrl} 
+                      src={getBusinessImageUrl(biz)}
                       alt={biz.name}
                       onError={(e)=>{
-                        (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=400&q=80';
+                        (e.target as HTMLImageElement).src = getCategoryFallbackImage(biz.categoryId);
                       }}
                       className="w-16 h-16 rounded-lg object-cover bg-slate-100 border border-slate-200 flex-shrink-0 self-start md:self-center"
                     />
@@ -193,6 +194,20 @@ export default function AdminConsole({
                         <span className="text-[10px] bg-slate-200 text-slate-700 px-2 py-0.5 rounded-full font-semibold">
                           {biz.categoryId.toUpperCase()}
                         </span>
+                        {onUpdateBusiness && (
+                          <select
+                            value={biz.categoryId}
+                            onChange={(e) => onUpdateBusiness({ ...biz, categoryId: e.target.value })}
+                            className="text-[10px] bg-white border border-slate-300 rounded px-2 py-0.5 font-semibold text-slate-700"
+                            title="Change listing category"
+                          >
+                            {INITIAL_CATEGORIES.filter((c) => c.id !== 'all').map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {c.name}
+                              </option>
+                            ))}
+                          </select>
+                        )}
                         {locality && (
                           <span className="text-[10px] bg-sky-100 text-sky-800 px-2 py-0.5 rounded-full font-medium">
                             📌 Locality target: {locality.name}
