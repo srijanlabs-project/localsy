@@ -513,7 +513,7 @@ export default function WebPortal({
       email: email.trim() || undefined, // Email optional!
       website: website || `https://${name.toLowerCase().replace(/\s+/g, '')}.in`,
       description: description || `${name} is a certified local provider of premium local services.`,
-      imageUrl: imageUrl.trim() || 'https://images.unsplash.com/photo-1544197150-b99a580bb7a8?auto=format&fit=crop&w=500&q=80',
+      imageUrl: imageUrl.trim(),
       featured: false, // Starts as standard approved, admins can toggle VIP status
       tags: [categoryId, subcategoryId, 'Local', 'Indian-SME'],
       hours,
