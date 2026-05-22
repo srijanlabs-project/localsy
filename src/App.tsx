@@ -30,6 +30,18 @@ const normalizeBusinessTaxonomy = (business: Business): Business => {
   };
 };
 
+const normalizeStoredBusiness = (business: Business): Business => {
+  const normalized = normalizeBusinessTaxonomy(business);
+  const isUploadedListing =
+    normalized.id.startsWith('csv_') ||
+    normalized.id.startsWith('b_dynamic_') ||
+    normalized.ownerName === 'Imported via CSV';
+
+  return isUploadedListing && normalized.status === 'pending'
+    ? { ...normalized, status: 'approved' }
+    : normalized;
+};
+
 export default function App() {
   const PRODUCTION_MODE = true;
   // Database version management to clear stale browser caches when definitions evolve
@@ -85,7 +97,7 @@ export default function App() {
       try {
         const parsed = JSON.parse(saved);
         if (parsed && parsed.some((b: any) => b.localityId === 'roadpali' || b.id === 's1')) {
-          return parsed;
+          return parsed.map(normalizeStoredBusiness);
         }
       } catch (e) {
         // Fall through
@@ -421,7 +433,7 @@ export default function App() {
     const newBiz: Business = {
       ...appData,
       id: `b_dynamic_${Date.now()}`,
-      status: 'pending', // Starts in moderation pipeline
+      status: 'approved',
       rating: 0,
       reviewCount: 0,
       createdAt: new Date().toISOString()
@@ -716,6 +728,7 @@ export default function App() {
             description: row.services || next[existingIndex].description,
             rating: Number.isFinite(rating) ? rating : next[existingIndex].rating,
             reviewCount: Number.isFinite(reviewCount) ? reviewCount : next[existingIndex].reviewCount,
+            status: 'approved',
             tags: (row.services || next[existingIndex].tags.join(',')).split(',').map(t => t.trim()).filter(Boolean).slice(0, 5),
             gpsCoordinates: lat !== undefined && lng !== undefined ? { lat, lng } : next[existingIndex].gpsCoordinates,
           };
@@ -746,7 +759,7 @@ export default function App() {
           reviewCount,
           imageUrl: '',
           featured: false,
-          status: 'pending',
+          status: 'approved',
           createdAt: new Date().toISOString(),
           tags: (row.services || 'Imported').split(',').map(t => t.trim()).filter(Boolean).slice(0, 5),
           ownerName: 'Imported via CSV',
