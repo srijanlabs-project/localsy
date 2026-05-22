@@ -60,26 +60,31 @@ If you encounter this specific error when adding a public TCP connection or tryi
 
 ---
 
-## ☁️ 3. Deploying Your Frontend App on Railway for UAT
+## ☁️ 3. Deploying Your App on Railway for UAT (New Full-Stack Setup)
 
-Our app is a highly optimized Single-Page Application (SPA) compiled utilizing **Vite + React 19**. 
-To serve this directly, you can route it as a static deployment or configure a simple node routing proxy. Here is how to configure Railway to build and launch it instantly:
+Our app has been updated to run as a **Full-Stack Express + Vite** application to serve pages reliably and handle server/API endpoints (such as database sync and proxying safely). Here is how to configure Railway to build and launch it instantly:
 
-### Step 1: Connect your GitHub Repo to Railway
-1. Inside your Railway console, click **"New Project"** ➔ **"GitHub Repo"**.
-2. Select your imported Yellow Pages repository.
+### Step 1: Connect & Push Your Latest Code
+Since we just created `server.ts` and updated `package.json`, **you must push/export these changes to your GitHub branch first**:
+1. Inside AI Studio, click **"Export to GitHub"** in the top-right settings/export menu of the workspace.
+2. Ensure the branch connected to your Railway project (usually `main`) receives the new files (`server.ts` and the updated `package.json`).
 
-### Step 2: Configure Environment Variables
-Inside Railway's **Variables** tab for your new service, add your keys:
+### Step 2: Configure Service Settings in Railway
+Because this is now a **standard Node/Express application** (not a Static deployment anymore), ensure the service is configured dynamically:
+1. **Change Deployment/Build Settings**:
+   * **Build Command**: Set to `npm run build`
+   * **Start Command**: Set to `npm run start` (or `npm start`)
+2. **Configure Port Mapping**:
+   * Go to **Settings** ➔ **Networking** in Railway.
+   * Under **Port**, ensure it is configured to use port **`3000`** (or left to reference your `PORT` environment variable which defaults to `3000`).
+   * *Why?* Railway expects the web container to bind to a port so that outward HTTP traffic can route in. Since we listen to `process.env.PORT` or fall back to `3000`, setting the Custom Port here ensures perfect proxy routing.
+
+### Step 3: Configure Environment Variables
+Inside Railway's **Variables** tab for your service, add the following variables:
 *   `NODE_ENV` ➔ `production`
-*   `VITE_GEMINI_API_KEY` (If making client-side calls) OR server-side secrets dynamically.
-*   `DATABASE_URL` ➔ `(paste your PostgreSQL connection string here)`
-
-### Step 3: Define Custom Railway Build/Start Command
-Railway will auto-detect Vite's static outputs inside the `/dist` directory. For client side SPAs:
-1. Ensure your static build command is set to: `npm run build`
-2. Specify your Static site directory as: `dist`
-3. If hosting via a simple Express or Node server for security proxying, modify your `package.json` with the production scripts detailed below.
+*   `PORT` ➔ `3000`
+*   `DATABASE_URL` ➔ `(your PostgreSQL connection string if using database)`
+*   `GEMINI_API_KEY` ➔ `(your Gemini model developer API key, if needed)`
 
 ---
 
