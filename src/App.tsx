@@ -748,6 +748,18 @@ export default function App() {
             Advertise Business
           </button>
 
+          {canAccessAdmin && (
+            <button
+              type="button"
+              onClick={() => setActiveViewWithAudit('admin')}
+              className="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-4 py-2 rounded-xl transition cursor-pointer shadow-sm"
+              title="Open Admin moderation and bulk import console"
+            >
+              <Shield className="w-3.5 h-3.5" />
+              <span>Admin Console</span>
+            </button>
+          )}
+
           {userSession.isAuthenticated && userSession.userPhone ? (
             <div className="flex items-center gap-2 bg-slate-100 border border-slate-200 px-3.5 py-1.5 rounded-xl text-xs font-medium">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
