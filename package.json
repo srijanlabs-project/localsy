@@ -12,7 +12,8 @@
     "start": "node server.js",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "release:check": "npm run lint && npm run build && node scripts/release-smoke.mjs"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
