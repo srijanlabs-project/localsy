@@ -63,9 +63,9 @@ export default function AndroidSimulator({
   const [appHours, setAppHours] = useState('10:00 AM - 08:30 PM');
   const [appOwner, setAppOwner] = useState('');
   const [appStateId, setAppStateId] = useState('mh');
-  const [appCityId, setAppCityId] = useState('mumbai');
-  const [appAreaId, setAppAreaId] = useState('bandra-w');
-  const [appAreasOfOperation, setAppAreasOfOperation] = useState<string[]>(['bandra-w']);
+  const [appCityId, setAppCityId] = useState('navimumbai');
+  const [appAreaId, setAppAreaId] = useState('roadpali-sec17');
+  const [appAreasOfOperation, setAppAreasOfOperation] = useState<string[]>(['roadpali-sec17']);
   const [appGpsCoords, setAppGpsCoords] = useState<{ lat: number; lng: number } | undefined>(undefined);
 
   // Verification dialog trigger state
@@ -626,6 +626,7 @@ export default function AndroidSimulator({
                         onChange={(e) => setAppCategory(e.target.value)}
                         className="w-full text-[10px] p-1.5 bg-slate-55 border border-slate-200 rounded"
                       >
+                        <option value="salon">Salons &amp; Wellness</option>
                         <option value="food">Food &amp; Dining</option>
                         <option value="tech">Tech &amp; Custom Software</option>
                         <option value="health">Health &amp; Wellness</option>

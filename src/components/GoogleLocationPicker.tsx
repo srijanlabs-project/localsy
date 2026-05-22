@@ -17,8 +17,8 @@ export default function GoogleLocationPicker({ onLocationGrabbed, cityName }: Go
 
     // Simulate coordinates based on selected city name context
     setTimeout(() => {
-      let lat = 19.0596;
-      let lng = 72.8295; // Bandra Mumbai as default
+      let lat = 19.0324;
+      let lng = 73.1042; // Sector 17 Roadpali as default
       let mockAddress = '';
 
       if (cityName.toLowerCase().includes('bengaluru')) {
@@ -30,7 +30,7 @@ export default function GoogleLocationPicker({ onLocationGrabbed, cityName }: Go
         lng = 77.2177; // CP
         mockAddress = 'N-12, Radial Road 3, Inner Circle, Connaught Place, New Delhi, Delhi 110001';
       } else {
-        mockAddress = 'Sea Breeze Residence, Carter Rd, Bandra West, Mumbai, Maharashtra 400050';
+        mockAddress = 'Shop 11, Phoenix Heights, Sector 17, Roadpali, Navi Mumbai, Maharashtra 410218';
       }
 
       const point = {

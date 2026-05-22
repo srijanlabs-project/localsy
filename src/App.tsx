@@ -11,21 +11,75 @@ import ProposalPanel from './components/ProposalPanel';
 import WebPortal from './components/WebPortal';
 import AndroidSimulator from './components/AndroidSimulator';
 import AdminConsole from './components/AdminConsole';
+import PincodeSelectionModal from './components/PincodeSelectionModal';
+import OtpVerificationModal from './components/OtpVerificationModal';
 import { 
   Layout, Smartphone, Shield, BookOpen, Layers, RefreshCw, 
-  User, CheckCircle, ShieldAlert, KeyRound, Wrench, Briefcase, HelpCircle
+  User, CheckCircle, ShieldAlert, KeyRound, Wrench, Briefcase, HelpCircle,
+  Sliders, Settings, X, Database, MapPin
 } from 'lucide-react';
 
 export default function App() {
+  // Database version management to clear stale browser caches when definitions evolve
+  const CURRENT_DB_VERSION = 'yp_v11_roadpali_final_railway';
+  
+  // Clean sweep of ancient local storage shards if database version is old
+  useState(() => {
+    const savedVer = localStorage.getItem('yp_cache_version');
+    if (savedVer !== CURRENT_DB_VERSION) {
+      localStorage.removeItem('yp_localities');
+      localStorage.removeItem('yp_businesses');
+      localStorage.removeItem('yp_reviews');
+      localStorage.removeItem('yp_subdomains');
+      localStorage.removeItem('yp_community');
+      localStorage.removeItem('yp_crm');
+      localStorage.removeItem('yp_coupons');
+      localStorage.removeItem('yp_viewed_bizs');
+      localStorage.removeItem('yp_audit_logs');
+      localStorage.setItem('yp_cache_version', CURRENT_DB_VERSION);
+    }
+  });
+
   // Load from local storage or fallback to defaults
   const [localities, setLocalities] = useState<Locality[]>(() => {
     const saved = localStorage.getItem('yp_localities');
-    return saved ? JSON.parse(saved) : INITIAL_LOCALITIES;
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        // Ensure "roadpali" exists in loaded localities, otherwise discard stale developer storage
+        if (parsed && parsed.some((l: any) => l.id === 'roadpali')) {
+          return parsed;
+        }
+      } catch (e) {
+        // Fall through
+      }
+      // Stale data detected - purge old database entries
+      localStorage.removeItem('yp_localities');
+      localStorage.removeItem('yp_businesses');
+      localStorage.removeItem('yp_reviews');
+      localStorage.removeItem('yp_subdomains');
+      localStorage.removeItem('yp_community');
+      localStorage.removeItem('yp_crm');
+      localStorage.removeItem('yp_coupons');
+      localStorage.removeItem('yp_viewed_bizs');
+      localStorage.removeItem('yp_audit_logs');
+    }
+    return INITIAL_LOCALITIES;
   });
 
   const [businesses, setBusinesses] = useState<Business[]>(() => {
     const saved = localStorage.getItem('yp_businesses');
-    return saved ? JSON.parse(saved) : INITIAL_BUSINESSES;
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed.some((b: any) => b.localityId === 'roadpali' || b.id === 's1')) {
+          return parsed;
+        }
+      } catch (e) {
+        // Fall through
+      }
+    }
+    return INITIAL_BUSINESSES;
   });
 
   const [reviews, setReviews] = useState<Review[]>(() => {
@@ -47,11 +101,42 @@ export default function App() {
     }));
   });
 
+  const [defaultLocalityId, setDefaultLocalityId] = useState<string>(() => {
+    return localStorage.getItem('yp_default_locality_id') || 'roadpali';
+  });
+
   const [activeLocalityId, setActiveLocalityId] = useState<string>(() => {
-    return 'bandra';
+    const savedLoc = localStorage.getItem('yp_saved_locality_id');
+    if (savedLoc) return savedLoc;
+    return localStorage.getItem('yp_default_locality_id') || 'roadpali';
+  });
+
+  const [savedPincode, setSavedPincode] = useState<string | null>(() => {
+    return localStorage.getItem('yp_saved_pincode');
+  });
+
+  const [showPincodeModal, setShowPincodeModal] = useState<boolean>(() => {
+    const prompted = localStorage.getItem('yp_pincode_prompted');
+    return !prompted;
+  });
+
+  const [pincodeMappings, setPincodeMappings] = useState<Array<{ pincode: string; localityId: string }>>(() => {
+    const saved = localStorage.getItem('yp_pincode_mappings');
+    if (saved) return JSON.parse(saved);
+    return [
+      { pincode: '410101', localityId: 'roadpali' }, // Kalamboli (routed to Roadpali/Kalamboli single page)
+      { pincode: '410218', localityId: 'roadpali' }, // Kalamboli (routed to Roadpali/Kalamboli single page)
+      { pincode: '410210', localityId: 'kharghar' },
+      { pincode: '410209', localityId: 'kamothe' },
+      { pincode: '410206', localityId: 'panvel' },
+      { pincode: '410221', localityId: 'panvel' },
+      { pincode: '410208', localityId: 'taloja' },
+    ];
   });
 
   const [activeView, setActiveView] = useState<'proposal' | 'web' | 'android' | 'admin'>('web'); // Default to pubic web portal for instant aesthetics!
+  const [showSandbox, setShowSandbox] = useState(false); // Controls floating simulation HUD
+  const [showAppLoginOtpModal, setShowAppLoginOtpModal] = useState(false); // Customer login gateway modal
 
   // Active User session simulation
   const [userSession, setUserSession] = useState<UserSession>(() => {
@@ -67,7 +152,7 @@ export default function App() {
   // Track the business IDs for which the current user has performed OTP verification to unlock contact details
   const [viewedBusinessIds, setViewedBusinessIds] = useState<string[]>(() => {
     const saved = localStorage.getItem('yp_viewed_bizs');
-    return saved ? JSON.parse(saved) : ['b1']; // Pre-authorize b1 for quick visual overview
+    return saved ? JSON.parse(saved) : ['s1']; // Pre-authorize s1 for quick visual overview
   });
 
   const [communityItems, setCommunityItems] = useState<CommunityItem[]>(() => {
@@ -94,8 +179,8 @@ export default function App() {
         id: 'audit_init_1',
         timestamp: new Date(Date.now() - 3600000 * 2).toISOString(),
         actionType: 'data_entry',
-        description: 'Provisioned primary database shards for Locality "Bandra"',
-        details: 'Route slug mapped to bandra.yellowpages.io with active SSL',
+        description: 'Provisioned primary database shards for Locality "Roadpali"',
+        details: 'Route slug mapped to roadpali.yellowpages.co.in with active SSL',
         ipAddress: '103.45.22.105',
         deviceCode: 'Mozilla/5.0 (H:1080, W:1920, DPR:2)',
         userName: 'Rahul Sharma (National Administrator)'
@@ -104,7 +189,7 @@ export default function App() {
         id: 'audit_init_2',
         timestamp: new Date(Date.now() - 3600000).toISOString(),
         actionType: 'contact_view',
-        description: 'Revealed contact coordinates for merchant: "The Bandra Seaside Bistro"',
+        description: 'Revealed contact coordinates for merchant: "5 Elements | Family Salon"',
         details: 'OTP Verified successfully with SMS gateway ID sms_2026',
         ipAddress: '103.88.192.43',
         deviceCode: 'Chrome/124.0.0 (H:900, W:1440, DPR:1)',
@@ -117,6 +202,14 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('yp_localities', JSON.stringify(localities));
   }, [localities]);
+
+  useEffect(() => {
+    localStorage.setItem('yp_pincode_mappings', JSON.stringify(pincodeMappings));
+  }, [pincodeMappings]);
+
+  useEffect(() => {
+    localStorage.setItem('yp_default_locality_id', defaultLocalityId);
+  }, [defaultLocalityId]);
 
   useEffect(() => {
     localStorage.setItem('yp_businesses', JSON.stringify(businesses));
@@ -344,6 +437,12 @@ export default function App() {
       localStorage.removeItem('yp_community');
       localStorage.removeItem('yp_crm');
       localStorage.removeItem('yp_coupons');
+      localStorage.removeItem('yp_audit_logs');
+      localStorage.removeItem('yp_saved_pincode');
+      localStorage.removeItem('yp_saved_locality_id');
+      localStorage.removeItem('yp_pincode_prompted');
+      localStorage.removeItem('yp_pincode_mappings');
+      localStorage.removeItem('yp_default_locality_id');
       
       setLocalities(INITIAL_LOCALITIES);
       setBusinesses(INITIAL_BUSINESSES);
@@ -358,16 +457,61 @@ export default function App() {
         dnsStatus: 'active' as const,
         createdAt: new Date().toISOString()
       })));
-      setViewedBusinessIds(['b1']);
+      setViewedBusinessIds(['s1']);
       setUserSession({
         role: 'buyer',
         userName: 'Karan Malhotra (Verified Citizen)',
         userPhone: '+91 80011 22334',
         isAuthenticated: true
       });
-      setActiveLocalityId('bandra');
-      alert("Application storage cleared & restored to Mumbai metrics!");
+      setActiveLocalityId('roadpali');
+      setSavedPincode(null);
+      setShowPincodeModal(true);
+      setDefaultLocalityId('roadpali');
+      setPincodeMappings([
+        { pincode: '410101', localityId: 'roadpali' },
+        { pincode: '410218', localityId: 'roadpali' },
+        { pincode: '410210', localityId: 'kharghar' },
+        { pincode: '410209', localityId: 'kamothe' },
+        { pincode: '410206', localityId: 'panvel' },
+        { pincode: '410221', localityId: 'panvel' },
+        { pincode: '410208', localityId: 'taloja' },
+      ]);
+      alert("Application storage cleared & restored to Roadpali metrics!");
     }
+  };
+
+  // Pincode Routing Engine operations
+  const handleSavePincode = (pincode: string | null, matchedLocalityId: string) => {
+    setSavedPincode(pincode);
+    if (pincode) {
+      localStorage.setItem('yp_saved_pincode', pincode);
+      localStorage.setItem('yp_saved_locality_id', matchedLocalityId);
+    } else {
+      localStorage.removeItem('yp_saved_pincode');
+      localStorage.removeItem('yp_saved_locality_id');
+    }
+    localStorage.setItem('yp_pincode_prompted', 'true');
+    setActiveLocalityId(matchedLocalityId);
+    logAuditEvent('data_entry', `Pincode Routing Executed`, `Mapped pin: ${pincode || 'Skipped'}. Routed interface view to: "${matchedLocalityId}"`);
+  };
+
+  const handleAddPincodeMapping = (pincode: string, localityId: string) => {
+    setPincodeMappings(prev => {
+      const filtered = prev.filter(m => m.pincode !== pincode);
+      return [...filtered, { pincode, localityId }];
+    });
+    logAuditEvent('data_entry', `Added dynamic route mapping`, `Bind Postal: "${pincode}" -> Regional Node: "${localityId}"`);
+  };
+
+  const handleDeletePincodeMapping = (pincode: string) => {
+    setPincodeMappings(prev => prev.filter(m => m.pincode !== pincode));
+    logAuditEvent('data_entry', `Deleted route mapping`, `De-registered routing for Pincode: "${pincode}"`);
+  };
+
+  const handleChangeDefaultLocalityId = (localityId: string) => {
+    setDefaultLocalityId(localityId);
+    logAuditEvent('data_entry', `Default fallback page adjusted`, `Root Fallback set to: "${localityId}"`);
   };
 
   // Helper names & avatars for simulated roles
@@ -402,7 +546,7 @@ export default function App() {
           role: 'seller',
           userName: 'Kamesh Iyer (Proprietor Trader)',
           isAuthenticated: true,
-          sellerBusinessId: 'b5', // Pre-linked to Sardar Filter Coffee for quick testing
+          sellerBusinessId: 's1', // Pre-linked to 5 Elements for quick testing
           userPhone: '+91 80555 87788'
         });
         break;
@@ -418,128 +562,91 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans selection:bg-indigo-600/15">
+    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans selection:bg-indigo-600/15 relative">
       
-      {/* Role Access Control Simulator Header Strip */}
-      <div className="bg-slate-900 border-b border-slate-800 px-4 md:px-8 py-2.5 flex flex-col xl:flex-row items-center justify-between gap-3 text-xs text-white z-50">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="bg-amber-500/15 text-amber-400 font-mono text-[9px] px-2 py-0.5 rounded-md border border-amber-500/20 uppercase font-bold tracking-wider">
-            Identity Simulator Hub
-          </span>
-          <span className="text-slate-300 font-medium">Select simulated role access perspective to audit workflow permissions:</span>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-1.5">
-          {[
-            { id: 'buyer', label: '👤 Buyer (Guest)', color: 'border-slate-700 hover:bg-slate-800 text-slate-300', active: 'bg-blue-600 border-blue-500 text-white' },
-            { id: 'admin', label: '🛡️ Admin Operator', color: 'border-slate-700 hover:bg-slate-800 text-slate-300', active: 'bg-red-600 border-red-500 text-white font-bold' },
-            { id: 'moderator', label: '⚖️ Region Moderator', color: 'border-slate-700 hover:bg-slate-800 text-slate-300', active: 'bg-purple-600 border-purple-500 text-white font-bold' },
-            { id: 'operator', label: '⌨️ Data Operator', color: 'border-slate-700 hover:bg-slate-800 text-slate-300', active: 'bg-amber-600 border-amber-500 text-slate-950 font-bold' },
-            { id: 'seller', label: '💼 Certified Seller', color: 'border-slate-700 hover:bg-slate-800 text-slate-300', active: 'bg-emerald-600 border-emerald-500 text-white font-bold' },
-          ].map(r => {
-            const isSel = userSession.role === r.id;
-            return (
-              <button
-                key={r.id}
-                onClick={() => simulateRoleLogin(r.id as UserRole)}
-                className={`text-[10px] px-2.5 py-1.5 rounded-lg border transition font-medium ${isSel ? r.active : r.color}`}
-              >
-                {r.label}
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="text-slate-400 text-[11px] flex items-center gap-1 font-mono">
-          <span>Active User:</span>
-          <strong className="text-white bg-slate-850 px-2 py-0.5 rounded border border-slate-800">
-            {userSession.userName}
-          </strong>
-        </div>
-      </div>
-
-      {/* Top Navigation Frame */}
-      <nav id="platform-navbar" className="bg-white border-b border-slate-200 sticky top-0 md:top-auto z-40 px-4 md:px-8 py-3.5 flex flex-col md:flex-row items-center justify-between gap-4 shadow-xs">
+      {/* Top Navigation Frame - Pristine, Live, Human-labeled web directory */}
+      <nav id="platform-navbar" className="bg-white border-b border-slate-200 sticky top-0 md:top-auto z-40 px-4 md:px-8 py-4 flex flex-col md:flex-row items-center justify-between gap-4 shadow-xs">
         <div className="flex items-center gap-3">
-          <div className="bg-indigo-600 p-2 rounded-xl text-white shadow-md">
-            <Layers className="w-5 h-5 animate-pulse" />
+          <div className="bg-gradient-to-tr from-indigo-600 to-indigo-700 p-2.5 rounded-2xl text-white shadow-sm flex items-center justify-center animate-pulse">
+            <Layers className="w-5 h-5 animate-spin-slow" />
           </div>
           <div>
-            <h1 className="text-md font-bold font-sans text-slate-950 flex items-center gap-1.5 leading-none">
-              YellowPages India Directory
+            <h1 className="text-lg font-extrabold font-sans text-slate-900 flex items-center gap-2 leading-none">
+              Happy Gifting Yellow Pages
             </h1>
-            <span className="text-[10px] text-slate-400 mt-1 block">
-              Multi-Zone Shard Database • verified OTP view Protection • Admin approval Life Cycle
+            <span className="text-xs text-slate-500 mt-1 block">
+              Official verified municipal directory serving Roadpali, Kharghar, Kamothe, Panvel, and Taloja hubs
             </span>
           </div>
         </div>
 
-        {/* HUD Navigation Tabs */}
-        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 flex-wrap">
+        {/* Real-time Pincode and Locality tracker */}
+        <div className="flex flex-wrap items-center gap-2.5">
           <button
-            onClick={() => setActiveView('proposal')}
-            className={`text-xs px-3.5 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 ${
-              activeView === 'proposal' 
-              ? 'bg-white text-slate-950 shadow-xs' 
-              : 'text-slate-600 hover:text-slate-900'
-            }`}
+            onClick={() => setShowPincodeModal(true)}
+            className="flex items-center gap-2 bg-indigo-50 border border-indigo-200 hover:border-indigo-400 hover:bg-slate-100 text-indigo-850 px-3.5 py-1.5 rounded-2xl text-xs font-semibold font-mono shadow-xs transition cursor-pointer"
+            title="Click to switch regional portal using pincode"
           >
-            <BookOpen className="w-3.5 h-3.5 text-blue-500" />
-            Specs &amp; Tech Stack
+            <MapPin className="w-3.5 h-3.5 text-indigo-650 animate-bounce" />
+            <span>
+              Pincode: {savedPincode ? savedPincode : 'None'} 
+              <span className="text-indigo-400 font-sans ml-1 text-[10px] font-normal">
+                ({localities.find(l => l.id === activeLocalityId)?.name.split(',')[0]} node)
+              </span>
+            </span>
+            <span className="text-[10px] text-indigo-600 underline ml-1 font-bold">Change</span>
           </button>
+
+          <span className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-700 font-sans font-semibold text-xs py-1.5 px-3 rounded-full border border-emerald-250">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+            Node: {localities.find(l => l.id === activeLocalityId)?.name.split(',')[0]}
+          </span>
           
           <button
-            onClick={() => setActiveView('web')}
-            className={`text-xs px-3.5 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 ${
-              activeView === 'web' 
-              ? 'bg-white text-slate-950 shadow-xs' 
-              : 'text-slate-600 hover:text-slate-900'
-            }`}
+            onClick={() => {
+              // Direct access to register as business
+              const seekWebPortal = document.querySelector('[role="explore-dir"]');
+              if (seekWebPortal) seekWebPortal.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="hidden sm:inline-flex bg-slate-900 hover:bg-slate-800 text-white font-medium text-xs px-4 py-2 rounded-xl transition cursor-pointer"
           >
-            <Layout className="w-3.5 h-3.5 text-indigo-500" />
-            🖥️ Public Web Portal
+            Advertise Business
           </button>
 
-          <button
-            onClick={() => setActiveView('android')}
-            className={`text-xs px-3.5 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 ${
-              activeView === 'android' 
-              ? 'bg-white text-slate-950 shadow-xs' 
-              : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Smartphone className="w-3.5 h-3.5 text-emerald-500" />
-            📱 Android App Client
-          </button>
-
-          {(userSession.role === 'admin' || userSession.role === 'moderator') && (
+          {userSession.isAuthenticated && userSession.userPhone ? (
+            <div className="flex items-center gap-2 bg-slate-100 border border-slate-200 px-3.5 py-1.5 rounded-xl text-xs font-medium">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span className="text-slate-800 font-semibold truncate max-w-[150px]" title={`${userSession.userName} (${userSession.userPhone})`}>
+                👤 {userSession.userName.split(' ')[0]}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setUserSession({
+                    role: 'buyer',
+                    userName: 'Anonymous Guest Explorer',
+                    isAuthenticated: false,
+                    userPhone: undefined
+                  });
+                  logAuditEvent('data_entry', 'User Logged Out', 'Client cleared verified session status.');
+                }}
+                className="text-rose-600 hover:text-rose-800 text-[10px] font-bold border-l border-slate-200 pl-2 cursor-pointer ml-1"
+              >
+                Log Out
+              </button>
+            </div>
+          ) : (
             <button
-              onClick={() => setActiveView('admin')}
-              className={`text-xs px-3.5 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 relative ${
-                activeView === 'admin' 
-                ? 'bg-white text-slate-950 shadow-xs' 
-                : 'text-slate-600 hover:text-slate-900'
-              }`}
+              type="button"
+              onClick={() => setShowAppLoginOtpModal(true)}
+              className="inline-flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-4 py-2 rounded-xl transition cursor-pointer shadow-sm"
+              title="Log in to post reviews & view premium contacts"
             >
-              <Shield className="w-3.5 h-3.5 text-red-500" />
-              🛡️ Moderation Desk
-              {businesses.some(b => b.status === 'pending') && (
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] w-4.5 h-4.5 rounded-full flex items-center justify-center font-bold font-mono animate-bounce">
-                  {businesses.filter(b => b.status === 'pending').length}
-                </span>
-              )}
+              <User className="w-3.5 h-3.5" />
+              <span>Customer Login</span>
             </button>
           )}
         </div>
-
-        {/* Global Reset Switch */}
-        <button
-          onClick={handleResetData}
-          title="Reset database to default state"
-          className="text-[11px] text-slate-400 hover:text-red-500 font-mono transition flex items-center gap-1 cursor-pointer"
-        >
-          <RefreshCw className="w-3 h-3" /> Reset Mumbai Databases
-        </button>
       </nav>
 
       {/* Main Workspace Frame */}
@@ -631,23 +738,189 @@ export default function App() {
             onUpdateBusiness={handleUpdateBusiness} // Allows edits directly in queue!
             userSession={userSession}
             auditLogs={auditLogs}
+            pincodeMappings={pincodeMappings}
+            onAddPincodeMapping={handleAddPincodeMapping}
+            onDeletePincodeMapping={handleDeletePincodeMapping}
+            defaultLocalityId={defaultLocalityId}
+            onChangeDefaultLocalityId={handleChangeDefaultLocalityId}
           />
         )}
 
       </main>
 
-      {/* Humble, Professional Footer */}
-      <footer className="bg-white border-t border-slate-200 mt-12 py-6">
-        <div className="max-w-7xl mx-auto px-4 md:px-8 flex flex-col md:flex-row items-center justify-between text-xs text-slate-400 gap-4">
-          <div>
-            <span>Developed with Google AI Studio. Full-stack operational mocks with active localStorage and dynamic role context.</span>
+      {/* Pristine, Professional Footer */}
+      <footer className="bg-slate-900 border-t border-slate-800 text-slate-400 py-10 mt-16">
+        <div className="max-w-7xl mx-auto px-4 md:px-8 flex flex-col md:flex-row items-center justify-between gap-6">
+          <div className="space-y-1.5 text-center md:text-left">
+            <span className="block text-white font-bold text-sm">Roadpali Yellow Pages</span>
+            <span className="block text-xs text-slate-500">Your trusted neighbourhood local business directory node. Serving Roadpali, Kalamboli, and Navi Mumbai since 2026.</span>
           </div>
-          <div className="flex items-center gap-4">
-            <span>DNS Server Status: <strong className="text-emerald-500 font-semibold font-mono">100% ONLINE</strong></span>
-            <span>Port: <strong className="text-slate-650 font-semibold font-mono">3000</strong></span>
+          <div className="flex flex-wrap items-center justify-center gap-4 text-xs">
+            <button 
+              onClick={() => {
+                simulateRoleLogin('admin');
+                setActiveView('admin');
+                setShowSandbox(true);
+                alert("Switched role to Admin Operator. You can view pending listings in the Moderation Desk via the developer sandbox widget!");
+              }}
+              className="text-slate-300 hover:text-white transition text-xs bg-slate-800 hover:bg-slate-700 px-3.5 py-2 rounded-xl font-medium cursor-pointer"
+            >
+              🔐 Moderator Login Gate
+            </button>
+            <span className="text-slate-600">|</span>
+            <span className="text-xs text-slate-500">© 2026 Yellow Pages Node. Secure OTP View Protection.</span>
           </div>
         </div>
       </footer>
+
+      {/* Floating Developer Sandbox Panel - For AI Studio reviewers and team tests */}
+      <div className="fixed bottom-6 right-6 z-50">
+        {!showSandbox ? (
+          <button
+            onClick={() => setShowSandbox(true)}
+            className="bg-indigo-600 hover:bg-indigo-750 text-white p-3.5 rounded-2xl shadow-xl flex items-center gap-2 cursor-pointer transition hover:scale-103 active:scale-97 group border border-indigo-500/25"
+          >
+            <Sliders className="w-4 h-4 group-hover:rotate-12 transition-transform" />
+            <span className="text-xs font-bold font-sans tracking-wide">Developer Sandbox</span>
+            {businesses.some(b => b.status === 'pending') && (
+              <span className="bg-rose-500 text-white font-mono text-[9px] w-4.5 h-4.5 rounded-full flex items-center justify-center font-bold">
+                {businesses.filter(b => b.status === 'pending').length}
+              </span>
+            )}
+          </button>
+        ) : (
+          <div className="bg-slate-900 text-white rounded-2xl shadow-2xl p-4 w-80 md:w-96 border border-slate-800 space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-200">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <Settings className="w-4 h-4 text-amber-400 animate-pulse" />
+                <div>
+                  <span className="block text-xs font-bold uppercase tracking-wider text-amber-400 font-mono">Sandbox Settings</span>
+                  <span className="block text-[10px] text-slate-400 font-medium font-sans">Verify role scopes & client simulated views</span>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowSandbox(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Test Case Shard Identity Selector */}
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide font-sans">Simulate User Identity</label>
+              <div className="grid grid-cols-2 gap-1.5">
+                {[
+                  { id: 'buyer', label: '👤 Buyer (Guest)', desc: 'SME visitor, OTP view' },
+                  { id: 'admin', label: '🛡️ Admin Operator', desc: 'Can approve listings' },
+                  { id: 'moderator', label: '⚖️ Coordinator', desc: 'Audit SLAs & stats' },
+                  { id: 'operator', label: '⌨️ Data Oper.', desc: 'Direct mapping helper' },
+                  { id: 'seller', label: '💼 Seller Rep', desc: 'Dispatches coupons & CRM' },
+                ].map(r => {
+                  const isSel = userSession.role === r.id;
+                  return (
+                    <button
+                      key={r.id}
+                      onClick={() => simulateRoleLogin(r.id as UserRole)}
+                      className={`text-left p-2 rounded-xl border transition cursor-pointer ${
+                        isSel 
+                        ? 'bg-indigo-600 border-indigo-500 text-white shadow-md' 
+                        : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-850'
+                      }`}
+                    >
+                      <span className="block text-[11px] font-bold leading-tight">{r.label}</span>
+                      <span className="block text-[8px] text-slate-400 leading-tight mt-0.5">{r.desc}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="text-[10px] text-indigo-300 flex items-center gap-1 font-mono pt-1">
+                <span>Active Profile:</span>
+                <strong className="text-white truncate">{userSession.userName}</strong>
+              </div>
+            </div>
+
+            {/* Simulated Layout View Port selection */}
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide font-sans">Presentational Mode</label>
+              <div className="grid grid-cols-2 gap-1.5">
+                {[
+                  { id: 'web', label: '🖥️ Public Web', icon: Layout },
+                  { id: 'android', label: '📱 Mobile Sim', icon: Smartphone },
+                  ...((userSession.role === 'admin' || userSession.role === 'moderator') ? [
+                    { id: 'admin', label: '🛡️ Moderation', icon: Shield }
+                  ] : []),
+                  { id: 'proposal', label: '📖 Specs & Stack', icon: BookOpen }
+                ].map(v => {
+                  const Icon = v.icon;
+                  const isSel = activeView === v.id;
+                  return (
+                    <button
+                      key={v.id}
+                      onClick={() => {
+                        setActiveView(v.id as any);
+                        setShowSandbox(false);
+                      }}
+                      className={`flex items-center gap-2 p-2 rounded-xl text-xs font-bold leading-none border transition cursor-pointer ${
+                        isSel 
+                        ? 'bg-indigo-600/20 border-indigo-500 text-indigo-300 shadow' 
+                        : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-850'
+                      }`}
+                    >
+                      <Icon className="w-3.5 h-3.5 text-indigo-400" />
+                      <span>{v.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Reset helper and diagnostic values */}
+            <div className="border-t border-slate-800 pt-3 flex items-center justify-between gap-2">
+              <button
+                onClick={() => {
+                  if (confirm("Reset cache and database metrics back to Roadpali defaults? This clears your custom input listings.")) {
+                    handleResetData();
+                  }
+                }}
+                className="flex items-center gap-1.5 text-[10px] font-mono text-rose-500 hover:text-rose-400 font-bold bg-rose-500/10 hover:bg-rose-500/15 p-1.5 px-2.5 rounded-lg transition cursor-pointer"
+              >
+                <RefreshCw className="w-3 h-3" />
+                Reset System State
+              </button>
+
+              <span className="text-[9px] font-mono text-slate-500 flex items-center gap-1">
+                <Database className="w-3 h-3 text-slate-400" />
+                Sandbox Active
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <PincodeSelectionModal 
+        isOpen={showPincodeModal}
+        onClose={() => setShowPincodeModal(false)}
+        savedPincode={savedPincode}
+        onSavePincode={handleSavePincode}
+        pincodeMappings={pincodeMappings}
+        localities={localities}
+        defaultLocalityId={defaultLocalityId}
+      />
+
+      <OtpVerificationModal 
+        isOpen={showAppLoginOtpModal}
+        onClose={() => setShowAppLoginOtpModal(false)}
+        onVerifySuccess={(userName, userPhone) => {
+          setUserSession({
+            role: 'buyer',
+            userName: `${userName} (Verified Customer)`,
+            isAuthenticated: true,
+            userPhone: userPhone
+          });
+          logAuditEvent('data_entry', 'User Authenticated', `Customer logged in with phone: ${userPhone}`);
+        }}
+      />
     </div>
   );
 }

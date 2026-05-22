@@ -91,9 +91,9 @@ export default function WebPortal({
 
   // Master geography form values
   const [formStateId, setFormStateId] = useState('mh');
-  const [formCityId, setFormCityId] = useState('mumbai');
-  const [formAreaId, setFormAreaId] = useState('bandra-w');
-  const [formAreasOfOperation, setFormAreasOfOperation] = useState<string[]>(['bandra-w']);
+  const [formCityId, setFormCityId] = useState('navimumbai');
+  const [formAreaId, setFormAreaId] = useState('roadpali-sec17');
+  const [formAreasOfOperation, setFormAreasOfOperation] = useState<string[]>(['roadpali-sec17']);
 
   // Review submission state
   const [newRating, setNewRating] = useState(5);
@@ -128,7 +128,7 @@ export default function WebPortal({
   const [sortBy, setSortBy] = useState<'recommended' | 'popular' | 'rating' | 'nearest' | 'newest'>('recommended');
 
   // Merchant Hub Grow Desk workspace state
-  const [activeSellerBizId, setActiveSellerBizId] = useState('b1');
+  const [activeSellerBizId, setActiveSellerBizId] = useState('s1');
 
   // Marketing campaign dispatcher inputs
   const [campaignSubject, setCampaignSubject] = useState('');
@@ -153,7 +153,7 @@ export default function WebPortal({
   const [communityTitle, setCommunityTitle] = useState('');
   const [communityBody, setCommunityBody] = useState('');
   const [communitySection, setCommunitySection] = useState<'qna' | 'deals' | 'recommendations' | 'sponsored'>('qna');
-  const [communityTags, setCommunityTags] = useState('monsoon, Bandra');
+  const [communityTags, setCommunityTags] = useState('monsoon, Roadpali');
 
   // Auto-rotating slider effect
   const currentLocality = localities.find(l => l.id === activeLocalityId) || localities[0];
@@ -220,7 +220,7 @@ export default function WebPortal({
     setVoiceTranscript('');
     setTimeout(() => {
       setVoiceIsListening(false);
-      const choices = ['Bistro', 'Coffee', 'Dental', 'Handloom', 'Saree'];
+      const choices = ['Salon', 'Grooming', 'Botox', 'Academy', 'Utsav'];
       const pick = choices[Math.floor(Math.random() * choices.length)];
       setVoiceTranscript(pick);
       setSearchQuery(pick);
@@ -231,14 +231,14 @@ export default function WebPortal({
   const triggerImageTagSimulate = (tag: string) => {
     setUploadedImageTag(tag);
     if (tag === 'tea_shop') {
-      setSearchQuery('Coffee');
+      setSearchQuery('Utsav');
       setSelectedCategory('food');
     } else if (tag === 'saree') {
-      setSearchQuery('Handloom');
-      setSelectedCategory('retail');
+      setSearchQuery('Boutique');
+      setSelectedCategory('salon');
     } else if (tag === 'dental_chair') {
-      setSearchQuery('Clinic');
-      setSelectedCategory('health');
+      setSearchQuery('5 Elements');
+      setSelectedCategory('salon');
     }
   };
 
@@ -256,14 +256,14 @@ export default function WebPortal({
     setTimeout(() => {
       setAiIsResponding(false);
       const q = aiSearchQuery.toLowerCase();
-      if (q.includes('coffee') || q.includes('dosa') || q.includes('ghee') || q.includes('sardar')) {
-        setAiResponseText(`✨ AI Recommendation: You must visit "Sardar Filter Coffee & Tiffin House" in Koramangala 5th Block! They boasts traditional brass tumblers and crispy Ghee Podi dosas with a whopping 4.8★ user feedback and 98% satisfaction rating.`);
-      } else if (q.includes('dentist') || q.includes('dental') || q.includes('braces') || q.includes('aura')) {
-        setAiResponseText(`✨ AI Recommendation: I recommend "Aura Premium Dental Clinic" at Pali Hill, Bandra. Led by Dr. Ananya Sharma, they excel in biological restorations, maintain <15 mins operator response metrics, and offer flat 15% discount coupons on health consults.`);
-      } else if (q.includes('seafood') || q.includes('sea') || q.includes('dinner') || q.includes('view') || q.includes('bistro')) {
-        setAiResponseText(`✨ AI Recommendation: "The Bandra Seaside Bistro" at Carter Road West is your top match! Quiet coastal views, professional organic single-origin coffee, live evening grills, and 91% repeat client retention ratings.`);
+      if (q.includes('hair') || q.includes('salon') || q.includes('groom') || q.includes('cut')) {
+        setAiResponseText(`✨ AI Recommendation: I highly recommend "5 Elements | Family Salon" in Sector 17, Roadpali. They offer premium family styling packages, organic hair spa treatments, and maintain a stellar 4.9★ rating based on verified customer feedback.`);
+      } else if (q.includes('academy') || q.includes('spa') || q.includes('majestic')) {
+        setAiResponseText(`✨ AI Recommendation: Look no further than "Majestic Salon Spa & Academy" in Sector 11, Kalamboli. Managed by Priya Shinde, they hold standard certified beauty training programs and luxury therapeutic bridal therapies.`);
+      } else if (q.includes('veg') || q.includes('food') || q.includes('dosa') || q.includes('utsav')) {
+        setAiResponseText(`✨ AI Recommendation: "Utsav Grand Pure Veg Restaurant" on Sector 17, Roadpali is the finest pure vegetarian choice! Delivers outstanding Podi Dosa plates and North Indian paneer delicacies in a dynamic family lounge.`);
       } else {
-        setAiResponseText(`✨ AI Recommendation: For your query "${aiSearchQuery}", we scanned the local regional directory under B-Zone coordinates and found standard validated matches. Try checking 'Bandra Seaside Bistro' or search under Food category filters!`);
+        setAiResponseText(`✨ AI Recommendation: For your query "${aiSearchQuery}", we scanned the active regional directory coords for Roadpali and found high-quality options. Try checking "Barberry Bliss Family Salon" or filters under "Salons & Wellness"!`);
       }
     }, 1200);
   };
@@ -842,9 +842,9 @@ export default function WebPortal({
                 </p>
                 <div className="flex justify-center gap-3 flex-wrap">
                   {[
-                    { id: 'tea_shop', label: '☕ Hot Filter Coffee Cup', icon: Clock },
-                    { id: 'saree', label: '👗 Silk Saree Drapery', icon: Award },
-                    { id: 'dental_chair', label: '🦷 biological Braces Setup', icon: CheckCircle },
+                    { id: 'tea_shop', label: '🍛 Pure Veg Dosa Plate', icon: Clock },
+                    { id: 'saree', label: '👗 Designer Boutique Saree', icon: Award },
+                    { id: 'dental_chair', label: '💇 Elite Salon Chair', icon: CheckCircle },
                   ].map(photo => {
                     const active = uploadedImageTag === photo.id;
                     return (
@@ -913,14 +913,18 @@ export default function WebPortal({
                       <button
                         type="button"
                         onClick={() => {
-                          if (aiSearchQuery.toLowerCase().includes('seaside') || aiSearchQuery.toLowerCase().includes('sea') || aiSearchQuery.toLowerCase().includes('bistro')) {
-                            const b = businesses.find(x => x.id === 'b1');
+                          const q = aiSearchQuery.toLowerCase();
+                          if (q.includes('hair') || q.includes('salon') || q.includes('groom') || q.includes('cut') || q.includes('element')) {
+                            const b = businesses.find(x => x.id === 's1');
                             if (b) setSelectedBiz(b);
-                          } else if (aiSearchQuery.toLowerCase().includes('dentist') || aiSearchQuery.toLowerCase().includes('dental') || aiSearchQuery.toLowerCase().includes('aura')) {
-                            const b = businesses.find(x => x.id === 'b2');
+                          } else if (q.includes('academy') || q.includes('spa') || q.includes('majestic')) {
+                            const b = businesses.find(x => x.id === 's2');
+                            if (b) setSelectedBiz(b);
+                          } else if (q.includes('veg') || q.includes('food') || q.includes('dosa') || q.includes('utsav')) {
+                            const b = businesses.find(x => x.id === 'b11');
                             if (b) setSelectedBiz(b);
                           } else {
-                            const b = businesses.find(x => x.id === 'b5');
+                            const b = businesses.find(x => x.id === 's8'); // Barberry Bliss Family Salon as default
                             if (b) setSelectedBiz(b);
                           }
                         }}
@@ -951,7 +955,7 @@ export default function WebPortal({
                     onChange={(e) => setFilterDistance(e.target.value as any)}
                     className="w-full p-2 bg-white rounded-lg border border-slate-200 focus:outline-none text-[11px]"
                   >
-                    <option value="all">Any range (Bandra Zone)</option>
+                    <option value="all">Any range (Roadpali Zone)</option>
                     <option value="1">Within 1.0 km</option>
                     <option value="2">Within 2.0 km</option>
                     <option value="5">Within 5.0 km</option>
@@ -1257,7 +1261,7 @@ export default function WebPortal({
 
             {/* Standard Approved Listings Segment */}
             <div className="space-y-3">
-              <h3 className="text-xs font-bold font-mono text-slate-400 tracking-widest uppercase">
+              <h3 className="text-xs font-bold font-mono text-slate-400 tracking-widest uppercase mb-1">
                 Active Verified Listings Directory ({regularBusinesses.length})
               </h3>
 
@@ -1266,81 +1270,137 @@ export default function WebPortal({
                   <Compass className="w-12 h-12 text-slate-300 mx-auto mb-3 animate-spin" style={{ animationDuration: '6s' }} />
                   <p className="text-base font-bold text-slate-850">No verified businesses found matching criteria</p>
                   <p className="text-xs text-slate-505 mt-1 max-w-sm mx-auto">
-                    Adjust selected category, radius slides, filters checklist to capture more Bandra merchants.
+                    Adjust search queries or refine your category keywords above to discover matching merchants.
                   </p>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {regularBusinesses.map(biz => {
+                  {regularBusinesses.map((biz, index) => {
                     const hasViewed = viewedBusinessIds.includes(biz.id);
+                    // Inject a beautiful sponsor banner ad after every 3rd listing
+                    const injectAd = (index > 0) && (index % 3 === 2);
+                    const MOCK_BANNER_ADS = [
+                      {
+                        title: "⚡ Switch to JioFiber – Best High-Speed Broadband in Roadpali",
+                        description: "Get 200 Mbps unlimited optical fiber Internet, free smart setup, and 14 premium OTT channels. Call +91 86559 11223.",
+                        badge: "Local ISP Sponsor",
+                        cta: "Claim Free Router",
+                        color: "from-blue-600 via-indigo-900 to-slate-900"
+                      },
+                      {
+                        title: "🏥 Apollo Diagnostics India – Sector 17 Health Checkup at ₹899",
+                        description: "Complete health evaluation package covering 68 key parameters with certified online reports & free home collection.",
+                        badge: "Medical Partner",
+                        cta: "Book Diagnostic",
+                        color: "from-emerald-700 via-teal-905 to-slate-900"
+                      },
+                      {
+                        title: "🚗 Royal Landmark Hyundai Group – Big Monsoon Bonanza",
+                        description: "Drive home a premium SUV with zero downpayment, exchange bonuses up to ₹40,000, and free 3-year service shields.",
+                        badge: "Automotive Ad",
+                        cta: "Request Demo Drive",
+                        color: "from-sky-700 via-slate-900 to-indigo-950"
+                      }
+                    ];
+                    const ad = MOCK_BANNER_ADS[Math.floor(index / 3) % MOCK_BANNER_ADS.length];
+
                     return (
-                      <div 
-                        key={biz.id}
-                        onClick={() => setSelectedBiz(biz)}
-                        className="bg-white rounded-2xl border border-slate-200 p-4 shadow-2xs hover:border-indigo-400 hover:shadow-md cursor-pointer transition flex flex-col justify-between"
-                      >
-                        <div className="space-y-3">
-                          <div className="relative">
-                            <img 
-                              src={biz.imageUrl} 
-                              alt={biz.name}
-                              onError={(e) => {
-                                (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1544197150-b99a580bb7a8?auto=format&fit=crop&w=400&q=80';
-                              }}
-                              className="w-full h-36 object-cover rounded-xl border border-slate-200/60 bg-slate-100"
-                            />
-                            {biz.verifiedBadge && (
-                              <span className="absolute top-2 left-2 bg-emerald-650 text-white text-[9px] uppercase font-mono font-bold px-2 py-0.5 rounded-full flex items-center gap-0.5">
-                                Verified Badge
-                              </span>
-                            )}
+                      <React.Fragment key={biz.id}>
+                        <div 
+                          onClick={() => setSelectedBiz(biz)}
+                          className="bg-white rounded-2xl border border-slate-200 p-4 shadow-2xs hover:border-indigo-400 hover:shadow-md cursor-pointer transition flex flex-col justify-between"
+                        >
+                          <div className="space-y-3">
+                            <div className="relative">
+                              <img 
+                                src={biz.imageUrl} 
+                                alt={biz.name}
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1544197150-b99a580bb7a8?auto=format&fit=crop&w=400&q=80';
+                                }}
+                                className="w-full h-36 object-cover rounded-xl border border-slate-200/60 bg-slate-100"
+                              />
+                              {biz.verifiedBadge && (
+                                <span className="absolute top-2 left-2 bg-emerald-600 text-white text-[9px] uppercase font-mono font-bold px-2 py-0.5 rounded-full flex items-center gap-0.5">
+                                  Verified Badge
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="space-y-1">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[10px] uppercase font-mono tracking-wider font-semibold text-slate-400">
+                                  {biz.categoryId.toUpperCase()}
+                                </span>
+                                <div className="flex items-center gap-0.5 bg-amber-50 text-amber-600 text-xs px-1.5 rounded font-bold">
+                                  ★ {biz.rating}
+                                </div>
+                              </div>
+                              <h4 className="font-bold text-slate-900 text-sm leading-tight truncate flex items-center gap-1">
+                                {biz.name}
+                                {biz.isSponsored && (
+                                  <span className="bg-amber-100 text-amber-800 text-[8px] font-mono font-bold px-1 rounded">CPC</span>
+                                )}
+                              </h4>
+                              <p className="text-xs text-slate-505 line-clamp-2 italic leading-relaxed">
+                                &quot;{biz.description}&quot;
+                              </p>
+                            </div>
                           </div>
 
-                          <div className="space-y-1">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[10px] uppercase font-mono tracking-wider font-semibold text-slate-400">
-                                {biz.categoryId.toUpperCase()}
-                              </span>
-                              <div className="flex items-center gap-0.5 bg-amber-50 text-amber-600 text-xs px-1.5 rounded font-bold">
-                                ★ {biz.rating}
+                          <div className="space-y-2 pt-3 border-t border-slate-100 mt-3 text-[11px] text-slate-500 font-mono">
+                            <div className="flex items-center justify-between font-sans flex-wrap gap-1.5">
+                              {hasViewed ? (
+                                <div className="flex items-center gap-1 text-slate-800 font-bold bg-emerald-50 border border-emerald-100 px-1.5 py-0.5 rounded-md">
+                                  <span>📞 {biz.phone}</span>
+                                  <span className="text-emerald-700 text-[8px] font-bold ml-1">Viewed</span>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={(e) => initContactUnlockFlow(biz, e)}
+                                  className="bg-slate-105 hover:bg-indigo-50 border border-slate-200 text-slate-600 hover:text-indigo-700 text-[10px] px-2 py-0.5 rounded flex items-center gap-1 transition-all"
+                                >
+                                  <Lock className="w-2.5 h-2.5" /> Unlock Phone Number
+                                </button>
+                              )}
+                            </div>
+
+                            <div className="font-sans text-slate-600 truncate leading-normal">📍 {biz.address}</div>
+                            
+                            <span className="text-indigo-600 font-sans font-bold hover:underline inline-flex items-center gap-0.5 mt-1 block">
+                              Explore directory record →
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Injected Gorgeous Premium Row Banner Ad */}
+                        {injectAd && ad && (
+                          <div className="col-span-full bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 border border-slate-800 rounded-3xl p-6 text-white shadow-lg flex flex-col md:flex-row items-center justify-between gap-6 relative overflow-hidden">
+                            <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 rounded-full blur-2xl pointer-events-none"></div>
+                            <div className="flex flex-col md:flex-row items-center md:items-start gap-4">
+                              <div className="bg-amber-400 text-slate-950 p-3 rounded-full flex-shrink-0 animate-bounce shadow">
+                                <Megaphone className="w-5 h-5" />
+                              </div>
+                              <div className="text-center md:text-left space-y-1">
+                                <span className="inline-flex bg-amber-500/15 text-amber-400 font-mono text-[9px] px-2.5 py-0.5 rounded-md border border-amber-500/20 uppercase font-bold tracking-wider mb-1">
+                                  📢 {ad.badge} Sponsored Highlight
+                                </span>
+                                <h4 className="text-base font-bold text-white font-sans">{ad.title}</h4>
+                                <p className="text-xs text-slate-300 leading-relaxed max-w-2xl">{ad.description}</p>
                               </div>
                             </div>
-                            <h4 className="font-bold text-slate-900 text-sm leading-tight truncate flex items-center gap-1">
-                              {biz.name}
-                              {biz.isSponsored && (
-                                <span className="bg-amber-100 text-amber-800 text-[8px] font-mono font-bold px-1 rounded">CPC</span>
-                              )}
-                            </h4>
-                            <p className="text-xs text-slate-500 line-clamp-2 italic leading-relaxed">
-                              &quot;{biz.description}&quot;
-                            </p>
+                            <button
+                              onClick={() => {
+                                alert(`Simulating sponsor connection to ${ad.badge}. A direct referral WhatsApp route has been dispatched!`);
+                              }}
+                              className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs px-5 py-3 rounded-xl transition shadow flex items-center gap-2 flex-shrink-0 cursor-pointer w-full md:w-auto justify-center"
+                            >
+                              <span>{ad.cta}</span>
+                              <ExternalLink className="w-3.5 h-3.5" />
+                            </button>
                           </div>
-                        </div>
-
-                        <div className="space-y-2 pt-3 border-t border-slate-100 mt-3 text-[11px] text-slate-500 font-mono">
-                          <div className="flex items-center gap-1.5">
-                            {hasViewed ? (
-                              <div className="flex items-center gap-1 text-slate-800 font-bold bg-emerald-50 border border-emerald-100 px-1.5 py-0.5 rounded-md">
-                                <span>📞 {biz.phone}</span>
-                                <span className="text-emerald-700 text-[8px] font-bold ml-1">Viewed</span>
-                              </div>
-                            ) : (
-                              <button
-                                onClick={(e) => initContactUnlockFlow(biz, e)}
-                                className="bg-slate-100 hover:bg-indigo-50 border border-slate-200 text-slate-600 hover:text-indigo-700 text-[10px] px-2 py-0.5 rounded flex items-center gap-1 transition"
-                              >
-                                <Lock className="w-2.5 h-2.5" /> Unlock Phone Number
-                              </button>
-                            )}
-                          </div>
-
-                          <div className="font-sans text-slate-600 truncate leading-normal">📍 {biz.address}</div>
-                          
-                          <span className="text-indigo-600 font-sans font-bold hover:underline inline-flex items-center gap-0.5 mt-1 block">
-                            Explore directory record →
-                          </span>
-                        </div>
-                      </div>
+                        )}
+                      </React.Fragment>
                     );
                   })}
                 </div>
@@ -1359,7 +1419,7 @@ export default function WebPortal({
             <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
                 <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-1.5 font-sans">
-                  <span className="text-emerald-500">🤝</span> Bandra Citizens Forum Hub
+                  <span className="text-emerald-500">🤝</span> Roadpali Citizens Forum Hub
                 </h3>
                 <span className="text-xs text-slate-400 font-mono">Sharded Community Channel</span>
               </div>
@@ -1395,7 +1455,7 @@ export default function WebPortal({
                     <div className="flex items-center justify-between pt-2 border-t border-slate-200/55 flex-wrap gap-2 text-[11px] font-mono">
                       <div className="flex items-center gap-1.5 text-slate-500">
                         <span className="bg-white border border-slate-200 px-1.5 py-0.5 rounded text-[9px] font-mono text-slate-500">
-                          #bandra_citizens
+                          #roadpali_citizens
                         </span>
                         <span className="bg-white border border-slate-200 px-1.5 py-0.5 rounded text-[9px] font-mono text-slate-500">
                           #verified_ops
@@ -2236,6 +2296,7 @@ export default function WebPortal({
                     onChange={(e) => setCategoryId(e.target.value)}
                     className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500 font-medium"
                   >
+                    <option value="salon">Salons &amp; Wellness</option>
                     <option value="food">Food &amp; Dining</option>
                     <option value="tech">Tech &amp; Digital</option>
                     <option value="health">Health &amp; Wellness</option>

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   CheckCircle, XCircle, Plus, Info, Globe, AlertCircle, 
-  Trash2, PlusCircle, Check, Database, Eye, Server, RefreshCw
+  Trash2, PlusCircle, Check, Database, Eye, Server, RefreshCw, MapPin
 } from 'lucide-react';
 import { Locality, Business, SubdomainMapping, UserSession, AuditEvent } from '../types';
 import { MASTER_AREAS } from '../data';
@@ -17,6 +17,13 @@ interface AdminConsoleProps {
   onUpdateBusiness?: (b: Business) => void;
   userSession?: UserSession;
   auditLogs?: AuditEvent[];
+  
+  // Customizable Pincode Routing Props
+  pincodeMappings?: Array<{ pincode: string; localityId: string }>;
+  onAddPincodeMapping?: (pincode: string, localityId: string) => void;
+  onDeletePincodeMapping?: (pincode: string) => void;
+  defaultLocalityId?: string;
+  onChangeDefaultLocalityId?: (localityId: string) => void;
 }
 
 export default function AdminConsole({
@@ -29,7 +36,13 @@ export default function AdminConsole({
   onDeleteLocality,
   onUpdateBusiness,
   userSession,
-  auditLogs = []
+  auditLogs = [],
+  
+  pincodeMappings = [],
+  onAddPincodeMapping,
+  onDeletePincodeMapping,
+  defaultLocalityId = 'roadpali',
+  onChangeDefaultLocalityId
 }: AdminConsoleProps) {
   const [newLocName, setNewLocName] = useState('');
   const [newLocSubdomain, setNewLocSubdomain] = useState('');
@@ -529,6 +542,116 @@ export default function AdminConsole({
                 </div>
               );
             })}
+          </div>
+        </div>
+
+        {/* Pincode Routing Master Config Panel */}
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+          <div>
+            <h3 className="text-base font-extrabold text-slate-950 flex items-center gap-2">
+              <MapPin className="w-4 h-4 text-indigo-500" />
+              Pincode Routing Engine
+            </h3>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              Configure 1:1 or many:1 static bindings mapping postal codes to active regional Happy Gifting subdirectories.
+            </p>
+          </div>
+
+          {/* Form to change current Default fallback locality */}
+          <div className="bg-indigo-50/50 p-3 rounded-xl border border-indigo-100/70 space-y-1.5">
+            <label className="block text-[10px] font-bold text-indigo-900 uppercase tracking-tight">Default Fallback Page:</label>
+            <select
+              value={defaultLocalityId}
+              onChange={(e) => onChangeDefaultLocalityId?.(e.target.value)}
+              className="w-full bg-white border border-indigo-200 rounded-lg text-xs p-2 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-sans cursor-pointer text-indigo-950 font-semibold"
+            >
+              {localities.map(loc => (
+                <option key={loc.id} value={loc.id}>
+                  {loc.name.split(',')[0]} (Fallback Default)
+                </option>
+              ))}
+            </select>
+            <span className="text-[9px] text-indigo-600 block leading-tight">This page opens automatically on first visit when a user enters an unactivated pincode, clicks skip, or views general landing info.</span>
+          </div>
+
+          {/* List of current mappings */}
+          <div className="space-y-1.5">
+            <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest block font-mono">Active Mappings ({pincodeMappings.length})</span>
+            <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1 text-xs">
+              {pincodeMappings.map(mapping => {
+                const matchedLoc = localities.find(l => l.id === mapping.localityId);
+                return (
+                  <div key={mapping.pincode} className="flex justify-between items-center p-2 bg-slate-50 border border-slate-150 rounded-xl font-mono">
+                    <span className="font-bold text-slate-800">📪 {mapping.pincode}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="font-sans text-[11px] text-slate-600 font-semibold">{matchedLoc?.name.split(',')[0] || mapping.localityId}</span>
+                      <button
+                        onClick={() => onDeletePincodeMapping?.(mapping.pincode)}
+                        className="text-slate-400 hover:text-rose-500 p-1 hover:bg-rose-50 rounded-lg transition-all"
+                        title="Delete this binding mapping"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+              {pincodeMappings.length === 0 && (
+                <div className="text-center py-4 text-slate-405 text-xs italic">No postal codes mapped yet.</div>
+              )}
+            </div>
+          </div>
+
+          {/* Form to add a new pairing */}
+          <div className="border-t border-slate-200/80 pt-4 space-y-3">
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Add Custom Entry</span>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[9px] uppercase font-bold text-slate-400 mb-1">Pincode</label>
+                <input
+                  type="text"
+                  maxLength={6}
+                  placeholder="e.g. 410210"
+                  id="admin-new-pincode"
+                  className="w-full text-xs px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono text-slate-800 font-bold"
+                />
+              </div>
+              <div>
+                <label className="block text-[9px] uppercase font-bold text-slate-400 mb-1">Open Page</label>
+                <select
+                  id="admin-new-locality"
+                  className="w-full text-xs px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500 font-sans text-slate-700 cursor-pointer text-ellipsis whitespace-nowrap overflow-hidden"
+                >
+                  {localities.map(loc => (
+                    <option key={loc.id} value={loc.id}>{loc.name.split(',')[0]}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                const pinInput = document.getElementById('admin-new-pincode') as HTMLInputElement;
+                const locSelect = document.getElementById('admin-new-locality') as HTMLSelectElement;
+                if (!pinInput || !locSelect) return;
+                const pin = pinInput.value.replace(/\D/g, '').trim();
+                const locId = locSelect.value;
+                if (pin.length !== 6) {
+                  alert("Please supply a valid 6-digit Indian Pincode code.");
+                  return;
+                }
+                const existing = pincodeMappings.find(m => m.pincode === pin);
+                if (existing) {
+                  alert(`Pincode ${pin} is already assigned to a directory node. Clear the existing route first!`);
+                  return;
+                }
+                onAddPincodeMapping?.(pin, locId);
+                pinInput.value = '';
+              }}
+              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs py-2.5 rounded-xl transition flex items-center justify-center gap-1.5 focus:ring-2 focus:ring-indigo-500/25 cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" /> Set Area Binding
+            </button>
           </div>
         </div>
       </div>
