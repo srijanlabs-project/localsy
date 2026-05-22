@@ -96,6 +96,26 @@ function normalizeRoleForType(userType) {
 }
 
 async function readUsers() {
+  const client = await getPgClient();
+  if (client) {
+    const result = await client.query(
+      `SELECT id, name, email, phone, user_type, role, password_hash, created_at, status
+       FROM app_users
+       ORDER BY created_at ASC`,
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      email: row.email,
+      phone: row.phone,
+      userType: row.user_type,
+      role: row.role,
+      passwordHash: row.password_hash,
+      createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
+      status: row.status,
+    }));
+  }
+
   if (Array.isArray(memoryUsers)) return memoryUsers;
   try {
     const raw = await fs.readFile(usersPath, 'utf8');
@@ -108,6 +128,36 @@ async function readUsers() {
 }
 
 async function writeUsers(users) {
+  const client = await getPgClient();
+  if (client) {
+    await client.query('BEGIN');
+    try {
+      await client.query('DELETE FROM app_users');
+      for (const user of users) {
+        await client.query(
+          `INSERT INTO app_users (id, name, email, phone, user_type, role, password_hash, created_at, status)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+          [
+            user.id,
+            user.name,
+            user.email,
+            user.phone || '',
+            user.userType,
+            user.role,
+            user.passwordHash,
+            user.createdAt,
+            user.status || 'active',
+          ],
+        );
+      }
+      await client.query('COMMIT');
+      return;
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    }
+  }
+
   try {
     await fs.writeFile(usersPath, JSON.stringify(users, null, 2), 'utf8');
     memoryUsers = users;
@@ -120,12 +170,11 @@ async function writeUsers(users) {
 
 async function ensureBootstrapUsers() {
   const users = await readUsers();
-  if (users.length > 0) return;
   const adminEmail = process.env.BOOTSTRAP_ADMIN_EMAIL || 'admin@localsy.test';
   const adminPassword = process.env.BOOTSTRAP_ADMIN_PASSWORD || 'Admin@12345';
   const devEmail = process.env.BOOTSTRAP_DEV_EMAIL || 'dev@localsy.test';
   const devPassword = process.env.BOOTSTRAP_DEV_PASSWORD || 'Dev@12345';
-  const seed = [
+  const seed = users.length > 0 ? users : [
     {
       id: randomId('usr'),
       name: 'Platform Admin',
@@ -149,6 +198,33 @@ async function ensureBootstrapUsers() {
       status: 'active',
     },
   ];
+  const byEmail = new Set(seed.map((u) => u.email));
+  if (!byEmail.has(adminEmail.toLowerCase())) {
+    seed.push({
+      id: randomId('usr'),
+      name: 'Platform Admin',
+      email: adminEmail.toLowerCase(),
+      phone: '+91 9999900000',
+      userType: 'platform_admin',
+      role: normalizeRoleForType('platform_admin'),
+      passwordHash: await hashPassword(adminPassword),
+      createdAt: nowIso(),
+      status: 'active',
+    });
+  }
+  if (!byEmail.has(devEmail.toLowerCase())) {
+    seed.push({
+      id: randomId('usr'),
+      name: 'Developer User',
+      email: devEmail.toLowerCase(),
+      phone: '+91 9999911111',
+      userType: 'developer',
+      role: normalizeRoleForType('developer'),
+      passwordHash: await hashPassword(devPassword),
+      createdAt: nowIso(),
+      status: 'active',
+    });
+  }
   await writeUsers(seed);
 }
 
@@ -182,6 +258,19 @@ async function getPgClient() {
         ip_address TEXT NOT NULL,
         device_code TEXT NOT NULL,
         user_name TEXT NOT NULL
+      )
+    `);
+    await pgClient.query(`
+      CREATE TABLE IF NOT EXISTS app_users (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        email TEXT NOT NULL UNIQUE,
+        phone TEXT NOT NULL DEFAULT '',
+        user_type TEXT NOT NULL,
+        role TEXT NOT NULL,
+        password_hash TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL,
+        status TEXT NOT NULL DEFAULT 'active'
       )
     `);
     return pgClient;
