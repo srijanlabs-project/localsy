@@ -24,6 +24,20 @@ interface AdminConsoleProps {
   onDeletePincodeMapping?: (pincode: string) => void;
   defaultLocalityId?: string;
   onChangeDefaultLocalityId?: (localityId: string) => void;
+  onBulkImportBusinesses?: (rows: Array<{
+    businessName: string;
+    address: string;
+    area: string;
+    city: string;
+    state: string;
+    pin: string;
+    mobile: string;
+    rating: string;
+    reviews: string;
+    services: string;
+    latitude: string;
+    longitude: string;
+  }>) => { imported: number; skipped: number };
 }
 
 export default function AdminConsole({
@@ -42,8 +56,11 @@ export default function AdminConsole({
   onAddPincodeMapping,
   onDeletePincodeMapping,
   defaultLocalityId = 'roadpali',
-  onChangeDefaultLocalityId
+  onChangeDefaultLocalityId,
+  onBulkImportBusinesses
 }: AdminConsoleProps) {
+  // Internal infrastructure controls are hidden from public-facing admin UI.
+  const showInternalTopology = false;
   const [newLocName, setNewLocName] = useState('');
   const [newLocSubdomain, setNewLocSubdomain] = useState('');
   const [newLocDesc, setNewLocDesc] = useState('');
@@ -52,6 +69,49 @@ export default function AdminConsole({
   const [rejectionActive, setRejectionActive] = useState<Record<string, boolean>>({});
   const [adminNotification, setAdminNotification] = useState<string | null>(null);
   const [editedHrs, setEditedHrs] = useState<Record<string, string>>({});
+  const [importResult, setImportResult] = useState<string>('');
+
+  const parseCsvLine = (line: string) => {
+    return line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map((s) => s.trim().replace(/^"|"$/g, ''));
+  };
+
+  const handleCsvImport = async (file: File) => {
+    const text = await file.text();
+    const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
+    if (lines.length < 2) {
+      setImportResult('CSV appears empty or missing rows.');
+      return;
+    }
+    const headers = parseCsvLine(lines[0]).map((h) => h.toLowerCase());
+    const rows = lines.slice(1).map((line) => {
+      const cols = parseCsvLine(line);
+      const get = (name: string) => {
+        const idx = headers.indexOf(name.toLowerCase());
+        return idx >= 0 ? (cols[idx] || '') : '';
+      };
+      return {
+        businessName: get('Business Name'),
+        address: get('Address'),
+        area: get('Area'),
+        city: get('City'),
+        state: get('State'),
+        pin: get('PIN'),
+        mobile: get('Mobile'),
+        rating: get('Rating'),
+        reviews: get('Reviews'),
+        services: get('Services'),
+        latitude: get('Latitude'),
+        longitude: get('Longitude'),
+      };
+    }).filter((r) => r.businessName.trim());
+
+    if (!onBulkImportBusinesses) {
+      setImportResult('Bulk import callback is not configured.');
+      return;
+    }
+    const result = onBulkImportBusinesses(rows);
+    setImportResult(`Imported ${result.imported} businesses, skipped ${result.skipped} duplicates/invalid rows.`);
+  };
 
   const pendingBusinesses = businesses.filter(b => b.status === 'pending');
   const activeBusinesses = businesses.filter(b => b.status === 'approved');
@@ -380,12 +440,34 @@ export default function AdminConsole({
             </div>
           )}
         </div>
+
+        {/* CSV Import */}
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-3">
+          <h3 className="text-md font-bold text-slate-950">Bulk Import Businesses (CSV)</h3>
+          <p className="text-xs text-slate-500">
+            Upload CSV with columns: Business Name, Address, Area, City, State, PIN, Mobile, Rating, Reviews, Services, Latitude, Longitude.
+          </p>
+          <input
+            type="file"
+            accept=".csv,text/csv"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) handleCsvImport(f);
+            }}
+            className="w-full text-xs border border-slate-200 rounded-lg p-2"
+          />
+          {importResult && (
+            <div className="text-xs bg-emerald-50 border border-emerald-100 text-emerald-800 rounded-lg px-3 py-2">
+              {importResult}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Domain Mapping Panel and Locality Spinner */}
       <div className="space-y-6">
         {/* Dynamic Mapping and DNS Status */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+        {showInternalTopology && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
           <div>
             <h3 className="text-lg font-bold text-slate-950 flex items-center gap-2">
               <Globe className="w-5 h-5 text-indigo-500" />
@@ -432,13 +514,13 @@ export default function AdminConsole({
               In a full production deploy, these routes dynamically intercept the host header variables inside the <strong>Express Router Request payload</strong> to query records strictly matching the subdomain.
             </p>
           </div>
-        </div>
+        </div>}
 
         {/* Locality Spinner Form */}
         <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
           <h3 className="text-lg font-bold text-slate-950 mb-1 flex items-center gap-2">
             <PlusCircle className="w-5 h-5 text-blue-600" />
-            Create Local Yellow Pages Site
+            Create Local Business Region
           </h3>
           <p className="text-xs text-slate-500 mb-4">
             Provision database shards and auto-map a subdomain for a new municipality.

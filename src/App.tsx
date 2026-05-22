@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   INITIAL_LOCALITIES, INITIAL_BUSINESSES, INITIAL_CATEGORIES, INITIAL_REVIEWS,
-  INITIAL_COMMUNITY_ITEMS, INITIAL_CRM_CONTACTS, INITIAL_COUPONS
+  INITIAL_COMMUNITY_ITEMS, INITIAL_CRM_CONTACTS, INITIAL_COUPONS, MASTER_AREAS
 } from './data';
 import { 
   Locality, Business, SubdomainMapping, Review, UserSession, UserRole,
@@ -12,7 +12,8 @@ import WebPortal from './components/WebPortal';
 import AndroidSimulator from './components/AndroidSimulator';
 import AdminConsole from './components/AdminConsole';
 import PincodeSelectionModal from './components/PincodeSelectionModal';
-import OtpVerificationModal from './components/OtpVerificationModal';
+import AuthModal from './components/AuthModal';
+import happyBusinessLogo from './assets/happy-business-logo.png';
 import { 
   Layout, Smartphone, Shield, BookOpen, Layers, RefreshCw, 
   User, CheckCircle, ShieldAlert, KeyRound, Wrench, Briefcase, HelpCircle,
@@ -20,6 +21,7 @@ import {
 } from 'lucide-react';
 
 export default function App() {
+  const PRODUCTION_MODE = true;
   // Database version management to clear stale browser caches when definitions evolve
   const CURRENT_DB_VERSION = 'yp_v11_roadpali_final_railway';
   
@@ -136,18 +138,42 @@ export default function App() {
 
   const [activeView, setActiveView] = useState<'proposal' | 'web' | 'android' | 'admin'>('web'); // Default to pubic web portal for instant aesthetics!
   const [showSandbox, setShowSandbox] = useState(false); // Controls floating simulation HUD
-  const [showAppLoginOtpModal, setShowAppLoginOtpModal] = useState(false); // Customer login gateway modal
+  const [showAuthModal, setShowAuthModal] = useState(false);
 
   // Active User session simulation
   const [userSession, setUserSession] = useState<UserSession>(() => {
     const saved = localStorage.getItem('yp_user_session');
     return saved ? JSON.parse(saved) : {
       role: 'buyer',
-      userName: 'Karan Malhotra (Verified Citizen)',
-      userPhone: '+91 80011 22334',
-      isAuthenticated: true // Gated behind simulated sign in
+      userName: 'Anonymous Guest Explorer',
+      userPhone: undefined,
+      isAuthenticated: false
     };
   });
+
+  useEffect(() => {
+    const token = localStorage.getItem('yp_auth_token');
+    if (!token) return;
+    fetch('/api/auth/me', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!data?.user) return;
+        setUserSession({
+          role: data.user.role,
+          userType: data.user.userType,
+          userName: data.user.name,
+          userPhone: data.user.phone || undefined,
+          email: data.user.email,
+          authToken: token,
+          isAuthenticated: true,
+        });
+      })
+      .catch(() => {
+        localStorage.removeItem('yp_auth_token');
+      });
+  }, []);
 
   // Track the business IDs for which the current user has performed OTP verification to unlock contact details
   const [viewedBusinessIds, setViewedBusinessIds] = useState<string[]>(() => {
@@ -247,6 +273,10 @@ export default function App() {
     localStorage.setItem('yp_audit_logs', JSON.stringify(auditLogs));
   }, [auditLogs]);
 
+  useEffect(() => {
+    logAuditEvent('data_entry', 'Active locality changed', `Locality switched to: ${activeLocalityId}`);
+  }, [activeLocalityId]);
+
   // Unified logger for complete client-side security compliance auditing
   const logAuditEvent = (actionType: 'search' | 'contact_view' | 'data_entry', description: string, details: string) => {
     const ipAddress = `103.${45 + Math.floor(Math.random() * 40)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`;
@@ -265,6 +295,16 @@ export default function App() {
     };
     
     setAuditLogs(prev => [freshLog, ...prev]);
+
+    // Persist audit events server-side for public deployment traceability.
+    // This is best-effort and should never block UX interactions.
+    fetch('/api/audit-events', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(freshLog),
+    }).catch(() => {
+      // Keep silent fallback to local state/localStorage if server logging fails.
+    });
   };
 
   // Actions
@@ -383,6 +423,7 @@ export default function App() {
 
   // Allow Admins, Moderators, Sellers, and Data Operators to directly modify listings
   const handleUpdateBusiness = (updatedBiz: Business) => {
+    logAuditEvent('data_entry', `Business listing updated: "${updatedBiz.name}"`, `Updated listing ID: ${updatedBiz.id} | Locality: ${updatedBiz.localityId}`);
     setBusinesses(prev => prev.map(b => b.id === updatedBiz.id ? updatedBiz : b));
   };
 
@@ -559,6 +600,106 @@ export default function App() {
         });
         break;
     }
+    logAuditEvent('data_entry', 'Role switched in sandbox', `Switched to role: ${role}`);
+  };
+
+  const setActiveViewWithAudit = (nextView: 'proposal' | 'web' | 'android' | 'admin') => {
+    if (PRODUCTION_MODE && (nextView === 'proposal' || nextView === 'android')) return;
+    setActiveView(nextView);
+    logAuditEvent('data_entry', 'Interface view switched', `Active view changed to: ${nextView}`);
+  };
+
+  const canAccessAdmin = ['admin', 'moderator', 'developer'].includes(userSession.role);
+
+  const handleBulkImportBusinesses = (rows: Array<{
+    businessName: string;
+    address: string;
+    area: string;
+    city: string;
+    state: string;
+    pin: string;
+    mobile: string;
+    rating: string;
+    reviews: string;
+    services: string;
+    latitude: string;
+    longitude: string;
+  }>) => {
+    const inferCategory = (services: string) => {
+      const s = services.toLowerCase();
+      if (s.includes('hospital') || s.includes('medical') || s.includes('pharmacy') || s.includes('clinic')) return 'health';
+      if (s.includes('school') || s.includes('preschool') || s.includes('education')) return 'services';
+      if (s.includes('hardware') || s.includes('electrical') || s.includes('plumbing')) return 'home';
+      if (s.includes('restaurant') || s.includes('sweets') || s.includes('food')) return 'food';
+      if (s.includes('fashion') || s.includes('clothing') || s.includes('store') || s.includes('retail')) return 'retail';
+      return 'services';
+    };
+
+    const inferLocality = (area: string) => {
+      const a = area.toLowerCase();
+      if (a.includes('kharghar')) return 'kharghar';
+      if (a.includes('kamothe')) return 'kamothe';
+      if (a.includes('panvel')) return 'panvel';
+      if (a.includes('taloja')) return 'taloja';
+      if (a.includes('kalamboli')) return 'kalamboli';
+      return 'roadpali';
+    };
+
+    let imported = 0;
+    let skipped = 0;
+
+    setBusinesses(prev => {
+      const next = [...prev];
+      const keySet = new Set(prev.map((b) => `${b.name.toLowerCase()}|${b.address.toLowerCase()}|${b.phone}`));
+
+      for (const row of rows) {
+        const phone = row.mobile && row.mobile !== '—' ? (row.mobile.startsWith('+91') ? row.mobile : `+91 ${row.mobile}`) : '+91 0000000000';
+        const address = row.address && row.address !== '—' ? row.address : `${row.area || 'Unknown Area'}, ${row.city || 'Navi Mumbai'}`;
+        const name = row.businessName.trim();
+        const key = `${name.toLowerCase()}|${address.toLowerCase()}|${phone}`;
+        if (!name || keySet.has(key)) {
+          skipped++;
+          continue;
+        }
+        keySet.add(key);
+        const localityId = inferLocality(row.area || row.city || '');
+        const areaMatch = MASTER_AREAS.find(a => a.name.toLowerCase().includes((row.area || '').toLowerCase()));
+        const areaId = areaMatch?.id || 'roadpali-sec17';
+        const rating = row.rating && row.rating !== '—' ? parseFloat(row.rating) : 0;
+        const reviewCount = row.reviews && row.reviews !== '—' ? parseInt(row.reviews, 10) || 0 : 0;
+        const lat = row.latitude && row.latitude !== '—' ? parseFloat(row.latitude) : undefined;
+        const lng = row.longitude && row.longitude !== '—' ? parseFloat(row.longitude) : undefined;
+
+        next.unshift({
+          id: `csv_${Date.now()}_${Math.floor(Math.random() * 100000)}`,
+          name,
+          categoryId: inferCategory(row.services || ''),
+          localityId,
+          stateId: 'mh',
+          cityId: 'navimumbai',
+          areaId,
+          areasOfOperation: [areaId],
+          address,
+          phone,
+          website: `https://${name.toLowerCase().replace(/[^a-z0-9]+/g, '') || 'business'}.in`,
+          description: row.services || 'Business imported from CSV.',
+          rating: Number.isFinite(rating) ? rating : 0,
+          reviewCount,
+          imageUrl: 'https://images.unsplash.com/photo-1544197150-b99a580bb7a8?auto=format&fit=crop&w=500&q=80',
+          featured: false,
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+          tags: (row.services || 'Imported').split(',').map(t => t.trim()).filter(Boolean).slice(0, 5),
+          ownerName: 'Imported via CSV',
+          gpsCoordinates: lat !== undefined && lng !== undefined ? { lat, lng } : undefined,
+        });
+        imported++;
+      }
+      return next;
+    });
+
+    logAuditEvent('data_entry', 'CSV import executed', `Rows processed: ${rows.length} | Imported: ${imported} | Skipped: ${skipped}`);
+    return { imported, skipped };
   };
 
   return (
@@ -567,17 +708,11 @@ export default function App() {
       {/* Top Navigation Frame - Pristine, Live, Human-labeled web directory */}
       <nav id="platform-navbar" className="bg-white border-b border-slate-200 sticky top-0 md:top-auto z-40 px-4 md:px-8 py-4 flex flex-col md:flex-row items-center justify-between gap-4 shadow-xs">
         <div className="flex items-center gap-3">
-          <div className="bg-gradient-to-tr from-indigo-600 to-indigo-700 p-2.5 rounded-2xl text-white shadow-sm flex items-center justify-center animate-pulse">
-            <Layers className="w-5 h-5 animate-spin-slow" />
-          </div>
-          <div>
-            <h1 className="text-lg font-extrabold font-sans text-slate-900 flex items-center gap-2 leading-none">
-              Happy Gifting Yellow Pages
-            </h1>
-            <span className="text-xs text-slate-500 mt-1 block">
-              Official verified municipal directory serving Roadpali, Kharghar, Kamothe, Panvel, and Taloja hubs
-            </span>
-          </div>
+          <img
+            src={happyBusinessLogo}
+            alt="Happy Business"
+            className="h-12 md:h-14 w-auto object-contain"
+          />
         </div>
 
         {/* Real-time Pincode and Locality tracker */}
@@ -622,6 +757,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => {
+                  localStorage.removeItem('yp_auth_token');
                   setUserSession({
                     role: 'buyer',
                     userName: 'Anonymous Guest Explorer',
@@ -638,12 +774,12 @@ export default function App() {
           ) : (
             <button
               type="button"
-              onClick={() => setShowAppLoginOtpModal(true)}
+              onClick={() => setShowAuthModal(true)}
               className="inline-flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-4 py-2 rounded-xl transition cursor-pointer shadow-sm"
-              title="Log in to post reviews & view premium contacts"
+              title="Sign in to post reviews & manage role-based access"
             >
               <User className="w-3.5 h-3.5" />
-              <span>Customer Login</span>
+              <span>Sign In</span>
             </button>
           )}
         </div>
@@ -653,7 +789,7 @@ export default function App() {
       <main className="flex-1 w-full max-w-7xl mx-auto px-4 md:px-8 py-8 space-y-8">
         
         {/* Workspace Active Presentation Render */}
-        {activeView === 'proposal' && (
+        {!PRODUCTION_MODE && activeView === 'proposal' && (
           <div className="space-y-6">
             <ProposalPanel />
             <div className="flex flex-col md:flex-row items-center justify-between border-t border-slate-200 pt-6 gap-4">
@@ -663,14 +799,14 @@ export default function App() {
               </div>
               <div className="flex gap-2">
                 <button
-                  onClick={() => setActiveView('web')}
+                  onClick={() => setActiveViewWithAudit('web')}
                   className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-mono font-bold px-4 py-2 rounded-xl transition"
                 >
                   Explore Public Web →
                 </button>
-                {(userSession.role === 'admin' || userSession.role === 'moderator') && (
+                {canAccessAdmin && (
                   <button
-                    onClick={() => setActiveView('admin')}
+                    onClick={() => setActiveViewWithAudit('admin')}
                     className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-mono font-bold px-4 py-2 rounded-xl transition"
                   >
                     Manage Moderation (Admin) →
@@ -708,7 +844,7 @@ export default function App() {
           />
         )}
 
-        {activeView === 'android' && (
+        {!PRODUCTION_MODE && activeView === 'android' && (
           <AndroidSimulator 
             localities={localities}
             businesses={businesses}
@@ -726,7 +862,7 @@ export default function App() {
           />
         )}
 
-        {activeView === 'admin' && (userSession.role === 'admin' || userSession.role === 'moderator') && (
+        {activeView === 'admin' && canAccessAdmin && (
           <AdminConsole 
             localities={localities}
             businesses={businesses}
@@ -743,6 +879,7 @@ export default function App() {
             onDeletePincodeMapping={handleDeletePincodeMapping}
             defaultLocalityId={defaultLocalityId}
             onChangeDefaultLocalityId={handleChangeDefaultLocalityId}
+            onBulkImportBusinesses={handleBulkImportBusinesses}
           />
         )}
 
@@ -752,11 +889,12 @@ export default function App() {
       <footer className="bg-slate-900 border-t border-slate-800 text-slate-400 py-10 mt-16">
         <div className="max-w-7xl mx-auto px-4 md:px-8 flex flex-col md:flex-row items-center justify-between gap-6">
           <div className="space-y-1.5 text-center md:text-left">
-            <span className="block text-white font-bold text-sm">Roadpali Yellow Pages</span>
+            <span className="block text-white font-bold text-sm">Roadpali Businesses</span>
             <span className="block text-xs text-slate-500">Your trusted neighbourhood local business directory node. Serving Roadpali, Kalamboli, and Navi Mumbai since 2026.</span>
           </div>
           <div className="flex flex-wrap items-center justify-center gap-4 text-xs">
             <button 
+              style={{ display: PRODUCTION_MODE ? 'none' : 'inline-flex' }}
               onClick={() => {
                 simulateRoleLogin('admin');
                 setActiveView('admin');
@@ -767,14 +905,14 @@ export default function App() {
             >
               🔐 Moderator Login Gate
             </button>
-            <span className="text-slate-600">|</span>
-            <span className="text-xs text-slate-500">© 2026 Yellow Pages Node. Secure OTP View Protection.</span>
+            <span className="text-slate-600" style={{ display: PRODUCTION_MODE ? 'none' : 'inline' }}>|</span>
+            <span className="text-xs text-slate-500">© 2026 Happy Gifting Businesses. Secure OTP View Protection.</span>
           </div>
         </div>
       </footer>
 
       {/* Floating Developer Sandbox Panel - For AI Studio reviewers and team tests */}
-      <div className="fixed bottom-6 right-6 z-50">
+      {!PRODUCTION_MODE && <div className="fixed bottom-6 right-6 z-50">
         {!showSandbox ? (
           <button
             onClick={() => setShowSandbox(true)}
@@ -847,7 +985,7 @@ export default function App() {
                 {[
                   { id: 'web', label: '🖥️ Public Web', icon: Layout },
                   { id: 'android', label: '📱 Mobile Sim', icon: Smartphone },
-                  ...((userSession.role === 'admin' || userSession.role === 'moderator') ? [
+                  ...((canAccessAdmin) ? [
                     { id: 'admin', label: '🛡️ Moderation', icon: Shield }
                   ] : []),
                   { id: 'proposal', label: '📖 Specs & Stack', icon: BookOpen }
@@ -858,7 +996,7 @@ export default function App() {
                     <button
                       key={v.id}
                       onClick={() => {
-                        setActiveView(v.id as any);
+                        setActiveViewWithAudit(v.id as any);
                         setShowSandbox(false);
                       }}
                       className={`flex items-center gap-2 p-2 rounded-xl text-xs font-bold leading-none border transition cursor-pointer ${
@@ -896,7 +1034,7 @@ export default function App() {
             </div>
           </div>
         )}
-      </div>
+      </div>}
 
       <PincodeSelectionModal 
         isOpen={showPincodeModal}
@@ -908,17 +1046,21 @@ export default function App() {
         defaultLocalityId={defaultLocalityId}
       />
 
-      <OtpVerificationModal 
-        isOpen={showAppLoginOtpModal}
-        onClose={() => setShowAppLoginOtpModal(false)}
-        onVerifySuccess={(userName, userPhone) => {
+      <AuthModal
+        isOpen={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+        onAuthSuccess={({ token, name, phone, email, role, userType }) => {
+          localStorage.setItem('yp_auth_token', token);
           setUserSession({
-            role: 'buyer',
-            userName: `${userName} (Verified Customer)`,
+            role: role as UserRole,
+            userType,
+            userName: `${name} (${userType})`,
+            userPhone: phone,
+            email,
+            authToken: token,
             isAuthenticated: true,
-            userPhone: userPhone
           });
-          logAuditEvent('data_entry', 'User Authenticated', `Customer logged in with phone: ${userPhone}`);
+          logAuditEvent('data_entry', 'User Authenticated', `Authenticated user ${email} with role: ${role}`);
         }}
       />
     </div>

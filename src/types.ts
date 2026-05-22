@@ -164,7 +164,8 @@ export interface AreaMaster {
   pincode: string;
 }
 
-export type UserRole = 'buyer' | 'admin' | 'moderator' | 'operator' | 'seller';
+export type UserRole = 'buyer' | 'admin' | 'moderator' | 'operator' | 'seller' | 'developer' | 'resource';
+export type UserType = 'platform_admin' | 'developer' | 'buyer' | 'seller' | 'resource';
 
 export interface UserSession {
   role: UserRole;
@@ -172,6 +173,9 @@ export interface UserSession {
   userPhone?: string;
   isAuthenticated: boolean;
   sellerBusinessId?: string; // Linked for seller dashboard
+  userType?: UserType;
+  email?: string;
+  authToken?: string;
 }
 
 export interface AuditEvent {
@@ -184,4 +188,3 @@ export interface AuditEvent {
   deviceCode: string;
   userName: string;
 }
-

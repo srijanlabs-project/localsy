@@ -64,6 +64,10 @@ export default function WebPortal({
   onAddCoupon,
   onLogAuditEvent
 }: WebPortalProps) {
+  const showSubdomainLocationMapping = false; // Hidden for production public UI.
+  const SIMPLE_SEARCH_FORM = true;
+  const SHOW_PORTAL_TABS = false;
+  const SHOW_REFINED_FILTERS = false;
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [showApplyModal, setShowApplyModal] = useState(false);
@@ -154,6 +158,13 @@ export default function WebPortal({
   const [communityBody, setCommunityBody] = useState('');
   const [communitySection, setCommunitySection] = useState<'qna' | 'deals' | 'recommendations' | 'sponsored'>('qna');
   const [communityTags, setCommunityTags] = useState('monsoon, Roadpali');
+
+  useEffect(() => {
+    if (SIMPLE_SEARCH_FORM) {
+      setActivePortalTab('listings');
+      if (searchMode !== 'keyword') setSearchMode('keyword');
+    }
+  }, [SIMPLE_SEARCH_FORM, searchMode]);
 
   // Auto-rotating slider effect
   const currentLocality = localities.find(l => l.id === activeLocalityId) || localities[0];
@@ -585,7 +596,7 @@ export default function WebPortal({
     <div id="web-portal-root" className="space-y-8 pb-10">
       
       {/* Dynamic Subdomain Navigator Router Header */}
-      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl p-4 md:p-5 border border-indigo-500/10 shadow-md flex flex-col md:flex-row md:items-center justify-between gap-4">
+      {showSubdomainLocationMapping && <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl p-4 md:p-5 border border-indigo-500/10 shadow-md flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="bg-indigo-500/10 p-2.5 rounded-xl border border-indigo-500/20 text-indigo-400">
             <Globe className="w-6 h-6" />
@@ -620,7 +631,7 @@ export default function WebPortal({
             </button>
           ))}
         </div>
-      </div>
+      </div>}
 
       {/* Hero Header Section with Dynamic Carousel */}
       <div className="relative rounded-3xl overflow-hidden bg-slate-950 text-white min-h-[240px] md:min-h-[300px] flex items-center shadow-lg group">
@@ -663,7 +674,7 @@ export default function WebPortal({
             <MapPin className="w-3.5 h-3.5 animate-bounce" /> Indian Regional Directory
           </div>
           <h2 className="text-2xl md:text-4xl font-extrabold font-sans tracking-tight text-white leading-tight">
-            {currentLocality.name} Yellow Pages
+            {currentLocality.name} Businesses
           </h2>
           <p className="text-sm text-slate-300 leading-relaxed max-w-xl">
             {currentLocality.description} verified reviews, location-grabbing utilities, and dynamic approval tracking.
@@ -693,7 +704,7 @@ export default function WebPortal({
       </div>
 
       {/* Primary Multi-Hub Portal Navigation Workspace Tabs */}
-      <div className="flex border-b border-slate-200 bg-white rounded-2xl p-1 shadow-2xs">
+      {SHOW_PORTAL_TABS && <div className="flex border-b border-slate-200 bg-white rounded-2xl p-1 shadow-2xs">
         <button
           onClick={() => setActivePortalTab('listings')}
           className={`flex-1 py-3 text-center text-xs font-bold font-sans flex items-center justify-center gap-2 rounded-xl transition ${
@@ -730,7 +741,7 @@ export default function WebPortal({
           <Megaphone className="w-4 h-4" />
           💼 SME Merchant Workspace &amp; CRM
         </button>
-      </div>
+      </div>}
 
       {/* RENDER TAB 1: YELLOW PAGES BUSINESS DIRECTORY FINDER */}
       {activePortalTab === 'listings' && (
@@ -741,7 +752,7 @@ export default function WebPortal({
               <span className="text-xs font-bold font-mono uppercase text-indigo-600 tracking-wider flex items-center gap-1">
                 <Compass className="w-3.5 h-3.5" /> Discovery Search Suite:
               </span>
-              <div className="flex bg-slate-100 p-1 rounded-lg gap-1">
+              {!SIMPLE_SEARCH_FORM && <div className="flex bg-slate-100 p-1 rounded-lg gap-1">
                 {[
                   { id: 'keyword', label: '🔍 Text', icon: Search },
                   { id: 'voice', label: '🎤 Voice', icon: Volume2 },
@@ -764,7 +775,7 @@ export default function WebPortal({
                     {mode.label}
                   </button>
                 ))}
-              </div>
+              </div>}
             </div>
 
             {/* Render conditional inputs matching active Search Mode */}
@@ -791,7 +802,7 @@ export default function WebPortal({
               </div>
             )}
 
-            {searchMode === 'voice' && (
+            {!SIMPLE_SEARCH_FORM && searchMode === 'voice' && (
               <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex flex-col items-center text-center space-y-3">
                 <p className="text-xs text-slate-600 font-medium">
                   {voiceIsListening 
@@ -833,7 +844,7 @@ export default function WebPortal({
               </div>
             )}
 
-            {searchMode === 'image' && (
+            {!SIMPLE_SEARCH_FORM && searchMode === 'image' && (
               <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3 text-center">
                 <p className="text-xs text-slate-600">
                   {uploadedImageTag 
@@ -871,7 +882,7 @@ export default function WebPortal({
               </div>
             )}
 
-            {searchMode === 'ai' && (
+            {!SIMPLE_SEARCH_FORM && searchMode === 'ai' && (
               <form onSubmit={handleAiSearchRun} className="bg-slate-50 border border-indigo-100 rounded-xl p-4 space-y-3">
                 <div className="flex items-start gap-2 text-indigo-900 bg-indigo-50/50 p-2.5 rounded-lg border border-indigo-100 mb-1 leading-normal">
                   <Brain className="w-4 h-4 text-indigo-600 flex-shrink-0 mt-0.5" />
@@ -939,7 +950,7 @@ export default function WebPortal({
             )}
 
             {/* COLLAPSIBLE ADVANCED METRIC FILTERS DECK */}
-            <div className="bg-slate-50/50 rounded-xl p-4 border border-slate-100 space-y-4">
+            {SHOW_REFINED_FILTERS && <div className="bg-slate-50/50 rounded-xl p-4 border border-slate-100 space-y-4">
               <div className="flex items-center gap-1.5 text-slate-700 text-xs font-bold border-b border-slate-150 pb-2">
                 <Filter className="w-3.5 h-3.5 text-slate-400" />
                 <span>Refined Shards Filters Selector</span>
@@ -1097,7 +1108,7 @@ export default function WebPortal({
                   </select>
                 </div>
               </div>
-            </div>
+            </div>}
 
             {/* Quick clean reset button for filters */}
             {(filterDistance !== 'all' || filterRating !== 0 || filterOpenNow || filterPriceRange !== 'all' || filterDelivery || filterHasOffers || filterVerifiedOnly || filterLanguageSpoken !== 'all' || filterPaymentMethod !== 'all' || filterExperience !== 'all' || sortBy !== 'recommended') && (
