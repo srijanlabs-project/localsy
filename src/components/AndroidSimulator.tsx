@@ -179,7 +179,7 @@ export default function AndroidSimulator({
       email: appEmail.trim() || undefined, // Email optional!
       website: appWebsite || `https://${appName.toLowerCase().replace(/\s+/g, '')}.in`,
       description: appDesc || `${appName} is a dependable local shop.`,
-      imageUrl: 'https://images.unsplash.com/photo-1544197150-b99a580bb7a8?auto=format&fit=crop&w=500&q=80',
+      imageUrl: '',
       featured: false,
       tags: [appCategory, 'Local', 'Mobile-Entry'],
       hours: appHours,

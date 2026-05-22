@@ -744,7 +744,7 @@ export default function App() {
           description: row.services || 'Business imported from CSV.',
           rating: Number.isFinite(rating) ? rating : 0,
           reviewCount,
-          imageUrl: 'https://images.unsplash.com/photo-1544197150-b99a580bb7a8?auto=format&fit=crop&w=500&q=80',
+          imageUrl: '',
           featured: false,
           status: 'pending',
           createdAt: new Date().toISOString(),
