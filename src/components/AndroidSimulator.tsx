@@ -7,7 +7,7 @@ import { Locality, Business, Category, Review, UserSession } from '../types';
 import { MASTER_STATES, MASTER_CITIES, MASTER_AREAS } from '../data';
 import OtpVerificationModal from './OtpVerificationModal';
 import GoogleLocationPicker from './GoogleLocationPicker';
-import { getBusinessImageUrl, getCategoryFallbackImage } from '../utils/businessImage';
+import { getBusinessImageUrl, getCategoryFallbackImage, hasUploadedBusinessImage } from '../utils/businessImage';
 import { resolveDefaultSubcategoryId } from '../categoryMaster';
 
 interface AndroidSimulatorProps {
@@ -415,7 +415,7 @@ export default function AndroidSimulator({
                               onError={(e) => {
                                 (e.target as HTMLImageElement).src = getCategoryFallbackImage(biz.categoryId);
                               }}
-                              className="w-12 h-12 rounded bg-slate-100 object-cover flex-shrink-0"
+                              className={`w-12 h-12 rounded bg-slate-100 flex-shrink-0 ${hasUploadedBusinessImage(biz) ? 'object-cover' : 'object-contain p-1'}`}
                             />
                             <div className="flex-1 truncate text-left">
                               <div className="flex items-center justify-between">
@@ -463,7 +463,7 @@ export default function AndroidSimulator({
                     onError={(e) => {
                       (e.target as HTMLImageElement).src = getCategoryFallbackImage(selectedBiz.categoryId);
                     }}
-                    className="w-full h-28 object-cover rounded-xl border border-slate-200 bg-slate-100 shadow-sm"
+                    className={`w-full h-28 rounded-xl border border-slate-200 bg-slate-100 shadow-sm ${hasUploadedBusinessImage(selectedBiz) ? 'object-cover' : 'object-contain p-3'}`}
                   />
 
                   <div className="space-y-1">

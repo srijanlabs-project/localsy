@@ -261,12 +261,17 @@ function isGenericPlaceholderImage(imageUrl: string) {
   return GENERIC_PLACEHOLDER_IMAGE_MARKERS.some((marker) => imageUrl.includes(marker));
 }
 
+export function hasUploadedBusinessImage(business: Pick<Business, 'imageUrl'>): boolean {
+  const customImage = String(business.imageUrl || '').trim();
+  return customImage.length > 0 && !isGenericPlaceholderImage(customImage);
+}
+
 export function getCategoryFallbackImage(categoryId?: string): string {
   return buildCategoryIconDataUri(categoryId);
 }
 
 export function getBusinessImageUrl(business: Pick<Business, 'imageUrl' | 'categoryId'>): string {
   const customImage = String(business.imageUrl || '').trim();
-  if (customImage.length > 0 && !isGenericPlaceholderImage(customImage)) return customImage;
+  if (hasUploadedBusinessImage(business)) return customImage;
   return getCategoryFallbackImage(business.categoryId);
 }

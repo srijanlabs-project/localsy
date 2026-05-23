@@ -13,7 +13,7 @@ import {
 import { MASTER_STATES, MASTER_CITIES, MASTER_AREAS } from '../data';
 import OtpVerificationModal from './OtpVerificationModal';
 import GoogleLocationPicker from './GoogleLocationPicker';
-import { getBusinessImageUrl, getCategoryFallbackImage } from '../utils/businessImage';
+import { getBusinessImageUrl, getCategoryFallbackImage, hasUploadedBusinessImage } from '../utils/businessImage';
 import {
   BUSINESS_CATEGORIES,
   getCategoryById,
@@ -207,6 +207,9 @@ export default function WebPortal({
     .split(',')
     .map((id) => id.trim())
     .filter(Boolean);
+  const browsingLocalityIds = selectedLocalityIds.includes('roadpali')
+    ? Array.from(new Set([...selectedLocalityIds, 'kalamboli']))
+    : selectedLocalityIds;
   const currentLocality =
     localities.find((l) => l.id === selectedLocalityIds[0]) ||
     localities.find((l) => l.id === activeLocalityId) ||
@@ -401,14 +404,7 @@ export default function WebPortal({
 
   // Filter approved listings relevant to search keyword + category ID
   const approvedInLocality = businesses.filter((b) => {
-    if (!selectedLocalityIds.includes(b.localityId) || b.status !== 'approved') return false;
-    if (!savedPincode) return true;
-    const primaryAreaPin = MASTER_AREAS.find((a) => a.id === b.areaId)?.pincode;
-    const opPins = (b.areasOfOperation || [])
-      .map((aid) => MASTER_AREAS.find((a) => a.id === aid)?.pincode)
-      .filter(Boolean);
-    const allPins = new Set([primaryAreaPin, ...opPins].filter(Boolean));
-    return allPins.has(savedPincode);
+    return browsingLocalityIds.includes(b.localityId) && b.status === 'approved';
   });
 
   const filteredBusinesses = approvedInLocality.filter(b => {
@@ -1270,7 +1266,7 @@ export default function WebPortal({
                         <img 
                           src={getBusinessImageUrl(biz)}
                           alt={biz.name}
-                          className="w-24 h-24 md:w-28 md:h-28 rounded-xl object-cover bg-slate-100 self-center border border-slate-200 flex-shrink-0"
+                          className={`w-24 h-24 md:w-28 md:h-28 rounded-xl bg-slate-100 self-center border border-slate-200 flex-shrink-0 ${hasUploadedBusinessImage(biz) ? 'object-cover' : 'object-contain p-3'}`}
                           onError={(e) => {
                             (e.target as HTMLImageElement).src = getCategoryFallbackImage(biz.categoryId);
                           }}
@@ -1405,7 +1401,7 @@ export default function WebPortal({
                                 onError={(e) => {
                                   (e.target as HTMLImageElement).src = getCategoryFallbackImage(biz.categoryId);
                                 }}
-                                className="w-full h-36 object-cover rounded-xl border border-slate-200/60 bg-slate-100"
+                                className={`w-full h-36 rounded-xl border border-slate-200/60 bg-slate-100 ${hasUploadedBusinessImage(biz) ? 'object-cover' : 'object-contain p-4'}`}
                               />
                               {biz.verifiedBadge && (
                                 <span className="absolute top-2 left-2 bg-emerald-600 text-white text-[9px] uppercase font-mono font-bold px-2 py-0.5 rounded-full flex items-center gap-0.5">
@@ -2046,7 +2042,7 @@ export default function WebPortal({
                 onError={(e) => {
                   (e.target as HTMLImageElement).src = getCategoryFallbackImage(selectedBiz.categoryId);
                 }}
-                className="w-full h-44 object-cover rounded-2xl border border-slate-200 bg-slate-50 shadow-inner"
+                className={`w-full h-44 rounded-2xl border border-slate-200 bg-slate-50 shadow-inner ${hasUploadedBusinessImage(selectedBiz) ? 'object-cover' : 'object-contain p-4'}`}
               />
 
               <div className="space-y-2">

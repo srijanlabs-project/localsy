@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { Locality, Business, SubdomainMapping, UserSession, AuditEvent } from '../types';
 import { MASTER_AREAS } from '../data';
-import { getBusinessImageUrl, getCategoryFallbackImage } from '../utils/businessImage';
+import { getBusinessImageUrl, getCategoryFallbackImage, hasUploadedBusinessImage } from '../utils/businessImage';
 import {
   BUSINESS_CATEGORIES,
   BUSINESS_SUBCATEGORIES,
@@ -393,7 +393,7 @@ export default function AdminConsole({
                       onError={(e)=>{
                         (e.target as HTMLImageElement).src = getCategoryFallbackImage(biz.categoryId);
                       }}
-                      className="w-16 h-16 rounded-lg object-cover bg-slate-100 border border-slate-200 flex-shrink-0 self-start md:self-center"
+                      className={`w-16 h-16 rounded-lg bg-slate-100 border border-slate-200 flex-shrink-0 self-start md:self-center ${hasUploadedBusinessImage(biz) ? 'object-cover' : 'object-contain p-2'}`}
                     />
                     <div className="flex-1 space-y-2">
                       <div className="flex flex-wrap items-center gap-2">
