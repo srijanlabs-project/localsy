@@ -13,6 +13,7 @@ import AndroidSimulator from './components/AndroidSimulator';
 import AdminConsole from './components/AdminConsole';
 import PincodeSelectionModal from './components/PincodeSelectionModal';
 import AuthModal from './components/AuthModal';
+import happyBusinessLogo from './assets/happy-business-logo.png';
 import happyBusinessMark from './assets/happy-business-mark.png';
 import { 
   Layout, Smartphone, Shield, BookOpen, Layers, RefreshCw, 
@@ -870,7 +871,7 @@ export default function App() {
       
       {/* Top Navigation Frame - Pristine, Live, Human-labeled web directory */}
       <nav id="platform-navbar" className="bg-white border-b border-slate-200 sticky top-0 md:top-auto z-40 px-3 sm:px-4 md:px-8 py-2.5 md:py-4 shadow-xs">
-        <div className="flex items-center gap-2.5 md:gap-4">
+        <div className="flex items-center gap-2.5 md:hidden">
           <button
             type="button"
             onClick={() => setActiveViewWithAudit('web')}
@@ -1027,6 +1028,91 @@ export default function App() {
               <span>Sign In</span>
             </button>
           )}
+        </div>
+
+        <div className="hidden md:flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <img
+              src={happyBusinessLogo}
+              alt="Happy Business"
+              className="h-12 md:h-14 w-auto object-contain"
+            />
+          </div>
+
+          {/* Real-time Pincode and Locality tracker */}
+          <div className="flex flex-wrap items-center gap-2.5">
+            <button
+              type="button"
+              onClick={() => setShowPincodeModal(true)}
+              className="flex items-center gap-2 bg-indigo-50 border border-indigo-200 hover:border-indigo-400 hover:bg-slate-100 text-indigo-850 px-3.5 py-1.5 rounded-2xl text-xs font-semibold font-mono shadow-xs transition cursor-pointer"
+              title="Click to switch regional portal using pincode"
+            >
+              <MapPin className="w-3.5 h-3.5 text-indigo-650 animate-bounce" />
+              <span>
+                Pincode: {savedPincode ? savedPincode : 'None'}
+                <span className="text-indigo-400 font-sans ml-1 text-[10px] font-normal">
+                  ({activeNodeLabel} node)
+                </span>
+              </span>
+              <span className="text-[10px] text-indigo-600 underline ml-1 font-bold">Change</span>
+            </button>
+
+            <span className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-700 font-sans font-semibold text-xs py-1.5 px-3 rounded-full border border-emerald-250">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              Node: {activeNodeLabel}
+            </span>
+
+            <button
+              onClick={() => {
+                // Direct access for merchants to submit a listing.
+                window.dispatchEvent(new CustomEvent('localsy:open-business-application'));
+                const seekWebPortal = document.getElementById('web-portal-root');
+                if (seekWebPortal) seekWebPortal.scrollIntoView({ behavior: 'smooth' });
+              }}
+              title="Open the listing application form for merchants who want to be promoted on the directory"
+              className="hidden sm:inline-flex bg-slate-900 hover:bg-slate-800 text-white font-medium text-xs px-4 py-2 rounded-xl transition cursor-pointer"
+            >
+              Advertise Business
+            </button>
+
+            {canAccessAdmin && (
+              <button
+                type="button"
+                onClick={() => setActiveViewWithAudit('admin')}
+                className="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-4 py-2 rounded-xl transition cursor-pointer shadow-sm"
+                title="Open Admin moderation and bulk import console"
+              >
+                <Shield className="w-3.5 h-3.5" />
+                <span>Admin Console</span>
+              </button>
+            )}
+
+            {userSession.isAuthenticated && userSession.userPhone ? (
+              <div className="flex items-center gap-2 bg-slate-100 border border-slate-200 px-3.5 py-1.5 rounded-xl text-xs font-medium">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span className="text-slate-800 font-semibold truncate max-w-[150px]" title={`${userSession.userName} (${userSession.userPhone})`}>
+                  {userSession.userName.split(' ')[0]}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="text-rose-600 hover:text-rose-800 text-[10px] font-bold border-l border-slate-200 pl-2 cursor-pointer ml-1"
+                >
+                  Log Out
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowAuthModal(true)}
+                className="inline-flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-4 py-2 rounded-xl transition cursor-pointer shadow-sm"
+                title="Sign in to post reviews & manage role-based access"
+              >
+                <User className="w-3.5 h-3.5" />
+                <span>Sign In</span>
+              </button>
+            )}
+          </div>
         </div>
       </nav>
 
