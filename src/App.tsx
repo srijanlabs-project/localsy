@@ -13,11 +13,11 @@ import AndroidSimulator from './components/AndroidSimulator';
 import AdminConsole from './components/AdminConsole';
 import PincodeSelectionModal from './components/PincodeSelectionModal';
 import AuthModal from './components/AuthModal';
-import happyBusinessLogo from './assets/happy-business-logo.png';
+import happyBusinessMark from './assets/happy-business-mark.png';
 import { 
   Layout, Smartphone, Shield, BookOpen, Layers, RefreshCw, 
   User, CheckCircle, ShieldAlert, KeyRound, Wrench, Briefcase, HelpCircle,
-  Sliders, Settings, X, Database, MapPin
+  Sliders, Settings, X, Database, MapPin, Search, LogOut, ChevronDown
 } from 'lucide-react';
 import { resolveDefaultSubcategoryId, resolveMasterCategoryId } from './categoryMaster';
 
@@ -40,6 +40,13 @@ const normalizeStoredBusiness = (business: Business): Business => {
   return isUploadedListing && normalized.status === 'pending'
     ? { ...normalized, status: 'approved' }
     : normalized;
+};
+
+const mergeBusinessCollections = (base: Business[], incoming: Business[]): Business[] => {
+  const merged = new Map<string, Business>();
+  base.forEach((business) => merged.set(business.id, normalizeStoredBusiness(business)));
+  incoming.forEach((business) => merged.set(business.id, normalizeStoredBusiness(business)));
+  return Array.from(merged.values());
 };
 
 export default function App() {
@@ -161,6 +168,7 @@ export default function App() {
   const [activeView, setActiveView] = useState<'proposal' | 'web' | 'android' | 'admin'>('web'); // Default to pubic web portal for instant aesthetics!
   const [showSandbox, setShowSandbox] = useState(false); // Controls floating simulation HUD
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
 
   // Active User session simulation
   const [userSession, setUserSession] = useState<UserSession>(() => {
@@ -245,6 +253,42 @@ export default function App() {
       }
     ];
   });
+
+  const persistBusinessesToServer = (nextBusinesses: Business[]) => {
+    fetch('/api/businesses', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ businesses: nextBusinesses })
+    }).catch(() => {
+      // Local cache remains the fallback when the API is unavailable.
+    });
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/businesses')
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { businesses?: Business[] } | null) => {
+        if (cancelled || !Array.isArray(data?.businesses)) return;
+        if (data.businesses.length === 0) {
+          persistBusinessesToServer(businesses);
+          return;
+        }
+        setBusinesses((prev) => {
+          const remoteBusinesses = data.businesses || [];
+          const next = mergeBusinessCollections(prev, remoteBusinesses);
+          if (next.length > remoteBusinesses.length) persistBusinessesToServer(next);
+          return next;
+        });
+      })
+      .catch(() => {
+        // Static/local builds keep using localStorage and seed data.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Push state to localStorage on any updates
   useEffect(() => {
@@ -365,23 +409,31 @@ export default function App() {
   };
 
   const handleApproveBusiness = (bizId: string) => {
-    setBusinesses(prev => prev.map(b => {
-      if (b.id === bizId) {
-        logAuditEvent('data_entry', `Approved business listing registration: "${b.name}"`, `Successfully validated SLA & activated routing headers for ID ${bizId}`);
-        return { ...b, status: 'approved' };
-      }
-      return b;
-    }));
+    setBusinesses(prev => {
+      const next = prev.map(b => {
+        if (b.id === bizId) {
+          logAuditEvent('data_entry', `Approved business listing registration: "${b.name}"`, `Successfully validated SLA & activated routing headers for ID ${bizId}`);
+          return { ...b, status: 'approved' };
+        }
+        return b;
+      });
+      persistBusinessesToServer(next);
+      return next;
+    });
   };
 
   const handleRejectBusiness = (bizId: string, reason: string) => {
-    setBusinesses(prev => prev.map(b => {
-      if (b.id === bizId) {
-        logAuditEvent('data_entry', `Rejected business listing application: "${b.name}"`, `Reason of refusal: "${reason}" | App ID ${bizId} flag rejected`);
-        return { ...b, status: 'rejected', rejectionReason: reason };
-      }
-      return b;
-    }));
+    setBusinesses(prev => {
+      const next = prev.map(b => {
+        if (b.id === bizId) {
+          logAuditEvent('data_entry', `Rejected business listing application: "${b.name}"`, `Reason of refusal: "${reason}" | App ID ${bizId} flag rejected`);
+          return { ...b, status: 'rejected', rejectionReason: reason };
+        }
+        return b;
+      });
+      persistBusinessesToServer(next);
+      return next;
+    });
   };
 
   const handleCreateLocality = (name: string, subdomain: string, description: string, image: string) => {
@@ -439,14 +491,22 @@ export default function App() {
       createdAt: new Date().toISOString()
     };
 
-    setBusinesses(prev => [newBiz, ...prev]);
+    setBusinesses(prev => {
+      const next = [newBiz, ...prev];
+      persistBusinessesToServer(next);
+      return next;
+    });
     logAuditEvent('data_entry', `Submitted registration request for new business: "${appData.name}"`, `Owner/Proprietor: ${appData.ownerName} | Ph: ${appData.phone} | Shard Locality: ${appData.localityId}`);
   };
 
   // Allow Admins, Moderators, Sellers, and Data Operators to directly modify listings
   const handleUpdateBusiness = (updatedBiz: Business) => {
     logAuditEvent('data_entry', `Business listing updated: "${updatedBiz.name}"`, `Updated listing ID: ${updatedBiz.id} | Locality: ${updatedBiz.localityId}`);
-    setBusinesses(prev => prev.map(b => b.id === updatedBiz.id ? updatedBiz : b));
+    setBusinesses(prev => {
+      const next = prev.map(b => b.id === updatedBiz.id ? updatedBiz : b);
+      persistBusinessesToServer(next);
+      return next;
+    });
   };
 
   // Add a verified customer review, and update rating counters
@@ -466,20 +526,24 @@ export default function App() {
     setReviews(nextReviews);
 
     // Recalculate average rating & reviewCount for this business
-    setBusinesses(prevBizs => prevBizs.map(b => {
-      if (b.id === businessId) {
-        const itemReviews = nextReviews.filter(r => r.businessId === businessId);
-        const sumRating = itemReviews.reduce((sum, r) => sum + r.rating, 0);
-        const avg = parseFloat((sumRating / itemReviews.length).toFixed(1));
-        logAuditEvent('data_entry', `Created OTP-verified customer rating for: "${b.name}"`, `${rating}★ given by ${userName}`);
-        return {
-          ...b,
-          rating: avg,
-          reviewCount: itemReviews.length
-        };
-      }
-      return b;
-    }));
+    setBusinesses(prevBizs => {
+      const next = prevBizs.map(b => {
+        if (b.id === businessId) {
+          const itemReviews = nextReviews.filter(r => r.businessId === businessId);
+          const sumRating = itemReviews.reduce((sum, r) => sum + r.rating, 0);
+          const avg = parseFloat((sumRating / itemReviews.length).toFixed(1));
+          logAuditEvent('data_entry', `Created OTP-verified customer rating for: "${b.name}"`, `${rating}★ given by ${userName}`);
+          return {
+            ...b,
+            rating: avg,
+            reviewCount: itemReviews.length
+          };
+        }
+        return b;
+      });
+      persistBusinessesToServer(next);
+      return next;
+    });
   };
 
   // Register that a user safely unlocked a verified listing via sliding Captcha and OTP validated
@@ -767,6 +831,7 @@ export default function App() {
         });
         imported++;
       }
+      persistBusinessesToServer(next);
       return next;
     });
 
@@ -778,41 +843,73 @@ export default function App() {
     if (activeLocalityId === 'roadpali') return 'Roadpali & Kalamboli';
     return localities.find((l) => l.id === activeLocalityId)?.name.split(',')[0] || 'Roadpali';
   })();
+  const compactNodeLabel = activeNodeLabel.length > 16 ? `${activeNodeLabel.slice(0, 16)}...` : activeNodeLabel;
+  const displayedPincode = savedPincode ? savedPincode : 'Select area';
+  const handleSearchShortcut = () => {
+    const searchForm = document.getElementById('public-listing-search');
+    if (searchForm) {
+      searchForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    const searchInput = document.getElementById('public-listing-search-input') as HTMLInputElement | null;
+    window.setTimeout(() => searchInput?.focus(), 350);
+  };
+  const handleLogout = () => {
+    localStorage.removeItem('yp_auth_token');
+    setUserSession({
+      role: 'buyer',
+      userName: 'Anonymous Guest Explorer',
+      isAuthenticated: false,
+      userPhone: undefined
+    });
+    setShowUserMenu(false);
+    logAuditEvent('data_entry', 'User Logged Out', 'Client cleared verified session status.');
+  };
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans selection:bg-indigo-600/15 relative">
       
       {/* Top Navigation Frame - Pristine, Live, Human-labeled web directory */}
-      <nav id="platform-navbar" className="bg-white border-b border-slate-200 sticky top-0 md:top-auto z-40 px-4 md:px-8 py-4 flex flex-col md:flex-row items-center justify-between gap-4 shadow-xs">
-        <div className="flex items-center gap-3">
-          <img
-            src={happyBusinessLogo}
-            alt="Happy Business"
-            className="h-12 md:h-14 w-auto object-contain"
-          />
-        </div>
-
-        {/* Real-time Pincode and Locality tracker */}
-        <div className="flex flex-wrap items-center gap-2.5">
+      <nav id="platform-navbar" className="bg-white border-b border-slate-200 sticky top-0 md:top-auto z-40 px-3 sm:px-4 md:px-8 py-2.5 md:py-4 shadow-xs">
+        <div className="flex items-center gap-2.5 md:gap-4">
           <button
-            onClick={() => setShowPincodeModal(true)}
-            className="flex items-center gap-2 bg-indigo-50 border border-indigo-200 hover:border-indigo-400 hover:bg-slate-100 text-indigo-850 px-3.5 py-1.5 rounded-2xl text-xs font-semibold font-mono shadow-xs transition cursor-pointer"
-            title="Click to switch regional portal using pincode"
+            type="button"
+            onClick={() => setActiveViewWithAudit('web')}
+            className="shrink-0 rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            title="Happy Business home"
           >
-            <MapPin className="w-3.5 h-3.5 text-indigo-650 animate-bounce" />
-            <span>
-              Pincode: {savedPincode ? savedPincode : 'None'} 
-              <span className="text-indigo-400 font-sans ml-1 text-[10px] font-normal">
-                ({activeNodeLabel} node)
-              </span>
-            </span>
-            <span className="text-[10px] text-indigo-600 underline ml-1 font-bold">Change</span>
+          <img
+            src={happyBusinessMark}
+            alt="Happy Business"
+            className="h-11 w-11 md:h-14 md:w-14 object-contain"
+          />
           </button>
 
-          <span className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-700 font-sans font-semibold text-xs py-1.5 px-3 rounded-full border border-emerald-250">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-            Node: {activeNodeLabel}
-          </span>
+        {/* Real-time Pincode and Locality tracker */}
+          <button
+            type="button"
+            onClick={() => setShowPincodeModal(true)}
+            className="min-w-0 flex-1 md:flex-none md:min-w-[320px] inline-flex h-11 md:h-12 items-center gap-2 bg-indigo-50 border border-indigo-200 hover:border-indigo-400 hover:bg-slate-100 text-indigo-950 px-3 md:px-4 rounded-2xl text-xs md:text-sm font-semibold font-mono shadow-xs transition cursor-pointer"
+            title="Change pincode or locality"
+          >
+            <MapPin className="w-4 h-4 text-slate-600 shrink-0" />
+            <span className="truncate">
+              <span className="font-extrabold text-slate-800">{displayedPincode}</span>
+              <span className="text-indigo-500 font-sans font-semibold ml-1">
+                <span className="md:hidden">({compactNodeLabel})</span>
+                <span className="hidden md:inline">({activeNodeLabel})</span>
+              </span>
+            </span>
+            <span className="hidden md:inline text-[10px] text-indigo-600 underline ml-auto font-bold">Change</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleSearchShortcut}
+            className="h-11 md:h-12 w-14 md:w-16 inline-flex items-center justify-center rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm transition cursor-pointer shrink-0"
+            title="Jump to listing search"
+          >
+            <Search className="w-5 h-5 md:w-6 md:h-6" />
+          </button>
           
           <button
             onClick={() => {
@@ -822,25 +919,82 @@ export default function App() {
               if (seekWebPortal) seekWebPortal.scrollIntoView({ behavior: 'smooth' });
             }}
             title="Open the listing application form for merchants who want to be promoted on the directory"
-            className="hidden sm:inline-flex bg-slate-900 hover:bg-slate-800 text-white font-medium text-xs px-4 py-2 rounded-xl transition cursor-pointer"
+            className="hidden lg:inline-flex bg-slate-900 hover:bg-slate-800 text-white font-medium text-xs px-4 py-3 rounded-xl transition cursor-pointer"
           >
             Advertise Business
           </button>
 
-          {canAccessAdmin && (
-            <button
-              type="button"
-              onClick={() => setActiveViewWithAudit('admin')}
-              className="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-4 py-2 rounded-xl transition cursor-pointer shadow-sm"
-              title="Open Admin moderation and bulk import console"
-            >
-              <Shield className="w-3.5 h-3.5" />
-              <span>Admin Console</span>
-            </button>
-          )}
+          <div className="relative shrink-0">
+            {userSession.isAuthenticated && userSession.userPhone ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setShowUserMenu((open) => !open)}
+                  className="h-11 md:h-12 w-14 md:w-auto inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-0 md:px-4 rounded-2xl transition cursor-pointer shadow-sm"
+                  title="Open user menu"
+                >
+                  <User className="w-5 h-5" />
+                  <span className="hidden md:inline max-w-[120px] truncate">{userSession.userName.split(' ')[0]}</span>
+                  <ChevronDown className="hidden md:inline w-3.5 h-3.5" />
+                </button>
+                {showUserMenu && (
+                  <div className="absolute right-0 top-full mt-2 w-60 bg-white border border-slate-200 rounded-2xl shadow-xl p-2 z-50">
+                    <div className="px-3 py-2 border-b border-slate-100 mb-1">
+                      <span className="block text-xs font-bold text-slate-900 truncate">{userSession.userName}</span>
+                      <span className="block text-[10px] text-slate-500 truncate">{userSession.userPhone}</span>
+                    </div>
+                    {canAccessAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowUserMenu(false);
+                          setActiveViewWithAudit('admin');
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 rounded-xl"
+                      >
+                        <Shield className="w-4 h-4" />
+                        Admin Console
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowUserMenu(false);
+                        window.dispatchEvent(new CustomEvent('localsy:open-business-application'));
+                        const seekWebPortal = document.getElementById('web-portal-root');
+                        if (seekWebPortal) seekWebPortal.scrollIntoView({ behavior: 'smooth' });
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 rounded-xl"
+                    >
+                      <Briefcase className="w-4 h-4" />
+                      Advertise Business
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleLogout}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-xl"
+                    >
+                      <LogOut className="w-4 h-4" />
+                      Log Out
+                    </button>
+                  </div>
+                )}
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowAuthModal(true)}
+                className="h-11 md:h-12 w-14 md:w-auto inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-0 md:px-4 rounded-2xl transition cursor-pointer shadow-sm"
+                title="Sign in to post reviews and manage access"
+              >
+                <User className="w-5 h-5" />
+                <span className="hidden md:inline">Sign In</span>
+              </button>
+            )}
+          </div>
 
           {userSession.isAuthenticated && userSession.userPhone ? (
-            <div className="flex items-center gap-2 bg-slate-100 border border-slate-200 px-3.5 py-1.5 rounded-xl text-xs font-medium">
+            <div className="hidden items-center gap-2 bg-slate-100 border border-slate-200 px-3.5 py-1.5 rounded-xl text-xs font-medium">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
               <span className="text-slate-800 font-semibold truncate max-w-[150px]" title={`${userSession.userName} (${userSession.userPhone})`}>
                 👤 {userSession.userName.split(' ')[0]}
@@ -866,7 +1020,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => setShowAuthModal(true)}
-              className="inline-flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-4 py-2 rounded-xl transition cursor-pointer shadow-sm"
+              className="hidden items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-4 py-2 rounded-xl transition cursor-pointer shadow-sm"
               title="Sign in to post reviews & manage role-based access"
             >
               <User className="w-3.5 h-3.5" />

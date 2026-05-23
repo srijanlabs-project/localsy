@@ -810,7 +810,7 @@ export default function WebPortal({
       {activePortalTab === 'listings' && (
         <div className="space-y-6">
           {/* Advanced Multi-Mode Search Suite */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
+          <div id="public-listing-search" className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4 scroll-mt-24">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3 flex-wrap gap-2">
               <span className="text-xs font-bold font-mono uppercase text-indigo-600 tracking-wider flex items-center gap-1">
                 <Compass className="w-3.5 h-3.5" /> Discovery Search Suite:
@@ -846,6 +846,7 @@ export default function WebPortal({
               <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_210px_210px_auto] items-center gap-3">
                 <div className="relative min-w-0">
                   <input
+                    id="public-listing-search-input"
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}

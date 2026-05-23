@@ -83,7 +83,20 @@ export default function AndroidSimulator({
     setBridgeLogs(prev => [`[${timestamp}] ${log}`, ...prev.slice(0, 8)]);
   };
 
-  const activeLocality = localities.find(l => l.id === activeLocalityId) || localities[0];
+  const selectedLocalityIds = activeLocalityId
+    .split(',')
+    .map((id) => id.trim())
+    .filter(Boolean);
+  const browsingLocalityIds = selectedLocalityIds.includes('roadpali')
+    ? Array.from(new Set([...selectedLocalityIds, 'kalamboli']))
+    : selectedLocalityIds;
+  const activeLocality =
+    localities.find(l => l.id === selectedLocalityIds[0]) ||
+    localities.find(l => l.id === activeLocalityId) ||
+    localities[0];
+  const activeLocalityName = selectedLocalityIds.includes('roadpali')
+    ? 'Roadpali & Kalamboli'
+    : activeLocality.name;
   const carouselImages = activeLocality.carouselImages || [activeLocality.coverImage];
 
   // Auto scroll mobile slides
@@ -95,7 +108,7 @@ export default function AndroidSimulator({
   }, [carouselImages.length]);
 
   const approvedInLocality = businesses.filter(
-    b => b.localityId === activeLocalityId && b.status === 'approved'
+    b => browsingLocalityIds.includes(b.localityId) && b.status === 'approved'
   );
 
   const filteredBusinesses = approvedInLocality.filter(biz => {
@@ -288,7 +301,7 @@ export default function AndroidSimulator({
                 <div className="mt-4 p-3 bg-indigo-50 border border-indigo-100 rounded-xl max-w-full">
                   <span className="text-[10px] font-mono block font-bold text-indigo-900 mb-1">LOCAL SQLITE CACHE DB:</span>
                   <div className="text-[10px] text-indigo-700 text-left truncate">
-                    🏷️ Loaded {approvedInLocality.length} stores in {activeLocality.name}
+                    🏷️ Loaded {approvedInLocality.length} stores in {activeLocalityName}
                   </div>
                 </div>
                 <button

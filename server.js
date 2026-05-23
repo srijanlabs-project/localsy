@@ -10,10 +10,11 @@ const __dirname = path.dirname(__filename);
 const distPath = path.join(__dirname, 'dist');
 const auditLogPath = path.join(__dirname, 'audit-events.jsonl');
 const usersPath = path.join(__dirname, 'users.json');
+const businessesPath = path.join(__dirname, 'businesses.json');
 const TOKEN_SECRET = process.env.AUTH_SECRET || 'replace-this-in-production';
 const TOKEN_TTL_SEC = 60 * 60 * 12; // 12 hours
 
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '5mb' }));
 app.disable('x-powered-by');
 app.use((_req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -26,6 +27,7 @@ app.use((_req, res, next) => {
 let pgClient = null;
 let pgInitAttempted = false;
 let memoryUsers = null;
+let memoryBusinesses = null;
 
 const PUBLIC_USER_TYPES = ['buyer', 'seller', 'resource'];
 const ALL_USER_TYPES = ['platform_admin', 'developer', 'buyer', 'seller', 'resource'];
@@ -168,6 +170,75 @@ async function writeUsers(users) {
   }
 }
 
+function sanitizeBusinessListings(value) {
+  if (!Array.isArray(value)) return null;
+  return value
+    .filter((business) => business && business.id && business.name)
+    .map((business) => ({
+      ...business,
+      id: String(business.id),
+      name: String(business.name),
+      status: ['approved', 'pending', 'rejected'].includes(business.status)
+        ? business.status
+        : 'pending',
+    }));
+}
+
+function mergeBusinessListings(existing, incoming) {
+  const merged = new Map();
+  for (const business of existing) merged.set(business.id, business);
+  for (const business of incoming) merged.set(business.id, business);
+  return Array.from(merged.values());
+}
+
+async function readBusinessListings() {
+  const client = await getPgClient();
+  if (client) {
+    const result = await client.query(
+      `SELECT value
+       FROM app_state
+       WHERE key = $1
+       LIMIT 1`,
+      ['businesses'],
+    );
+    const data = result.rows[0]?.value;
+    const listings = sanitizeBusinessListings(data);
+    return listings || [];
+  }
+
+  if (Array.isArray(memoryBusinesses)) return memoryBusinesses;
+  try {
+    const raw = await fs.readFile(businessesPath, 'utf8');
+    const data = JSON.parse(raw);
+    return sanitizeBusinessListings(data) || [];
+  } catch {
+    return [];
+  }
+}
+
+async function writeBusinessListings(businesses) {
+  const listings = sanitizeBusinessListings(businesses) || [];
+  const client = await getPgClient();
+  if (client) {
+    await client.query(
+      `INSERT INTO app_state (key, value, updated_at)
+       VALUES ($1, $2::jsonb, NOW())
+       ON CONFLICT (key)
+       DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+      ['businesses', JSON.stringify(listings)],
+    );
+    return;
+  }
+
+  try {
+    await fs.writeFile(businessesPath, JSON.stringify(listings, null, 2), 'utf8');
+    memoryBusinesses = listings;
+  } catch (err) {
+    console.warn('businesses.json write failed, using in-memory listing store:', err?.message || err);
+    memoryBusinesses = listings;
+  }
+}
+
 async function ensureBootstrapUsers() {
   const users = await readUsers();
   const adminEmail = process.env.BOOTSTRAP_ADMIN_EMAIL || 'admin@localsy.test';
@@ -273,6 +344,13 @@ async function getPgClient() {
         status TEXT NOT NULL DEFAULT 'active'
       )
     `);
+    await pgClient.query(`
+      CREATE TABLE IF NOT EXISTS app_state (
+        key TEXT PRIMARY KEY,
+        value JSONB NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
     return pgClient;
   } catch (err) {
     console.error('Postgres audit logging unavailable, using file fallback:', err?.message || err);
@@ -283,6 +361,33 @@ async function getPgClient() {
 
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true, service: 'localsy-web' });
+});
+
+app.get('/api/businesses', async (_req, res) => {
+  try {
+    const businesses = await readBusinessListings();
+    res.json({ ok: true, businesses });
+  } catch (err) {
+    console.error('Failed to read business listings:', err);
+    res.status(500).json({ ok: false, error: 'Failed to read business listings' });
+  }
+});
+
+app.put('/api/businesses', async (req, res) => {
+  const incoming = sanitizeBusinessListings(req.body?.businesses);
+  if (!incoming) {
+    return res.status(400).json({ ok: false, error: 'businesses array is required' });
+  }
+
+  try {
+    const existing = await readBusinessListings();
+    const businesses = mergeBusinessListings(existing, incoming);
+    await writeBusinessListings(businesses);
+    res.json({ ok: true, businesses });
+  } catch (err) {
+    console.error('Failed to sync business listings:', err);
+    res.status(500).json({ ok: false, error: 'Failed to sync business listings' });
+  }
 });
 
 app.post('/api/auth/register', async (req, res) => {
