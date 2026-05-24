@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   CheckCircle, XCircle, Plus, Info, Globe, AlertCircle, 
   Trash2, PlusCircle, Check, Database, Eye, Server, RefreshCw, MapPin
 } from 'lucide-react';
-import { Locality, Business, SubdomainMapping, UserSession, AuditEvent } from '../types';
+import { Locality, Business, SubdomainMapping, UserSession, AuditEvent, ListingAd, HeroBanner, AdLead } from '../types';
 import { MASTER_AREAS } from '../data';
 import { getBusinessImageUrl, getCategoryFallbackImage, hasUploadedBusinessImage } from '../utils/businessImage';
 import {
@@ -47,6 +47,18 @@ interface AdminConsoleProps {
     latitude: string;
     longitude: string;
   }>) => { imported: number; skipped: number };
+  listingAds?: ListingAd[];
+  onCreateListingAd?: (ad: Omit<ListingAd, 'id'>) => void;
+  onUpdateListingAd?: (ad: ListingAd) => void;
+  onDeleteListingAd?: (adId: string) => void;
+  heroBanners?: HeroBanner[];
+  onCreateHeroBanner?: (banner: Omit<HeroBanner, 'id'>) => void;
+  onUpdateHeroBanner?: (banner: HeroBanner) => void;
+  onDeleteHeroBanner?: (bannerId: string) => void;
+  adLeads?: AdLead[];
+  localityCategoryLinks?: LocalityCategoryLink[];
+  onCreateLocalityCategoryLink?: (payload: Omit<LocalityCategoryLink, 'id'>) => void;
+  onDeleteLocalityCategoryLink?: (id: string) => void;
 }
 
 type BulkImportRow = {
@@ -81,6 +93,14 @@ type ImportPreviewRow = BulkImportRow & {
   resolvedLocalityId: string;
 };
 
+type LocalityCategoryLink = {
+  id: string;
+  localityId: string;
+  categoryId: string;
+  subcategoryId?: string;
+  slug: string;
+};
+
 export default function AdminConsole({
   localities,
   businesses,
@@ -98,7 +118,19 @@ export default function AdminConsole({
   onDeletePincodeMapping,
   defaultLocalityId = 'roadpali',
   onChangeDefaultLocalityId,
-  onBulkImportBusinesses
+  onBulkImportBusinesses,
+  listingAds = [],
+  onCreateListingAd,
+  onUpdateListingAd,
+  onDeleteListingAd,
+  heroBanners = [],
+  onCreateHeroBanner,
+  onUpdateHeroBanner,
+  onDeleteHeroBanner,
+  adLeads = [],
+  localityCategoryLinks = [],
+  onCreateLocalityCategoryLink,
+  onDeleteLocalityCategoryLink
 }: AdminConsoleProps) {
   // Internal infrastructure controls are hidden from public-facing admin UI.
   const showInternalTopology = false;
@@ -116,6 +148,48 @@ export default function AdminConsole({
   const [selectedBackendBiz, setSelectedBackendBiz] = useState<Business | null>(null);
   const [backendDraft, setBackendDraft] = useState<Business | null>(null);
   const [backendEditMode, setBackendEditMode] = useState(false);
+  const [uploadedTab, setUploadedTab] = useState<'active' | 'deactivated' | 'pending'>('active');
+  const [uploadedPage, setUploadedPage] = useState(1);
+
+  const [adTitle, setAdTitle] = useState('');
+  const [adDescription, setAdDescription] = useState('');
+  const [adBadge, setAdBadge] = useState('Sponsored');
+  const [adCtaText, setAdCtaText] = useState('Know More');
+  const [adBgColor, setAdBgColor] = useState('#1d4ed8');
+  const [adStartDate, setAdStartDate] = useState(new Date().toISOString().slice(0, 10));
+  const [adEndDate, setAdEndDate] = useState(new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().slice(0, 10));
+  const [adActionType, setAdActionType] = useState<ListingAd['actionType']>('landing_page');
+  const [adTargetUrl, setAdTargetUrl] = useState('');
+  const [adTargetBusinessId, setAdTargetBusinessId] = useState('');
+  const [adSellerBusinessId, setAdSellerBusinessId] = useState('');
+
+  const [heroLocalityId, setHeroLocalityId] = useState(localities[0]?.id || 'roadpali');
+  const [heroTitle, setHeroTitle] = useState('');
+  const [heroSubtitle, setHeroSubtitle] = useState('');
+  const [heroImageUrl, setHeroImageUrl] = useState('');
+  const [heroStartDate, setHeroStartDate] = useState(new Date().toISOString().slice(0, 10));
+  const [heroEndDate, setHeroEndDate] = useState(new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().slice(0, 10));
+
+  const [linkLocalityId, setLinkLocalityId] = useState(localities[0]?.id || 'roadpali');
+  const [linkCategoryId, setLinkCategoryId] = useState(BUSINESS_CATEGORIES[0]?.id || 'food-restaurants');
+  const [linkSubcategoryId, setLinkSubcategoryId] = useState('');
+
+  useEffect(() => {
+    if (localities.length === 0) return;
+    if (!localities.some((locality) => locality.id === heroLocalityId)) {
+      setHeroLocalityId(localities[0].id);
+    }
+    if (!localities.some((locality) => locality.id === linkLocalityId)) {
+      setLinkLocalityId(localities[0].id);
+    }
+  }, [localities, heroLocalityId, linkLocalityId]);
+
+  useEffect(() => {
+    if (!linkSubcategoryId) return;
+    if (!getSubcategoriesForCategory(linkCategoryId).some((subcategory) => subcategory.id === linkSubcategoryId)) {
+      setLinkSubcategoryId('');
+    }
+  }, [linkCategoryId, linkSubcategoryId]);
 
   const parseCsvLine = (line: string) => {
     return line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map((s) => s.trim().replace(/^"|"$/g, ''));
@@ -192,7 +266,7 @@ export default function AdminConsole({
     if (!getSubcategoriesForCategory(categoryId).some(s => s.id === subcategoryId)) errors.push('Could not resolve a valid subcategory.');
 
     const duplicate = businesses.find((biz) => {
-      const bizPincode = MASTER_AREAS.find(a => a.id === biz.areaId)?.pincode || '';
+      const bizPincode = biz.pincode || MASTER_AREAS.find(a => a.id === biz.areaId)?.pincode || '';
       return (
         biz.name.trim().toLowerCase() === row.businessName.trim().toLowerCase() &&
         normalizedPhone.length > 0 &&
@@ -304,7 +378,11 @@ export default function AdminConsole({
 
   const openBackendListing = (biz: Business) => {
     setSelectedBackendBiz(biz);
-    setBackendDraft({ ...biz, areasOfOperation: [...(biz.areasOfOperation || [])] });
+    setBackendDraft({
+      ...biz,
+      pincode: biz.pincode || MASTER_AREAS.find((area) => area.id === biz.areaId)?.pincode || '',
+      areasOfOperation: [...(biz.areasOfOperation || [])]
+    });
     setBackendEditMode(false);
   };
 
@@ -316,10 +394,15 @@ export default function AdminConsole({
 
   const saveBackendListing = () => {
     if (!backendDraft || !onUpdateBusiness) return;
-    onUpdateBusiness(backendDraft);
-    setSelectedBackendBiz(backendDraft);
+    const normalizedDraft = {
+      ...backendDraft,
+      pincode: backendDraft.pincode || MASTER_AREAS.find((area) => area.id === backendDraft.areaId)?.pincode || ''
+    };
+    onUpdateBusiness(normalizedDraft);
+    setSelectedBackendBiz(normalizedDraft);
+    setBackendDraft(normalizedDraft);
     setBackendEditMode(false);
-    triggerNotification(`Saved listing: ${backendDraft.name}`);
+    triggerNotification(`Saved listing: ${normalizedDraft.name}`);
   };
 
   const handleLocalitySubmit = (e: React.FormEvent) => {
@@ -351,6 +434,96 @@ export default function AdminConsole({
     setNewLocDesc('');
     setNewLocImg('');
     setNewLocPincodes('');
+  };
+
+  const uploadedListings = businesses.filter((business) => (
+    business.id.startsWith('csv_') ||
+    business.id.startsWith('b_dynamic_') ||
+    business.ownerName === 'Imported via CSV'
+  ));
+  const uploadedStatusFiltered = uploadedListings.filter((business) => {
+    if (uploadedTab === 'active') return business.status === 'approved';
+    if (uploadedTab === 'deactivated') return business.status === 'rejected';
+    return business.status === 'pending';
+  });
+  const UPLOADED_PAGE_SIZE = 20;
+  const uploadedTotalPages = Math.max(1, Math.ceil(uploadedStatusFiltered.length / UPLOADED_PAGE_SIZE));
+  const safeUploadedPage = Math.min(uploadedPage, uploadedTotalPages);
+  const uploadedPageItems = uploadedStatusFiltered.slice((safeUploadedPage - 1) * UPLOADED_PAGE_SIZE, safeUploadedPage * UPLOADED_PAGE_SIZE);
+
+  const handleCreateListingAdSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adTitle.trim() || !adDescription.trim() || !adCtaText.trim()) {
+      triggerNotification('Please fill Ad title, description, and CTA text.');
+      return;
+    }
+    if (adActionType === 'landing_page' && !adTargetUrl.trim()) {
+      triggerNotification('Please provide a landing page URL.');
+      return;
+    }
+    if (adActionType === 'landing_listing' && !adTargetBusinessId) {
+      triggerNotification('Please choose a landing listing.');
+      return;
+    }
+
+    onCreateListingAd?.({
+      title: adTitle.trim(),
+      description: adDescription.trim(),
+      badge: adBadge.trim() || 'Sponsored',
+      ctaText: adCtaText.trim(),
+      backgroundColor: adBgColor || '#1d4ed8',
+      startDate: adStartDate,
+      endDate: adEndDate,
+      actionType: adActionType,
+      targetUrl: adActionType === 'landing_page' ? adTargetUrl.trim() : undefined,
+      targetBusinessId: adActionType === 'landing_listing' ? adTargetBusinessId : undefined,
+      sellerBusinessId: adSellerBusinessId || undefined,
+      isActive: true
+    });
+
+    setAdTitle('');
+    setAdDescription('');
+    setAdBadge('Sponsored');
+    setAdCtaText('Know More');
+    setAdTargetUrl('');
+    setAdTargetBusinessId('');
+    setAdSellerBusinessId('');
+    triggerNotification('Listing ad created successfully.');
+  };
+
+  const handleCreateHeroBannerSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!heroTitle.trim() || !heroSubtitle.trim() || !heroImageUrl.trim()) {
+      triggerNotification('Please fill hero title, subtitle, and image URL.');
+      return;
+    }
+    onCreateHeroBanner?.({
+      localityId: heroLocalityId,
+      title: heroTitle.trim(),
+      subtitle: heroSubtitle.trim(),
+      imageUrl: heroImageUrl.trim(),
+      startDate: heroStartDate,
+      endDate: heroEndDate,
+      isActive: true
+    });
+    setHeroTitle('');
+    setHeroSubtitle('');
+    setHeroImageUrl('');
+    triggerNotification('Hero banner created.');
+  };
+
+  const handleCreateLocalityCategoryLinkSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const localitySlug = localities.find((locality) => locality.id === linkLocalityId)?.slug || linkLocalityId;
+    const filterSlug = linkSubcategoryId || linkCategoryId;
+    const slug = `locality/${localitySlug}/${filterSlug}`;
+    onCreateLocalityCategoryLink?.({
+      localityId: linkLocalityId,
+      categoryId: linkCategoryId,
+      subcategoryId: linkSubcategoryId || undefined,
+      slug
+    });
+    triggerNotification('Locality + category URL mapping created.');
   };
 
   return (
@@ -1107,6 +1280,383 @@ export default function AdminConsole({
             </button>
           </div>
         </div>
+
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-base font-extrabold text-slate-950">Uploaded Listings</h3>
+            <span className="text-[10px] font-mono text-slate-500">20 per page</span>
+          </div>
+          <div className="flex gap-2">
+            {[
+              { id: 'active', label: 'Active' },
+              { id: 'deactivated', label: 'Deactivated' },
+              { id: 'pending', label: 'Pending' }
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => {
+                  setUploadedTab(tab.id as 'active' | 'deactivated' | 'pending');
+                  setUploadedPage(1);
+                }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold ${
+                  uploadedTab === tab.id ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+          <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+            {uploadedPageItems.length === 0 ? (
+              <div className="text-xs text-slate-400">No listings in this tab.</div>
+            ) : (
+              uploadedPageItems.map((listing) => (
+                <div key={listing.id} className="bg-slate-50 border border-slate-150 rounded-xl p-3 text-xs">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <span className="block font-bold text-slate-800 truncate">{listing.name}</span>
+                      <span className="block text-[10px] text-slate-500 font-mono">
+                        PIN {listing.pincode || MASTER_AREAS.find((area) => area.id === listing.areaId)?.pincode || 'NA'}
+                      </span>
+                    </div>
+                    {onUpdateBusiness && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nextStatus = listing.status === 'approved' ? 'rejected' : 'approved';
+                          onUpdateBusiness({
+                            ...listing,
+                            status: nextStatus,
+                            rejectionReason: nextStatus === 'rejected' ? (listing.rejectionReason || 'Deactivated from uploaded listings tab.') : undefined
+                          });
+                        }}
+                        className={`text-[10px] px-2.5 py-1 rounded-lg font-bold ${
+                          listing.status === 'approved'
+                            ? 'bg-rose-100 text-rose-700 border border-rose-200'
+                            : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                        }`}
+                      >
+                        {listing.status === 'approved' ? 'Deactivate' : 'Activate'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+          <div className="flex items-center justify-between text-xs">
+            <button
+              type="button"
+              onClick={() => setUploadedPage((prev) => Math.max(1, prev - 1))}
+              disabled={safeUploadedPage <= 1}
+              className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 disabled:opacity-50"
+            >
+              Previous
+            </button>
+            <span className="font-mono text-slate-500">
+              Page {safeUploadedPage} / {uploadedTotalPages}
+            </span>
+            <button
+              type="button"
+              onClick={() => setUploadedPage((prev) => Math.min(uploadedTotalPages, prev + 1))}
+              disabled={safeUploadedPage >= uploadedTotalPages}
+              className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+          <h3 className="text-base font-extrabold text-slate-950">Ad Banner Manager</h3>
+          <form onSubmit={handleCreateListingAdSubmit} className="space-y-3 text-xs">
+            <input
+              value={adTitle}
+              onChange={(e) => setAdTitle(e.target.value)}
+              placeholder="Ad title"
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
+            />
+            <textarea
+              value={adDescription}
+              onChange={(e) => setAdDescription(e.target.value)}
+              placeholder="Ad description"
+              rows={2}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
+            />
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                value={adBadge}
+                onChange={(e) => setAdBadge(e.target.value)}
+                placeholder="Badge"
+                className="border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
+              />
+              <input
+                value={adCtaText}
+                onChange={(e) => setAdCtaText(e.target.value)}
+                placeholder="CTA text"
+                className="border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                type="date"
+                value={adStartDate}
+                onChange={(e) => setAdStartDate(e.target.value)}
+                className="border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
+              />
+              <input
+                type="date"
+                value={adEndDate}
+                onChange={(e) => setAdEndDate(e.target.value)}
+                className="border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <select
+                value={adActionType}
+                onChange={(e) => setAdActionType(e.target.value as ListingAd['actionType'])}
+                className="border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
+              >
+                <option value="landing_page">Landing Page</option>
+                <option value="landing_listing">Landing Listing</option>
+                <option value="lead_form">Lead Generation Form</option>
+              </select>
+              <input
+                type="color"
+                value={adBgColor}
+                onChange={(e) => setAdBgColor(e.target.value)}
+                className="border border-slate-200 rounded-lg h-9 w-full bg-slate-50"
+              />
+            </div>
+            {adActionType === 'landing_page' && (
+              <input
+                type="url"
+                value={adTargetUrl}
+                onChange={(e) => setAdTargetUrl(e.target.value)}
+                placeholder="https://example.com"
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
+              />
+            )}
+            {adActionType === 'landing_listing' && (
+              <select
+                value={adTargetBusinessId}
+                onChange={(e) => setAdTargetBusinessId(e.target.value)}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
+              >
+                <option value="">Select target listing</option>
+                {businesses.filter((business) => business.status === 'approved').map((business) => (
+                  <option key={business.id} value={business.id}>{business.name}</option>
+                ))}
+              </select>
+            )}
+            <select
+              value={adSellerBusinessId}
+              onChange={(e) => setAdSellerBusinessId(e.target.value)}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
+            >
+              <option value="">No seller mapping (platform only)</option>
+              {businesses.filter((business) => business.status === 'approved').map((business) => (
+                <option key={business.id} value={business.id}>{business.name}</option>
+              ))}
+            </select>
+            <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-lg">
+              Create Ad Banner
+            </button>
+          </form>
+          <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+            {listingAds.map((ad) => (
+              <div key={ad.id} className="bg-slate-50 border border-slate-150 rounded-lg p-2.5 text-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <span className="block font-semibold text-slate-800 truncate">{ad.title}</span>
+                    <span className="block text-[10px] text-slate-500 font-mono">{ad.startDate} → {ad.endDate}</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => onUpdateListingAd?.({ ...ad, isActive: !ad.isActive })}
+                      className={`text-[10px] px-2 py-1 rounded ${ad.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-700'}`}
+                    >
+                      {ad.isActive ? 'Active' : 'Paused'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onDeleteListingAd?.(ad.id)}
+                      className="text-[10px] px-2 py-1 rounded bg-rose-100 text-rose-700"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+            {listingAds.length === 0 && <div className="text-xs text-slate-400">No ads created yet.</div>}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+          <h3 className="text-base font-extrabold text-slate-950">Hero Banner Manager</h3>
+          <form onSubmit={handleCreateHeroBannerSubmit} className="space-y-3 text-xs">
+            <select
+              value={heroLocalityId}
+              onChange={(e) => setHeroLocalityId(e.target.value)}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
+            >
+              {localities.map((locality) => (
+                <option key={locality.id} value={locality.id}>{locality.name}</option>
+              ))}
+            </select>
+            <input
+              value={heroTitle}
+              onChange={(e) => setHeroTitle(e.target.value)}
+              placeholder="Hero title"
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
+            />
+            <textarea
+              value={heroSubtitle}
+              onChange={(e) => setHeroSubtitle(e.target.value)}
+              placeholder="Hero subtitle"
+              rows={2}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
+            />
+            <input
+              type="url"
+              value={heroImageUrl}
+              onChange={(e) => setHeroImageUrl(e.target.value)}
+              placeholder="Hero image URL"
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
+            />
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                type="date"
+                value={heroStartDate}
+                onChange={(e) => setHeroStartDate(e.target.value)}
+                className="border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
+              />
+              <input
+                type="date"
+                value={heroEndDate}
+                onChange={(e) => setHeroEndDate(e.target.value)}
+                className="border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
+              />
+            </div>
+            <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-lg">
+              Create Hero Banner
+            </button>
+          </form>
+          <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+            {heroBanners.map((hero) => (
+              <div key={hero.id} className="bg-slate-50 border border-slate-150 rounded-lg p-2.5 text-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <span className="block font-semibold text-slate-800 truncate">{hero.title}</span>
+                    <span className="block text-[10px] text-slate-500">{localities.find((locality) => locality.id === hero.localityId)?.name || hero.localityId}</span>
+                  </div>
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      onClick={() => onUpdateHeroBanner?.({ ...hero, isActive: !hero.isActive })}
+                      className={`text-[10px] px-2 py-1 rounded ${hero.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-700'}`}
+                    >
+                      {hero.isActive ? 'Active' : 'Paused'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onDeleteHeroBanner?.(hero.id)}
+                      className="text-[10px] px-2 py-1 rounded bg-rose-100 text-rose-700"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+            {heroBanners.length === 0 && <div className="text-xs text-slate-400">No hero banners configured.</div>}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-3">
+          <h3 className="text-base font-extrabold text-slate-950">Ad Lead Inbox</h3>
+          <div className="max-h-56 overflow-y-auto space-y-2 pr-1">
+            {adLeads.length === 0 ? (
+              <div className="text-xs text-slate-400">No ad leads submitted yet.</div>
+            ) : (
+              adLeads.slice(0, 50).map((lead) => (
+                <div key={lead.id} className="bg-slate-50 border border-slate-150 rounded-lg p-2.5 text-xs">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-semibold text-slate-800">{lead.name}</span>
+                    <span className="font-mono text-slate-500">{lead.pincode}</span>
+                  </div>
+                  <div className="text-slate-600 font-mono">{lead.mobile}</div>
+                  <div className="text-[10px] text-slate-400">
+                    Seller: {lead.sellerBusinessId || 'Platform'} • {new Date(lead.createdAt).toLocaleString()}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+          <h3 className="text-base font-extrabold text-slate-950">Locality + Category URL Mapper</h3>
+          <form onSubmit={handleCreateLocalityCategoryLinkSubmit} className="space-y-3 text-xs">
+            <select
+              value={linkLocalityId}
+              onChange={(e) => setLinkLocalityId(e.target.value)}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
+            >
+              {localities.map((locality) => (
+                <option key={locality.id} value={locality.id}>{locality.name}</option>
+              ))}
+            </select>
+            <select
+              value={linkCategoryId}
+              onChange={(e) => setLinkCategoryId(e.target.value)}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
+            >
+              {BUSINESS_CATEGORIES.map((category) => (
+                <option key={category.id} value={category.id}>{category.name}</option>
+              ))}
+            </select>
+            <select
+              value={linkSubcategoryId}
+              onChange={(e) => setLinkSubcategoryId(e.target.value)}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
+            >
+              <option value="">All subcategories under selected category</option>
+              {getSubcategoriesForCategory(linkCategoryId).map((subcategory) => (
+                <option key={subcategory.id} value={subcategory.id}>{subcategory.name}</option>
+              ))}
+            </select>
+            <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-lg">
+              Create Locality + Category URL
+            </button>
+          </form>
+          <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+            {localityCategoryLinks.map((link) => {
+              const fullUrl = `${window.location.origin}/${link.slug}`;
+              return (
+                <div key={link.id} className="bg-slate-50 border border-slate-150 rounded-lg p-2.5 text-xs">
+                  <a href={fullUrl} target="_blank" rel="noreferrer" className="text-indigo-700 font-mono break-all hover:underline">
+                    {fullUrl}
+                  </a>
+                  <div className="text-[10px] text-slate-500 mt-1">
+                    {localities.find((locality) => locality.id === link.localityId)?.name || link.localityId} • {link.subcategoryId || link.categoryId}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onDeleteLocalityCategoryLink?.(link.id)}
+                    className="mt-2 text-[10px] px-2 py-1 rounded bg-rose-100 text-rose-700"
+                  >
+                    Delete
+                  </button>
+                </div>
+              );
+            })}
+            {localityCategoryLinks.length === 0 && <div className="text-xs text-slate-400">No locality-category URLs created yet.</div>}
+          </div>
+        </div>
       </div>
       {selectedBackendBiz && backendDraft && (
         <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4">
@@ -1201,13 +1751,27 @@ export default function AdminConsole({
                   <select
                     value={backendDraft.areaId}
                     disabled={!backendEditMode}
-                    onChange={(e) => setBackendDraft({ ...backendDraft, areaId: e.target.value })}
+                    onChange={(e) => {
+                      const nextAreaId = e.target.value;
+                      const nextPincode = MASTER_AREAS.find((area) => area.id === nextAreaId)?.pincode || backendDraft.pincode || '';
+                      setBackendDraft({ ...backendDraft, areaId: nextAreaId, pincode: nextPincode });
+                    }}
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 disabled:bg-slate-50"
                   >
                     {MASTER_AREAS.map(area => (
                       <option key={area.id} value={area.id}>{area.name} ({area.pincode})</option>
                     ))}
                   </select>
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-500 mb-1">Pincode</label>
+                  <input
+                    value={backendDraft.pincode || ''}
+                    disabled={!backendEditMode}
+                    maxLength={6}
+                    onChange={(e) => setBackendDraft({ ...backendDraft, pincode: e.target.value.replace(/\D/g, '') })}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 disabled:bg-slate-50 font-mono"
+                  />
                 </div>
                 <div className="md:col-span-2">
                   <label className="block font-bold text-slate-500 mb-1">Address</label>
@@ -1245,7 +1809,11 @@ export default function AdminConsole({
                   <button
                     type="button"
                     onClick={() => {
-                      setBackendDraft({ ...selectedBackendBiz, areasOfOperation: [...(selectedBackendBiz.areasOfOperation || [])] });
+                      setBackendDraft({
+                        ...selectedBackendBiz,
+                        pincode: selectedBackendBiz.pincode || MASTER_AREAS.find((area) => area.id === selectedBackendBiz.areaId)?.pincode || '',
+                        areasOfOperation: [...(selectedBackendBiz.areasOfOperation || [])]
+                      });
                       setBackendEditMode(false);
                     }}
                     className="bg-white border border-slate-200 text-slate-700 text-xs font-bold px-4 py-2 rounded-lg hover:bg-slate-100"

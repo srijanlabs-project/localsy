@@ -5,7 +5,7 @@ import {
 } from './data';
 import { 
   Locality, Business, SubdomainMapping, Review, UserSession, UserRole,
-  CommunityItem, CRMContact, MarketingCoupon, AuditEvent
+  CommunityItem, CRMContact, MarketingCoupon, AuditEvent, ListingAd, AdLead, HeroBanner
 } from './types';
 import ProposalPanel from './components/ProposalPanel';
 import WebPortal from './components/WebPortal';
@@ -20,14 +20,35 @@ import {
   User, CheckCircle, ShieldAlert, KeyRound, Wrench, Briefcase, HelpCircle,
   Sliders, Settings, X, Database, MapPin, Search, LogOut, ChevronDown
 } from 'lucide-react';
-import { resolveDefaultSubcategoryId, resolveMasterCategoryId } from './categoryMaster';
+import {
+  BUSINESS_CATEGORIES,
+  BUSINESS_SUBCATEGORIES,
+  resolveDefaultSubcategoryId,
+  resolveMasterCategoryId
+} from './categoryMaster';
+
+const DEFAULT_PINCODE_MAPPINGS: Array<{ pincode: string; localityId: string }> = [
+  { pincode: '410101', localityId: 'roadpali' }, // Kalamboli (routed to Roadpali/Kalamboli single page)
+  { pincode: '410218', localityId: 'roadpali' }, // Kalamboli (routed to Roadpali/Kalamboli single page)
+  { pincode: '410210', localityId: 'kharghar' },
+  { pincode: '410209', localityId: 'kamothe' },
+  { pincode: '410206', localityId: 'panvel' },
+  { pincode: '410221', localityId: 'panvel' },
+  { pincode: '410208', localityId: 'taloja' },
+];
+
+const resolveBusinessPincode = (business: Business): string => {
+  if (business.pincode && /^\d{6}$/.test(business.pincode)) return business.pincode;
+  return MASTER_AREAS.find((area) => area.id === business.areaId)?.pincode || '';
+};
 
 const normalizeBusinessTaxonomy = (business: Business): Business => {
   const categoryId = resolveMasterCategoryId(business.categoryId);
   return {
     ...business,
     categoryId,
-    subcategoryId: business.subcategoryId || resolveDefaultSubcategoryId(business.categoryId)
+    subcategoryId: business.subcategoryId || resolveDefaultSubcategoryId(business.categoryId),
+    pincode: resolveBusinessPincode({ ...business, categoryId })
   };
 };
 
@@ -50,10 +71,18 @@ const mergeBusinessCollections = (base: Business[], incoming: Business[]): Busin
   return Array.from(merged.values());
 };
 
+type LocalityCategoryLink = {
+  id: string;
+  localityId: string;
+  categoryId: string;
+  subcategoryId?: string;
+  slug: string;
+};
+
 export default function App() {
   const PRODUCTION_MODE = true;
   // Database version management to clear stale browser caches when definitions evolve
-  const CURRENT_DB_VERSION = 'yp_v12_category_subcategory_master';
+  const CURRENT_DB_VERSION = 'yp_v13_ads_heroes_pincode_routes';
   
   // Clean sweep of ancient local storage shards if database version is old
   useState(() => {
@@ -68,6 +97,10 @@ export default function App() {
       localStorage.removeItem('yp_coupons');
       localStorage.removeItem('yp_viewed_bizs');
       localStorage.removeItem('yp_audit_logs');
+      localStorage.removeItem('yp_listing_ads');
+      localStorage.removeItem('yp_ad_leads');
+      localStorage.removeItem('yp_hero_banners');
+      localStorage.removeItem('yp_locality_category_links');
       localStorage.setItem('yp_cache_version', CURRENT_DB_VERSION);
     }
   });
@@ -80,7 +113,7 @@ export default function App() {
         const parsed = JSON.parse(saved);
         // Ensure "roadpali" exists in loaded localities, otherwise discard stale developer storage
         if (parsed && parsed.some((l: any) => l.id === 'roadpali')) {
-          return parsed.map(normalizeBusinessTaxonomy);
+          return parsed;
         }
       } catch (e) {
         // Fall through
@@ -95,6 +128,10 @@ export default function App() {
       localStorage.removeItem('yp_coupons');
       localStorage.removeItem('yp_viewed_bizs');
       localStorage.removeItem('yp_audit_logs');
+      localStorage.removeItem('yp_listing_ads');
+      localStorage.removeItem('yp_ad_leads');
+      localStorage.removeItem('yp_hero_banners');
+      localStorage.removeItem('yp_locality_category_links');
     }
     return INITIAL_LOCALITIES;
   });
@@ -111,7 +148,7 @@ export default function App() {
         // Fall through
       }
     }
-    return INITIAL_BUSINESSES.map(normalizeBusinessTaxonomy);
+    return INITIAL_BUSINESSES.map(normalizeStoredBusiness);
   });
 
   const [reviews, setReviews] = useState<Review[]>(() => {
@@ -155,15 +192,62 @@ export default function App() {
   const [pincodeMappings, setPincodeMappings] = useState<Array<{ pincode: string; localityId: string }>>(() => {
     const saved = localStorage.getItem('yp_pincode_mappings');
     if (saved) return JSON.parse(saved);
+    return DEFAULT_PINCODE_MAPPINGS;
+  });
+
+  const [listingAds, setListingAds] = useState<ListingAd[]>(() => {
+    const saved = localStorage.getItem('yp_listing_ads');
+    if (saved) return JSON.parse(saved);
+    const now = new Date();
+    const startDate = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+    const endDate = new Date(now.getFullYear(), now.getMonth() + 2, 0).toISOString().slice(0, 10);
     return [
-      { pincode: '410101', localityId: 'roadpali' }, // Kalamboli (routed to Roadpali/Kalamboli single page)
-      { pincode: '410218', localityId: 'roadpali' }, // Kalamboli (routed to Roadpali/Kalamboli single page)
-      { pincode: '410210', localityId: 'kharghar' },
-      { pincode: '410209', localityId: 'kamothe' },
-      { pincode: '410206', localityId: 'panvel' },
-      { pincode: '410221', localityId: 'panvel' },
-      { pincode: '410208', localityId: 'taloja' },
+      {
+        id: 'ad_seed_1',
+        title: 'Roadpali Fiber Upgrade Drive',
+        description: 'Get high-speed broadband installation and starter plan offers this month.',
+        badge: 'Local ISP Sponsor',
+        ctaText: 'View Offer',
+        backgroundColor: '#1d4ed8',
+        startDate,
+        endDate,
+        actionType: 'landing_page',
+        targetUrl: 'https://www.jio.com/fiber',
+        isActive: true
+      }
     ];
+  });
+
+  const [adLeads, setAdLeads] = useState<AdLead[]>(() => {
+    const saved = localStorage.getItem('yp_ad_leads');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const [heroBanners, setHeroBanners] = useState<HeroBanner[]>(() => {
+    const saved = localStorage.getItem('yp_hero_banners');
+    if (saved) return JSON.parse(saved);
+    const startDate = new Date().toISOString().slice(0, 10);
+    const endDate = new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().slice(0, 10);
+    return INITIAL_LOCALITIES.map((locality) => ({
+      id: `hero_${locality.id}`,
+      localityId: locality.id,
+      title: `Hyper Local Directory for ${locality.name.split(',')[0]}`,
+      subtitle: `${locality.description} verified reviews, location-grabbing utilities, and dynamic approval tracking.`,
+      imageUrl: (locality.carouselImages && locality.carouselImages[0]) || locality.coverImage,
+      startDate,
+      endDate,
+      isActive: true
+    }));
+  });
+
+  const [urlCategoryFilter, setUrlCategoryFilter] = useState<string | null>(null);
+  const [urlSubcategoryFilter, setUrlSubcategoryFilter] = useState<string | null>(null);
+  const [urlFilterNonce, setUrlFilterNonce] = useState(0);
+
+  const [localityCategoryLinks, setLocalityCategoryLinks] = useState<LocalityCategoryLink[]>(() => {
+    const saved = localStorage.getItem('yp_locality_category_links');
+    if (saved) return JSON.parse(saved);
+    return [];
   });
 
   const [activeView, setActiveView] = useState<'proposal' | 'web' | 'android' | 'admin'>('web'); // Default to pubic web portal for instant aesthetics!
@@ -337,6 +421,22 @@ export default function App() {
   }, [coupons]);
 
   useEffect(() => {
+    localStorage.setItem('yp_listing_ads', JSON.stringify(listingAds));
+  }, [listingAds]);
+
+  useEffect(() => {
+    localStorage.setItem('yp_ad_leads', JSON.stringify(adLeads));
+  }, [adLeads]);
+
+  useEffect(() => {
+    localStorage.setItem('yp_hero_banners', JSON.stringify(heroBanners));
+  }, [heroBanners]);
+
+  useEffect(() => {
+    localStorage.setItem('yp_locality_category_links', JSON.stringify(localityCategoryLinks));
+  }, [localityCategoryLinks]);
+
+  useEffect(() => {
     localStorage.setItem('yp_audit_logs', JSON.stringify(auditLogs));
   }, [auditLogs]);
 
@@ -407,6 +507,93 @@ export default function App() {
     };
     setCoupons(prev => [fresh, ...prev]);
     logAuditEvent('data_entry', `Launched promotional listing coupon code: "${coupon.code}"`, `Discount: ${coupon.discount} | Business ID: ${coupon.businessId}`);
+  };
+
+  const handleCreateListingAd = (adInput: Omit<ListingAd, 'id'>) => {
+    const freshAd: ListingAd = {
+      ...adInput,
+      id: `ad_${Date.now()}`
+    };
+    setListingAds((prev) => [freshAd, ...prev]);
+    logAuditEvent('data_entry', `Created listing ad banner`, `Ad: "${adInput.title}" | Action: ${adInput.actionType}`);
+  };
+
+  const handleUpdateListingAd = (ad: ListingAd) => {
+    setListingAds((prev) => prev.map((existing) => (existing.id === ad.id ? ad : existing)));
+    logAuditEvent('data_entry', `Updated listing ad banner`, `Ad ID: ${ad.id}`);
+  };
+
+  const handleDeleteListingAd = (adId: string) => {
+    setListingAds((prev) => prev.filter((ad) => ad.id !== adId));
+    setAdLeads((prev) => prev.filter((lead) => lead.adId !== adId));
+    logAuditEvent('data_entry', `Deleted listing ad banner`, `Ad ID: ${adId}`);
+  };
+
+  const handleCreateHeroBanner = (bannerInput: Omit<HeroBanner, 'id'>) => {
+    const freshBanner: HeroBanner = {
+      ...bannerInput,
+      id: `hero_${Date.now()}`
+    };
+    setHeroBanners((prev) => [freshBanner, ...prev]);
+    logAuditEvent('data_entry', `Created hero banner`, `Locality: ${bannerInput.localityId}`);
+  };
+
+  const handleUpdateHeroBanner = (banner: HeroBanner) => {
+    setHeroBanners((prev) => prev.map((existing) => (existing.id === banner.id ? banner : existing)));
+    logAuditEvent('data_entry', `Updated hero banner`, `Hero ID: ${banner.id}`);
+  };
+
+  const handleDeleteHeroBanner = (bannerId: string) => {
+    setHeroBanners((prev) => prev.filter((banner) => banner.id !== bannerId));
+    logAuditEvent('data_entry', `Deleted hero banner`, `Hero ID: ${bannerId}`);
+  };
+
+  const handleSubmitAdLead = (leadInput: Omit<AdLead, 'id' | 'createdAt'>) => {
+    const freshLead: AdLead = {
+      ...leadInput,
+      id: `lead_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      createdAt: new Date().toISOString()
+    };
+    setAdLeads((prev) => [freshLead, ...prev]);
+
+    if (leadInput.sellerBusinessId) {
+      setCrmContacts((prev) => {
+        const crmLead: CRMContact = {
+          id: `crm_ad_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+          businessId: leadInput.sellerBusinessId as string,
+          name: leadInput.name,
+          phone: leadInput.mobile,
+          lastInteraction: freshLead.createdAt,
+          followUpNotes: `Lead captured from ad campaign (${leadInput.adId})`,
+          loyaltyPoints: 0
+        };
+        return [crmLead, ...prev];
+      });
+    }
+
+    logAuditEvent(
+      'data_entry',
+      'Captured ad lead',
+      `Ad ID: ${leadInput.adId} | Seller ID: ${leadInput.sellerBusinessId || 'platform'} | Mobile: ${leadInput.mobile}`
+    );
+  };
+
+  const handleCreateLocalityCategoryLink = (payload: Omit<LocalityCategoryLink, 'id'>) => {
+    const linkRecord = {
+      ...payload,
+      id: `lc_${Date.now()}_${Math.floor(Math.random() * 1000)}`
+    };
+    setLocalityCategoryLinks((prev) => [linkRecord, ...prev]);
+    logAuditEvent(
+      'data_entry',
+      'Created locality-category URL mapping',
+      `Locality: ${payload.localityId} | Category: ${payload.categoryId} | Subcategory: ${payload.subcategoryId || 'all'}`
+    );
+  };
+
+  const handleDeleteLocalityCategoryLink = (id: string) => {
+    setLocalityCategoryLinks((prev) => prev.filter((row) => row.id !== id));
+    logAuditEvent('data_entry', 'Deleted locality-category URL mapping', `Mapping ID: ${id}`);
   };
 
   const handleApproveBusiness = (bizId: string) => {
@@ -489,7 +676,8 @@ export default function App() {
       status: 'approved',
       rating: 0,
       reviewCount: 0,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      pincode: appData.pincode || MASTER_AREAS.find((area) => area.id === appData.areaId)?.pincode || ''
     };
 
     setBusinesses(prev => {
@@ -504,7 +692,11 @@ export default function App() {
   const handleUpdateBusiness = (updatedBiz: Business) => {
     logAuditEvent('data_entry', `Business listing updated: "${updatedBiz.name}"`, `Updated listing ID: ${updatedBiz.id} | Locality: ${updatedBiz.localityId}`);
     setBusinesses(prev => {
-      const next = prev.map(b => b.id === updatedBiz.id ? updatedBiz : b);
+      const normalized = {
+        ...updatedBiz,
+        pincode: updatedBiz.pincode || MASTER_AREAS.find((area) => area.id === updatedBiz.areaId)?.pincode || ''
+      };
+      const next = prev.map(b => b.id === normalized.id ? normalized : b);
       persistBusinessesToServer(next);
       return next;
     });
@@ -571,13 +763,30 @@ export default function App() {
       localStorage.removeItem('yp_pincode_prompted');
       localStorage.removeItem('yp_pincode_mappings');
       localStorage.removeItem('yp_default_locality_id');
+      localStorage.removeItem('yp_listing_ads');
+      localStorage.removeItem('yp_ad_leads');
+      localStorage.removeItem('yp_hero_banners');
+      localStorage.removeItem('yp_locality_category_links');
       
       setLocalities(INITIAL_LOCALITIES);
-      setBusinesses(INITIAL_BUSINESSES);
+      setBusinesses(INITIAL_BUSINESSES.map(normalizeStoredBusiness));
       setReviews(INITIAL_REVIEWS);
       setCommunityItems(INITIAL_COMMUNITY_ITEMS);
       setCrmContacts(INITIAL_CRM_CONTACTS);
       setCoupons(INITIAL_COUPONS);
+      setListingAds([]);
+      setAdLeads([]);
+      setHeroBanners(INITIAL_LOCALITIES.map((locality) => ({
+        id: `hero_${locality.id}`,
+        localityId: locality.id,
+        title: `Hyper Local Directory for ${locality.name.split(',')[0]}`,
+        subtitle: `${locality.description} verified reviews, location-grabbing utilities, and dynamic approval tracking.`,
+        imageUrl: (locality.carouselImages && locality.carouselImages[0]) || locality.coverImage,
+        startDate: new Date().toISOString().slice(0, 10),
+        endDate: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().slice(0, 10),
+        isActive: true
+      })));
+      setLocalityCategoryLinks([]);
       setSubdomains(INITIAL_LOCALITIES.map(l => ({
         domain: l.subdomain,
         localityId: l.id,
@@ -596,15 +805,10 @@ export default function App() {
       setSavedPincode(null);
       setShowPincodeModal(true);
       setDefaultLocalityId('roadpali');
-      setPincodeMappings([
-        { pincode: '410101', localityId: 'roadpali' },
-        { pincode: '410218', localityId: 'roadpali' },
-        { pincode: '410210', localityId: 'kharghar' },
-        { pincode: '410209', localityId: 'kamothe' },
-        { pincode: '410206', localityId: 'panvel' },
-        { pincode: '410221', localityId: 'panvel' },
-        { pincode: '410208', localityId: 'taloja' },
-      ]);
+      setPincodeMappings(DEFAULT_PINCODE_MAPPINGS);
+      setUrlCategoryFilter(null);
+      setUrlSubcategoryFilter(null);
+      setUrlFilterNonce(0);
       alert("Application storage cleared & restored to Roadpali metrics!");
     }
   };
@@ -615,9 +819,11 @@ export default function App() {
     if (pincode) {
       localStorage.setItem('yp_saved_pincode', pincode);
       localStorage.setItem('yp_saved_locality_id', matchedLocalityId);
+      window.history.pushState({}, '', `${window.location.origin}/pin/${pincode}`);
     } else {
       localStorage.removeItem('yp_saved_pincode');
       localStorage.removeItem('yp_saved_locality_id');
+      window.history.pushState({}, '', `${window.location.origin}/`);
     }
     localStorage.setItem('yp_pincode_prompted', 'true');
     setActiveLocalityId(matchedLocalityId);
@@ -698,6 +904,86 @@ export default function App() {
 
   const canAccessAdmin = ['admin', 'moderator', 'developer'].includes(userSession.role);
 
+  useEffect(() => {
+    const resolveLocalityFromToken = (token: string) => {
+      const normalized = token.toLowerCase().replace(/[^a-z0-9]/g, '');
+      return localities.find((locality) => {
+        const compactName = locality.name.split(',')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
+        return [locality.id, locality.slug, compactName].includes(normalized);
+      });
+    };
+
+    const applyUrlContext = () => {
+      const url = new URL(window.location.href);
+      const pathParts = url.pathname.split('/').filter(Boolean);
+
+      let pincodeToken = (url.searchParams.get('pin') || '').replace(/\D/g, '');
+      let localityToken = (url.searchParams.get('locality') || '').trim().toLowerCase();
+      let categoryToken = (url.searchParams.get('category') || '').trim().toLowerCase();
+      let subcategoryToken = (url.searchParams.get('subcategory') || '').trim().toLowerCase();
+
+      if (pathParts[0] === 'pin' && pathParts[1]) {
+        pincodeToken = pathParts[1].replace(/\D/g, '');
+      }
+
+      if ((pathParts[0] === 'locality' || pathParts[0] === 'explore') && pathParts[1]) {
+        localityToken = pathParts[1].trim().toLowerCase();
+      }
+
+      if ((pathParts[0] === 'locality' || pathParts[0] === 'explore') && pathParts[2]) {
+        const routeCategoryToken = pathParts[2].trim().toLowerCase();
+        if (BUSINESS_CATEGORIES.some((category) => [category.id, category.slug].includes(routeCategoryToken))) {
+          categoryToken = routeCategoryToken;
+        } else {
+          subcategoryToken = routeCategoryToken;
+        }
+      }
+
+      const directLink = localityCategoryLinks.find((link) => link.slug.toLowerCase() === pathParts.join('/').toLowerCase());
+      if (directLink) {
+        localityToken = directLink.localityId;
+        categoryToken = directLink.categoryId;
+        subcategoryToken = directLink.subcategoryId || subcategoryToken;
+      }
+
+      if (/^\d{6}$/.test(pincodeToken)) {
+        const pinMapping = pincodeMappings.find((mapping) => mapping.pincode === pincodeToken);
+        if (pinMapping) {
+          setSavedPincode(pincodeToken);
+          setActiveLocalityId(pinMapping.localityId);
+          localStorage.setItem('yp_saved_pincode', pincodeToken);
+          localStorage.setItem('yp_saved_locality_id', pinMapping.localityId);
+          localStorage.setItem('yp_pincode_prompted', 'true');
+          setShowPincodeModal(false);
+        }
+      }
+
+      if (localityToken) {
+        const matchedLocality = resolveLocalityFromToken(localityToken);
+        if (matchedLocality) {
+          setActiveLocalityId(matchedLocality.id);
+        }
+      }
+
+      const mappedSubcategory = BUSINESS_SUBCATEGORIES.find((subcategory) => (
+        [subcategory.id, subcategory.slug].includes(subcategoryToken)
+      ));
+      const mappedCategory = BUSINESS_CATEGORIES.find((category) => (
+        [category.id, category.slug].includes(resolveMasterCategoryId(categoryToken))
+      ));
+
+      const resolvedCategory = mappedCategory?.id || mappedSubcategory?.categoryId || null;
+      const resolvedSubcategory = mappedSubcategory?.id || null;
+      setUrlCategoryFilter(resolvedCategory);
+      setUrlSubcategoryFilter(resolvedSubcategory);
+      setUrlFilterNonce((prev) => prev + 1);
+    };
+
+    applyUrlContext();
+    window.addEventListener('popstate', applyUrlContext);
+    return () => window.removeEventListener('popstate', applyUrlContext);
+  }, [localities, pincodeMappings, localityCategoryLinks]);
+
   const handleBulkImportBusinesses = (rows: Array<{
     businessName: string;
     address: string;
@@ -748,7 +1034,7 @@ export default function App() {
     setBusinesses(prev => {
       const next = [...prev];
       const normalizePhone = (phone: string) => phone.replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '');
-      const getBusinessPincode = (b: Business) => MASTER_AREAS.find(a => a.id === b.areaId)?.pincode || '';
+      const getBusinessPincode = (b: Business) => b.pincode || MASTER_AREAS.find(a => a.id === b.areaId)?.pincode || '';
 
       for (const row of rows) {
         const phone = row.mobile && row.mobile !== '—' ? (row.mobile.startsWith('+91') ? row.mobile : `+91 ${row.mobile}`) : '';
@@ -787,6 +1073,7 @@ export default function App() {
             subcategoryId: row.subcategoryId || resolveDefaultSubcategoryId(row.categoryId || inferCategory(row.services || '')),
             localityId,
             areaId,
+            pincode: resolvedPincode,
             areasOfOperation: [areaId],
             address,
             phone,
@@ -815,6 +1102,7 @@ export default function App() {
           stateId: 'mh',
           cityId: 'navimumbai',
           areaId,
+          pincode: resolvedPincode,
           areasOfOperation: [areaId],
           address,
           phone,
@@ -846,6 +1134,51 @@ export default function App() {
   })();
   const compactNodeLabel = activeNodeLabel.length > 16 ? `${activeNodeLabel.slice(0, 16)}...` : activeNodeLabel;
   const displayedPincode = savedPincode ? savedPincode : 'Select area';
+  const activeLocalityIds = activeLocalityId.split(',').map((value) => value.trim()).filter(Boolean);
+  const mappedPincodesForActiveLocality = pincodeMappings
+    .filter((mapping) => activeLocalityIds.includes(mapping.localityId))
+    .map((mapping) => mapping.pincode);
+  const localityServingLabel = (() => {
+    if (activeLocalityId === 'roadpali') {
+      return 'Serving Roadpali, Kalamboli, and Navi Mumbai since 2026.';
+    }
+    const localityName = localities.find((locality) => locality.id === activeLocalityId)?.name.split(',')[0] || 'Roadpali';
+    const mappedLocalityNames = Array.from(new Set(
+      pincodeMappings
+        .filter((mapping) => activeLocalityIds.includes(mapping.localityId))
+        .map((mapping) => {
+          const mappedLocality = localities.find((locality) => locality.id === mapping.localityId);
+          return mappedLocality?.name.split(',')[0];
+        })
+        .filter(Boolean) as string[]
+    ));
+
+    if (mappedLocalityNames.length > 1) {
+      const last = mappedLocalityNames[mappedLocalityNames.length - 1];
+      const initial = mappedLocalityNames.slice(0, -1).join(', ');
+      return `Serving ${initial}, and ${last} since 2026.`;
+    }
+
+    if (mappedLocalityNames.length === 1) {
+      return `Serving ${mappedLocalityNames[0]} and nearby areas since 2026.`;
+    }
+
+    return `Serving ${localityName} and nearby areas since 2026.`;
+  })();
+  const handleMainLogoHome = () => {
+    setActiveViewWithAudit('web');
+    const normalizedPin = savedPincode?.replace(/\D/g, '') || '';
+    if (/^\d{6}$/.test(normalizedPin)) {
+      const matched = pincodeMappings.find((mapping) => mapping.pincode === normalizedPin);
+      if (matched) {
+        setActiveLocalityId(matched.localityId);
+      }
+      const homeUrl = `${window.location.origin}/pin/${normalizedPin}`;
+      window.history.pushState({}, '', homeUrl);
+    } else {
+      window.history.pushState({}, '', `${window.location.origin}/`);
+    }
+  };
   const handleSearchShortcut = () => {
     const searchForm = document.getElementById('public-listing-search');
     if (searchForm) {
@@ -874,7 +1207,7 @@ export default function App() {
         <div className="flex items-center gap-2.5 md:hidden">
           <button
             type="button"
-            onClick={() => setActiveViewWithAudit('web')}
+            onClick={handleMainLogoHome}
             className="shrink-0 rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
             title="Happy Business home"
           >
@@ -1032,11 +1365,18 @@ export default function App() {
 
         <div className="hidden md:flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <img
-              src={happyBusinessLogo}
-              alt="Happy Business"
-              className="h-12 md:h-14 w-auto object-contain"
-            />
+            <button
+              type="button"
+              onClick={handleMainLogoHome}
+              className="rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              title="Open home page for selected pincode"
+            >
+              <img
+                src={happyBusinessLogo}
+                alt="Happy Business"
+                className="h-12 md:h-14 w-auto object-contain"
+              />
+            </button>
           </div>
 
           {/* Real-time Pincode and Locality tracker */}
@@ -1155,6 +1495,8 @@ export default function App() {
             categories={INITIAL_CATEGORIES}
             reviews={reviews}
             activeLocalityId={activeLocalityId}
+            pincodeMappings={pincodeMappings}
+            localityMappedPincodes={mappedPincodesForActiveLocality}
             savedPincode={savedPincode}
             onLocalityChange={setActiveLocalityId}
             userSession={userSession}
@@ -1164,6 +1506,13 @@ export default function App() {
             onSubmitApplication={handleSubmitApplication}
             onUpdateBusiness={handleUpdateBusiness}
             onAddReview={handleAddReview}
+            listingAds={listingAds}
+            adLeads={adLeads}
+            heroBanners={heroBanners}
+            onSubmitAdLead={handleSubmitAdLead}
+            urlCategoryFilter={urlCategoryFilter}
+            urlSubcategoryFilter={urlSubcategoryFilter}
+            urlFilterNonce={urlFilterNonce}
             
             communityItems={communityItems}
             onAddCommunityItem={handleAddCommunityItem}
@@ -1212,6 +1561,18 @@ export default function App() {
             defaultLocalityId={defaultLocalityId}
             onChangeDefaultLocalityId={handleChangeDefaultLocalityId}
             onBulkImportBusinesses={handleBulkImportBusinesses}
+            listingAds={listingAds}
+            onCreateListingAd={handleCreateListingAd}
+            onUpdateListingAd={handleUpdateListingAd}
+            onDeleteListingAd={handleDeleteListingAd}
+            heroBanners={heroBanners}
+            onCreateHeroBanner={handleCreateHeroBanner}
+            onUpdateHeroBanner={handleUpdateHeroBanner}
+            onDeleteHeroBanner={handleDeleteHeroBanner}
+            adLeads={adLeads}
+            localityCategoryLinks={localityCategoryLinks}
+            onCreateLocalityCategoryLink={handleCreateLocalityCategoryLink}
+            onDeleteLocalityCategoryLink={handleDeleteLocalityCategoryLink}
           />
         )}
 
@@ -1221,8 +1582,13 @@ export default function App() {
       <footer className="bg-slate-900 border-t border-slate-800 text-slate-400 py-10 mt-16">
         <div className="max-w-7xl mx-auto px-4 md:px-8 flex flex-col md:flex-row items-center justify-between gap-6">
           <div className="space-y-1.5 text-center md:text-left">
-            <span className="block text-white font-bold text-sm">Roadpali Businesses</span>
-            <span className="block text-xs text-slate-500">Your trusted neighbourhood Hyper Local directory node. Serving Roadpali, Kalamboli, and Navi Mumbai since 2026.</span>
+            <span className="block text-white font-bold text-sm">{activeNodeLabel} Businesses</span>
+            <span className="block text-xs text-slate-500">Your trusted neighbourhood Hyper Local directory node. {localityServingLabel}</span>
+            {mappedPincodesForActiveLocality.length > 0 && (
+              <span className="block text-[10px] text-slate-500 font-mono">
+                Pincodes: {mappedPincodesForActiveLocality.join(', ')}
+              </span>
+            )}
           </div>
           <div className="flex flex-wrap items-center justify-center gap-4 text-xs">
             <button 
@@ -1238,7 +1604,7 @@ export default function App() {
               🔐 Moderator Login Gate
             </button>
             <span className="text-slate-600" style={{ display: PRODUCTION_MODE ? 'none' : 'inline' }}>|</span>
-            <span className="text-xs text-slate-500">© 2026 Happy Gifting Businesses. Secure OTP View Protection.</span>
+            <span className="text-xs text-slate-500">© 2026 Happy Gifting Businesses.</span>
           </div>
         </div>
       </footer>

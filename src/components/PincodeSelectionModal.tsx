@@ -84,7 +84,7 @@ export default function PincodeSelectionModal({
   };
 
   const handleSkip = () => {
-    onSavePincode(null, defaultLocalityId);
+    onSavePincode(null, (matchedLocality || defaultLocality).id);
     onClose();
   };
 
@@ -242,7 +242,7 @@ export default function PincodeSelectionModal({
                 onClick={handleSkip}
                 className="w-full sm:w-auto bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-sm py-3 px-5 rounded-2xl cursor-pointer transition"
               >
-                Skip (Roadpali)
+                Skip ({(matchedLocality || defaultLocality).name.split(',')[0]})
               </button>
             </div>
           </form>

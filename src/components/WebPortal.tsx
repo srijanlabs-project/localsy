@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { 
   Locality, Business, Category, Review, UserSession,
-  CommunityItem, CRMContact, MarketingCoupon
+  CommunityItem, CRMContact, MarketingCoupon, ListingAd, AdLead, HeroBanner
 } from '../types';
 import { MASTER_STATES, MASTER_CITIES, MASTER_AREAS } from '../data';
 import OtpVerificationModal from './OtpVerificationModal';
@@ -28,6 +28,8 @@ interface WebPortalProps {
   categories: Category[];
   reviews: Review[];
   activeLocalityId: string;
+  pincodeMappings?: Array<{ pincode: string; localityId: string }>;
+  localityMappedPincodes?: string[];
   savedPincode?: string | null;
   onLocalityChange: (id: string) => void;
   userSession: UserSession;
@@ -37,6 +39,13 @@ interface WebPortalProps {
   onSubmitApplication: (bizData: Omit<Business, 'id' | 'status' | 'createdAt' | 'rating' | 'reviewCount'>) => void;
   onUpdateBusiness: (b: Business) => void;
   onAddReview: (bizId: string, userName: string, userPhone: string, rating: number, comment: string) => void;
+  listingAds?: ListingAd[];
+  adLeads?: AdLead[];
+  heroBanners?: HeroBanner[];
+  onSubmitAdLead?: (lead: Omit<AdLead, 'id' | 'createdAt'>) => void;
+  urlCategoryFilter?: string | null;
+  urlSubcategoryFilter?: string | null;
+  urlFilterNonce?: number;
   
   // Custom interactive models props
   communityItems: CommunityItem[];
@@ -55,6 +64,8 @@ export default function WebPortal({
   categories,
   reviews,
   activeLocalityId,
+  pincodeMappings = [],
+  localityMappedPincodes = [],
   savedPincode,
   onLocalityChange,
   userSession,
@@ -64,6 +75,13 @@ export default function WebPortal({
   onSubmitApplication,
   onUpdateBusiness,
   onAddReview,
+  listingAds = [],
+  adLeads = [],
+  heroBanners = [],
+  onSubmitAdLead,
+  urlCategoryFilter = null,
+  urlSubcategoryFilter = null,
+  urlFilterNonce = 0,
   
   communityItems,
   onAddCommunityItem,
@@ -104,6 +122,7 @@ export default function WebPortal({
   const [hours, setHours] = useState('10:00 AM - 08:30 PM');
   const [imageUrl, setImageUrl] = useState('');
   const [gpsCoords, setGpsCoords] = useState<{ lat: number; lng: number } | undefined>(undefined);
+  const [listingPincode, setListingPincode] = useState(savedPincode || '410218');
 
   // Master geography form values
   const [formStateId, setFormStateId] = useState('mh');
@@ -170,6 +189,10 @@ export default function WebPortal({
   const [communityBody, setCommunityBody] = useState('');
   const [communitySection, setCommunitySection] = useState<'qna' | 'deals' | 'recommendations' | 'sponsored'>('qna');
   const [communityTags, setCommunityTags] = useState('monsoon, Roadpali');
+  const [activeLeadAd, setActiveLeadAd] = useState<ListingAd | null>(null);
+  const [leadName, setLeadName] = useState('');
+  const [leadMobile, setLeadMobile] = useState('');
+  const [leadPincode, setLeadPincode] = useState(savedPincode || '410218');
 
   useEffect(() => {
     if (SIMPLE_SEARCH_FORM) {
@@ -202,6 +225,34 @@ export default function WebPortal({
     }
   }, [categoryId, subcategoryId]);
 
+  useEffect(() => {
+    if (!urlFilterNonce) return;
+    if (urlCategoryFilter) {
+      setSelectedCategory(urlCategoryFilter);
+      setSelectedSubcategory(urlSubcategoryFilter || 'all');
+      setActivePortalTab('listings');
+    } else if (urlSubcategoryFilter) {
+      const parent = getSubcategoryById(urlSubcategoryFilter)?.categoryId || 'all';
+      setSelectedCategory(parent);
+      setSelectedSubcategory(urlSubcategoryFilter);
+      setActivePortalTab('listings');
+    }
+  }, [urlCategoryFilter, urlSubcategoryFilter, urlFilterNonce]);
+
+  useEffect(() => {
+    if (!savedPincode) return;
+    setListingPincode(savedPincode);
+    setLeadPincode(savedPincode);
+  }, [savedPincode]);
+
+  useEffect(() => {
+    const areaPincode = MASTER_AREAS.find((area) => area.id === formAreaId)?.pincode;
+    if (!areaPincode) return;
+    if (!/^\d{6}$/.test(listingPincode)) {
+      setListingPincode(areaPincode);
+    }
+  }, [formAreaId, listingPincode]);
+
   // Auto-rotating slider effect
   const selectedLocalityIds = activeLocalityId
     .split(',')
@@ -214,6 +265,11 @@ export default function WebPortal({
     localities.find((l) => l.id === selectedLocalityIds[0]) ||
     localities.find((l) => l.id === activeLocalityId) ||
     localities[0];
+  const selectedLocalityMappedPincodes = localityMappedPincodes.length > 0
+    ? localityMappedPincodes
+    : pincodeMappings
+        .filter((mapping) => selectedLocalityIds.includes(mapping.localityId))
+        .map((mapping) => mapping.pincode);
   const selectedLocalityNames = activeLocalityId
     .split(',')
     .map((id) => id.trim())
@@ -224,7 +280,18 @@ export default function WebPortal({
       return localityName;
     })
     .join(', ');
-  const carouselImages = currentLocality.carouselImages || [currentLocality.coverImage];
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const activeHeroBanners = heroBanners.filter((banner) => {
+    if (!banner.isActive) return false;
+    if (banner.localityId !== currentLocality.id) return false;
+    return banner.startDate <= todayIso && banner.endDate >= todayIso;
+  });
+  const carouselImages = activeHeroBanners.length > 0
+    ? activeHeroBanners.map((banner) => banner.imageUrl)
+    : (currentLocality.carouselImages || [currentLocality.coverImage]);
+  const activeHeroSlide = activeHeroBanners.length > 0
+    ? activeHeroBanners[carouselIndex % activeHeroBanners.length]
+    : null;
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -404,7 +471,11 @@ export default function WebPortal({
 
   // Filter approved listings relevant to search keyword + category ID
   const approvedInLocality = businesses.filter((b) => {
-    return browsingLocalityIds.includes(b.localityId) && b.status === 'approved';
+    const businessPincode = b.pincode || MASTER_AREAS.find((area) => area.id === b.areaId)?.pincode || '';
+    const matchesMappedPincode = selectedLocalityMappedPincodes.length === 0
+      ? true
+      : selectedLocalityMappedPincodes.includes(businessPincode);
+    return browsingLocalityIds.includes(b.localityId) && b.status === 'approved' && matchesMappedPincode;
   });
 
   const filteredBusinesses = approvedInLocality.filter(b => {
@@ -480,12 +551,58 @@ export default function WebPortal({
   // Separate sorted lists
   const featuredBusinesses = sortedBusinesses.filter(b => b.featured);
   const regularBusinesses = sortedBusinesses.filter(b => !b.featured);
+  const activeListingAds = listingAds.filter((ad) => {
+    if (!ad.isActive) return false;
+    return ad.startDate <= todayIso && ad.endDate >= todayIso;
+  });
+
+  const handleListingAdAction = (ad: ListingAd) => {
+    if (ad.actionType === 'landing_page') {
+      if (ad.targetUrl) {
+        window.open(ad.targetUrl, '_blank', 'noopener,noreferrer');
+      }
+      return;
+    }
+    if (ad.actionType === 'landing_listing') {
+      if (!ad.targetBusinessId) return;
+      const target = businesses.find((biz) => biz.id === ad.targetBusinessId);
+      if (target) {
+        setSelectedBiz(target);
+      }
+      return;
+    }
+    setLeadPincode(savedPincode || leadPincode);
+    setActiveLeadAd(ad);
+  };
+
+  const handleAdLeadSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeLeadAd) return;
+    const mobile = leadMobile.replace(/\D/g, '');
+    if (!leadName.trim() || mobile.length < 10 || !/^\d{6}$/.test(leadPincode)) {
+      alert('Please enter valid lead details (Name, Mobile, and 6-digit Pincode).');
+      return;
+    }
+    onSubmitAdLead?.({
+      adId: activeLeadAd.id,
+      sellerBusinessId: activeLeadAd.sellerBusinessId,
+      localityId: currentLocality.id,
+      name: leadName.trim(),
+      mobile: mobile.slice(-10),
+      pincode: leadPincode
+    });
+    setLeadName('');
+    setLeadMobile('');
+    setLeadPincode(savedPincode || leadPincode);
+    setActiveLeadAd(null);
+    alert('Thank you! Your details were submitted to the seller and platform team.');
+  };
 
   // Trigger registration submission
   const handleApplySubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !address || formAreasOfOperation.length === 0) {
-      alert("Please fill in the required fields (*), select operational areas, and define address details.");
+    if (!name || !address || formAreasOfOperation.length === 0 || !/^\d{6}$/.test(listingPincode)) {
+      alert("Please fill in required fields, including a valid 6-digit listing pincode.");
       return;
     }
 
@@ -503,6 +620,7 @@ export default function WebPortal({
       stateId: formStateId,
       cityId: formCityId,
       areaId: formAreaId,
+      pincode: listingPincode,
       areasOfOperation: formAreasOfOperation,
       address,
       phone,
@@ -532,6 +650,7 @@ export default function WebPortal({
     setHours('10:00 AM - 08:30 PM');
     setImageUrl('');
     setFormAreasOfOperation([formAreaId]);
+    setListingPincode(savedPincode || MASTER_AREAS.find((area) => area.id === formAreaId)?.pincode || '');
     setGpsCoords(undefined);
 
     setShowApplyModal(false);
@@ -634,6 +753,7 @@ export default function WebPortal({
       if (relatedAreas.length > 0) {
         setFormAreaId(relatedAreas[0].id);
         setFormAreasOfOperation([relatedAreas[0].id]);
+        setListingPincode(relatedAreas[0].pincode);
       }
     }
   };
@@ -644,6 +764,7 @@ export default function WebPortal({
     if (relatedAreas.length > 0) {
       setFormAreaId(relatedAreas[0].id);
       setFormAreasOfOperation([relatedAreas[0].id]);
+      setListingPincode(relatedAreas[0].pincode);
     }
   };
 
@@ -737,11 +858,16 @@ export default function WebPortal({
             <MapPin className="w-3.5 h-3.5 animate-bounce" /> Indian Regional Directory
           </div>
           <h2 className="text-2xl md:text-4xl font-extrabold font-sans tracking-tight text-white leading-tight">
-            Hyper Local Directory for {selectedLocalityNames || currentLocality.name}
+            {activeHeroSlide?.title || `Hyper Local Directory for ${selectedLocalityNames || currentLocality.name}`}
           </h2>
           <p className="text-sm text-slate-300 leading-relaxed max-w-xl">
-            {currentLocality.description} verified reviews, location-grabbing utilities, and dynamic approval tracking.
+            {activeHeroSlide?.subtitle || `${currentLocality.description} verified reviews, location-grabbing utilities, and dynamic approval tracking.`}
           </p>
+          {selectedLocalityMappedPincodes.length > 0 && (
+            <div className="text-[10px] font-mono text-slate-300 bg-white/10 border border-white/20 px-2.5 py-1 rounded-full inline-flex">
+              Pincodes: {selectedLocalityMappedPincodes.join(', ')}
+            </div>
+          )}
 
           <div className="flex flex-wrap items-center gap-3 pt-2">
             {(userSession.role === 'admin' || userSession.role === 'moderator' || userSession.role === 'operator' || userSession.role === 'seller') ? (
@@ -1241,6 +1367,31 @@ export default function WebPortal({
             <span className="text-[10px] font-mono text-slate-400 hidden md:inline">AD #2026</span>
           </div>
 
+          {userSession.role === 'seller' && userSession.sellerBusinessId && (
+            <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-2xs">
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="text-xs font-bold text-slate-800">Seller Ad Leads</h4>
+                <span className="text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-100 px-2 py-0.5 rounded-full font-mono font-bold">
+                  {adLeads.filter((lead) => lead.sellerBusinessId === userSession.sellerBusinessId).length}
+                </span>
+              </div>
+              <div className="space-y-1.5 max-h-44 overflow-y-auto pr-1">
+                {adLeads.filter((lead) => lead.sellerBusinessId === userSession.sellerBusinessId).slice(0, 20).map((lead) => (
+                  <div key={lead.id} className="bg-slate-50 border border-slate-150 rounded-lg px-2.5 py-2 text-[11px]">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-slate-800">{lead.name}</span>
+                      <span className="font-mono text-slate-500">{lead.pincode}</span>
+                    </div>
+                    <div className="font-mono text-slate-600">{lead.mobile}</div>
+                  </div>
+                ))}
+                {adLeads.filter((lead) => lead.sellerBusinessId === userSession.sellerBusinessId).length === 0 && (
+                  <span className="text-[11px] text-slate-400">No leads received yet.</span>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* LISTINGS STREAMS SECTION */}
           <div className="space-y-6">
             
@@ -1318,6 +1469,9 @@ export default function WebPortal({
                               <Globe className="w-3 h-3 text-blue-400" /> {biz.website}
                             </div>
                             <div className="font-sans text-slate-600 font-medium truncate">📍 {biz.address}</div>
+                            <div className="font-mono text-[10px] text-slate-500">
+                              PIN: {biz.pincode || MASTER_AREAS.find((area) => area.id === biz.areaId)?.pincode || 'Not set'}
+                            </div>
                             
                             {/* Area scope list */}
                             {biz.areasOfOperation && biz.areasOfOperation.length > 0 && (
@@ -1328,7 +1482,7 @@ export default function WebPortal({
                           </div>
 
                           <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-                            <div className="flex items-center gap-1 bg-amber-50 text-amber-700 text-xs px-2 py-0.5 rounded-lg font-bold">
+                            <div className="flex items-center gap-1 bg-amber-50 text-amber-700 text-xs px-2 py-0.5 rounded-lg font-bold" title="Google Ratings">
                               ★ {biz.rating} <span className="font-medium text-slate-400 text-[10px]">({biz.reviewCount || 0} customer reviews)</span>
                             </div>
                             <span className="text-xs text-indigo-600 font-bold hover:underline inline-flex items-center gap-0.5 text-[10px]">
@@ -1361,8 +1515,7 @@ export default function WebPortal({
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {regularBusinesses.map((biz, index) => {
                     const hasViewed = viewedBusinessIds.includes(biz.id);
-                    // Inject a beautiful sponsor banner ad after every 3rd listing
-                    const injectAd = (index > 0) && (index % 3 === 2);
+                    const injectAd = activeListingAds.length > 0 && index > 0 && index % 9 === 8;
                     const MOCK_BANNER_ADS = [
                       {
                         title: "⚡ Switch to JioFiber – Best High-Speed Broadband in Roadpali",
@@ -1386,7 +1539,9 @@ export default function WebPortal({
                         color: "from-sky-700 via-slate-900 to-indigo-950"
                       }
                     ];
-                    const ad = MOCK_BANNER_ADS[Math.floor(index / 3) % MOCK_BANNER_ADS.length];
+                    const ad = activeListingAds.length > 0
+                      ? activeListingAds[Math.floor(index / 9) % activeListingAds.length]
+                      : null;
 
                     return (
                       <React.Fragment key={biz.id}>
@@ -1417,7 +1572,7 @@ export default function WebPortal({
                                   {getCategoryById(biz.categoryId)?.name || biz.categoryId}
                                   {biz.subcategoryId && ` / ${getSubcategoryById(biz.subcategoryId)?.name || biz.subcategoryId}`}
                                 </span>
-                                <div className="flex items-center gap-0.5 bg-amber-50 text-amber-600 text-xs px-1.5 rounded font-bold">
+                                <div className="flex items-center gap-0.5 bg-amber-50 text-amber-600 text-xs px-1.5 rounded font-bold" title="Google Ratings">
                                   ★ {biz.rating}
                                 </div>
                               </div>
@@ -1451,6 +1606,9 @@ export default function WebPortal({
                             </div>
 
                             <div className="font-sans text-slate-600 truncate leading-normal">📍 {biz.address}</div>
+                            <div className="font-mono text-[10px] text-slate-500 truncate">
+                              PIN: {biz.pincode || MASTER_AREAS.find((area) => area.id === biz.areaId)?.pincode || 'Not set'}
+                            </div>
                             
                             <span className="text-indigo-600 font-sans font-bold hover:underline inline-flex items-center gap-0.5 mt-1 block">
                               Explore directory record →
@@ -1460,7 +1618,10 @@ export default function WebPortal({
 
                         {/* Injected Gorgeous Premium Row Banner Ad */}
                         {injectAd && ad && (
-                          <div className="col-span-full bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 border border-slate-800 rounded-3xl p-6 text-white shadow-lg flex flex-col md:flex-row items-center justify-between gap-6 relative overflow-hidden">
+                          <div
+                            className="col-span-full border border-slate-800 rounded-3xl p-6 text-white shadow-lg flex flex-col md:flex-row items-center justify-between gap-6 relative overflow-hidden"
+                            style={{ backgroundColor: ad.backgroundColor || '#0f172a' }}
+                          >
                             <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 rounded-full blur-2xl pointer-events-none"></div>
                             <div className="flex flex-col md:flex-row items-center md:items-start gap-4">
                               <div className="bg-amber-400 text-slate-950 p-3 rounded-full flex-shrink-0 animate-bounce shadow">
@@ -1472,15 +1633,16 @@ export default function WebPortal({
                                 </span>
                                 <h4 className="text-base font-bold text-white font-sans">{ad.title}</h4>
                                 <p className="text-xs text-slate-300 leading-relaxed max-w-2xl">{ad.description}</p>
+                                <span className="text-[10px] text-slate-200 font-mono">
+                                  Action: {ad.actionType.replace('_', ' ')}
+                                </span>
                               </div>
                             </div>
                             <button
-                              onClick={() => {
-                                alert(`Simulating sponsor connection to ${ad.badge}. A direct referral WhatsApp route has been dispatched!`);
-                              }}
+                              onClick={() => handleListingAdAction(ad)}
                               className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs px-5 py-3 rounded-xl transition shadow flex items-center gap-2 flex-shrink-0 cursor-pointer w-full md:w-auto justify-center"
                             >
-                              <span>{ad.cta}</span>
+                              <span>{ad.ctaText}</span>
                               <ExternalLink className="w-3.5 h-3.5" />
                             </button>
                           </div>
@@ -1783,6 +1945,34 @@ export default function WebPortal({
                 </div>
               </div>
 
+              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-3">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                  <h4 className="text-xs font-bold font-mono text-slate-500 uppercase tracking-wider">Ad Leads</h4>
+                  <span className="text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-100 px-2 py-0.5 rounded-full font-bold font-mono">
+                    {adLeads.filter((lead) => lead.sellerBusinessId === activeSellerBizId).length} Leads
+                  </span>
+                </div>
+                <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+                  {adLeads.filter((lead) => lead.sellerBusinessId === activeSellerBizId).length === 0 ? (
+                    <p className="text-[11px] text-slate-400">No ad-form leads captured yet.</p>
+                  ) : (
+                    adLeads
+                      .filter((lead) => lead.sellerBusinessId === activeSellerBizId)
+                      .slice(0, 20)
+                      .map((lead) => (
+                        <div key={lead.id} className="bg-slate-50 border border-slate-150 rounded-lg px-3 py-2 text-[11px]">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-semibold text-slate-800">{lead.name}</span>
+                            <span className="font-mono text-slate-400">{lead.pincode}</span>
+                          </div>
+                          <div className="text-slate-600 font-mono">{lead.mobile}</div>
+                          <div className="text-[10px] text-slate-400">{new Date(lead.createdAt).toLocaleString()}</div>
+                        </div>
+                      ))
+                  )}
+                </div>
+              </div>
+
               {/* Marketing multi-channel campaign push form */}
               <form onSubmit={handleRunCampaignSubmit} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
                 <div className="border-b border-slate-100 pb-3">
@@ -2057,7 +2247,7 @@ export default function WebPortal({
                     )}
                   </div>
 
-                  <span className="bg-amber-100 text-amber-800 text-xs px-2.5 py-1 rounded-full font-bold">
+                  <span className="bg-amber-100 text-amber-800 text-xs px-2.5 py-1 rounded-full font-bold" title="Google Ratings">
                     ★ {selectedBiz.rating} ({selectedBiz.reviewCount} verified reviews)
                   </span>
                 </div>
@@ -2100,6 +2290,9 @@ export default function WebPortal({
                   <div>
                     <span className="block font-bold font-sans text-[10px] text-slate-400 uppercase">Address:</span>
                     <span className="font-sans text-slate-800 text-xs">{selectedBiz.address}</span>
+                    <span className="block font-mono text-[10px] text-slate-500 mt-1">
+                      Pincode: {selectedBiz.pincode || MASTER_AREAS.find((area) => area.id === selectedBiz.areaId)?.pincode || 'Not set'}
+                    </span>
                     {selectedBiz.gpsCoordinates && (
                       <span className="block font-mono text-[9px] text-blue-600 mt-0.5">
                         GPS Locked: {selectedBiz.gpsCoordinates.lat}° N, {selectedBiz.gpsCoordinates.lng}° E
@@ -2347,6 +2540,73 @@ export default function WebPortal({
         </div>
       )}
 
+      {activeLeadAd && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-3xl border border-slate-200 max-w-md w-full shadow-2xl overflow-hidden">
+            <div className="p-4 bg-indigo-700 text-white">
+              <span className="text-[10px] uppercase tracking-wider font-mono">Lead Generation Form</span>
+              <h4 className="text-sm font-extrabold mt-1">{activeLeadAd.title}</h4>
+            </div>
+            <form onSubmit={handleAdLeadSubmit} className="p-5 space-y-3 text-xs">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Name *</label>
+                <input
+                  type="text"
+                  required
+                  value={leadName}
+                  onChange={(e) => setLeadName(e.target.value)}
+                  className="w-full border border-slate-200 bg-slate-50 rounded-xl px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  placeholder="Full name"
+                />
+              </div>
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Mobile Number *</label>
+                <input
+                  type="tel"
+                  required
+                  value={leadMobile}
+                  onChange={(e) => setLeadMobile(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                  className="w-full border border-slate-200 bg-slate-50 rounded-xl px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono"
+                  placeholder="10-digit mobile"
+                />
+              </div>
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Pincode *</label>
+                <input
+                  type="text"
+                  required
+                  maxLength={6}
+                  value={leadPincode}
+                  onChange={(e) => setLeadPincode(e.target.value.replace(/\D/g, ''))}
+                  className="w-full border border-slate-200 bg-slate-50 rounded-xl px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono"
+                  placeholder="6-digit pincode"
+                />
+              </div>
+              {activeLeadAd.sellerBusinessId && (
+                <p className="text-[10px] text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2">
+                  This lead will be visible to seller account <strong>{activeLeadAd.sellerBusinessId}</strong> and platform admin.
+                </p>
+              )}
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setActiveLeadAd(null)}
+                  className="px-3 py-2 rounded-xl border border-slate-200 text-slate-600 font-semibold hover:bg-slate-100"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold"
+                >
+                  Submit Lead
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Dynamic Modal for adding businesses */}
       {showApplyModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
@@ -2513,6 +2773,19 @@ export default function WebPortal({
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Listing Pincode *</label>
+                  <input
+                    type="text"
+                    required
+                    maxLength={6}
+                    value={listingPincode}
+                    onChange={(e) => setListingPincode(e.target.value.replace(/\D/g, ''))}
+                    placeholder="e.g. 410218"
+                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500 font-mono"
+                  />
+                </div>
+
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">Phone Number</label>
                   <input

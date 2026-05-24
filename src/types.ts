@@ -22,6 +22,7 @@ export interface Business {
   stateId: string;    // Master State
   cityId: string;     // Master City
   areaId: string;     // Primary Area
+  pincode?: string;   // Explicit pincode captured at listing level
   areasOfOperation: string[]; // List of operational areas from master list
   address: string;
   phone: string;
@@ -129,6 +130,44 @@ export interface MarketingCoupon {
   description: string;
   expiryDate: string;
   usageCount: number;
+}
+
+export interface ListingAd {
+  id: string;
+  title: string;
+  description: string;
+  badge: string;
+  ctaText: string;
+  backgroundColor: string;
+  startDate: string;
+  endDate: string;
+  actionType: 'landing_page' | 'landing_listing' | 'lead_form';
+  targetUrl?: string;
+  targetBusinessId?: string;
+  sellerBusinessId?: string;
+  isActive: boolean;
+}
+
+export interface AdLead {
+  id: string;
+  adId: string;
+  sellerBusinessId?: string;
+  localityId: string;
+  name: string;
+  mobile: string;
+  pincode: string;
+  createdAt: string;
+}
+
+export interface HeroBanner {
+  id: string;
+  localityId: string;
+  title: string;
+  subtitle: string;
+  imageUrl: string;
+  startDate: string;
+  endDate: string;
+  isActive: boolean;
 }
 
 export interface Category {
