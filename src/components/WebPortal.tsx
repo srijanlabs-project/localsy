@@ -22,6 +22,52 @@ import {
   resolveDefaultSubcategoryId
 } from '../categoryMaster';
 
+type PaginationControlsProps = {
+  compact?: boolean;
+  currentPage: number;
+  totalPages: number;
+  onPageChange: (page: number) => void;
+};
+
+function PaginationControls({
+  compact = false,
+  currentPage,
+  totalPages,
+  onPageChange
+}: PaginationControlsProps) {
+  if (totalPages <= 1) return null;
+
+  return (
+    <div className={`flex items-center justify-between gap-2 ${compact ? 'text-[11px]' : 'text-xs'}`}>
+      <button
+        type="button"
+        onClick={() => onPageChange(Math.max(1, currentPage - 1))}
+        disabled={currentPage <= 1}
+        className={`inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-700 disabled:opacity-50 ${
+          compact ? 'text-[11px]' : 'text-xs'
+        }`}
+      >
+        <ChevronLeft className="h-3.5 w-3.5" />
+        <span>Previous</span>
+      </button>
+      <span className="font-mono text-slate-500">
+        Page {currentPage} / {totalPages}
+      </span>
+      <button
+        type="button"
+        onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
+        disabled={currentPage >= totalPages}
+        className={`inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-700 disabled:opacity-50 ${
+          compact ? 'text-[11px]' : 'text-xs'
+        }`}
+      >
+        <span>Next</span>
+        <ChevronRight className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
+
 interface WebPortalProps {
   localities: Locality[];
   businesses: Business[];
@@ -223,6 +269,13 @@ export default function WebPortal({
   const [leadName, setLeadName] = useState('');
   const [leadMobile, setLeadMobile] = useState('');
   const [leadPincode, setLeadPincode] = useState(savedPincode || '410218');
+  const [featuredPage, setFeaturedPage] = useState(1);
+  const [regularPage, setRegularPage] = useState(1);
+  const [communityPage, setCommunityPage] = useState(1);
+  const [crmPage, setCrmPage] = useState(1);
+  const [merchantLeadsPage, setMerchantLeadsPage] = useState(1);
+  const [sellerWidgetLeadsPage, setSellerWidgetLeadsPage] = useState(1);
+  const [reviewsPage, setReviewsPage] = useState(1);
 
   useEffect(() => {
     if (SIMPLE_SEARCH_FORM) {
@@ -380,6 +433,47 @@ export default function WebPortal({
     if (selectedBiz) return;
     pushHistoryIfNeeded(buildCategoryRoutePath(selectedCategory));
   }, [activePortalTab, selectedBiz, selectedCategory, currentLocalitySlug]);
+
+  useEffect(() => {
+    setFeaturedPage(1);
+    setRegularPage(1);
+  }, [
+    activeLocalityId,
+    searchQuery,
+    voiceTranscript,
+    searchMode,
+    selectedCategory,
+    selectedSubcategory,
+    sortBy,
+    filterDistance,
+    filterRating,
+    filterOpenNow,
+    filterPriceRange,
+    filterDelivery,
+    filterHasOffers,
+    filterVerifiedOnly,
+    filterLanguageSpoken,
+    filterPaymentMethod,
+    filterExperience,
+    urlFilterNonce
+  ]);
+
+  useEffect(() => {
+    setCommunityPage(1);
+  }, [activeLocalityId, activePortalTab]);
+
+  useEffect(() => {
+    setCrmPage(1);
+    setMerchantLeadsPage(1);
+  }, [activeSellerBizId]);
+
+  useEffect(() => {
+    setSellerWidgetLeadsPage(1);
+  }, [userSession.sellerBusinessId, activePortalTab]);
+
+  useEffect(() => {
+    setReviewsPage(1);
+  }, [selectedBiz?.id]);
 
   // Audit log tracker for user search operations (debounced/distinct values)
   useEffect(() => {
@@ -632,10 +726,166 @@ export default function WebPortal({
   // Separate sorted lists
   const featuredBusinesses = sortedBusinesses.filter(b => b.featured);
   const regularBusinesses = sortedBusinesses.filter(b => !b.featured);
+  const FEATURED_PAGE_SIZE = 6;
+  const REGULAR_PAGE_SIZE = 18;
+  const COMMUNITY_PAGE_SIZE = 8;
+  const CRM_PAGE_SIZE = 10;
+  const LEADS_PAGE_SIZE = 10;
+  const REVIEWS_PAGE_SIZE = 6;
+  const featuredTotalPages = Math.max(1, Math.ceil(featuredBusinesses.length / FEATURED_PAGE_SIZE));
+  const safeFeaturedPage = Math.min(featuredPage, featuredTotalPages);
+  const pagedFeaturedBusinesses = featuredBusinesses.slice(
+    (safeFeaturedPage - 1) * FEATURED_PAGE_SIZE,
+    safeFeaturedPage * FEATURED_PAGE_SIZE
+  );
+  const regularTotalPages = Math.max(1, Math.ceil(regularBusinesses.length / REGULAR_PAGE_SIZE));
+  const safeRegularPage = Math.min(regularPage, regularTotalPages);
+  const pagedRegularBusinesses = regularBusinesses.slice(
+    (safeRegularPage - 1) * REGULAR_PAGE_SIZE,
+    safeRegularPage * REGULAR_PAGE_SIZE
+  );
+  const localityCommunityItems = communityItems.filter((item) => item.localityId === activeLocalityId);
+  const communityTotalPages = Math.max(1, Math.ceil(localityCommunityItems.length / COMMUNITY_PAGE_SIZE));
+  const safeCommunityPage = Math.min(communityPage, communityTotalPages);
+  const pagedCommunityItems = localityCommunityItems.slice(
+    (safeCommunityPage - 1) * COMMUNITY_PAGE_SIZE,
+    safeCommunityPage * COMMUNITY_PAGE_SIZE
+  );
+  const activeSellerContacts = crmContacts.filter((contact) => contact.businessId === activeSellerBizId);
+  const crmTotalPages = Math.max(1, Math.ceil(activeSellerContacts.length / CRM_PAGE_SIZE));
+  const safeCrmPage = Math.min(crmPage, crmTotalPages);
+  const pagedSellerContacts = activeSellerContacts.slice(
+    (safeCrmPage - 1) * CRM_PAGE_SIZE,
+    safeCrmPage * CRM_PAGE_SIZE
+  );
+  const activeMerchantLeads = adLeads.filter((lead) => lead.sellerBusinessId === activeSellerBizId);
+  const merchantLeadsTotalPages = Math.max(1, Math.ceil(activeMerchantLeads.length / LEADS_PAGE_SIZE));
+  const safeMerchantLeadsPage = Math.min(merchantLeadsPage, merchantLeadsTotalPages);
+  const pagedMerchantLeads = activeMerchantLeads.slice(
+    (safeMerchantLeadsPage - 1) * LEADS_PAGE_SIZE,
+    safeMerchantLeadsPage * LEADS_PAGE_SIZE
+  );
+  const activeSellerWidgetLeads = adLeads.filter((lead) => lead.sellerBusinessId === userSession.sellerBusinessId);
+  const sellerWidgetLeadsTotalPages = Math.max(1, Math.ceil(activeSellerWidgetLeads.length / LEADS_PAGE_SIZE));
+  const safeSellerWidgetLeadsPage = Math.min(sellerWidgetLeadsPage, sellerWidgetLeadsTotalPages);
+  const pagedSellerWidgetLeads = activeSellerWidgetLeads.slice(
+    (safeSellerWidgetLeadsPage - 1) * LEADS_PAGE_SIZE,
+    safeSellerWidgetLeadsPage * LEADS_PAGE_SIZE
+  );
+  const selectedBizReviews = selectedBiz ? reviews.filter((review) => review.businessId === selectedBiz.id) : [];
+  const reviewsTotalPages = Math.max(1, Math.ceil(selectedBizReviews.length / REVIEWS_PAGE_SIZE));
+  const safeReviewsPage = Math.min(reviewsPage, reviewsTotalPages);
+  const pagedSelectedBizReviews = selectedBizReviews.slice(
+    (safeReviewsPage - 1) * REVIEWS_PAGE_SIZE,
+    safeReviewsPage * REVIEWS_PAGE_SIZE
+  );
   const activeListingAds = listingAds.filter((ad) => {
     if (!ad.isActive) return false;
     return ad.startDate <= todayIso && ad.endDate >= todayIso;
   });
+
+  const getBusinessAreaName = (biz: Business) => {
+    const areaName = MASTER_AREAS.find((area) => area.id === biz.areaId)?.name;
+    if (areaName) return areaName;
+    return localities.find((locality) => locality.id === biz.localityId)?.name.split(',')[0] || 'Area not set';
+  };
+
+  const openBusinessDirections = (biz: Business, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const destination = biz.gpsCoordinates
+      ? `${biz.gpsCoordinates.lat},${biz.gpsCoordinates.lng}`
+      : `${biz.address}, ${getBusinessAreaName(biz)}`;
+    window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(destination)}`, '_blank', 'noopener,noreferrer');
+  };
+
+  const handlePrimaryBusinessAction = (biz: Business, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (viewedBusinessIds.includes(biz.id) && biz.phone) {
+      window.location.href = `tel:${biz.phone}`;
+      return;
+    }
+    initContactUnlockFlow(biz, e);
+  };
+
+  const renderCompactBusinessRow = (
+    biz: Business,
+    options?: {
+      highlightClass?: string;
+      badgeLabel?: string;
+      badgeClassName?: string;
+    }
+  ) => {
+    const categoryLabel = getCategoryById(biz.categoryId)?.name || biz.categoryId;
+    const areaLabel = getBusinessAreaName(biz);
+    const hasViewed = viewedBusinessIds.includes(biz.id);
+    return (
+      <div
+        onClick={() => openBusinessDetails(biz)}
+        className={`md:hidden rounded-2xl border bg-white p-3 shadow-sm ${options?.highlightClass || 'border-slate-200'}`}
+      >
+        <div className="flex gap-3">
+          <div className="relative h-20 w-20 flex-shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
+            <img
+              src={getBusinessImageUrl(biz)}
+              alt={biz.name}
+              onError={(e) => {
+                (e.target as HTMLImageElement).src = getCategoryFallbackImage(biz.categoryId);
+              }}
+              className={`h-full w-full ${hasUploadedBusinessImage(biz) ? 'object-cover' : 'object-contain p-2.5'}`}
+            />
+            {options?.badgeLabel && (
+              <span className={`absolute left-1.5 top-1.5 rounded-full px-1.5 py-0.5 text-[9px] font-bold ${options.badgeClassName || 'bg-slate-900 text-white'}`}>
+                {options.badgeLabel}
+              </span>
+            )}
+          </div>
+
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <h4 className="truncate text-sm font-bold text-slate-900">
+                  {biz.name}
+                </h4>
+                <div className="truncate text-xs font-medium text-slate-500">
+                  {categoryLabel}
+                </div>
+              </div>
+              {biz.verifiedBadge && (
+                <CheckCircle className="h-4 w-4 flex-shrink-0 text-emerald-500" />
+              )}
+            </div>
+
+            <div className="flex items-center gap-1 text-xs text-slate-600">
+              <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 font-semibold text-amber-700" title="Google Ratings">
+                <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
+                <span>{biz.rating.toFixed(1)}</span>
+              </span>
+              <span className="truncate">• {areaLabel}</span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              <button
+                type="button"
+                onClick={(e) => handlePrimaryBusinessAction(biz, e)}
+                className="inline-flex items-center justify-center gap-1 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white"
+              >
+                <Phone className="h-3.5 w-3.5" />
+                <span>{hasViewed && biz.phone ? 'Call' : 'Call'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={(e) => openBusinessDirections(biz, e)}
+                className="inline-flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700"
+              >
+                <Navigation className="h-3.5 w-3.5" />
+                <span>Directions</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   const handleListingAdAction = (ad: ListingAd) => {
     if (ad.actionType === 'landing_page') {
@@ -1453,11 +1703,11 @@ export default function WebPortal({
               <div className="flex items-center justify-between mb-2">
                 <h4 className="text-xs font-bold text-slate-800">Seller Ad Leads</h4>
                 <span className="text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-100 px-2 py-0.5 rounded-full font-mono font-bold">
-                  {adLeads.filter((lead) => lead.sellerBusinessId === userSession.sellerBusinessId).length}
+                  {activeSellerWidgetLeads.length}
                 </span>
               </div>
               <div className="space-y-1.5 max-h-44 overflow-y-auto pr-1">
-                {adLeads.filter((lead) => lead.sellerBusinessId === userSession.sellerBusinessId).slice(0, 20).map((lead) => (
+                {pagedSellerWidgetLeads.map((lead) => (
                   <div key={lead.id} className="bg-slate-50 border border-slate-150 rounded-lg px-2.5 py-2 text-[11px]">
                     <div className="flex items-center justify-between gap-2">
                       <span className="font-semibold text-slate-800">{lead.name}</span>
@@ -1466,10 +1716,16 @@ export default function WebPortal({
                     <div className="font-mono text-slate-600">{lead.mobile}</div>
                   </div>
                 ))}
-                {adLeads.filter((lead) => lead.sellerBusinessId === userSession.sellerBusinessId).length === 0 && (
+                {activeSellerWidgetLeads.length === 0 && (
                   <span className="text-[11px] text-slate-400">No leads received yet.</span>
                 )}
               </div>
+              <PaginationControls
+                compact
+                currentPage={safeSellerWidgetLeadsPage}
+                totalPages={sellerWidgetLeadsTotalPages}
+                onPageChange={setSellerWidgetLeadsPage}
+              />
             </div>
           )}
 
@@ -1484,97 +1740,107 @@ export default function WebPortal({
                 </h3>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {featuredBusinesses.map(biz => {
+                  {pagedFeaturedBusinesses.map(biz => {
                     const hasViewed = viewedBusinessIds.includes(biz.id);
                     return (
-                      <div 
-                        key={biz.id}
-                        onClick={() => openBusinessDetails(biz)}
-                        className="bg-white rounded-2xl border-2 border-indigo-400/40 p-5 shadow-xs flex flex-col md:flex-row gap-5 hover:border-indigo-600 transition cursor-pointer relative"
-                      >
-                        <span className="absolute top-2.5 right-2.5 bg-gradient-to-r from-indigo-700 to-indigo-900 text-white text-[9px] uppercase font-mono font-bold px-2.5 py-0.5 rounded-full tracking-wide flex items-center gap-1">
-                          <Sparkles className="w-2.5 h-2.5 text-amber-300 animate-spin" /> Sponsored VIP
-                        </span>
+                      <React.Fragment key={biz.id}>
+                        {renderCompactBusinessRow(biz, {
+                          highlightClass: 'border-indigo-300',
+                          badgeLabel: 'VIP',
+                          badgeClassName: 'bg-indigo-700 text-white'
+                        })}
+                        <div 
+                          onClick={() => openBusinessDetails(biz)}
+                          className="relative hidden cursor-pointer flex-col gap-5 rounded-2xl border-2 border-indigo-400/40 bg-white p-5 shadow-xs transition hover:border-indigo-600 md:flex md:flex-row"
+                        >
+                          <span className="absolute right-2.5 top-2.5 flex items-center gap-1 rounded-full bg-gradient-to-r from-indigo-700 to-indigo-900 px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white font-mono">
+                            <Sparkles className="h-2.5 w-2.5 animate-spin text-amber-300" /> Sponsored VIP
+                          </span>
 
-                        <img 
-                          src={getBusinessImageUrl(biz)}
-                          alt={biz.name}
-                          className={`w-24 h-24 md:w-28 md:h-28 rounded-xl bg-slate-100 self-center border border-slate-200 flex-shrink-0 ${hasUploadedBusinessImage(biz) ? 'object-cover' : 'object-contain p-3'}`}
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).src = getCategoryFallbackImage(biz.categoryId);
-                          }}
-                        />
+                          <img 
+                            src={getBusinessImageUrl(biz)}
+                            alt={biz.name}
+                            className={`h-24 w-24 self-center rounded-xl border border-slate-200 bg-slate-100 md:h-28 md:w-28 flex-shrink-0 ${hasUploadedBusinessImage(biz) ? 'object-cover' : 'object-contain p-3'}`}
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).src = getCategoryFallbackImage(biz.categoryId);
+                            }}
+                          />
 
-                        <div className="flex-1 space-y-2 truncate">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <h4 className="font-extrabold text-slate-900 text-base flex items-center gap-1">
-                              {biz.name}
-                              {biz.verifiedBadge && (
-                                <span className="text-emerald-500" title="Physical KYC Verified Merchant">✓</span>
-                              )}
-                            </h4>
-                            <span className="text-[10px] bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded font-mono font-bold">
-                              {getCategoryById(biz.categoryId)?.name || biz.categoryId}
-                              {biz.subcategoryId && ` / ${getSubcategoryById(biz.subcategoryId)?.name || biz.subcategoryId}`}
-                            </span>
-                          </div>
-
-                          <p className="text-xs text-slate-600 line-clamp-2 leading-relaxed">
-                            {biz.description}
-                          </p>
-
-                          <div className="text-[11px] font-mono text-slate-500 space-y-0.5 font-sans">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              {hasViewed ? (
-                                <div className="flex items-center gap-1.5 text-slate-800 font-bold font-mono bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-lg">
-                                  <span>📞 {biz.phone || 'Not provided'}</span>
-                                  <span className="bg-emerald-600 text-white text-[9px] px-1.5 py-0.5 rounded-md text-[8px] font-bold">
-                                    Viewed
-                                  </span>
-                                </div>
-                              ) : (
-                                <button
-                                  onClick={(e) => initContactUnlockFlow(biz, e)}
-                                  className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] px-2.5 py-1 rounded-lg border border-indigo-200/50 flex items-center gap-1 font-bold transition font-mono"
-                                >
-                                  <Lock className="w-3 h-3 text-indigo-600" /> Reveal Contact (OTP Gated)
-                                </button>
-                              )}
+                          <div className="flex-1 space-y-2 truncate">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h4 className="font-extrabold text-slate-900 text-base flex items-center gap-1">
+                                {biz.name}
+                                {biz.verifiedBadge && (
+                                  <span className="text-emerald-500" title="Physical KYC Verified Merchant">✓</span>
+                                )}
+                              </h4>
+                              <span className="text-[10px] bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded font-mono font-bold">
+                                {getCategoryById(biz.categoryId)?.name || biz.categoryId}
+                                {biz.subcategoryId && ` / ${getSubcategoryById(biz.subcategoryId)?.name || biz.subcategoryId}`}
+                              </span>
                             </div>
 
-                            {biz.email && hasViewed && (
-                              <div className="truncate text-slate-600">✉️ {biz.email}</div>
-                            )}
+                            <p className="text-xs text-slate-600 line-clamp-2 leading-relaxed">
+                              {biz.description}
+                            </p>
 
-                            <div className="truncate text-blue-600 flex items-center gap-1">
-                              <Globe className="w-3 h-3 text-blue-400" /> {biz.website}
-                            </div>
-                            <div className="font-sans text-slate-600 font-medium truncate">📍 {biz.address}</div>
-                            <div className="font-mono text-[10px] text-slate-500">
-                              PIN: {biz.pincode || MASTER_AREAS.find((area) => area.id === biz.areaId)?.pincode || 'Not set'}
-                            </div>
-                            
-                            {/* Area scope list */}
-                            {biz.areasOfOperation && biz.areasOfOperation.length > 0 && (
-                              <div className="font-sans text-[10px] text-slate-400 mt-1 truncate">
-                                🗺️ Service Areas: {biz.areasOfOperation.map(aid => MASTER_AREAS.find(a => a.id === aid)?.name).filter(Boolean).join(', ')}
+                            <div className="text-[11px] font-mono text-slate-500 space-y-0.5 font-sans">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                {hasViewed ? (
+                                  <div className="flex items-center gap-1.5 text-slate-800 font-bold font-mono bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-lg">
+                                    <span>📞 {biz.phone || 'Not provided'}</span>
+                                    <span className="bg-emerald-600 text-white text-[9px] px-1.5 py-0.5 rounded-md text-[8px] font-bold">
+                                      Viewed
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <button
+                                    onClick={(e) => initContactUnlockFlow(biz, e)}
+                                    className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] px-2.5 py-1 rounded-lg border border-indigo-200/50 flex items-center gap-1 font-bold transition font-mono"
+                                  >
+                                    <Lock className="w-3 h-3 text-indigo-600" /> Reveal Contact (OTP Gated)
+                                  </button>
+                                )}
                               </div>
-                            )}
-                          </div>
 
-                          <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-                            <div className="flex items-center gap-1 bg-amber-50 text-amber-700 text-xs px-2 py-0.5 rounded-lg font-bold" title="Google Ratings">
-                              ★ {biz.rating} <span className="font-medium text-slate-400 text-[10px]">({biz.reviewCount || 0} customer reviews)</span>
+                              {biz.email && hasViewed && (
+                                <div className="truncate text-slate-600">✉️ {biz.email}</div>
+                              )}
+
+                              <div className="truncate text-blue-600 flex items-center gap-1">
+                                <Globe className="w-3 h-3 text-blue-400" /> {biz.website}
+                              </div>
+                              <div className="font-sans text-slate-600 font-medium truncate">📍 {biz.address}</div>
+                              <div className="font-mono text-[10px] text-slate-500">
+                                PIN: {biz.pincode || MASTER_AREAS.find((area) => area.id === biz.areaId)?.pincode || 'Not set'}
+                              </div>
+                              
+                              {biz.areasOfOperation && biz.areasOfOperation.length > 0 && (
+                                <div className="font-sans text-[10px] text-slate-400 mt-1 truncate">
+                                  🗺️ Service Areas: {biz.areasOfOperation.map(aid => MASTER_AREAS.find(a => a.id === aid)?.name).filter(Boolean).join(', ')}
+                                </div>
+                              )}
                             </div>
-                            <span className="text-xs text-indigo-600 font-bold hover:underline inline-flex items-center gap-0.5 text-[10px]">
-                              Inspect records &gt;
-                            </span>
+
+                            <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                              <div className="flex items-center gap-1 bg-amber-50 text-amber-700 text-xs px-2 py-0.5 rounded-lg font-bold" title="Google Ratings">
+                                ★ {biz.rating} <span className="font-medium text-slate-400 text-[10px]">({biz.reviewCount || 0} customer reviews)</span>
+                              </div>
+                              <span className="text-xs text-indigo-600 font-bold hover:underline inline-flex items-center gap-0.5 text-[10px]">
+                                Inspect records &gt;
+                              </span>
+                            </div>
                           </div>
                         </div>
-                      </div>
+                      </React.Fragment>
                     );
                   })}
                 </div>
+                <PaginationControls
+                  currentPage={safeFeaturedPage}
+                  totalPages={featuredTotalPages}
+                  onPageChange={setFeaturedPage}
+                />
               </div>
             )}
 
@@ -1593,145 +1859,138 @@ export default function WebPortal({
                   </p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {regularBusinesses.map((biz, index) => {
-                    const hasViewed = viewedBusinessIds.includes(biz.id);
-                    const injectAd = activeListingAds.length > 0 && index > 0 && index % 9 === 8;
-                    const MOCK_BANNER_ADS = [
-                      {
-                        title: "⚡ Switch to JioFiber – Best High-Speed Broadband in Roadpali",
-                        description: "Get 200 Mbps unlimited optical fiber Internet, free smart setup, and 14 premium OTT channels. Call +91 86559 11223.",
-                        badge: "Local ISP Sponsor",
-                        cta: "Claim Free Router",
-                        color: "from-blue-600 via-indigo-900 to-slate-900"
-                      },
-                      {
-                        title: "🏥 Apollo Diagnostics India – Sector 17 Health Checkup at ₹899",
-                        description: "Complete health evaluation package covering 68 key parameters with certified online reports & free home collection.",
-                        badge: "Medical Partner",
-                        cta: "Book Diagnostic",
-                        color: "from-emerald-700 via-teal-905 to-slate-900"
-                      },
-                      {
-                        title: "🚗 Royal Landmark Hyundai Group – Big Monsoon Bonanza",
-                        description: "Drive home a premium SUV with zero downpayment, exchange bonuses up to ₹40,000, and free 3-year service shields.",
-                        badge: "Automotive Ad",
-                        cta: "Request Demo Drive",
-                        color: "from-sky-700 via-slate-900 to-indigo-950"
-                      }
-                    ];
-                    const ad = activeListingAds.length > 0
-                      ? activeListingAds[Math.floor(index / 9) % activeListingAds.length]
-                      : null;
+                regularBusinesses.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-5 py-10 text-center text-xs text-slate-400">
+                    Featured listings are available above. No additional standard listings matched this filter set.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {pagedRegularBusinesses.map((biz, index) => {
+                      const hasViewed = viewedBusinessIds.includes(biz.id);
+                      const injectAd = activeListingAds.length > 0 && index > 0 && index % 9 === 8;
+                      const ad = activeListingAds.length > 0
+                        ? activeListingAds[Math.floor(index / 9) % activeListingAds.length]
+                        : null;
 
-                    return (
-                      <React.Fragment key={biz.id}>
-                        <div 
-                          onClick={() => openBusinessDetails(biz)}
-                          className="bg-white rounded-2xl border border-slate-200 p-4 shadow-2xs hover:border-indigo-400 hover:shadow-md cursor-pointer transition flex flex-col justify-between"
-                        >
-                          <div className="space-y-3">
-                            <div className="relative">
-                              <img 
-                                src={getBusinessImageUrl(biz)}
-                                alt={biz.name}
-                                onError={(e) => {
-                                  (e.target as HTMLImageElement).src = getCategoryFallbackImage(biz.categoryId);
-                                }}
-                                className={`w-full h-36 rounded-xl border border-slate-200/60 bg-slate-100 ${hasUploadedBusinessImage(biz) ? 'object-cover' : 'object-contain p-4'}`}
-                              />
-                              {biz.verifiedBadge && (
-                                <span className="absolute top-2 left-2 bg-emerald-600 text-white text-[9px] uppercase font-mono font-bold px-2 py-0.5 rounded-full flex items-center gap-0.5">
-                                  Verified Badge
-                                </span>
-                              )}
-                            </div>
-
-                            <div className="space-y-1">
-                              <div className="flex items-center justify-between">
-                                <span className="text-[10px] uppercase font-mono tracking-wider font-semibold text-slate-400">
-                                  {getCategoryById(biz.categoryId)?.name || biz.categoryId}
-                                  {biz.subcategoryId && ` / ${getSubcategoryById(biz.subcategoryId)?.name || biz.subcategoryId}`}
-                                </span>
-                                <div className="flex items-center gap-0.5 bg-amber-50 text-amber-600 text-xs px-1.5 rounded font-bold" title="Google Ratings">
-                                  ★ {biz.rating}
-                                </div>
-                              </div>
-                              <h4 className="font-bold text-slate-900 text-sm leading-tight truncate flex items-center gap-1">
-                                {biz.name}
-                                {biz.isSponsored && (
-                                  <span className="bg-amber-100 text-amber-800 text-[8px] font-mono font-bold px-1 rounded">CPC</span>
-                                )}
-                              </h4>
-                              <p className="text-xs text-slate-505 line-clamp-2 italic leading-relaxed">
-                                &quot;{biz.description}&quot;
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="space-y-2 pt-3 border-t border-slate-100 mt-3 text-[11px] text-slate-500 font-mono">
-                            <div className="flex items-center justify-between font-sans flex-wrap gap-1.5">
-                              {hasViewed ? (
-                                <div className="flex items-center gap-1 text-slate-800 font-bold bg-emerald-50 border border-emerald-100 px-1.5 py-0.5 rounded-md">
-                                  <span>📞 {biz.phone || 'Not provided'}</span>
-                                  <span className="text-emerald-700 text-[8px] font-bold ml-1">Viewed</span>
-                                </div>
-                              ) : (
-                                <button
-                                  onClick={(e) => initContactUnlockFlow(biz, e)}
-                                  className="bg-slate-105 hover:bg-indigo-50 border border-slate-200 text-slate-600 hover:text-indigo-700 text-[10px] px-2 py-0.5 rounded flex items-center gap-1 transition-all"
-                                >
-                                  <Lock className="w-2.5 h-2.5" /> Unlock Phone Number
-                                </button>
-                              )}
-                            </div>
-
-                            <div className="font-sans text-slate-600 truncate leading-normal">📍 {biz.address}</div>
-                            <div className="font-mono text-[10px] text-slate-500 truncate">
-                              PIN: {biz.pincode || MASTER_AREAS.find((area) => area.id === biz.areaId)?.pincode || 'Not set'}
-                            </div>
-                            
-                            <span className="text-indigo-600 font-sans font-bold hover:underline inline-flex items-center gap-0.5 mt-1 block">
-                              Explore directory record →
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Injected Gorgeous Premium Row Banner Ad */}
-                        {injectAd && ad && (
-                          <div
-                            className="col-span-full border border-slate-800 rounded-3xl p-6 text-white shadow-lg flex flex-col md:flex-row items-center justify-between gap-6 relative overflow-hidden"
-                            style={{ backgroundColor: ad.backgroundColor || '#0f172a' }}
+                      return (
+                        <React.Fragment key={biz.id}>
+                          {renderCompactBusinessRow(biz, biz.isSponsored ? {
+                            badgeLabel: 'CPC',
+                            badgeClassName: 'bg-amber-500 text-slate-950'
+                          } : undefined)}
+                          <div 
+                            onClick={() => openBusinessDetails(biz)}
+                            className="hidden cursor-pointer flex-col justify-between rounded-2xl border border-slate-200 bg-white p-4 shadow-2xs transition hover:border-indigo-400 hover:shadow-md md:flex"
                           >
-                            <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 rounded-full blur-2xl pointer-events-none"></div>
-                            <div className="flex flex-col md:flex-row items-center md:items-start gap-4">
-                              <div className="bg-amber-400 text-slate-950 p-3 rounded-full flex-shrink-0 animate-bounce shadow">
-                                <Megaphone className="w-5 h-5" />
+                            <div className="space-y-3">
+                              <div className="relative">
+                                <img 
+                                  src={getBusinessImageUrl(biz)}
+                                  alt={biz.name}
+                                  onError={(e) => {
+                                    (e.target as HTMLImageElement).src = getCategoryFallbackImage(biz.categoryId);
+                                  }}
+                                  className={`w-full h-36 rounded-xl border border-slate-200/60 bg-slate-100 ${hasUploadedBusinessImage(biz) ? 'object-cover' : 'object-contain p-4'}`}
+                                />
+                                {biz.verifiedBadge && (
+                                  <span className="absolute top-2 left-2 bg-emerald-600 text-white text-[9px] uppercase font-mono font-bold px-2 py-0.5 rounded-full flex items-center gap-0.5">
+                                    Verified Badge
+                                  </span>
+                                )}
                               </div>
-                              <div className="text-center md:text-left space-y-1">
-                                <span className="inline-flex bg-amber-500/15 text-amber-400 font-mono text-[9px] px-2.5 py-0.5 rounded-md border border-amber-500/20 uppercase font-bold tracking-wider mb-1">
-                                  📢 {ad.badge} Sponsored Highlight
-                                </span>
-                                <h4 className="text-base font-bold text-white font-sans">{ad.title}</h4>
-                                <p className="text-xs text-slate-300 leading-relaxed max-w-2xl">{ad.description}</p>
-                                <span className="text-[10px] text-slate-200 font-mono">
-                                  Action: {ad.actionType.replace('_', ' ')}
-                                </span>
+
+                              <div className="space-y-1">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[10px] uppercase font-mono tracking-wider font-semibold text-slate-400">
+                                    {getCategoryById(biz.categoryId)?.name || biz.categoryId}
+                                    {biz.subcategoryId && ` / ${getSubcategoryById(biz.subcategoryId)?.name || biz.subcategoryId}`}
+                                  </span>
+                                  <div className="flex items-center gap-0.5 bg-amber-50 text-amber-600 text-xs px-1.5 rounded font-bold" title="Google Ratings">
+                                    ★ {biz.rating}
+                                  </div>
+                                </div>
+                                <h4 className="font-bold text-slate-900 text-sm leading-tight truncate flex items-center gap-1">
+                                  {biz.name}
+                                  {biz.isSponsored && (
+                                    <span className="bg-amber-100 text-amber-800 text-[8px] font-mono font-bold px-1 rounded">CPC</span>
+                                  )}
+                                </h4>
+                                <p className="text-xs text-slate-505 line-clamp-2 italic leading-relaxed">
+                                  &quot;{biz.description}&quot;
+                                </p>
                               </div>
                             </div>
-                            <button
-                              onClick={() => handleListingAdAction(ad)}
-                              className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs px-5 py-3 rounded-xl transition shadow flex items-center gap-2 flex-shrink-0 cursor-pointer w-full md:w-auto justify-center"
-                            >
-                              <span>{ad.ctaText}</span>
-                              <ExternalLink className="w-3.5 h-3.5" />
-                            </button>
+
+                            <div className="space-y-2 pt-3 border-t border-slate-100 mt-3 text-[11px] text-slate-500 font-mono">
+                              <div className="flex items-center justify-between font-sans flex-wrap gap-1.5">
+                                {hasViewed ? (
+                                  <div className="flex items-center gap-1 text-slate-800 font-bold bg-emerald-50 border border-emerald-100 px-1.5 py-0.5 rounded-md">
+                                    <span>📞 {biz.phone || 'Not provided'}</span>
+                                    <span className="text-emerald-700 text-[8px] font-bold ml-1">Viewed</span>
+                                  </div>
+                                ) : (
+                                  <button
+                                    onClick={(e) => initContactUnlockFlow(biz, e)}
+                                    className="bg-slate-105 hover:bg-indigo-50 border border-slate-200 text-slate-600 hover:text-indigo-700 text-[10px] px-2 py-0.5 rounded flex items-center gap-1 transition-all"
+                                  >
+                                    <Lock className="w-2.5 h-2.5" /> Unlock Phone Number
+                                  </button>
+                                )}
+                              </div>
+
+                              <div className="font-sans text-slate-600 truncate leading-normal">📍 {biz.address}</div>
+                              <div className="font-mono text-[10px] text-slate-500 truncate">
+                                PIN: {biz.pincode || MASTER_AREAS.find((area) => area.id === biz.areaId)?.pincode || 'Not set'}
+                              </div>
+                              
+                              <span className="text-indigo-600 font-sans font-bold hover:underline inline-flex items-center gap-0.5 mt-1 block">
+                                Explore directory record →
+                              </span>
+                            </div>
                           </div>
-                        )}
-                      </React.Fragment>
-                    );
-                  })}
-                </div>
+
+                          {injectAd && ad && (
+                            <div
+                              className="col-span-full border border-slate-800 rounded-3xl p-6 text-white shadow-lg flex flex-col md:flex-row items-center justify-between gap-6 relative overflow-hidden"
+                              style={{ backgroundColor: ad.backgroundColor || '#0f172a' }}
+                            >
+                              <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 rounded-full blur-2xl pointer-events-none"></div>
+                              <div className="flex flex-col md:flex-row items-center md:items-start gap-4">
+                                <div className="bg-amber-400 text-slate-950 p-3 rounded-full flex-shrink-0 animate-bounce shadow">
+                                  <Megaphone className="w-5 h-5" />
+                                </div>
+                                <div className="text-center md:text-left space-y-1">
+                                  <span className="inline-flex bg-amber-500/15 text-amber-400 font-mono text-[9px] px-2.5 py-0.5 rounded-md border border-amber-500/20 uppercase font-bold tracking-wider mb-1">
+                                    📢 {ad.badge} Sponsored Highlight
+                                  </span>
+                                  <h4 className="text-base font-bold text-white font-sans">{ad.title}</h4>
+                                  <p className="text-xs text-slate-300 leading-relaxed max-w-2xl">{ad.description}</p>
+                                  <span className="text-[10px] text-slate-200 font-mono">
+                                    Action: {ad.actionType.replace('_', ' ')}
+                                  </span>
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => handleListingAdAction(ad)}
+                                className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs px-5 py-3 rounded-xl transition shadow flex items-center gap-2 flex-shrink-0 cursor-pointer w-full md:w-auto justify-center"
+                              >
+                                <span>{ad.ctaText}</span>
+                                <ExternalLink className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
+                  </div>
+                )
+              )}
+              {regularBusinesses.length > 0 && (
+                <PaginationControls
+                  currentPage={safeRegularPage}
+                  totalPages={regularTotalPages}
+                  onPageChange={setRegularPage}
+                />
               )}
             </div>
           </div>
@@ -1754,7 +2013,7 @@ export default function WebPortal({
 
               {/* Feed items */}
               <div className="space-y-4">
-                {communityItems.filter(item => item.localityId === activeLocalityId).map(post => (
+                {pagedCommunityItems.map(post => (
                   <div key={post.id} className="bg-slate-50 border border-slate-150 rounded-xl p-4 space-y-2.5">
                     <div className="flex items-center justify-between flex-wrap gap-2">
                       <div className="flex items-center gap-2">
@@ -1807,7 +2066,17 @@ export default function WebPortal({
                     </div>
                   </div>
                 ))}
+                {localityCommunityItems.length === 0 && (
+                  <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-xs text-slate-400">
+                    No community posts yet for this locality.
+                  </div>
+                )}
               </div>
+              <PaginationControls
+                currentPage={safeCommunityPage}
+                totalPages={communityTotalPages}
+                onPageChange={setCommunityPage}
+              />
             </div>
           </div>
 
@@ -1943,7 +2212,7 @@ export default function WebPortal({
                     <p className="text-[10px] text-slate-400 mt-0.5">Citizens who performed verified phone lookups or viewed contact cards</p>
                   </div>
                   <span className="text-xs bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full font-bold font-mono">
-                    {crmContacts.filter(c => c.businessId === activeSellerBizId).length} Contacts
+                    {activeSellerContacts.length} Contacts
                   </span>
                 </div>
 
@@ -1959,14 +2228,14 @@ export default function WebPortal({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {crmContacts.filter(c => c.businessId === activeSellerBizId).length === 0 ? (
+                      {activeSellerContacts.length === 0 ? (
                         <tr>
                           <td colSpan={5} className="p-4 text-center text-slate-400 font-mono">
                             No lead lookups recorded yet. Perform public OTP views as Buyer perspective to bootstrap CRM contacts!
                           </td>
                         </tr>
                       ) : (
-                        crmContacts.filter(c => c.businessId === activeSellerBizId).map(contact => (
+                        pagedSellerContacts.map(contact => (
                           <tr key={contact.id} className="hover:bg-slate-50/50">
                             <td className="p-3 font-semibold text-slate-800">{contact.name}</td>
                             <td className="p-3 font-mono text-[11px] text-slate-600">{contact.phone}</td>
@@ -2024,22 +2293,25 @@ export default function WebPortal({
                     </tbody>
                   </table>
                 </div>
+                <PaginationControls
+                  currentPage={safeCrmPage}
+                  totalPages={crmTotalPages}
+                  onPageChange={setCrmPage}
+                />
               </div>
 
               <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-3">
                 <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                   <h4 className="text-xs font-bold font-mono text-slate-500 uppercase tracking-wider">Ad Leads</h4>
                   <span className="text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-100 px-2 py-0.5 rounded-full font-bold font-mono">
-                    {adLeads.filter((lead) => lead.sellerBusinessId === activeSellerBizId).length} Leads
+                    {activeMerchantLeads.length} Leads
                   </span>
                 </div>
                 <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
-                  {adLeads.filter((lead) => lead.sellerBusinessId === activeSellerBizId).length === 0 ? (
+                  {activeMerchantLeads.length === 0 ? (
                     <p className="text-[11px] text-slate-400">No ad-form leads captured yet.</p>
                   ) : (
-                    adLeads
-                      .filter((lead) => lead.sellerBusinessId === activeSellerBizId)
-                      .slice(0, 20)
+                    pagedMerchantLeads
                       .map((lead) => (
                         <div key={lead.id} className="bg-slate-50 border border-slate-150 rounded-lg px-3 py-2 text-[11px]">
                           <div className="flex items-center justify-between gap-2">
@@ -2052,6 +2324,12 @@ export default function WebPortal({
                       ))
                   )}
                 </div>
+                <PaginationControls
+                  compact
+                  currentPage={safeMerchantLeadsPage}
+                  totalPages={merchantLeadsTotalPages}
+                  onPageChange={setMerchantLeadsPage}
+                />
               </div>
 
               {/* Marketing multi-channel campaign push form */}
@@ -2515,16 +2793,16 @@ export default function WebPortal({
               <div className="space-y-3 pt-4 border-t border-slate-100">
                 <h4 className="text-sm font-bold text-slate-900 font-sans flex items-center gap-1.5">
                   <MessageSquare className="w-4 h-4 text-indigo-500" />
-                  Verified Customer Reviews ({reviews.filter(r => r.businessId === selectedBiz.id).length})
+                  Verified Customer Reviews ({selectedBizReviews.length})
                 </h4>
 
                 <div className="space-y-2.5 max-h-56 overflow-y-auto">
-                  {reviews.filter(r => r.businessId === selectedBiz.id).length === 0 ? (
+                  {selectedBizReviews.length === 0 ? (
                     <p className="text-slate-400 italic text-[11px] py-2 text-center bg-slate-50 rounded-lg">
                       No customer reviews yet. Be the first to verify and post matching feedback!
                     </p>
                   ) : (
-                    reviews.filter(r => r.businessId === selectedBiz.id).map(rev => (
+                    pagedSelectedBizReviews.map(rev => (
                       <div key={rev.id} className="bg-slate-50 border border-slate-100 p-3 rounded-2xl text-xs space-y-1">
                         <div className="flex items-center justify-between">
                           <span className="font-bold text-slate-800 flex items-center gap-1">
@@ -2543,6 +2821,12 @@ export default function WebPortal({
                     ))
                   )}
                 </div>
+                <PaginationControls
+                  compact
+                  currentPage={safeReviewsPage}
+                  totalPages={reviewsTotalPages}
+                  onPageChange={setReviewsPage}
+                />
 
                 {/* Submit Ratings after verification check */}
                 {userSession.isAuthenticated && userSession.userPhone ? (

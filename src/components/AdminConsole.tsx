@@ -91,6 +91,10 @@ type ImportPreviewRow = BulkImportRow & {
   normalizedPhone: string;
   resolvedPincode: string;
   resolvedLocalityId: string;
+  categorySuggestionNeeded: boolean;
+  subcategorySuggestionNeeded: boolean;
+  suggestedCategoryName?: string;
+  suggestedSubcategoryName?: string;
 };
 
 type LocalityCategoryLink = {
@@ -100,6 +104,9 @@ type LocalityCategoryLink = {
   subcategoryId?: string;
   slug: string;
 };
+
+type AdminWorkspaceTab = 'moderation' | 'listing-status' | 'bulk-upload' | 'data-audit';
+type ListingStatusFilter = 'all' | 'approved' | 'rejected' | 'pending';
 
 export default function AdminConsole({
   localities,
@@ -145,6 +152,11 @@ export default function AdminConsole({
   const [editedHrs, setEditedHrs] = useState<Record<string, string>>({});
   const [importResult, setImportResult] = useState<string>('');
   const [importPreview, setImportPreview] = useState<ImportPreviewRow[]>([]);
+  const [adminWorkspaceTab, setAdminWorkspaceTab] = useState<AdminWorkspaceTab>('moderation');
+  const [listingStatusFilter, setListingStatusFilter] = useState<ListingStatusFilter>('all');
+  const [listingStatusPage, setListingStatusPage] = useState(1);
+  const [auditPage, setAuditPage] = useState(1);
+  const [importPreviewPage, setImportPreviewPage] = useState(1);
   const [selectedBackendBiz, setSelectedBackendBiz] = useState<Business | null>(null);
   const [backendDraft, setBackendDraft] = useState<Business | null>(null);
   const [backendEditMode, setBackendEditMode] = useState(false);
@@ -242,6 +254,23 @@ export default function AdminConsole({
     return 'roadpali';
   };
 
+  const applyImportSuggestion = (rowNumber: number) => {
+    setImportPreview((prev) => prev.map((row) => {
+      if (row.rowNumber !== rowNumber) return row;
+      const categoryName = getCategoryById(row.categoryId || '')?.name || row.category || '';
+      const subcategoryName = getSubcategoryById(row.subcategoryId || '')?.name || row.subcategory || '';
+      return {
+        ...row,
+        category: categoryName,
+        subcategory: subcategoryName,
+        categorySuggestionNeeded: false,
+        subcategorySuggestionNeeded: false,
+        suggestedCategoryName: categoryName,
+        suggestedSubcategoryName: subcategoryName
+      };
+    }));
+  };
+
   const buildImportPreview = (rows: BulkImportRow[]) => rows.map((row, idx): ImportPreviewRow => {
     const errors: string[] = [];
     const normalizedPhone = normalizePhone(row.mobile);
@@ -251,12 +280,19 @@ export default function AdminConsole({
     const resolvedPincode = row.pin.replace(/\D/g, '') || areaMatch?.pincode || '';
     const mappedLocality = pincodeMappings.find(m => m.pincode === resolvedPincode)?.localityId;
     const resolvedLocalityId = mappedLocality || inferLocality(`${row.area} ${row.city}`);
-    const categoryId = resolveCategoryFromImport(row.category, row.services || '');
+    const directCategory = BUSINESS_CATEGORIES.find((category) => (
+      category.name.toLowerCase() === String(row.category || '').trim().toLowerCase()
+    ));
+    const categoryId = directCategory?.id || resolveCategoryFromImport(row.category, row.services || '');
     const directSubcategory = BUSINESS_SUBCATEGORIES.find((subcategory) => (
       subcategory.categoryId === categoryId &&
       subcategory.name.toLowerCase() === String(row.subcategory || '').trim().toLowerCase()
     ));
     const subcategoryId = directSubcategory?.id || inferSubcategory(row.services || '', categoryId);
+    const categorySuggestionNeeded = Boolean(String(row.category || '').trim()) && !directCategory;
+    const subcategorySuggestionNeeded = Boolean(String(row.subcategory || '').trim()) && !directSubcategory;
+    const suggestedCategoryName = getCategoryById(categoryId)?.name || categoryId;
+    const suggestedSubcategoryName = getSubcategoryById(subcategoryId)?.name || subcategoryId;
 
     if (!row.businessName.trim()) errors.push('Business Name is required.');
     if (normalizedPhone.length > 0 && normalizedPhone.length !== 10) errors.push('Mobile must be blank or a valid 10-digit number.');
@@ -285,6 +321,10 @@ export default function AdminConsole({
       normalizedPhone,
       resolvedPincode,
       resolvedLocalityId,
+      categorySuggestionNeeded,
+      subcategorySuggestionNeeded,
+      suggestedCategoryName,
+      suggestedSubcategoryName,
       importAction: duplicate ? 'update' : 'create',
       existingBusinessId: duplicate?.id,
       localityId: resolvedLocalityId,
@@ -329,6 +369,7 @@ export default function AdminConsole({
 
     const preview = buildImportPreview(rows);
     setImportPreview(preview);
+    setImportPreviewPage(1);
     const ready = preview.filter(r => r.previewStatus === 'ready').length;
     const updates = preview.filter(r => r.previewStatus === 'update').length;
     const failed = preview.filter(r => r.previewStatus === 'fail').length;
@@ -348,6 +389,7 @@ export default function AdminConsole({
     const result = onBulkImportBusinesses(validRows);
     const failed = importPreview.filter(r => r.previewStatus === 'fail').length;
     setImportPreview(importPreview.filter(r => r.previewStatus === 'fail'));
+    setImportPreviewPage(1);
     setImportResult(`Upload complete: ${result.imported} created, ${result.skipped} updated/skipped, ${failed} failed rows kept below with error details.`);
   };
 
@@ -368,8 +410,33 @@ export default function AdminConsole({
   };
 
   const pendingBusinesses = businesses.filter(b => b.status === 'pending');
-  const activeBusinesses = businesses.filter(b => b.status === 'approved');
-  const rejectedBusinesses = businesses.filter(b => b.status === 'rejected');
+  const listingStatusItems = [...businesses]
+    .filter((business) => listingStatusFilter === 'all' ? true : business.status === listingStatusFilter)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const LISTING_STATUS_PAGE_SIZE = 20;
+  const listingStatusTotalPages = Math.max(1, Math.ceil(listingStatusItems.length / LISTING_STATUS_PAGE_SIZE));
+  const safeListingStatusPage = Math.min(listingStatusPage, listingStatusTotalPages);
+  const listingStatusPageItems = listingStatusItems.slice(
+    (safeListingStatusPage - 1) * LISTING_STATUS_PAGE_SIZE,
+    safeListingStatusPage * LISTING_STATUS_PAGE_SIZE
+  );
+  const adminWorkspaceTabs: Array<{ id: AdminWorkspaceTab; label: string; count?: number }> = [
+    { id: 'moderation', label: 'Moderation', count: pendingBusinesses.length },
+    { id: 'listing-status', label: 'Listing Status', count: businesses.length },
+    { id: 'bulk-upload', label: 'Bulk Upload' },
+    { id: 'data-audit', label: 'Data Audit', count: auditLogs.length }
+  ];
+  const AUDIT_PAGE_SIZE = 20;
+  const auditTotalPages = Math.max(1, Math.ceil(auditLogs.length / AUDIT_PAGE_SIZE));
+  const safeAuditPage = Math.min(auditPage, auditTotalPages);
+  const pagedAuditLogs = auditLogs.slice((safeAuditPage - 1) * AUDIT_PAGE_SIZE, safeAuditPage * AUDIT_PAGE_SIZE);
+  const IMPORT_PREVIEW_PAGE_SIZE = 20;
+  const importPreviewTotalPages = Math.max(1, Math.ceil(importPreview.length / IMPORT_PREVIEW_PAGE_SIZE));
+  const safeImportPreviewPage = Math.min(importPreviewPage, importPreviewTotalPages);
+  const pagedImportPreview = importPreview.slice(
+    (safeImportPreviewPage - 1) * IMPORT_PREVIEW_PAGE_SIZE,
+    safeImportPreviewPage * IMPORT_PREVIEW_PAGE_SIZE
+  );
 
   const triggerNotification = (msg: string) => {
     setAdminNotification(msg);
@@ -530,6 +597,46 @@ export default function AdminConsole({
     <div id="admin-console-root" className="grid grid-cols-1 lg:grid-cols-3 gap-8">
       {/* Moderation Module */}
       <div className="lg:col-span-2 space-y-6">
+        <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <h3 className="text-lg font-bold text-slate-950">Admin Workspace</h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Switch between moderation, listing status, imports, and audit activity without stacking everything in one long view.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {adminWorkspaceTabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => {
+                    setAdminWorkspaceTab(tab.id);
+                    if (tab.id === 'listing-status') setListingStatusPage(1);
+                    if (tab.id === 'data-audit') setAuditPage(1);
+                    if (tab.id === 'bulk-upload') setImportPreviewPage(1);
+                  }}
+                  className={`inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+                    adminWorkspaceTab === tab.id
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+                >
+                  <span>{tab.label}</span>
+                  {typeof tab.count === 'number' && (
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-mono ${
+                      adminWorkspaceTab === tab.id ? 'bg-white/15 text-white' : 'bg-white text-slate-500'
+                    }`}>
+                      {tab.count}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {adminWorkspaceTab === 'moderation' && (
         <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <div>
@@ -723,13 +830,48 @@ export default function AdminConsole({
             </div>
           )}
         </div>
+        )}
 
-        {/* Audit Log / History */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
-          <h3 className="text-md font-bold text-slate-950 mb-3 flex items-center gap-2">
-            <Database className="w-4.5 h-4.5 text-blue-600" />
-            Audit Log (Other Listings Status)
-          </h3>
+        {adminWorkspaceTab === 'listing-status' && (
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <h3 className="text-md font-bold text-slate-950 flex items-center gap-2">
+                <Database className="w-4.5 h-4.5 text-blue-600" />
+                Other Listings Status
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">
+                Review listing states in one place. This tab now paginates 20 listings per page.
+              </p>
+            </div>
+            <span className="text-[10px] font-mono text-slate-500 bg-slate-100 border border-slate-200 rounded-lg px-3 py-1.5 self-start">
+              {listingStatusItems.length} listings • 20 per page
+            </span>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {[
+              { id: 'all', label: 'All' },
+              { id: 'approved', label: 'Active' },
+              { id: 'rejected', label: 'Deactivated' },
+              { id: 'pending', label: 'Pending' }
+            ].map((filter) => (
+              <button
+                key={filter.id}
+                type="button"
+                onClick={() => {
+                  setListingStatusFilter(filter.id as ListingStatusFilter);
+                  setListingStatusPage(1);
+                }}
+                className={`rounded-lg px-3 py-1.5 text-xs font-bold ${
+                  listingStatusFilter === filter.id ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'
+                }`}
+              >
+                {filter.label}
+              </button>
+            ))}
+          </div>
+
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs text-slate-500 border-collapse">
               <thead>
@@ -742,79 +884,122 @@ export default function AdminConsole({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {activeBusinesses.map(b => (
-                  <tr key={b.id} onClick={() => openBackendListing(b)} className="hover:bg-slate-50/50 cursor-pointer">
-                    <td className="py-2.5 font-semibold text-slate-800">{b.name}</td>
-                    <td className="py-2.5">
-                      {onUpdateBusiness ? (
-                        <div className="flex flex-col gap-1">
-                          <select
-                            value={b.categoryId}
-                            required
-                            onClick={(e) => e.stopPropagation()}
-                            onChange={(e) => {
-                              const nextCategory = e.target.value;
-                              onUpdateBusiness({ ...b, categoryId: nextCategory, subcategoryId: resolveDefaultSubcategoryId(nextCategory) });
-                            }}
-                            className="text-[10px] bg-white border border-slate-300 rounded px-2 py-1 font-semibold text-slate-700"
-                            title="Update listing category"
-                          >
-                            {BUSINESS_CATEGORIES.map((c) => (
-                              <option key={c.id} value={c.id}>{c.name}</option>
-                            ))}
-                          </select>
-                          <select
-                            value={b.subcategoryId}
-                            required
-                            onClick={(e) => e.stopPropagation()}
-                            onChange={(e) => onUpdateBusiness({ ...b, subcategoryId: e.target.value })}
-                            className="text-[10px] bg-white border border-slate-300 rounded px-2 py-1 font-semibold text-slate-700"
-                            title="Update listing subcategory"
-                          >
-                            {getSubcategoriesForCategory(b.categoryId).map((s) => (
-                              <option key={s.id} value={s.id}>{s.name}</option>
-                            ))}
-                          </select>
-                        </div>
-                      ) : (
-                        <span>{getCategoryById(b.categoryId)?.name || b.categoryId} / {getSubcategoryById(b.subcategoryId)?.name || b.subcategoryId}</span>
-                      )}
-                    </td>
-                    <td className="py-2.5 font-mono text-slate-600">{(localities.find(l=>l.id===b.localityId))?.subdomain || 'Unknown'}</td>
-                    <td className="py-2.5">{b.ownerName || 'Self-Registered'}</td>
-                    <td className="py-2.5">
-                      <span className="inline-flex items-center gap-1.5 text-emerald-600 font-semibold">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                        Approved
-                      </span>
+                {listingStatusPageItems.map((business) => {
+                  const locality = localities.find((candidate) => candidate.id === business.localityId);
+                  const isRejected = business.status === 'rejected';
+                  const isPending = business.status === 'pending';
+                  return (
+                    <tr
+                      key={business.id}
+                      onClick={() => openBackendListing(business)}
+                      className="hover:bg-slate-50/50 cursor-pointer"
+                    >
+                      <td className={`py-2.5 font-semibold ${isRejected ? 'text-slate-500 line-through' : 'text-slate-800'}`}>
+                        {business.name}
+                      </td>
+                      <td className="py-2.5">
+                        {onUpdateBusiness ? (
+                          <div className="flex flex-col gap-1">
+                            <select
+                              value={business.categoryId}
+                              required
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={(e) => {
+                                const nextCategory = e.target.value;
+                                onUpdateBusiness({ ...business, categoryId: nextCategory, subcategoryId: resolveDefaultSubcategoryId(nextCategory) });
+                              }}
+                              className="text-[10px] bg-white border border-slate-300 rounded px-2 py-1 font-semibold text-slate-700"
+                              title="Update listing category"
+                            >
+                              {BUSINESS_CATEGORIES.map((category) => (
+                                <option key={category.id} value={category.id}>{category.name}</option>
+                              ))}
+                            </select>
+                            <select
+                              value={business.subcategoryId}
+                              required
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={(e) => onUpdateBusiness({ ...business, subcategoryId: e.target.value })}
+                              className="text-[10px] bg-white border border-slate-300 rounded px-2 py-1 font-semibold text-slate-700"
+                              title="Update listing subcategory"
+                            >
+                              {getSubcategoriesForCategory(business.categoryId).map((subcategory) => (
+                                <option key={subcategory.id} value={subcategory.id}>{subcategory.name}</option>
+                              ))}
+                            </select>
+                          </div>
+                        ) : (
+                          <span>{getCategoryById(business.categoryId)?.name || business.categoryId} / {getSubcategoryById(business.subcategoryId)?.name || business.subcategoryId}</span>
+                        )}
+                      </td>
+                      <td className={`py-2.5 font-mono ${isRejected ? 'text-slate-400' : 'text-slate-600'}`}>
+                        {locality?.subdomain || 'Unknown'}
+                      </td>
+                      <td className="py-2.5">{business.ownerName || 'Self-Registered'}</td>
+                      <td className="py-2.5">
+                        {business.status === 'approved' && (
+                          <span className="inline-flex items-center gap-1.5 text-emerald-600 font-semibold">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                            Approved
+                          </span>
+                        )}
+                        {business.status === 'pending' && (
+                          <span className="inline-flex items-center gap-1.5 text-amber-600 font-semibold">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                            Pending
+                          </span>
+                        )}
+                        {business.status === 'rejected' && (
+                          <div className="text-red-500 font-semibold flex flex-col">
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                              Rejected
+                            </span>
+                            <span className="text-[10px] font-sans text-slate-400 max-w-[180px] truncate" title={business.rejectionReason}>
+                              {business.rejectionReason || 'No reason recorded'}
+                            </span>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {listingStatusPageItems.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="py-8 text-center text-xs text-slate-400">
+                      No listings found for this filter.
                     </td>
                   </tr>
-                ))}
-                {rejectedBusinesses.map(b => (
-                  <tr key={b.id} className="hover:bg-slate-50/50">
-                    <td className="py-2.5 font-semibold text-slate-500 line-through">{b.name}</td>
-                    <td className="py-2.5 text-slate-400">{getCategoryById(b.categoryId)?.name || b.categoryId} / {getSubcategoryById(b.subcategoryId)?.name || b.subcategoryId}</td>
-                    <td className="py-2.5 font-mono text-slate-400">{(localities.find(l=>l.id===b.localityId))?.subdomain || 'Unknown'}</td>
-                    <td className="py-2.5">{b.ownerName || 'Unknown'}</td>
-                    <td className="py-2.5">
-                      <div className="text-red-500 font-semibold flex flex-col">
-                        <span className="inline-flex items-center gap-1.5">
-                          <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
-                          Rejected
-                        </span>
-                        <span className="text-[10px] font-sans text-slate-400 max-w-[150px] truncate" title={b.rejectionReason}>
-                          {b.rejectionReason}
-                        </span>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                )}
               </tbody>
             </table>
           </div>
-        </div>
 
-        {/* Compliance Audit Logs & Privacy Desk */}
+          <div className="flex items-center justify-between text-xs">
+            <button
+              type="button"
+              onClick={() => setListingStatusPage((prev) => Math.max(1, prev - 1))}
+              disabled={safeListingStatusPage <= 1}
+              className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 disabled:opacity-50"
+            >
+              Previous
+            </button>
+            <span className="font-mono text-slate-500">
+              Page {safeListingStatusPage} / {listingStatusTotalPages}
+            </span>
+            <button
+              type="button"
+              onClick={() => setListingStatusPage((prev) => Math.min(listingStatusTotalPages, prev + 1))}
+              disabled={safeListingStatusPage >= listingStatusTotalPages}
+              className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+        )}
+
+        {adminWorkspaceTab === 'data-audit' && (
         <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
             <div>
@@ -848,7 +1033,7 @@ export default function AdminConsole({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {auditLogs.map((log) => {
+                  {pagedAuditLogs.map((log) => {
                     const badgeColor = 
                       log.actionType === 'search' 
                         ? 'bg-blue-50 text-blue-700 border-blue-200/50' 
@@ -889,13 +1074,37 @@ export default function AdminConsole({
               </table>
             </div>
           )}
+          {auditLogs.length > 0 && (
+            <div className="flex items-center justify-between text-xs">
+              <button
+                type="button"
+                onClick={() => setAuditPage((prev) => Math.max(1, prev - 1))}
+                disabled={safeAuditPage <= 1}
+                className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 disabled:opacity-50"
+              >
+                Previous
+              </button>
+              <span className="font-mono text-slate-500">
+                Page {safeAuditPage} / {auditTotalPages}
+              </span>
+              <button
+                type="button"
+                onClick={() => setAuditPage((prev) => Math.min(auditTotalPages, prev + 1))}
+                disabled={safeAuditPage >= auditTotalPages}
+                className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+          )}
         </div>
+        )}
 
-        {/* CSV Import */}
+        {adminWorkspaceTab === 'bulk-upload' && (
         <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-3">
           <h3 className="text-md font-bold text-slate-950">Bulk Import Businesses (CSV)</h3>
           <p className="text-xs text-slate-500">
-            Upload CSV with columns: Business Name, Address, Area, City, State, PIN, Mobile, Rating, Reviews, Services, Latitude, Longitude.
+            Upload CSV with columns: Business Name, Address, Area, City, State, PIN, Mobile, Rating, Reviews, Services, Category, Subcategory, Latitude, Longitude.
           </p>
           <input
             type="file"
@@ -961,15 +1170,25 @@ export default function AdminConsole({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {importPreview.map((row) => (
+                    {pagedImportPreview.map((row) => (
                       <tr key={`${row.rowNumber}-${row.businessName}`} className="hover:bg-slate-50/60">
                         <td className="p-2 font-mono">{row.rowNumber}</td>
                         <td className="p-2 font-semibold text-slate-800">{row.businessName}</td>
                         <td className="p-2 font-mono">{row.normalizedPhone || 'Not provided'}</td>
                         <td className="p-2 font-mono">{row.resolvedPincode || '-'}</td>
                         <td className="p-2">{localities.find(l => l.id === row.resolvedLocalityId)?.name.split(',')[0] || row.resolvedLocalityId}</td>
-                        <td className="p-2">{getCategoryById(row.categoryId || '')?.name || row.categoryId}</td>
-                        <td className="p-2">{getSubcategoryById(row.subcategoryId || '')?.name || row.subcategoryId}</td>
+                        <td className="p-2 align-top">
+                          <span className="block text-slate-800">{row.category?.trim() || 'Not supplied'}</span>
+                          <span className={`block text-[9px] ${row.categorySuggestionNeeded ? 'text-amber-700 font-semibold' : 'text-slate-400'}`}>
+                            {row.categorySuggestionNeeded ? `Suggested: ${row.suggestedCategoryName}` : `Mapped: ${getCategoryById(row.categoryId || '')?.name || row.categoryId}`}
+                          </span>
+                        </td>
+                        <td className="p-2 align-top">
+                          <span className="block text-slate-800">{row.subcategory?.trim() || 'Not supplied'}</span>
+                          <span className={`block text-[9px] ${row.subcategorySuggestionNeeded ? 'text-amber-700 font-semibold' : 'text-slate-400'}`}>
+                            {row.subcategorySuggestionNeeded ? `Suggested: ${row.suggestedSubcategoryName}` : `Mapped: ${getSubcategoryById(row.subcategoryId || '')?.name || row.subcategoryId}`}
+                          </span>
+                        </td>
                         <td className="p-2">
                           <span className={`px-2 py-0.5 rounded-full font-bold ${
                             row.previewStatus === 'ready'
@@ -981,15 +1200,65 @@ export default function AdminConsole({
                             {row.previewStatus === 'ready' ? 'Ready' : row.previewStatus === 'update' ? 'Update existing' : 'Fail'}
                           </span>
                         </td>
-                        <td className="p-2 text-rose-600">{row.errors.join('; ') || (row.previewStatus === 'update' ? `Existing ID: ${row.existingBusinessId}` : '-')}</td>
+                        <td className="p-2 align-top">
+                          <div className="space-y-1">
+                            {row.errors.length > 0 ? (
+                              <div className="text-rose-600">{row.errors.join('; ')}</div>
+                            ) : row.previewStatus === 'update' ? (
+                              <div className="text-blue-700">Existing ID: {row.existingBusinessId}</div>
+                            ) : (
+                              <div className="text-slate-400">-</div>
+                            )}
+                            {(row.categorySuggestionNeeded || row.subcategorySuggestionNeeded) && (
+                              <div className="rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5">
+                                <div className="text-[9px] font-semibold text-amber-800">
+                                  Suggested mapping: {row.suggestedCategoryName || 'Unknown'} / {row.suggestedSubcategoryName || 'Unknown'}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (confirm(`Use suggested category "${row.suggestedCategoryName}" and subcategory "${row.suggestedSubcategoryName}" for ${row.businessName}?`)) {
+                                      applyImportSuggestion(row.rowNumber);
+                                    }
+                                  }}
+                                  className="mt-1 rounded bg-amber-500 px-2 py-1 text-[9px] font-bold text-white hover:bg-amber-600"
+                                >
+                                  OK, use suggestion
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
+              <div className="flex items-center justify-between text-xs">
+                <button
+                  type="button"
+                  onClick={() => setImportPreviewPage((prev) => Math.max(1, prev - 1))}
+                  disabled={safeImportPreviewPage <= 1}
+                  className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 disabled:opacity-50"
+                >
+                  Previous
+                </button>
+                <span className="font-mono text-slate-500">
+                  Page {safeImportPreviewPage} / {importPreviewTotalPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setImportPreviewPage((prev) => Math.min(importPreviewTotalPages, prev + 1))}
+                  disabled={safeImportPreviewPage >= importPreviewTotalPages}
+                  className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 disabled:opacity-50"
+                >
+                  Next
+                </button>
+              </div>
             </div>
           )}
         </div>
+        )}
       </div>
 
       {/* Domain Mapping Panel and Locality Spinner */}
