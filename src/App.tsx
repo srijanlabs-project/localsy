@@ -11,7 +11,6 @@ import WebPortal from './components/WebPortal';
 import PincodeSelectionModal from './components/PincodeSelectionModal';
 import AuthModal from './components/AuthModal';
 import happyBusinessLogo from './assets/happy-business-logo.png';
-import happyBusinessMark from './assets/happy-business-mark.png';
 import { 
   Layout, Smartphone, Shield, BookOpen, Layers, RefreshCw, 
   User, CheckCircle, ShieldAlert, KeyRound, Wrench, Briefcase, HelpCircle,
@@ -1586,9 +1585,9 @@ export default function App() {
             title="Happy Business home"
           >
           <img
-            src={happyBusinessMark}
-            alt="Happy Business"
-            className="h-11 w-11 md:h-14 md:w-14 object-contain"
+            src={happyBusinessLogo}
+            alt="Localisy"
+            className="h-8 sm:h-9 w-auto max-w-[128px] object-contain"
           />
           </button>
 
@@ -1747,7 +1746,7 @@ export default function App() {
             >
               <img
                 src={happyBusinessLogo}
-                alt="Happy Business"
+                alt="Localisy"
                 className="h-12 md:h-14 w-auto object-contain"
               />
             </button>
