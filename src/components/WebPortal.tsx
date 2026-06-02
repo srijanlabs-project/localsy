@@ -31,6 +31,11 @@ interface WebPortalProps {
   pincodeMappings?: Array<{ pincode: string; localityId: string }>;
   localityMappedPincodes?: string[];
   savedPincode?: string | null;
+  initialCategoryFilter?: string | null;
+  initialSearchFilter?: string | null;
+  filterNonce?: number;
+  initialSelectedBusinessId?: string | null;
+  selectionNonce?: number;
   onLocalityChange: (id: string) => void;
   userSession: UserSession;
   onUserSessionChange: (sess: UserSession) => void;
@@ -67,6 +72,11 @@ export default function WebPortal({
   pincodeMappings = [],
   localityMappedPincodes = [],
   savedPincode,
+  initialCategoryFilter = null,
+  initialSearchFilter = null,
+  filterNonce = 0,
+  initialSelectedBusinessId = null,
+  selectionNonce = 0,
   onLocalityChange,
   userSession,
   onUserSessionChange,
@@ -96,6 +106,26 @@ export default function WebPortal({
   const SIMPLE_SEARCH_FORM = true;
   const SHOW_PORTAL_TABS = false;
   const SHOW_REFINED_FILTERS = false;
+  const SEO_INTENT_SLUG_BY_CATEGORY: Record<string, string> = {
+    home: 'electrician',
+    'home-services': 'electrician',
+    salon: 'salon',
+    'beauty-wellness': 'salon',
+    health: 'dental-clinic',
+    'health-medical': 'dental-clinic',
+    food: 'restaurant',
+    'food-restaurants': 'restaurant',
+    retail: 'grocery-store',
+    'shopping-retail': 'grocery-store',
+    services: 'ca',
+    'professional-services': 'ca',
+  };
+  const slugifyForUrl = (value: string) => value
+    .toLowerCase()
+    .trim()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedSubcategory, setSelectedSubcategory] = useState('all');
@@ -253,6 +283,14 @@ export default function WebPortal({
     }
   }, [formAreaId, listingPincode]);
 
+  useEffect(() => {
+    if (filterNonce === 0) return;
+    setActivePortalTab('listings');
+    setSelectedCategory(initialCategoryFilter ?? 'all');
+    setSelectedSubcategory('all');
+    setSearchQuery(initialSearchFilter ?? '');
+  }, [filterNonce, initialCategoryFilter, initialSearchFilter]);
+
   // Auto-rotating slider effect
   const selectedLocalityIds = activeLocalityId
     .split(',')
@@ -293,12 +331,55 @@ export default function WebPortal({
     ? activeHeroBanners[carouselIndex % activeHeroBanners.length]
     : null;
 
+  const currentLocalitySlug = currentLocality.slug || currentLocality.id;
+  const buildCategoryRoutePath = (categoryId: string) => {
+    if (categoryId === 'all') return `/${currentLocalitySlug}`;
+    const seoSlug = SEO_INTENT_SLUG_BY_CATEGORY[categoryId] || slugifyForUrl(categoryId);
+    return `/${currentLocalitySlug}/${seoSlug}`;
+  };
+  const buildListingRoutePath = (biz: Business) => {
+    const locality = localities.find((entry) => entry.id === biz.localityId);
+    const localitySlug = locality?.slug || biz.localityId;
+    const seoSlug = SEO_INTENT_SLUG_BY_CATEGORY[biz.categoryId] || slugifyForUrl(biz.categoryId);
+    return `/${localitySlug}/${seoSlug}/${slugifyForUrl(biz.name)}-${biz.id}`;
+  };
+  const pushHistoryIfNeeded = (nextPath: string) => {
+    if (window.location.pathname === nextPath) return;
+    window.history.pushState({}, '', nextPath);
+  };
+  const openBusinessDetails = (biz: Business) => {
+    setSelectedBiz(biz);
+    pushHistoryIfNeeded(buildListingRoutePath(biz));
+  };
+  const closeBusinessDetails = () => {
+    setSelectedBiz(null);
+    pushHistoryIfNeeded(buildCategoryRoutePath(selectedCategory));
+  };
+
   useEffect(() => {
     const interval = setInterval(() => {
       setCarouselIndex(prev => (prev + 1) % carouselImages.length);
     }, 5000);
     return () => clearInterval(interval);
   }, [carouselImages.length]);
+
+  useEffect(() => {
+    if (selectionNonce === 0) return;
+    if (!initialSelectedBusinessId) {
+      setSelectedBiz(null);
+      return;
+    }
+    const matched = businesses.find((biz) => biz.id === initialSelectedBusinessId);
+    if (!matched) return;
+    setActivePortalTab('listings');
+    setSelectedBiz(matched);
+  }, [selectionNonce, initialSelectedBusinessId, businesses]);
+
+  useEffect(() => {
+    if (activePortalTab !== 'listings') return;
+    if (selectedBiz) return;
+    pushHistoryIfNeeded(buildCategoryRoutePath(selectedCategory));
+  }, [activePortalTab, selectedBiz, selectedCategory, currentLocalitySlug]);
 
   // Audit log tracker for user search operations (debounced/distinct values)
   useEffect(() => {
@@ -1145,16 +1226,16 @@ export default function WebPortal({
                           const q = aiSearchQuery.toLowerCase();
                           if (q.includes('hair') || q.includes('salon') || q.includes('groom') || q.includes('cut') || q.includes('element')) {
                             const b = businesses.find(x => x.id === 's1');
-                            if (b) setSelectedBiz(b);
+                            if (b) openBusinessDetails(b);
                           } else if (q.includes('academy') || q.includes('spa') || q.includes('majestic')) {
                             const b = businesses.find(x => x.id === 's2');
-                            if (b) setSelectedBiz(b);
+                            if (b) openBusinessDetails(b);
                           } else if (q.includes('veg') || q.includes('food') || q.includes('dosa') || q.includes('utsav')) {
                             const b = businesses.find(x => x.id === 'b11');
-                            if (b) setSelectedBiz(b);
+                            if (b) openBusinessDetails(b);
                           } else {
                             const b = businesses.find(x => x.id === 's8'); // Barberry Bliss Family Salon as default
-                            if (b) setSelectedBiz(b);
+                            if (b) openBusinessDetails(b);
                           }
                         }}
                         className="text-[10px] font-mono font-bold text-indigo-650 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded border border-indigo-200/50 transition cursor-pointer"
@@ -1408,7 +1489,7 @@ export default function WebPortal({
                     return (
                       <div 
                         key={biz.id}
-                        onClick={() => setSelectedBiz(biz)}
+                        onClick={() => openBusinessDetails(biz)}
                         className="bg-white rounded-2xl border-2 border-indigo-400/40 p-5 shadow-xs flex flex-col md:flex-row gap-5 hover:border-indigo-600 transition cursor-pointer relative"
                       >
                         <span className="absolute top-2.5 right-2.5 bg-gradient-to-r from-indigo-700 to-indigo-900 text-white text-[9px] uppercase font-mono font-bold px-2.5 py-0.5 rounded-full tracking-wide flex items-center gap-1">
@@ -1546,7 +1627,7 @@ export default function WebPortal({
                     return (
                       <React.Fragment key={biz.id}>
                         <div 
-                          onClick={() => setSelectedBiz(biz)}
+                          onClick={() => openBusinessDetails(biz)}
                           className="bg-white rounded-2xl border border-slate-200 p-4 shadow-2xs hover:border-indigo-400 hover:shadow-md cursor-pointer transition flex flex-col justify-between"
                         >
                           <div className="space-y-3">
@@ -2219,7 +2300,7 @@ export default function WebPortal({
                 </h4>
               </div>
               <button 
-                onClick={() => setSelectedBiz(null)}
+                onClick={closeBusinessDetails}
                 className="text-slate-300 hover:text-white font-bold text-xs bg-white/10 hover:bg-white/20 px-2.5 py-1.5 rounded-lg"
               >
                 Close

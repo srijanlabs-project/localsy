@@ -13,7 +13,8 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "release:check": "npm run lint && npm run build && node scripts/release-smoke.mjs"
+    "release:check": "npm run lint && npm run build && node scripts/release-smoke.mjs",
+    "seo:submit-sitemaps": "node scripts/submit-search-console-sitemaps.mjs"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",

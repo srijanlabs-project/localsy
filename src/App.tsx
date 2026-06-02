@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, Suspense, lazy } from 'react';
 import { 
   INITIAL_LOCALITIES, INITIAL_BUSINESSES, INITIAL_CATEGORIES, INITIAL_REVIEWS,
   INITIAL_COMMUNITY_ITEMS, INITIAL_CRM_CONTACTS, INITIAL_COUPONS, MASTER_AREAS
@@ -7,10 +7,7 @@ import {
   Locality, Business, SubdomainMapping, Review, UserSession, UserRole,
   CommunityItem, CRMContact, MarketingCoupon, AuditEvent, ListingAd, AdLead, HeroBanner
 } from './types';
-import ProposalPanel from './components/ProposalPanel';
 import WebPortal from './components/WebPortal';
-import AndroidSimulator from './components/AndroidSimulator';
-import AdminConsole from './components/AdminConsole';
 import PincodeSelectionModal from './components/PincodeSelectionModal';
 import AuthModal from './components/AuthModal';
 import happyBusinessLogo from './assets/happy-business-logo.png';
@@ -79,10 +76,38 @@ type LocalityCategoryLink = {
   slug: string;
 };
 
+type SeoRouteIntent = {
+  id: string;
+  slug: string;
+  categoryId: string;
+  q: string;
+  labelPrefix: string;
+};
+
+const SEO_ROUTE_INTENTS: SeoRouteIntent[] = [
+  { id: 'electrician', slug: 'electrician', categoryId: 'home-services', q: 'Electrician', labelPrefix: 'Electrician' },
+  { id: 'salon', slug: 'salon', categoryId: 'beauty-wellness', q: 'Salon', labelPrefix: 'Salon' },
+  { id: 'dental', slug: 'dental-clinic', categoryId: 'health-medical', q: 'Dental Clinic', labelPrefix: 'Dental Clinic' },
+  { id: 'restaurant', slug: 'restaurant', categoryId: 'food-restaurants', q: 'Restaurant', labelPrefix: 'Restaurant' },
+  { id: 'grocery', slug: 'grocery-store', categoryId: 'shopping-retail', q: 'Grocery Store', labelPrefix: 'Grocery Store' },
+  { id: 'chartered', slug: 'ca', categoryId: 'professional-services', q: 'Chartered Accountant', labelPrefix: 'CA' },
+];
+
+const slugifyForUrl = (value: string) => value
+  .toLowerCase()
+  .trim()
+  .replace(/&/g, ' and ')
+  .replace(/[^a-z0-9]+/g, '-')
+  .replace(/^-+|-+$/g, '');
+
+const ProposalPanel = lazy(() => import('./components/ProposalPanel'));
+const AndroidSimulator = lazy(() => import('./components/AndroidSimulator'));
+const AdminConsole = lazy(() => import('./components/AdminConsole'));
+
 export default function App() {
   const PRODUCTION_MODE = true;
   // Database version management to clear stale browser caches when definitions evolve
-  const CURRENT_DB_VERSION = 'yp_v13_ads_heroes_pincode_routes';
+  const CURRENT_DB_VERSION = 'yp_v14_seo_subdomain_routes';
   
   // Clean sweep of ancient local storage shards if database version is old
   useState(() => {
@@ -242,13 +267,57 @@ export default function App() {
 
   const [urlCategoryFilter, setUrlCategoryFilter] = useState<string | null>(null);
   const [urlSubcategoryFilter, setUrlSubcategoryFilter] = useState<string | null>(null);
+  const [urlSearchFilter, setUrlSearchFilter] = useState<string | null>(null);
   const [urlFilterNonce, setUrlFilterNonce] = useState(0);
+  const [urlSelectedBusinessId, setUrlSelectedBusinessId] = useState<string | null>(null);
+  const [urlSelectionNonce, setUrlSelectionNonce] = useState(0);
 
   const [localityCategoryLinks, setLocalityCategoryLinks] = useState<LocalityCategoryLink[]>(() => {
     const saved = localStorage.getItem('yp_locality_category_links');
     if (saved) return JSON.parse(saved);
     return [];
   });
+
+  const seoIntentBySlug = useMemo(() => {
+    const lookup = new Map<string, SeoRouteIntent>();
+    for (const intent of SEO_ROUTE_INTENTS) {
+      lookup.set(intent.slug, intent);
+    }
+    return lookup;
+  }, []);
+
+  const categorySlugLookup = useMemo(() => {
+    const lookup = new Map<string, string>();
+    for (const category of BUSINESS_CATEGORIES) {
+      lookup.set(category.id.toLowerCase(), category.id);
+      lookup.set(category.slug.toLowerCase(), category.id);
+      lookup.set(slugifyForUrl(category.name), category.id);
+    }
+    for (const category of INITIAL_CATEGORIES) {
+      if (category.id === 'all') continue;
+      lookup.set(category.id.toLowerCase(), resolveMasterCategoryId(category.id));
+      lookup.set(slugifyForUrl(category.name), resolveMasterCategoryId(category.id));
+    }
+    return lookup;
+  }, []);
+
+  const seoIntentByCategoryAndQuery = useMemo(() => {
+    const lookup = new Map<string, SeoRouteIntent>();
+    for (const intent of SEO_ROUTE_INTENTS) {
+      lookup.set(`${intent.categoryId}::${intent.q.toLowerCase()}`, intent);
+    }
+    return lookup;
+  }, []);
+
+  const seoDefaultIntentByCategory = useMemo(() => {
+    const lookup = new Map<string, SeoRouteIntent>();
+    for (const intent of SEO_ROUTE_INTENTS) {
+      if (!lookup.has(intent.categoryId)) {
+        lookup.set(intent.categoryId, intent);
+      }
+    }
+    return lookup;
+  }, []);
 
   const [activeView, setActiveView] = useState<'proposal' | 'web' | 'android' | 'admin'>('web'); // Default to pubic web portal for instant aesthetics!
   const [showSandbox, setShowSandbox] = useState(false); // Controls floating simulation HUD
@@ -443,6 +512,109 @@ export default function App() {
   useEffect(() => {
     logAuditEvent('data_entry', 'Active locality changed', `Locality switched to: ${activeLocalityId}`);
   }, [activeLocalityId]);
+
+  useEffect(() => {
+    const applySeoUrlState = () => {
+      const decodeSegment = (segment: string) => decodeURIComponent(segment).trim().toLowerCase();
+      const params = new URLSearchParams(window.location.search);
+      const pathSegments = window.location.pathname
+        .split('/')
+        .filter(Boolean)
+        .map(decodeSegment);
+      const hostFirstLabel = window.location.hostname.split('.')[0]?.toLowerCase() || '';
+      const hostLocality = localities.find((locality) => (
+        locality.id === hostFirstLabel || locality.slug === hostFirstLabel
+      )) || null;
+
+      let resolvedLocalityId: string | null = null;
+      let resolvedCategoryId: string | null = null;
+      let resolvedSearch: string | null = null;
+      let resolvedBusinessId: string | null = null;
+
+      let scopedSegments = pathSegments;
+      if (pathSegments.length > 0) {
+        const localitySegment = pathSegments[0];
+        const matchedLocality = localities.find((locality) => (
+          locality.id === localitySegment || locality.slug === localitySegment
+        ));
+        if (matchedLocality) {
+          resolvedLocalityId = matchedLocality.id;
+          scopedSegments = pathSegments.slice(1);
+        }
+      }
+
+      if (!resolvedLocalityId && hostLocality) {
+        resolvedLocalityId = hostLocality.id;
+      }
+
+      if (scopedSegments.length > 0) {
+        const intentOrCategorySegment = scopedSegments[0];
+        const matchedIntent = seoIntentBySlug.get(intentOrCategorySegment);
+        if (matchedIntent) {
+          resolvedCategoryId = matchedIntent.categoryId;
+          resolvedSearch = matchedIntent.q;
+        } else {
+          const categoryFromSlug = categorySlugLookup.get(intentOrCategorySegment);
+          if (categoryFromSlug) {
+            resolvedCategoryId = categoryFromSlug;
+          }
+        }
+
+        if (scopedSegments.length > 1) {
+          const listingSegment = scopedSegments[1];
+          const possibleBusinessId = listingSegment.split('-').pop() || '';
+          if (possibleBusinessId && businesses.some((biz) => biz.id === possibleBusinessId)) {
+            resolvedBusinessId = possibleBusinessId;
+          }
+        }
+      }
+
+      const localityParam = (params.get('locality') || '').trim().toLowerCase();
+      if (!resolvedLocalityId && localityParam) {
+        const matchedLocality = localities.find((locality) => (
+          locality.id === localityParam || locality.slug === localityParam
+        ));
+        if (matchedLocality) resolvedLocalityId = matchedLocality.id;
+      }
+
+      const categoryParam = (params.get('category') || '').trim().toLowerCase();
+      if (!resolvedCategoryId) {
+        if (categoryParam && INITIAL_CATEGORIES.some((category) => category.id === categoryParam)) {
+          resolvedCategoryId = categoryParam;
+        } else if (categoryParam === 'all') {
+          resolvedCategoryId = 'all';
+        }
+      }
+
+      const searchParam = (params.get('q') || '').trim();
+      if (!resolvedSearch && searchParam) {
+        resolvedSearch = searchParam;
+      }
+      if (!resolvedBusinessId) {
+        const businessParam = (params.get('biz') || '').trim();
+        if (businessParam && businesses.some((biz) => biz.id === businessParam)) {
+          resolvedBusinessId = businessParam;
+        }
+      }
+
+      if (resolvedLocalityId) {
+        setActiveLocalityId(resolvedLocalityId);
+        localStorage.setItem('yp_saved_locality_id', resolvedLocalityId);
+        localStorage.setItem('yp_pincode_prompted', 'true');
+        setShowPincodeModal(false);
+      }
+
+      setUrlCategoryFilter(resolvedCategoryId);
+      setUrlSearchFilter(resolvedSearch || null);
+      setUrlSelectedBusinessId(resolvedBusinessId);
+      setUrlFilterNonce((prev) => prev + 1);
+      setUrlSelectionNonce((prev) => prev + 1);
+    };
+
+    applySeoUrlState();
+    window.addEventListener('popstate', applySeoUrlState);
+    return () => window.removeEventListener('popstate', applySeoUrlState);
+  }, [localities, businesses, seoIntentBySlug, categorySlugLookup]);
 
   // Unified logger for complete client-side security compliance auditing
   const logAuditEvent = (actionType: 'search' | 'contact_view' | 'data_entry', description: string, details: string) => {
@@ -827,6 +999,12 @@ export default function App() {
     }
     localStorage.setItem('yp_pincode_prompted', 'true');
     setActiveLocalityId(matchedLocalityId);
+    setUrlCategoryFilter(null);
+    setUrlSearchFilter(null);
+    setUrlFilterNonce((prev) => prev + 1);
+    const matchedLocality = localities.find((locality) => locality.id === matchedLocalityId);
+    const localitySlug = matchedLocality?.slug || matchedLocalityId;
+    window.history.pushState({}, '', `/${localitySlug}`);
     logAuditEvent('data_entry', `Pincode Routing Executed`, `Mapped pin: ${pincode || 'Skipped'}. Routed interface view to: "${matchedLocalityId}"`);
   };
 
@@ -1128,6 +1306,72 @@ export default function App() {
     return { imported, skipped };
   };
 
+  const activeLocality = localities.find((locality) => locality.id === activeLocalityId) || localities[0];
+  const activeLocalityName = activeLocality?.name.split(',')[0] || 'Roadpali';
+  const seoCategoryName = BUSINESS_CATEGORIES.find((category) => category.id === (urlCategoryFilter || ''))?.name || '';
+  const getLocalitySlug = (localityId: string) => {
+    const locality = localities.find((candidate) => candidate.id === localityId);
+    return locality?.slug || localityId || 'roadpali';
+  };
+
+  const buildLocalityPath = (localityId: string) => `/${getLocalitySlug(localityId)}`;
+
+  const buildSeoPath = (
+    localityId: string,
+    categoryId: string | null,
+    searchQuery: string | null
+  ) => {
+    const localityPath = buildLocalityPath(localityId);
+    if (!categoryId || categoryId === 'all') return localityPath;
+
+    const normalizedCategoryId = resolveMasterCategoryId(categoryId);
+    const normalizedSearch = (searchQuery || '').trim().toLowerCase();
+    if (normalizedSearch) {
+      const matchedIntent = seoIntentByCategoryAndQuery.get(`${normalizedCategoryId}::${normalizedSearch}`);
+      if (matchedIntent) return `${localityPath}/${matchedIntent.slug}`;
+    }
+
+    const defaultIntent = seoDefaultIntentByCategory.get(normalizedCategoryId);
+    if (defaultIntent) return `${localityPath}/${defaultIntent.slug}`;
+
+    return `${localityPath}/${slugifyForUrl(normalizedCategoryId)}`;
+  };
+
+  const seoFooterLinks = useMemo(() => (
+    SEO_ROUTE_INTENTS.map((intent) => ({
+      ...intent,
+      label: `${intent.labelPrefix} in ${activeLocalityName}`,
+    }))
+  ), [activeLocalityName]);
+
+  const buildSeoHref = (categoryId: string, q: string) => buildSeoPath(
+    activeLocality?.id || 'roadpali',
+    categoryId,
+    q
+  );
+
+  const handleSeoFooterLinkClick = (
+    e: React.MouseEvent<HTMLAnchorElement>,
+    categoryId: string,
+    q: string
+  ) => {
+    e.preventDefault();
+    setActiveViewWithAudit('web');
+    if (activeLocality?.id) {
+      setActiveLocalityId(activeLocality.id);
+      localStorage.setItem('yp_saved_locality_id', activeLocality.id);
+    }
+    setUrlCategoryFilter(categoryId);
+    setUrlSubcategoryFilter(null);
+    setUrlSearchFilter(q);
+    setUrlFilterNonce((prev) => prev + 1);
+    localStorage.setItem('yp_pincode_prompted', 'true');
+    setShowPincodeModal(false);
+
+    const nextUrl = buildSeoPath(activeLocality?.id || 'roadpali', categoryId, q);
+    window.history.pushState({}, '', nextUrl);
+  };
+
   const activeNodeLabel = (() => {
     if (activeLocalityId === 'roadpali') return 'Roadpali & Kalamboli';
     return localities.find((l) => l.id === activeLocalityId)?.name.split(',')[0] || 'Roadpali';
@@ -1198,6 +1442,136 @@ export default function App() {
     setShowUserMenu(false);
     logAuditEvent('data_entry', 'User Logged Out', 'Client cleared verified session status.');
   };
+
+  useEffect(() => {
+    const siteName = 'Happy Gifting Businesses';
+    const seoTitle = (urlSearchFilter && urlSearchFilter.trim())
+      ? `${urlSearchFilter.trim()} in ${activeLocalityName} | ${siteName}`
+      : (urlCategoryFilter && urlCategoryFilter !== 'all')
+        ? `${seoCategoryName || 'Businesses'} in ${activeLocalityName} | ${siteName}`
+        : `${activeLocalityName} Local Business Directory | ${siteName}`;
+
+    const seoDescription = (urlCategoryFilter && urlCategoryFilter !== 'all')
+      ? `Find verified ${seoCategoryName.toLowerCase()} in ${activeLocalityName} with phone, address, ratings, and service details.`
+      : `Explore verified local businesses in ${activeLocalityName}, including shops, clinics, salons, restaurants, and home services.`;
+
+    const origin = window.location.origin;
+    const activeLocalityPath = buildLocalityPath(activeLocality?.id || 'roadpali');
+    const canonicalPath = buildSeoPath(activeLocality?.id || 'roadpali', urlCategoryFilter, urlSearchFilter);
+    const canonicalUrl = `${origin}${canonicalPath}`;
+    const categoryOrSearchText = [seoCategoryName, urlSearchFilter].filter(Boolean).join(', ');
+    const keywordSet = [
+      `${activeLocalityName} businesses`,
+      `${activeLocalityName} local services`,
+      categoryOrSearchText,
+      ...seoFooterLinks.map((link) => link.label),
+    ]
+      .filter(Boolean)
+      .join(', ');
+
+    const setMeta = (name: string, content: string) => {
+      let tag = document.querySelector(`meta[name="${name}"]`);
+      if (!tag) {
+        tag = document.createElement('meta');
+        tag.setAttribute('name', name);
+        document.head.appendChild(tag);
+      }
+      tag.setAttribute('content', content);
+    };
+
+    const setPropertyMeta = (property: string, content: string) => {
+      let tag = document.querySelector(`meta[property="${property}"]`);
+      if (!tag) {
+        tag = document.createElement('meta');
+        tag.setAttribute('property', property);
+        document.head.appendChild(tag);
+      }
+      tag.setAttribute('content', content);
+    };
+
+    document.title = seoTitle;
+    setMeta('description', seoDescription);
+    setMeta('keywords', keywordSet);
+    setMeta('robots', 'index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1');
+    setMeta('twitter:card', 'summary_large_image');
+    setMeta('twitter:title', seoTitle);
+    setMeta('twitter:description', seoDescription);
+    setPropertyMeta('og:type', 'website');
+    setPropertyMeta('og:site_name', siteName);
+    setPropertyMeta('og:title', seoTitle);
+    setPropertyMeta('og:description', seoDescription);
+    setPropertyMeta('og:url', canonicalUrl);
+
+    let canonical = document.querySelector('link[rel="canonical"]') as HTMLLinkElement | null;
+    if (!canonical) {
+      canonical = document.createElement('link');
+      canonical.setAttribute('rel', 'canonical');
+      document.head.appendChild(canonical);
+    }
+    canonical.setAttribute('href', canonicalUrl);
+
+    const breadcrumbElements: Array<{ '@type': 'ListItem'; position: number; name: string; item: string }> = [
+      { '@type': 'ListItem', position: 1, name: 'Home', item: `${origin}/` },
+      { '@type': 'ListItem', position: 2, name: activeLocalityName, item: `${origin}${activeLocalityPath}` },
+    ];
+
+    if (urlCategoryFilter && urlCategoryFilter !== 'all') {
+      breadcrumbElements.push({
+        '@type': 'ListItem',
+        position: 3,
+        name: (urlSearchFilter && urlSearchFilter.trim()) || seoCategoryName || 'Businesses',
+        item: canonicalUrl,
+      });
+    }
+
+    const jsonLdPayload = {
+      '@context': 'https://schema.org',
+      '@graph': [
+        {
+          '@type': 'WebSite',
+          '@id': `${origin}/#website`,
+          url: origin,
+          name: siteName,
+          potentialAction: {
+            '@type': 'SearchAction',
+            target: `${origin}${activeLocalityPath}?q={search_term_string}`,
+            'query-input': 'required name=search_term_string'
+          }
+        },
+        {
+          '@type': 'CollectionPage',
+          '@id': `${canonicalUrl}#collection`,
+          url: canonicalUrl,
+          name: seoTitle,
+          description: seoDescription,
+          isPartOf: { '@id': `${origin}/#website` }
+        },
+        {
+          '@type': 'BreadcrumbList',
+          itemListElement: breadcrumbElements
+        },
+        {
+          '@type': 'ItemList',
+          name: `Popular searches in ${activeLocalityName}`,
+          itemListElement: seoFooterLinks.map((link, index) => ({
+            '@type': 'ListItem',
+            position: index + 1,
+            name: link.label,
+            url: `${origin}${buildSeoHref(link.categoryId, link.q)}`
+          }))
+        }
+      ]
+    };
+
+    let jsonLdScript = document.getElementById('local-seo-jsonld');
+    if (!jsonLdScript) {
+      jsonLdScript = document.createElement('script');
+      jsonLdScript.setAttribute('type', 'application/ld+json');
+      jsonLdScript.setAttribute('id', 'local-seo-jsonld');
+      document.head.appendChild(jsonLdScript);
+    }
+    jsonLdScript.textContent = JSON.stringify(jsonLdPayload);
+  }, [activeLocality?.id, activeLocalityName, seoCategoryName, urlCategoryFilter, urlSearchFilter, seoFooterLinks]);
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans selection:bg-indigo-600/15 relative">
@@ -1462,7 +1836,9 @@ export default function App() {
         {/* Workspace Active Presentation Render */}
         {!PRODUCTION_MODE && activeView === 'proposal' && (
           <div className="space-y-6">
-            <ProposalPanel />
+            <Suspense fallback={<div className="text-xs text-slate-500">Loading proposal preview...</div>}>
+              <ProposalPanel />
+            </Suspense>
             <div className="flex flex-col md:flex-row items-center justify-between border-t border-slate-200 pt-6 gap-4">
               <div>
                 <h3 className="font-bold text-slate-900 text-sm">Ready to explore the fully functional interactive showcase?</h3>
@@ -1498,6 +1874,11 @@ export default function App() {
             pincodeMappings={pincodeMappings}
             localityMappedPincodes={mappedPincodesForActiveLocality}
             savedPincode={savedPincode}
+            initialCategoryFilter={urlCategoryFilter}
+            initialSearchFilter={urlSearchFilter}
+            filterNonce={urlFilterNonce}
+            initialSelectedBusinessId={urlSelectedBusinessId}
+            selectionNonce={urlSelectionNonce}
             onLocalityChange={setActiveLocalityId}
             userSession={userSession}
             onUserSessionChange={setUserSession}
@@ -1526,61 +1907,65 @@ export default function App() {
         )}
 
         {!PRODUCTION_MODE && activeView === 'android' && (
-          <AndroidSimulator 
-            localities={localities}
-            businesses={businesses}
-            categories={INITIAL_CATEGORIES}
-            reviews={reviews}
-            activeLocalityId={activeLocalityId}
-            onLocalityChange={setActiveLocalityId}
-            userSession={userSession}
-            onUserSessionChange={setUserSession}
-            viewedBusinessIds={viewedBusinessIds}
-            onUnlockBusinessContact={handleRegisterContactView}
-            onSubmitApplication={handleSubmitApplication}
-            onUpdateBusiness={handleUpdateBusiness}
-            onAddReview={handleAddReview}
-          />
+          <Suspense fallback={<div className="text-xs text-slate-500">Loading mobile preview...</div>}>
+            <AndroidSimulator 
+              localities={localities}
+              businesses={businesses}
+              categories={INITIAL_CATEGORIES}
+              reviews={reviews}
+              activeLocalityId={activeLocalityId}
+              onLocalityChange={setActiveLocalityId}
+              userSession={userSession}
+              onUserSessionChange={setUserSession}
+              viewedBusinessIds={viewedBusinessIds}
+              onUnlockBusinessContact={handleRegisterContactView}
+              onSubmitApplication={handleSubmitApplication}
+              onUpdateBusiness={handleUpdateBusiness}
+              onAddReview={handleAddReview}
+            />
+          </Suspense>
         )}
 
         {activeView === 'admin' && canAccessAdmin && (
-          <AdminConsole 
-            localities={localities}
-            businesses={businesses}
-            subdomains={subdomains}
-            onApprove={handleApproveBusiness}
-            onReject={handleRejectBusiness}
-            onCreateLocality={handleCreateLocality}
-            onDeleteLocality={handleDeleteLocality}
-            onUpdateBusiness={handleUpdateBusiness} // Allows edits directly in queue!
-            userSession={userSession}
-            auditLogs={auditLogs}
-            pincodeMappings={pincodeMappings}
-            onAddPincodeMapping={handleAddPincodeMapping}
-            onDeletePincodeMapping={handleDeletePincodeMapping}
-            defaultLocalityId={defaultLocalityId}
-            onChangeDefaultLocalityId={handleChangeDefaultLocalityId}
-            onBulkImportBusinesses={handleBulkImportBusinesses}
-            listingAds={listingAds}
-            onCreateListingAd={handleCreateListingAd}
-            onUpdateListingAd={handleUpdateListingAd}
-            onDeleteListingAd={handleDeleteListingAd}
-            heroBanners={heroBanners}
-            onCreateHeroBanner={handleCreateHeroBanner}
-            onUpdateHeroBanner={handleUpdateHeroBanner}
-            onDeleteHeroBanner={handleDeleteHeroBanner}
-            adLeads={adLeads}
-            localityCategoryLinks={localityCategoryLinks}
-            onCreateLocalityCategoryLink={handleCreateLocalityCategoryLink}
-            onDeleteLocalityCategoryLink={handleDeleteLocalityCategoryLink}
-          />
+          <Suspense fallback={<div className="text-xs text-slate-500">Loading admin console...</div>}>
+            <AdminConsole 
+              localities={localities}
+              businesses={businesses}
+              subdomains={subdomains}
+              onApprove={handleApproveBusiness}
+              onReject={handleRejectBusiness}
+              onCreateLocality={handleCreateLocality}
+              onDeleteLocality={handleDeleteLocality}
+              onUpdateBusiness={handleUpdateBusiness} // Allows edits directly in queue!
+              userSession={userSession}
+              auditLogs={auditLogs}
+              pincodeMappings={pincodeMappings}
+              onAddPincodeMapping={handleAddPincodeMapping}
+              onDeletePincodeMapping={handleDeletePincodeMapping}
+              defaultLocalityId={defaultLocalityId}
+              onChangeDefaultLocalityId={handleChangeDefaultLocalityId}
+              onBulkImportBusinesses={handleBulkImportBusinesses}
+              listingAds={listingAds}
+              onCreateListingAd={handleCreateListingAd}
+              onUpdateListingAd={handleUpdateListingAd}
+              onDeleteListingAd={handleDeleteListingAd}
+              heroBanners={heroBanners}
+              onCreateHeroBanner={handleCreateHeroBanner}
+              onUpdateHeroBanner={handleUpdateHeroBanner}
+              onDeleteHeroBanner={handleDeleteHeroBanner}
+              adLeads={adLeads}
+              localityCategoryLinks={localityCategoryLinks}
+              onCreateLocalityCategoryLink={handleCreateLocalityCategoryLink}
+              onDeleteLocalityCategoryLink={handleDeleteLocalityCategoryLink}
+            />
+          </Suspense>
         )}
 
       </main>
 
       {/* Pristine, Professional Footer */}
       <footer className="bg-slate-900 border-t border-slate-800 text-slate-400 py-10 mt-16">
-        <div className="max-w-7xl mx-auto px-4 md:px-8 flex flex-col md:flex-row items-center justify-between gap-6">
+        <div className="max-w-7xl mx-auto px-4 md:px-8 flex flex-col gap-6">
           <div className="space-y-1.5 text-center md:text-left">
             <span className="block text-white font-bold text-sm">{activeNodeLabel} Businesses</span>
             <span className="block text-xs text-slate-500">Your trusted neighbourhood Hyper Local directory node. {localityServingLabel}</span>
@@ -1590,7 +1975,24 @@ export default function App() {
               </span>
             )}
           </div>
-          <div className="flex flex-wrap items-center justify-center gap-4 text-xs">
+          <div className="space-y-2">
+            <span className="block text-[11px] font-bold uppercase tracking-wider text-slate-300">
+              Popular Searches
+            </span>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
+              {seoFooterLinks.map((link) => (
+                <a
+                  key={link.id}
+                  href={buildSeoHref(link.categoryId, link.q)}
+                  onClick={(e) => handleSeoFooterLinkClick(e, link.categoryId, link.q)}
+                  className="text-[11px] text-slate-300 hover:text-white hover:underline underline-offset-2 transition"
+                >
+                  {link.label}
+                </a>
+              ))}
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center justify-center md:justify-between gap-4 text-xs">
             <button 
               style={{ display: PRODUCTION_MODE ? 'none' : 'inline-flex' }}
               onClick={() => {
@@ -1604,7 +2006,7 @@ export default function App() {
               🔐 Moderator Login Gate
             </button>
             <span className="text-slate-600" style={{ display: PRODUCTION_MODE ? 'none' : 'inline' }}>|</span>
-            <span className="text-xs text-slate-500">© 2026 Happy Gifting Businesses.</span>
+            <span className="text-xs text-slate-500">(c) 2026 Happy Gifting Businesses.</span>
           </div>
         </div>
       </footer>
