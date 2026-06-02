@@ -5,7 +5,8 @@ import {
 } from './data';
 import { 
   Locality, Business, SubdomainMapping, Review, UserSession, UserRole,
-  CommunityItem, CRMContact, MarketingCoupon, AuditEvent, ListingAd, AdLead, HeroBanner
+  CommunityItem, CRMContact, MarketingCoupon, AuditEvent, ListingAd, AdLead, HeroBanner,
+  HomepageLayout, HomepageSection, HomepageSectionType
 } from './types';
 import WebPortal from './components/WebPortal';
 import PincodeSelectionModal from './components/PincodeSelectionModal';
@@ -99,6 +100,291 @@ const slugifyForUrl = (value: string) => value
   .replace(/[^a-z0-9]+/g, '-')
   .replace(/^-+|-+$/g, '');
 
+const normalizeStringList = (value: unknown): string[] => (
+  Array.isArray(value)
+    ? value
+        .map((entry) => String(entry || '').trim())
+        .filter(Boolean)
+    : []
+);
+
+const getTodayIso = () => new Date().toISOString().slice(0, 10);
+
+const normalizeStoredCoupon = (coupon: MarketingCoupon): MarketingCoupon => {
+  const endDate = coupon.endDate || coupon.expiryDate || getTodayIso();
+  return {
+    ...coupon,
+    title: coupon.title || coupon.description || coupon.code,
+    startDate: coupon.startDate || getTodayIso(),
+    expiryDate: endDate,
+    endDate,
+    isActive: coupon.isActive ?? true,
+    localityIds: normalizeStringList(coupon.localityIds),
+    pincodes: normalizeStringList(coupon.pincodes),
+    categoryIds: normalizeStringList(coupon.categoryIds),
+    badgeText: coupon.badgeText || coupon.discount,
+    ctaText: coupon.ctaText || 'Claim Offer',
+    targetBusinessId: coupon.targetBusinessId || coupon.businessId
+  };
+};
+
+const normalizeStoredListingAd = (ad: ListingAd): ListingAd => ({
+  ...ad,
+  localityIds: normalizeStringList(ad.localityIds),
+  pincodes: normalizeStringList(ad.pincodes),
+  placementKey: ad.placementKey || 'homepage_inline_primary',
+  deviceTarget: ad.deviceTarget || 'all'
+});
+
+const normalizeStoredHeroBanner = (banner: HeroBanner): HeroBanner => ({
+  ...banner,
+  ctaLabel: banner.ctaLabel || 'Explore Businesses',
+  ctaType: banner.ctaType || 'search_category',
+  ctaTarget: banner.ctaTarget || 'all',
+  pincodes: normalizeStringList(banner.pincodes)
+});
+
+const getSectionLabel = (sectionType: HomepageSectionType) => {
+  switch (sectionType) {
+    case 'hero_banner':
+      return 'Hero Banner';
+    case 'search_discovery':
+      return 'Search & Discovery';
+    case 'emergency_grid':
+      return 'Emergency Services';
+    case 'promo_banner':
+      return 'Promo Banner';
+    case 'featured_businesses':
+      return 'Featured Businesses';
+    case 'business_shelf':
+      return 'Business Shelf';
+    case 'offers_list':
+      return 'Offers & Deals';
+    case 'updates_feed':
+      return 'Locality Updates';
+    case 'category_grid':
+      return 'Category Grid';
+    case 'verified_business_grid':
+      return 'Verified Businesses';
+    case 'trust_strip':
+      return 'Trust Strip';
+    default:
+      return 'Homepage Section';
+  }
+};
+
+const normalizeHomepageSection = (
+  section: HomepageSection,
+  localityId: string,
+  index: number
+): HomepageSection => ({
+  ...section,
+  id: section.id || `home_section_${localityId}_${index + 1}`,
+  title: section.title || getSectionLabel(section.sectionType),
+  status: section.status || 'active',
+  visible: section.visible ?? true,
+  sortOrder: section.sortOrder ?? (index + 1) * 10,
+  localityIds: normalizeStringList(section.localityIds).length > 0
+    ? normalizeStringList(section.localityIds)
+    : [localityId],
+  pincodes: normalizeStringList(section.pincodes),
+  ctaType: section.ctaType || 'none',
+  showViewAll: section.showViewAll ?? true,
+  maxItems: section.maxItems ?? (section.sectionType === 'verified_business_grid' ? 9 : 6)
+});
+
+const reindexHomepageSections = (sections: HomepageSection[]) => (
+  [...sections]
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map((section, index) => ({
+      ...section,
+      sortOrder: (index + 1) * 10
+    }))
+);
+
+const buildDefaultHomepageLayout = (locality: Locality): HomepageLayout => {
+  const localityName = locality.name.split(',')[0];
+  const sections: HomepageSection[] = reindexHomepageSections([
+    {
+      id: `home_${locality.id}_hero`,
+      sectionType: 'hero_banner',
+      title: `Hero: ${localityName}`,
+      subtitle: `Primary visual banner for ${localityName}`,
+      status: 'active',
+      visible: true,
+      sortOrder: 10,
+      startDate: getTodayIso(),
+      localityIds: [locality.id],
+      ctaLabel: 'Explore Businesses',
+      ctaType: 'search_category',
+      ctaTarget: 'all',
+      showViewAll: false
+    },
+    {
+      id: `home_${locality.id}_search`,
+      sectionType: 'search_discovery',
+      title: 'Search & Discover',
+      subtitle: 'Locality-aware search with quick categories',
+      status: 'active',
+      visible: true,
+      sortOrder: 20,
+      localityIds: [locality.id],
+      showViewAll: false
+    },
+    {
+      id: `home_${locality.id}_emergency`,
+      sectionType: 'emergency_grid',
+      title: 'Emergency Services',
+      subtitle: 'Critical support nearby',
+      status: 'active',
+      visible: true,
+      sortOrder: 30,
+      localityIds: [locality.id],
+      maxItems: 8,
+      showViewAll: true
+    },
+    {
+      id: `home_${locality.id}_promo`,
+      sectionType: 'promo_banner',
+      title: 'Promoted This Week',
+      subtitle: 'Scheduled paid banner placement',
+      status: 'active',
+      visible: true,
+      sortOrder: 40,
+      localityIds: [locality.id],
+      placementKey: 'homepage_inline_primary',
+      showViewAll: false
+    },
+    {
+      id: `home_${locality.id}_featured`,
+      sectionType: 'featured_businesses',
+      title: 'Premium Featured Businesses',
+      subtitle: 'Priority merchants in this locality',
+      status: 'active',
+      visible: true,
+      sortOrder: 50,
+      localityIds: [locality.id],
+      maxItems: 6,
+      showViewAll: true
+    },
+    {
+      id: `home_${locality.id}_shelf`,
+      sectionType: 'business_shelf',
+      title: 'Home Kitchens & Bakers',
+      subtitle: 'Curated shelf with repeatable category merchandising',
+      status: 'active',
+      visible: true,
+      sortOrder: 60,
+      localityIds: [locality.id],
+      categoryId: 'food-restaurants',
+      subcategoryId: 'tiffin-services',
+      maxItems: 4,
+      showViewAll: true
+    },
+    {
+      id: `home_${locality.id}_categories`,
+      sectionType: 'category_grid',
+      title: 'Explore by Categories',
+      subtitle: 'Jump into high-intent categories',
+      status: 'active',
+      visible: true,
+      sortOrder: 70,
+      localityIds: [locality.id],
+      maxItems: 12,
+      showViewAll: true
+    },
+    {
+      id: `home_${locality.id}_offers`,
+      sectionType: 'offers_list',
+      title: 'Offers & Deals',
+      subtitle: 'Scheduled offers filtered by locality and pincode',
+      status: 'active',
+      visible: true,
+      sortOrder: 80,
+      localityIds: [locality.id],
+      maxItems: 4,
+      showViewAll: true
+    },
+    {
+      id: `home_${locality.id}_updates`,
+      sectionType: 'updates_feed',
+      title: `${localityName} Updates`,
+      subtitle: 'Timed announcements and community updates',
+      status: 'active',
+      visible: true,
+      sortOrder: 90,
+      localityIds: [locality.id],
+      maxItems: 4,
+      showViewAll: true
+    },
+    {
+      id: `home_${locality.id}_verified`,
+      sectionType: 'verified_business_grid',
+      title: 'Verified Businesses Near You',
+      subtitle: 'Trusted approved listings for this locality',
+      status: 'active',
+      visible: true,
+      sortOrder: 100,
+      localityIds: [locality.id],
+      maxItems: 9,
+      showViewAll: true
+    },
+    {
+      id: `home_${locality.id}_trust`,
+      sectionType: 'trust_strip',
+      title: 'Trust Highlights',
+      subtitle: 'Closing reassurance and platform trust points',
+      status: 'active',
+      visible: true,
+      sortOrder: 110,
+      localityIds: [locality.id],
+      showViewAll: false
+    }
+  ]);
+
+  return {
+    id: `homepage_${locality.id}`,
+    localityId: locality.id,
+    name: `${localityName} Homepage`,
+    status: 'active',
+    visible: true,
+    sections,
+    updatedAt: new Date().toISOString()
+  };
+};
+
+const normalizeHomepageLayout = (
+  layout: HomepageLayout,
+  localities: Locality[]
+): HomepageLayout => {
+  const locality = localities.find((entry) => entry.id === layout.localityId);
+  const fallbackLocality = locality || localities[0];
+  const normalizedSections = reindexHomepageSections(
+    (layout.sections || []).map((section, index) => normalizeHomepageSection(section, layout.localityId, index))
+  );
+  return {
+    ...layout,
+    id: layout.id || `homepage_${layout.localityId}`,
+    name: layout.name || `${fallbackLocality?.name.split(',')[0] || layout.localityId} Homepage`,
+    status: layout.status || 'active',
+    visible: layout.visible ?? true,
+    sections: normalizedSections,
+    updatedAt: layout.updatedAt || new Date().toISOString()
+  };
+};
+
+const ensureHomepageLayouts = (
+  layouts: HomepageLayout[],
+  localities: Locality[]
+): HomepageLayout[] => {
+  const normalizedLayouts = layouts.map((layout) => normalizeHomepageLayout(layout, localities));
+  const existingLocalityIds = new Set(normalizedLayouts.map((layout) => layout.localityId));
+  const missingLayouts = localities
+    .filter((locality) => !existingLocalityIds.has(locality.id))
+    .map((locality) => buildDefaultHomepageLayout(locality));
+  return [...normalizedLayouts, ...missingLayouts];
+};
+
 const ProposalPanel = lazy(() => import('./components/ProposalPanel'));
 const AndroidSimulator = lazy(() => import('./components/AndroidSimulator'));
 const AdminConsole = lazy(() => import('./components/AdminConsole'));
@@ -125,6 +411,7 @@ export default function App() {
       localStorage.removeItem('yp_ad_leads');
       localStorage.removeItem('yp_hero_banners');
       localStorage.removeItem('yp_locality_category_links');
+      localStorage.removeItem('yp_homepage_layouts');
       localStorage.setItem('yp_cache_version', CURRENT_DB_VERSION);
     }
   });
@@ -156,6 +443,7 @@ export default function App() {
       localStorage.removeItem('yp_ad_leads');
       localStorage.removeItem('yp_hero_banners');
       localStorage.removeItem('yp_locality_category_links');
+      localStorage.removeItem('yp_homepage_layouts');
     }
     return INITIAL_LOCALITIES;
   });
@@ -221,7 +509,7 @@ export default function App() {
 
   const [listingAds, setListingAds] = useState<ListingAd[]>(() => {
     const saved = localStorage.getItem('yp_listing_ads');
-    if (saved) return JSON.parse(saved);
+    if (saved) return JSON.parse(saved).map(normalizeStoredListingAd);
     const now = new Date();
     const startDate = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
     const endDate = new Date(now.getFullYear(), now.getMonth() + 2, 0).toISOString().slice(0, 10);
@@ -237,9 +525,12 @@ export default function App() {
         endDate,
         actionType: 'landing_page',
         targetUrl: 'https://www.jio.com/fiber',
+        localityIds: ['roadpali'],
+        placementKey: 'homepage_inline_primary',
+        deviceTarget: 'all',
         isActive: true
       }
-    ];
+    ].map(normalizeStoredListingAd);
   });
 
   const [adLeads, setAdLeads] = useState<AdLead[]>(() => {
@@ -249,7 +540,7 @@ export default function App() {
 
   const [heroBanners, setHeroBanners] = useState<HeroBanner[]>(() => {
     const saved = localStorage.getItem('yp_hero_banners');
-    if (saved) return JSON.parse(saved);
+    if (saved) return JSON.parse(saved).map(normalizeStoredHeroBanner);
     const startDate = new Date().toISOString().slice(0, 10);
     const endDate = new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().slice(0, 10);
     return INITIAL_LOCALITIES.map((locality) => ({
@@ -260,8 +551,11 @@ export default function App() {
       imageUrl: (locality.carouselImages && locality.carouselImages[0]) || locality.coverImage,
       startDate,
       endDate,
+      ctaLabel: 'Explore Businesses',
+      ctaType: 'search_category',
+      ctaTarget: 'all',
       isActive: true
-    }));
+    })).map(normalizeStoredHeroBanner);
   });
 
   const [urlCategoryFilter, setUrlCategoryFilter] = useState<string | null>(null);
@@ -275,6 +569,18 @@ export default function App() {
     const saved = localStorage.getItem('yp_locality_category_links');
     if (saved) return JSON.parse(saved);
     return [];
+  });
+
+  const [homepageLayouts, setHomepageLayouts] = useState<HomepageLayout[]>(() => {
+    const saved = localStorage.getItem('yp_homepage_layouts');
+    if (saved) {
+      try {
+        return ensureHomepageLayouts(JSON.parse(saved), localities);
+      } catch (error) {
+        localStorage.removeItem('yp_homepage_layouts');
+      }
+    }
+    return localities.map((locality) => buildDefaultHomepageLayout(locality));
   });
 
   const seoIntentBySlug = useMemo(() => {
@@ -376,7 +682,7 @@ export default function App() {
 
   const [coupons, setCoupons] = useState<MarketingCoupon[]>(() => {
     const saved = localStorage.getItem('yp_coupons');
-    return saved ? JSON.parse(saved) : INITIAL_COUPONS;
+    return saved ? JSON.parse(saved).map(normalizeStoredCoupon) : INITIAL_COUPONS.map(normalizeStoredCoupon);
   });
 
   const [auditLogs, setAuditLogs] = useState<AuditEvent[]>(() => {
@@ -503,6 +809,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('yp_locality_category_links', JSON.stringify(localityCategoryLinks));
   }, [localityCategoryLinks]);
+
+  useEffect(() => {
+    localStorage.setItem('yp_homepage_layouts', JSON.stringify(homepageLayouts));
+  }, [homepageLayouts]);
 
   useEffect(() => {
     localStorage.setItem('yp_audit_logs', JSON.stringify(auditLogs));
@@ -671,26 +981,26 @@ export default function App() {
   };
 
   const handleAddCoupon = (coupon: Omit<MarketingCoupon, 'id' | 'usageCount'>) => {
-    const fresh: MarketingCoupon = {
+    const fresh: MarketingCoupon = normalizeStoredCoupon({
       ...coupon,
       id: `cpn_${Date.now()}`,
       usageCount: 0
-    };
+    });
     setCoupons(prev => [fresh, ...prev]);
     logAuditEvent('data_entry', `Launched promotional listing coupon code: "${coupon.code}"`, `Discount: ${coupon.discount} | Business ID: ${coupon.businessId}`);
   };
 
   const handleCreateListingAd = (adInput: Omit<ListingAd, 'id'>) => {
-    const freshAd: ListingAd = {
+    const freshAd: ListingAd = normalizeStoredListingAd({
       ...adInput,
       id: `ad_${Date.now()}`
-    };
+    });
     setListingAds((prev) => [freshAd, ...prev]);
     logAuditEvent('data_entry', `Created listing ad banner`, `Ad: "${adInput.title}" | Action: ${adInput.actionType}`);
   };
 
   const handleUpdateListingAd = (ad: ListingAd) => {
-    setListingAds((prev) => prev.map((existing) => (existing.id === ad.id ? ad : existing)));
+    setListingAds((prev) => prev.map((existing) => (existing.id === ad.id ? normalizeStoredListingAd(ad) : existing)));
     logAuditEvent('data_entry', `Updated listing ad banner`, `Ad ID: ${ad.id}`);
   };
 
@@ -701,22 +1011,117 @@ export default function App() {
   };
 
   const handleCreateHeroBanner = (bannerInput: Omit<HeroBanner, 'id'>) => {
-    const freshBanner: HeroBanner = {
+    const freshBanner: HeroBanner = normalizeStoredHeroBanner({
       ...bannerInput,
       id: `hero_${Date.now()}`
-    };
+    });
     setHeroBanners((prev) => [freshBanner, ...prev]);
     logAuditEvent('data_entry', `Created hero banner`, `Locality: ${bannerInput.localityId}`);
   };
 
   const handleUpdateHeroBanner = (banner: HeroBanner) => {
-    setHeroBanners((prev) => prev.map((existing) => (existing.id === banner.id ? banner : existing)));
+    setHeroBanners((prev) => prev.map((existing) => (existing.id === banner.id ? normalizeStoredHeroBanner(banner) : existing)));
     logAuditEvent('data_entry', `Updated hero banner`, `Hero ID: ${banner.id}`);
   };
 
   const handleDeleteHeroBanner = (bannerId: string) => {
     setHeroBanners((prev) => prev.filter((banner) => banner.id !== bannerId));
     logAuditEvent('data_entry', `Deleted hero banner`, `Hero ID: ${bannerId}`);
+  };
+
+  const mutateHomepageLayout = (
+    localityId: string,
+    mutator: (layout: HomepageLayout) => HomepageLayout
+  ) => {
+    setHomepageLayouts((prev) => {
+      const locality = localities.find((entry) => entry.id === localityId) || localities[0];
+      const existingLayout = prev.find((layout) => layout.localityId === localityId) || buildDefaultHomepageLayout(locality);
+      const nextLayout = {
+        ...mutator(existingLayout),
+        updatedAt: new Date().toISOString()
+      };
+      const filtered = prev.filter((layout) => layout.localityId !== localityId);
+      return [...filtered, normalizeHomepageLayout(nextLayout, localities)];
+    });
+  };
+
+  const handleCreateHomepageSection = (
+    localityId: string,
+    sectionInput: Omit<HomepageSection, 'id' | 'sortOrder'>
+  ) => {
+    mutateHomepageLayout(localityId, (layout) => {
+      const nextSection = normalizeHomepageSection(
+        {
+          ...sectionInput,
+          id: `home_section_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+          sortOrder: (layout.sections[layout.sections.length - 1]?.sortOrder || 0) + 10
+        } as HomepageSection,
+        localityId,
+        layout.sections.length
+      );
+      return {
+        ...layout,
+        sections: reindexHomepageSections([...layout.sections, nextSection])
+      };
+    });
+    logAuditEvent('data_entry', 'Created homepage section', `Locality: ${localityId} | Type: ${sectionInput.sectionType}`);
+  };
+
+  const handleUpdateHomepageSection = (localityId: string, section: HomepageSection) => {
+    mutateHomepageLayout(localityId, (layout) => ({
+      ...layout,
+      sections: reindexHomepageSections(
+        layout.sections.map((existing) => (existing.id === section.id ? normalizeHomepageSection(section, localityId, 0) : existing))
+      )
+    }));
+    logAuditEvent('data_entry', 'Updated homepage section', `Locality: ${localityId} | Section ID: ${section.id}`);
+  };
+
+  const handleDeleteHomepageSection = (localityId: string, sectionId: string) => {
+    mutateHomepageLayout(localityId, (layout) => ({
+      ...layout,
+      sections: reindexHomepageSections(layout.sections.filter((section) => section.id !== sectionId))
+    }));
+    logAuditEvent('data_entry', 'Deleted homepage section', `Locality: ${localityId} | Section ID: ${sectionId}`);
+  };
+
+  const handleDuplicateHomepageSection = (localityId: string, sectionId: string) => {
+    mutateHomepageLayout(localityId, (layout) => {
+      const target = layout.sections.find((section) => section.id === sectionId);
+      if (!target) return layout;
+      const duplicate = normalizeHomepageSection(
+        {
+          ...target,
+          id: `home_section_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+          title: `${target.title} Copy`,
+          sortOrder: target.sortOrder + 1
+        },
+        localityId,
+        layout.sections.length
+      );
+      return {
+        ...layout,
+        sections: reindexHomepageSections([...layout.sections, duplicate])
+      };
+    });
+    logAuditEvent('data_entry', 'Duplicated homepage section', `Locality: ${localityId} | Section ID: ${sectionId}`);
+  };
+
+  const handleMoveHomepageSection = (localityId: string, sectionId: string, direction: 'up' | 'down') => {
+    mutateHomepageLayout(localityId, (layout) => {
+      const sorted = reindexHomepageSections(layout.sections);
+      const index = sorted.findIndex((section) => section.id === sectionId);
+      if (index === -1) return layout;
+      const nextIndex = direction === 'up' ? index - 1 : index + 1;
+      if (nextIndex < 0 || nextIndex >= sorted.length) return layout;
+      const nextSections = [...sorted];
+      [nextSections[index], nextSections[nextIndex]] = [nextSections[nextIndex], nextSections[index]];
+      return {
+        ...layout,
+        sections: reindexHomepageSections(nextSections)
+      };
+    });
+    logAuditEvent('data_entry', 'Reordered homepage section', `Locality: ${localityId} | Section ID: ${sectionId} | Direction: ${direction}`);
   };
 
   const handleSubmitAdLead = (leadInput: Omit<AdLead, 'id' | 'createdAt'>) => {
@@ -823,6 +1228,7 @@ export default function App() {
 
     setLocalities(prev => [...prev, newLoc]);
     setSubdomains(prev => [...prev, newSub]);
+    setHomepageLayouts(prev => [...prev, buildDefaultHomepageLayout(newLoc)]);
     logAuditEvent('data_entry', `Provisioned new municipal zone shard database and SSL routing: "${name}"`, `Virtual host bound to: ${subdomain}`);
   };
 
@@ -830,6 +1236,7 @@ export default function App() {
     const target = localities.find(l => l.id === locId);
     setLocalities(prev => prev.filter(l => l.id !== locId));
     setSubdomains(prev => prev.filter(s => s.localityId !== locId));
+    setHomepageLayouts(prev => prev.filter((layout) => layout.localityId !== locId));
     // Re-route if deleting current active locality
     if (activeLocalityId === locId) {
       const remaining = localities.filter(l => l.id !== locId);
@@ -938,13 +1345,14 @@ export default function App() {
       localStorage.removeItem('yp_ad_leads');
       localStorage.removeItem('yp_hero_banners');
       localStorage.removeItem('yp_locality_category_links');
+      localStorage.removeItem('yp_homepage_layouts');
       
       setLocalities(INITIAL_LOCALITIES);
       setBusinesses(INITIAL_BUSINESSES.map(normalizeStoredBusiness));
       setReviews(INITIAL_REVIEWS);
       setCommunityItems(INITIAL_COMMUNITY_ITEMS);
       setCrmContacts(INITIAL_CRM_CONTACTS);
-      setCoupons(INITIAL_COUPONS);
+      setCoupons(INITIAL_COUPONS.map(normalizeStoredCoupon));
       setListingAds([]);
       setAdLeads([]);
       setHeroBanners(INITIAL_LOCALITIES.map((locality) => ({
@@ -955,9 +1363,13 @@ export default function App() {
         imageUrl: (locality.carouselImages && locality.carouselImages[0]) || locality.coverImage,
         startDate: new Date().toISOString().slice(0, 10),
         endDate: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().slice(0, 10),
+        ctaLabel: 'Explore Businesses',
+        ctaType: 'search_category',
+        ctaTarget: 'all',
         isActive: true
-      })));
+      })).map(normalizeStoredHeroBanner));
       setLocalityCategoryLinks([]);
+      setHomepageLayouts(INITIAL_LOCALITIES.map((locality) => buildDefaultHomepageLayout(locality)));
       setSubdomains(INITIAL_LOCALITIES.map(l => ({
         domain: l.subdomain,
         localityId: l.id,
@@ -1889,6 +2301,7 @@ export default function App() {
             listingAds={listingAds}
             adLeads={adLeads}
             heroBanners={heroBanners}
+            homepageLayouts={homepageLayouts}
             onSubmitAdLead={handleSubmitAdLead}
             urlCategoryFilter={urlCategoryFilter}
             urlSubcategoryFilter={urlSubcategoryFilter}
@@ -1952,6 +2365,14 @@ export default function App() {
               onCreateHeroBanner={handleCreateHeroBanner}
               onUpdateHeroBanner={handleUpdateHeroBanner}
               onDeleteHeroBanner={handleDeleteHeroBanner}
+              coupons={coupons}
+              onAddCoupon={handleAddCoupon}
+              homepageLayouts={homepageLayouts}
+              onCreateHomepageSection={handleCreateHomepageSection}
+              onUpdateHomepageSection={handleUpdateHomepageSection}
+              onDeleteHomepageSection={handleDeleteHomepageSection}
+              onDuplicateHomepageSection={handleDuplicateHomepageSection}
+              onMoveHomepageSection={handleMoveHomepageSection}
               adLeads={adLeads}
               localityCategoryLinks={localityCategoryLinks}
               onCreateLocalityCategoryLink={handleCreateLocalityCategoryLink}

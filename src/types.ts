@@ -125,11 +125,21 @@ export interface CRMContact {
 export interface MarketingCoupon {
   id: string;
   businessId: string;
+  title?: string;
   code: string;
   discount: string;
   description: string;
+  startDate?: string;
   expiryDate: string;
+  endDate?: string;
   usageCount: number;
+  isActive?: boolean;
+  localityIds?: string[];
+  pincodes?: string[];
+  categoryIds?: string[];
+  badgeText?: string;
+  ctaText?: string;
+  targetBusinessId?: string;
 }
 
 export interface ListingAd {
@@ -145,6 +155,10 @@ export interface ListingAd {
   targetUrl?: string;
   targetBusinessId?: string;
   sellerBusinessId?: string;
+  localityIds?: string[];
+  pincodes?: string[];
+  placementKey?: string;
+  deviceTarget?: 'all' | 'desktop' | 'mobile';
   isActive: boolean;
 }
 
@@ -167,7 +181,64 @@ export interface HeroBanner {
   imageUrl: string;
   startDate: string;
   endDate: string;
+  ctaLabel?: string;
+  ctaType?: 'landing_page' | 'landing_listing' | 'lead_form' | 'search_category';
+  ctaTarget?: string;
+  pincodes?: string[];
   isActive: boolean;
+}
+
+export type HomepageSectionType =
+  | 'hero_banner'
+  | 'search_discovery'
+  | 'emergency_grid'
+  | 'promo_banner'
+  | 'featured_businesses'
+  | 'business_shelf'
+  | 'offers_list'
+  | 'updates_feed'
+  | 'category_grid'
+  | 'verified_business_grid'
+  | 'trust_strip';
+
+export type HomepageSectionCtaType =
+  | 'none'
+  | 'landing_page'
+  | 'landing_listing'
+  | 'lead_form'
+  | 'search_category';
+
+export interface HomepageSection {
+  id: string;
+  sectionType: HomepageSectionType;
+  title: string;
+  subtitle?: string;
+  status: 'active' | 'inactive';
+  visible: boolean;
+  sortOrder: number;
+  startDate?: string;
+  endDate?: string;
+  localityIds?: string[];
+  pincodes?: string[];
+  categoryId?: string;
+  subcategoryId?: string;
+  placementKey?: string;
+  maxItems?: number;
+  ctaLabel?: string;
+  ctaType?: HomepageSectionCtaType;
+  ctaTarget?: string;
+  backgroundColor?: string;
+  showViewAll?: boolean;
+}
+
+export interface HomepageLayout {
+  id: string;
+  localityId: string;
+  name: string;
+  status: 'active' | 'inactive';
+  visible: boolean;
+  sections: HomepageSection[];
+  updatedAt: string;
 }
 
 export interface Category {

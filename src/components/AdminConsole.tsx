@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { 
   CheckCircle, XCircle, Plus, Info, Globe, AlertCircle, 
-  Trash2, PlusCircle, Check, Database, Eye, Server, RefreshCw, MapPin
+  Trash2, PlusCircle, Check, Database, Eye, Server, RefreshCw, MapPin, Copy, ChevronUp, ChevronDown
 } from 'lucide-react';
-import { Locality, Business, SubdomainMapping, UserSession, AuditEvent, ListingAd, HeroBanner, AdLead } from '../types';
+import { Locality, Business, SubdomainMapping, UserSession, AuditEvent, ListingAd, HeroBanner, AdLead, MarketingCoupon, HomepageLayout, HomepageSection, HomepageSectionType } from '../types';
 import { MASTER_AREAS } from '../data';
 import { getBusinessImageUrl, getCategoryFallbackImage, hasUploadedBusinessImage } from '../utils/businessImage';
 import {
@@ -55,6 +55,14 @@ interface AdminConsoleProps {
   onCreateHeroBanner?: (banner: Omit<HeroBanner, 'id'>) => void;
   onUpdateHeroBanner?: (banner: HeroBanner) => void;
   onDeleteHeroBanner?: (bannerId: string) => void;
+  coupons?: MarketingCoupon[];
+  onAddCoupon?: (coupon: Omit<MarketingCoupon, 'id' | 'usageCount'>) => void;
+  homepageLayouts?: HomepageLayout[];
+  onCreateHomepageSection?: (localityId: string, section: Omit<HomepageSection, 'id' | 'sortOrder'>) => void;
+  onUpdateHomepageSection?: (localityId: string, section: HomepageSection) => void;
+  onDeleteHomepageSection?: (localityId: string, sectionId: string) => void;
+  onDuplicateHomepageSection?: (localityId: string, sectionId: string) => void;
+  onMoveHomepageSection?: (localityId: string, sectionId: string, direction: 'up' | 'down') => void;
   adLeads?: AdLead[];
   localityCategoryLinks?: LocalityCategoryLink[];
   onCreateLocalityCategoryLink?: (payload: Omit<LocalityCategoryLink, 'id'>) => void;
@@ -134,6 +142,14 @@ export default function AdminConsole({
   onCreateHeroBanner,
   onUpdateHeroBanner,
   onDeleteHeroBanner,
+  coupons = [],
+  onAddCoupon,
+  homepageLayouts = [],
+  onCreateHomepageSection,
+  onUpdateHomepageSection,
+  onDeleteHomepageSection,
+  onDuplicateHomepageSection,
+  onMoveHomepageSection,
   adLeads = [],
   localityCategoryLinks = [],
   onCreateLocalityCategoryLink,
@@ -174,6 +190,9 @@ export default function AdminConsole({
   const [adTargetUrl, setAdTargetUrl] = useState('');
   const [adTargetBusinessId, setAdTargetBusinessId] = useState('');
   const [adSellerBusinessId, setAdSellerBusinessId] = useState('');
+  const [adLocalityId, setAdLocalityId] = useState(localities[0]?.id || 'roadpali');
+  const [adPincodes, setAdPincodes] = useState('');
+  const [adPlacementKey, setAdPlacementKey] = useState('homepage_inline_primary');
 
   const [heroLocalityId, setHeroLocalityId] = useState(localities[0]?.id || 'roadpali');
   const [heroTitle, setHeroTitle] = useState('');
@@ -181,6 +200,37 @@ export default function AdminConsole({
   const [heroImageUrl, setHeroImageUrl] = useState('');
   const [heroStartDate, setHeroStartDate] = useState(new Date().toISOString().slice(0, 10));
   const [heroEndDate, setHeroEndDate] = useState(new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().slice(0, 10));
+  const [heroCtaLabel, setHeroCtaLabel] = useState('Explore Businesses');
+  const [heroCtaType, setHeroCtaType] = useState<NonNullable<HeroBanner['ctaType']>>('search_category');
+  const [heroCtaTarget, setHeroCtaTarget] = useState('all');
+  const [heroPincodes, setHeroPincodes] = useState('');
+
+  const [couponBusinessId, setCouponBusinessId] = useState('');
+  const [couponTitle, setCouponTitle] = useState('');
+  const [couponCode, setCouponCode] = useState('');
+  const [couponDiscount, setCouponDiscount] = useState('');
+  const [couponDescription, setCouponDescription] = useState('');
+  const [couponStartDate, setCouponStartDate] = useState(new Date().toISOString().slice(0, 10));
+  const [couponEndDate, setCouponEndDate] = useState(new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().slice(0, 10));
+  const [couponLocalityId, setCouponLocalityId] = useState(localities[0]?.id || 'roadpali');
+  const [couponPincodes, setCouponPincodes] = useState('');
+
+  const [homepageLocalityId, setHomepageLocalityId] = useState(localities[0]?.id || 'roadpali');
+  const [newSectionType, setNewSectionType] = useState<HomepageSectionType>('hero_banner');
+  const [newSectionTitle, setNewSectionTitle] = useState('Hero Banner');
+  const [newSectionSubtitle, setNewSectionSubtitle] = useState('');
+  const [newSectionCategoryId, setNewSectionCategoryId] = useState(BUSINESS_CATEGORIES[0]?.id || 'food-restaurants');
+  const [newSectionSubcategoryId, setNewSectionSubcategoryId] = useState('');
+  const [newSectionPlacementKey, setNewSectionPlacementKey] = useState('homepage_inline_primary');
+  const [newSectionMaxItems, setNewSectionMaxItems] = useState('6');
+  const [newSectionCtaLabel, setNewSectionCtaLabel] = useState('');
+  const [newSectionCtaType, setNewSectionCtaType] = useState<HomepageSection['ctaType']>('none');
+  const [newSectionCtaTarget, setNewSectionCtaTarget] = useState('');
+  const [newSectionBackgroundColor, setNewSectionBackgroundColor] = useState('#ffffff');
+  const [newSectionStartDate, setNewSectionStartDate] = useState(new Date().toISOString().slice(0, 10));
+  const [newSectionEndDate, setNewSectionEndDate] = useState('');
+  const [newSectionPincodes, setNewSectionPincodes] = useState('');
+  const [newSectionShowViewAll, setNewSectionShowViewAll] = useState(true);
 
   const [linkLocalityId, setLinkLocalityId] = useState(localities[0]?.id || 'roadpali');
   const [linkCategoryId, setLinkCategoryId] = useState(BUSINESS_CATEGORIES[0]?.id || 'food-restaurants');
@@ -191,10 +241,19 @@ export default function AdminConsole({
     if (!localities.some((locality) => locality.id === heroLocalityId)) {
       setHeroLocalityId(localities[0].id);
     }
+    if (!localities.some((locality) => locality.id === adLocalityId)) {
+      setAdLocalityId(localities[0].id);
+    }
+    if (!localities.some((locality) => locality.id === couponLocalityId)) {
+      setCouponLocalityId(localities[0].id);
+    }
+    if (!localities.some((locality) => locality.id === homepageLocalityId)) {
+      setHomepageLocalityId(localities[0].id);
+    }
     if (!localities.some((locality) => locality.id === linkLocalityId)) {
       setLinkLocalityId(localities[0].id);
     }
-  }, [localities, heroLocalityId, linkLocalityId]);
+  }, [localities, heroLocalityId, adLocalityId, couponLocalityId, homepageLocalityId, linkLocalityId]);
 
   useEffect(() => {
     if (!linkSubcategoryId) return;
@@ -202,6 +261,51 @@ export default function AdminConsole({
       setLinkSubcategoryId('');
     }
   }, [linkCategoryId, linkSubcategoryId]);
+
+  useEffect(() => {
+    if (!newSectionSubcategoryId) return;
+    if (!getSubcategoriesForCategory(newSectionCategoryId).some((subcategory) => subcategory.id === newSectionSubcategoryId)) {
+      setNewSectionSubcategoryId('');
+    }
+  }, [newSectionCategoryId, newSectionSubcategoryId]);
+
+  useEffect(() => {
+    if (!couponBusinessId) {
+      const firstApproved = businesses.find((business) => business.status === 'approved');
+      if (firstApproved) {
+        setCouponBusinessId(firstApproved.id);
+      }
+    }
+  }, [businesses, couponBusinessId]);
+
+  const parsePincodeList = (raw: string) => (
+    raw
+      .split(/[\s,]+/)
+      .map((entry) => entry.replace(/\D/g, '').trim())
+      .filter((entry, index, items) => entry.length === 6 && items.indexOf(entry) === index)
+  );
+
+  const homepageSectionLabels: Record<HomepageSectionType, string> = {
+    hero_banner: 'Hero Banner',
+    search_discovery: 'Search & Discovery',
+    emergency_grid: 'Emergency Services',
+    promo_banner: 'Promo Banner',
+    featured_businesses: 'Featured Businesses',
+    business_shelf: 'Business Shelf',
+    offers_list: 'Offers & Deals',
+    updates_feed: 'Locality Updates',
+    category_grid: 'Category Grid',
+    verified_business_grid: 'Verified Businesses',
+    trust_strip: 'Trust Strip'
+  };
+
+  const homepageSectionOptions = (Object.keys(homepageSectionLabels) as HomepageSectionType[]).map((sectionType) => ({
+    id: sectionType,
+    label: homepageSectionLabels[sectionType]
+  }));
+
+  const selectedHomepageLayout = homepageLayouts.find((layout) => layout.localityId === homepageLocalityId);
+  const homepageSections = [...(selectedHomepageLayout?.sections || [])].sort((a, b) => a.sortOrder - b.sortOrder);
 
   const parseCsvLine = (line: string) => {
     return line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map((s) => s.trim().replace(/^"|"$/g, ''));
@@ -545,6 +649,10 @@ export default function AdminConsole({
       targetUrl: adActionType === 'landing_page' ? adTargetUrl.trim() : undefined,
       targetBusinessId: adActionType === 'landing_listing' ? adTargetBusinessId : undefined,
       sellerBusinessId: adSellerBusinessId || undefined,
+      localityIds: adLocalityId ? [adLocalityId] : [],
+      pincodes: parsePincodeList(adPincodes),
+      placementKey: adPlacementKey.trim() || 'homepage_inline_primary',
+      deviceTarget: 'all',
       isActive: true
     });
 
@@ -555,6 +663,8 @@ export default function AdminConsole({
     setAdTargetUrl('');
     setAdTargetBusinessId('');
     setAdSellerBusinessId('');
+    setAdPincodes('');
+    setAdPlacementKey('homepage_inline_primary');
     triggerNotification('Listing ad created successfully.');
   };
 
@@ -571,12 +681,98 @@ export default function AdminConsole({
       imageUrl: heroImageUrl.trim(),
       startDate: heroStartDate,
       endDate: heroEndDate,
+      ctaLabel: heroCtaLabel.trim() || 'Explore Businesses',
+      ctaType: heroCtaType,
+      ctaTarget: heroCtaTarget.trim() || 'all',
+      pincodes: parsePincodeList(heroPincodes),
       isActive: true
     });
     setHeroTitle('');
     setHeroSubtitle('');
     setHeroImageUrl('');
+    setHeroCtaLabel('Explore Businesses');
+    setHeroCtaType('search_category');
+    setHeroCtaTarget('all');
+    setHeroPincodes('');
     triggerNotification('Hero banner created.');
+  };
+
+  const handleCreateCouponSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!couponBusinessId || !couponTitle.trim() || !couponCode.trim() || !couponDiscount.trim() || !couponDescription.trim()) {
+      triggerNotification('Please fill offer business, title, code, discount, and description.');
+      return;
+    }
+
+    onAddCoupon?.({
+      businessId: couponBusinessId,
+      title: couponTitle.trim(),
+      code: couponCode.trim(),
+      discount: couponDiscount.trim(),
+      description: couponDescription.trim(),
+      startDate: couponStartDate,
+      expiryDate: couponEndDate,
+      endDate: couponEndDate,
+      isActive: true,
+      localityIds: couponLocalityId ? [couponLocalityId] : [],
+      pincodes: parsePincodeList(couponPincodes),
+      badgeText: couponDiscount.trim(),
+      ctaText: 'Claim Offer',
+      targetBusinessId: couponBusinessId
+    });
+
+    setCouponTitle('');
+    setCouponCode('');
+    setCouponDiscount('');
+    setCouponDescription('');
+    setCouponPincodes('');
+    triggerNotification('Offer created successfully.');
+  };
+
+  const handleCreateHomepageSectionSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!homepageLocalityId || !newSectionTitle.trim()) {
+      triggerNotification('Choose locality and section title before adding a homepage section.');
+      return;
+    }
+
+    onCreateHomepageSection?.(homepageLocalityId, {
+      sectionType: newSectionType,
+      title: newSectionTitle.trim(),
+      subtitle: newSectionSubtitle.trim() || undefined,
+      status: 'active',
+      visible: true,
+      startDate: newSectionStartDate || undefined,
+      endDate: newSectionEndDate || undefined,
+      localityIds: [homepageLocalityId],
+      pincodes: parsePincodeList(newSectionPincodes),
+      categoryId: newSectionType === 'business_shelf' ? newSectionCategoryId : undefined,
+      subcategoryId: newSectionType === 'business_shelf' ? (newSectionSubcategoryId || undefined) : undefined,
+      placementKey: newSectionType === 'promo_banner' ? newSectionPlacementKey.trim() || 'homepage_inline_primary' : undefined,
+      maxItems: Number(newSectionMaxItems) > 0 ? Number(newSectionMaxItems) : undefined,
+      ctaLabel: newSectionCtaLabel.trim() || undefined,
+      ctaType: newSectionCtaType || 'none',
+      ctaTarget: newSectionCtaTarget.trim() || undefined,
+      backgroundColor: newSectionBackgroundColor || undefined,
+      showViewAll: newSectionShowViewAll
+    });
+
+    setNewSectionSubtitle('');
+    setNewSectionPincodes('');
+    setNewSectionCtaLabel('');
+    setNewSectionCtaType('none');
+    setNewSectionCtaTarget('');
+    setNewSectionBackgroundColor('#ffffff');
+    setNewSectionEndDate('');
+    setNewSectionMaxItems('6');
+    triggerNotification('Homepage section added.');
+  };
+
+  const updateHomepageSection = (section: HomepageSection, patch: Partial<HomepageSection>) => {
+    onUpdateHomepageSection?.(homepageLocalityId, {
+      ...section,
+      ...patch
+    });
   };
 
   const handleCreateLocalityCategoryLinkSubmit = (e: React.FormEvent) => {
@@ -1638,6 +1834,410 @@ export default function AdminConsole({
         </div>
 
         <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-base font-extrabold text-slate-950">Homepage Layout Manager</h3>
+              <p className="text-[11px] text-slate-500 mt-1">
+                Arrange repeatable sections for each locality page. Sections can be scheduled, hidden, duplicated, and targeted by pincode.
+              </p>
+            </div>
+            <span className="text-[10px] font-mono text-slate-500 bg-slate-100 border border-slate-200 rounded-lg px-2.5 py-1">
+              {homepageSections.length} sections
+            </span>
+          </div>
+
+          <div className="space-y-3 text-xs">
+            <select
+              value={homepageLocalityId}
+              onChange={(e) => setHomepageLocalityId(e.target.value)}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
+            >
+              {localities.map((locality) => (
+                <option key={locality.id} value={locality.id}>{locality.name}</option>
+              ))}
+            </select>
+
+            <form onSubmit={handleCreateHomepageSectionSubmit} className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <div className="grid grid-cols-2 gap-2">
+                <select
+                  value={newSectionType}
+                  onChange={(e) => {
+                    const nextType = e.target.value as HomepageSectionType;
+                    setNewSectionType(nextType);
+                    setNewSectionTitle(homepageSectionLabels[nextType]);
+                  }}
+                  className="border border-slate-200 rounded-lg px-3 py-2 bg-white"
+                >
+                  {homepageSectionOptions.map((option) => (
+                    <option key={option.id} value={option.id}>{option.label}</option>
+                  ))}
+                </select>
+                <input
+                  value={newSectionMaxItems}
+                  onChange={(e) => setNewSectionMaxItems(e.target.value.replace(/\D/g, ''))}
+                  placeholder="Max items"
+                  className="border border-slate-200 rounded-lg px-3 py-2 bg-white"
+                />
+              </div>
+              <input
+                value={newSectionTitle}
+                onChange={(e) => setNewSectionTitle(e.target.value)}
+                placeholder="Section title"
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-white"
+              />
+              <textarea
+                value={newSectionSubtitle}
+                onChange={(e) => setNewSectionSubtitle(e.target.value)}
+                placeholder="Section subtitle"
+                rows={2}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-white"
+              />
+              {newSectionType === 'business_shelf' && (
+                <div className="grid grid-cols-2 gap-2">
+                  <select
+                    value={newSectionCategoryId}
+                    onChange={(e) => setNewSectionCategoryId(e.target.value)}
+                    className="border border-slate-200 rounded-lg px-3 py-2 bg-white"
+                  >
+                    {BUSINESS_CATEGORIES.map((category) => (
+                      <option key={category.id} value={category.id}>{category.name}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={newSectionSubcategoryId}
+                    onChange={(e) => setNewSectionSubcategoryId(e.target.value)}
+                    className="border border-slate-200 rounded-lg px-3 py-2 bg-white"
+                  >
+                    <option value="">All subcategories</option>
+                    {getSubcategoriesForCategory(newSectionCategoryId).map((subcategory) => (
+                      <option key={subcategory.id} value={subcategory.id}>{subcategory.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {newSectionType === 'promo_banner' && (
+                <input
+                  value={newSectionPlacementKey}
+                  onChange={(e) => setNewSectionPlacementKey(e.target.value)}
+                  placeholder="Placement key"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-white"
+                />
+              )}
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  type="date"
+                  value={newSectionStartDate}
+                  onChange={(e) => setNewSectionStartDate(e.target.value)}
+                  className="border border-slate-200 rounded-lg px-3 py-2 bg-white"
+                />
+                <input
+                  type="date"
+                  value={newSectionEndDate}
+                  onChange={(e) => setNewSectionEndDate(e.target.value)}
+                  className="border border-slate-200 rounded-lg px-3 py-2 bg-white"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <select
+                  value={newSectionCtaType || 'none'}
+                  onChange={(e) => setNewSectionCtaType(e.target.value as HomepageSection['ctaType'])}
+                  className="border border-slate-200 rounded-lg px-3 py-2 bg-white"
+                >
+                  <option value="none">No CTA</option>
+                  <option value="landing_page">Landing Page</option>
+                  <option value="landing_listing">Landing Listing</option>
+                  <option value="lead_form">Lead Form</option>
+                  <option value="search_category">Search Category</option>
+                </select>
+                <input
+                  value={newSectionCtaLabel}
+                  onChange={(e) => setNewSectionCtaLabel(e.target.value)}
+                  placeholder="CTA label"
+                  className="border border-slate-200 rounded-lg px-3 py-2 bg-white"
+                />
+              </div>
+              <input
+                value={newSectionCtaTarget}
+                onChange={(e) => setNewSectionCtaTarget(e.target.value)}
+                placeholder="CTA target"
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-white"
+              />
+              <input
+                value={newSectionPincodes}
+                onChange={(e) => setNewSectionPincodes(e.target.value)}
+                placeholder="Target pincodes"
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-white font-mono"
+              />
+              <div className="flex items-center justify-between gap-3">
+                <label className="inline-flex items-center gap-2 text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={newSectionShowViewAll}
+                    onChange={(e) => setNewSectionShowViewAll(e.target.checked)}
+                  />
+                  <span>Show View All</span>
+                </label>
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-500">Background</span>
+                  <input
+                    type="color"
+                    value={newSectionBackgroundColor}
+                    onChange={(e) => setNewSectionBackgroundColor(e.target.value)}
+                    className="h-9 w-12 rounded border border-slate-200 bg-white"
+                  />
+                </div>
+              </div>
+              <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-lg">
+                Add Homepage Section
+              </button>
+            </form>
+
+            <div className="space-y-3 max-h-[36rem] overflow-y-auto pr-1">
+              {homepageSections.map((section, index) => (
+                <div key={section.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full bg-white border border-slate-200 px-2 py-0.5 text-[10px] font-mono text-slate-500">#{index + 1}</span>
+                      <span className="rounded-full bg-indigo-50 border border-indigo-100 px-2 py-0.5 text-[10px] font-bold text-indigo-700">
+                        {homepageSectionLabels[section.sectionType]}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button type="button" onClick={() => onMoveHomepageSection?.(homepageLocalityId, section.id, 'up')} className="rounded border border-slate-200 bg-white p-1.5 text-slate-600"><ChevronUp className="h-3.5 w-3.5" /></button>
+                      <button type="button" onClick={() => onMoveHomepageSection?.(homepageLocalityId, section.id, 'down')} className="rounded border border-slate-200 bg-white p-1.5 text-slate-600"><ChevronDown className="h-3.5 w-3.5" /></button>
+                      <button type="button" onClick={() => onDuplicateHomepageSection?.(homepageLocalityId, section.id)} className="rounded border border-slate-200 bg-white p-1.5 text-slate-600"><Copy className="h-3.5 w-3.5" /></button>
+                      <button type="button" onClick={() => onDeleteHomepageSection?.(homepageLocalityId, section.id)} className="rounded border border-rose-200 bg-rose-50 p-1.5 text-rose-700"><Trash2 className="h-3.5 w-3.5" /></button>
+                    </div>
+                  </div>
+                  <input
+                    value={section.title}
+                    onChange={(e) => updateHomepageSection(section, { title: e.target.value })}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold"
+                  />
+                  <textarea
+                    value={section.subtitle || ''}
+                    onChange={(e) => updateHomepageSection(section, { subtitle: e.target.value })}
+                    rows={2}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs"
+                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <select
+                      value={section.status}
+                      onChange={(e) => updateHomepageSection(section, { status: e.target.value as HomepageSection['status'] })}
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+                    >
+                      <option value="active">Active</option>
+                      <option value="inactive">Inactive</option>
+                    </select>
+                    <select
+                      value={section.visible ? 'visible' : 'hidden'}
+                      onChange={(e) => updateHomepageSection(section, { visible: e.target.value === 'visible' })}
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+                    >
+                      <option value="visible">Visible</option>
+                      <option value="hidden">Hidden</option>
+                    </select>
+                    <input
+                      type="date"
+                      value={section.startDate || ''}
+                      onChange={(e) => updateHomepageSection(section, { startDate: e.target.value || undefined })}
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+                    />
+                    <input
+                      type="date"
+                      value={section.endDate || ''}
+                      onChange={(e) => updateHomepageSection(section, { endDate: e.target.value || undefined })}
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+                    />
+                    <input
+                      value={String(section.maxItems || '')}
+                      onChange={(e) => updateHomepageSection(section, { maxItems: Number(e.target.value.replace(/\D/g, '')) || undefined })}
+                      placeholder="Max items"
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+                    />
+                    <input
+                      value={section.pincodes?.join(', ') || ''}
+                      onChange={(e) => updateHomepageSection(section, { pincodes: parsePincodeList(e.target.value) })}
+                      placeholder="Pincodes"
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono"
+                    />
+                  </div>
+                  {section.sectionType === 'business_shelf' && (
+                    <div className="grid grid-cols-2 gap-2">
+                      <select
+                        value={section.categoryId || ''}
+                        onChange={(e) => updateHomepageSection(section, { categoryId: e.target.value, subcategoryId: '' })}
+                        className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+                      >
+                        {BUSINESS_CATEGORIES.map((category) => (
+                          <option key={category.id} value={category.id}>{category.name}</option>
+                        ))}
+                      </select>
+                      <select
+                        value={section.subcategoryId || ''}
+                        onChange={(e) => updateHomepageSection(section, { subcategoryId: e.target.value || undefined })}
+                        className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+                      >
+                        <option value="">All subcategories</option>
+                        {getSubcategoriesForCategory(section.categoryId || BUSINESS_CATEGORIES[0]?.id || '').map((subcategory) => (
+                          <option key={subcategory.id} value={subcategory.id}>{subcategory.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  {section.sectionType === 'promo_banner' && (
+                    <input
+                      value={section.placementKey || ''}
+                      onChange={(e) => updateHomepageSection(section, { placementKey: e.target.value })}
+                      placeholder="Placement key"
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2"
+                    />
+                  )}
+                  <div className="grid grid-cols-2 gap-2">
+                    <select
+                      value={section.ctaType || 'none'}
+                      onChange={(e) => updateHomepageSection(section, { ctaType: e.target.value as HomepageSection['ctaType'] })}
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+                    >
+                      <option value="none">No CTA</option>
+                      <option value="landing_page">Landing Page</option>
+                      <option value="landing_listing">Landing Listing</option>
+                      <option value="lead_form">Lead Form</option>
+                      <option value="search_category">Search Category</option>
+                    </select>
+                    <input
+                      value={section.ctaLabel || ''}
+                      onChange={(e) => updateHomepageSection(section, { ctaLabel: e.target.value })}
+                      placeholder="CTA label"
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+                    />
+                    <input
+                      value={section.ctaTarget || ''}
+                      onChange={(e) => updateHomepageSection(section, { ctaTarget: e.target.value })}
+                      placeholder="CTA target"
+                      className="col-span-2 rounded-lg border border-slate-200 bg-white px-3 py-2"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="inline-flex items-center gap-2 text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={section.showViewAll ?? true}
+                        onChange={(e) => updateHomepageSection(section, { showViewAll: e.target.checked })}
+                      />
+                      <span>Show View All</span>
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-500">Background</span>
+                      <input
+                        type="color"
+                        value={section.backgroundColor || '#ffffff'}
+                        onChange={(e) => updateHomepageSection(section, { backgroundColor: e.target.value })}
+                        className="h-8 w-12 rounded border border-slate-200 bg-white"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {homepageSections.length === 0 && (
+                <div className="text-xs text-slate-400">No homepage sections configured yet for this locality.</div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+          <h3 className="text-base font-extrabold text-slate-950">Offers & Deals Manager</h3>
+          <form onSubmit={handleCreateCouponSubmit} className="space-y-3 text-xs">
+            <select
+              value={couponBusinessId}
+              onChange={(e) => setCouponBusinessId(e.target.value)}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
+            >
+              <option value="">Select business</option>
+              {businesses.filter((business) => business.status === 'approved').map((business) => (
+                <option key={business.id} value={business.id}>{business.name}</option>
+              ))}
+            </select>
+            <input
+              value={couponTitle}
+              onChange={(e) => setCouponTitle(e.target.value)}
+              placeholder="Offer title"
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
+            />
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                value={couponCode}
+                onChange={(e) => setCouponCode(e.target.value)}
+                placeholder="Coupon code"
+                className="border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
+              />
+              <input
+                value={couponDiscount}
+                onChange={(e) => setCouponDiscount(e.target.value)}
+                placeholder="Discount label"
+                className="border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
+              />
+            </div>
+            <textarea
+              value={couponDescription}
+              onChange={(e) => setCouponDescription(e.target.value)}
+              placeholder="Offer description"
+              rows={2}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
+            />
+            <div className="grid grid-cols-2 gap-2">
+              <select
+                value={couponLocalityId}
+                onChange={(e) => setCouponLocalityId(e.target.value)}
+                className="border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
+              >
+                {localities.map((locality) => (
+                  <option key={locality.id} value={locality.id}>{locality.name}</option>
+                ))}
+              </select>
+              <input
+                value={couponPincodes}
+                onChange={(e) => setCouponPincodes(e.target.value)}
+                placeholder="Pincodes"
+                className="border border-slate-200 rounded-lg px-3 py-2 bg-slate-50 font-mono"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                type="date"
+                value={couponStartDate}
+                onChange={(e) => setCouponStartDate(e.target.value)}
+                className="border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
+              />
+              <input
+                type="date"
+                value={couponEndDate}
+                onChange={(e) => setCouponEndDate(e.target.value)}
+                className="border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
+              />
+            </div>
+            <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-lg">
+              Create Offer
+            </button>
+          </form>
+          <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+            {coupons.map((coupon) => (
+              <div key={coupon.id} className="bg-slate-50 border border-slate-150 rounded-lg p-2.5 text-xs">
+                <span className="block font-semibold text-slate-800 truncate">{coupon.title || coupon.code}</span>
+                <span className="block text-[10px] text-slate-500">
+                  {businesses.find((business) => business.id === coupon.businessId)?.name || coupon.businessId}
+                </span>
+                <span className="block text-[10px] text-slate-500 font-mono">
+                  {(coupon.startDate || coupon.expiryDate)} {'->'} {(coupon.endDate || coupon.expiryDate)}
+                </span>
+              </div>
+            ))}
+            {coupons.length === 0 && <div className="text-xs text-slate-400">No offers created yet.</div>}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
           <h3 className="text-base font-extrabold text-slate-950">Ad Banner Manager</h3>
           <form onSubmit={handleCreateListingAdSubmit} className="space-y-3 text-xs">
             <input
@@ -1698,6 +2298,29 @@ export default function AdminConsole({
                 className="border border-slate-200 rounded-lg h-9 w-full bg-slate-50"
               />
             </div>
+            <div className="grid grid-cols-2 gap-2">
+              <select
+                value={adLocalityId}
+                onChange={(e) => setAdLocalityId(e.target.value)}
+                className="border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
+              >
+                {localities.map((locality) => (
+                  <option key={locality.id} value={locality.id}>{locality.name}</option>
+                ))}
+              </select>
+              <input
+                value={adPlacementKey}
+                onChange={(e) => setAdPlacementKey(e.target.value)}
+                placeholder="Placement key"
+                className="border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
+              />
+            </div>
+            <input
+              value={adPincodes}
+              onChange={(e) => setAdPincodes(e.target.value)}
+              placeholder="Target pincodes"
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-slate-50 font-mono"
+            />
             {adActionType === 'landing_page' && (
               <input
                 type="url"
@@ -1740,6 +2363,9 @@ export default function AdminConsole({
                   <div className="min-w-0">
                     <span className="block font-semibold text-slate-800 truncate">{ad.title}</span>
                     <span className="block text-[10px] text-slate-500 font-mono">{ad.startDate} → {ad.endDate}</span>
+                    <span className="block text-[10px] text-slate-500">
+                      {(ad.localityIds || []).join(', ') || 'All localities'} • {ad.placementKey || 'homepage_inline_primary'}
+                    </span>
                   </div>
                   <div className="flex items-center gap-1">
                     <button
@@ -1810,6 +2436,36 @@ export default function AdminConsole({
                 className="border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
               />
             </div>
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                value={heroCtaLabel}
+                onChange={(e) => setHeroCtaLabel(e.target.value)}
+                placeholder="CTA label"
+                className="border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
+              />
+              <select
+                value={heroCtaType}
+                onChange={(e) => setHeroCtaType(e.target.value as NonNullable<HeroBanner['ctaType']>)}
+                className="border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
+              >
+                <option value="landing_page">Landing Page</option>
+                <option value="landing_listing">Landing Listing</option>
+                <option value="lead_form">Lead Form</option>
+                <option value="search_category">Search Category</option>
+              </select>
+            </div>
+            <input
+              value={heroCtaTarget}
+              onChange={(e) => setHeroCtaTarget(e.target.value)}
+              placeholder="CTA target"
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
+            />
+            <input
+              value={heroPincodes}
+              onChange={(e) => setHeroPincodes(e.target.value)}
+              placeholder="Target pincodes"
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-slate-50 font-mono"
+            />
             <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-lg">
               Create Hero Banner
             </button>
@@ -1821,6 +2477,9 @@ export default function AdminConsole({
                   <div className="min-w-0">
                     <span className="block font-semibold text-slate-800 truncate">{hero.title}</span>
                     <span className="block text-[10px] text-slate-500">{localities.find((locality) => locality.id === hero.localityId)?.name || hero.localityId}</span>
+                    <span className="block text-[10px] text-slate-500">
+                      {hero.ctaLabel || 'No CTA'} • {(hero.pincodes || []).join(', ') || 'All pincodes'}
+                    </span>
                   </div>
                   <div className="flex gap-1">
                     <button
