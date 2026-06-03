@@ -3,7 +3,7 @@ import {
   CheckCircle, XCircle, Plus, Info, Globe, AlertCircle, 
   Trash2, PlusCircle, Check, Database, Eye, Server, RefreshCw, MapPin, Copy, ChevronUp, ChevronDown
 } from 'lucide-react';
-import { Locality, Business, SubdomainMapping, UserSession, AuditEvent, ListingAd, HeroBanner, AdLead, MarketingCoupon, HomepageLayout, HomepageSection, HomepageSectionType } from '../types';
+import { Locality, Business, SubdomainMapping, UserSession, AuditEvent, ListingAd, HeroBanner, AdLead, MarketingCoupon, HomepageLayout, HomepageSection, HomepageSectionType, ApiConfiguration } from '../types';
 import { MASTER_AREAS } from '../data';
 import { getBusinessImageUrl, getCategoryFallbackImage, hasUploadedBusinessImage } from '../utils/businessImage';
 import {
@@ -64,6 +64,9 @@ interface AdminConsoleProps {
   onDuplicateHomepageSection?: (localityId: string, sectionId: string) => void;
   onMoveHomepageSection?: (localityId: string, sectionId: string, direction: 'up' | 'down') => void;
   adLeads?: AdLead[];
+  apiConfiguration?: ApiConfiguration;
+  onUpdateApiConfiguration?: (config: ApiConfiguration) => void;
+  onSyncHomepageConfig?: () => void;
   localityCategoryLinks?: LocalityCategoryLink[];
   onCreateLocalityCategoryLink?: (payload: Omit<LocalityCategoryLink, 'id'>) => void;
   onDeleteLocalityCategoryLink?: (id: string) => void;
@@ -151,6 +154,9 @@ export default function AdminConsole({
   onDuplicateHomepageSection,
   onMoveHomepageSection,
   adLeads = [],
+  apiConfiguration,
+  onUpdateApiConfiguration,
+  onSyncHomepageConfig,
   localityCategoryLinks = [],
   onCreateLocalityCategoryLink,
   onDeleteLocalityCategoryLink
@@ -231,6 +237,14 @@ export default function AdminConsole({
   const [newSectionEndDate, setNewSectionEndDate] = useState('');
   const [newSectionPincodes, setNewSectionPincodes] = useState('');
   const [newSectionShowViewAll, setNewSectionShowViewAll] = useState(true);
+  const [apiConfigDraft, setApiConfigDraft] = useState<ApiConfiguration>(() => apiConfiguration || {
+    syncMode: 'api',
+    homepageConfigEndpoint: '/api/homepage-config',
+    businessesEndpoint: '/api/businesses',
+    auditEventsEndpoint: '/api/audit-events',
+    autoSyncHomepage: true,
+    autoSyncBusinesses: true
+  });
 
   const [linkLocalityId, setLinkLocalityId] = useState(localities[0]?.id || 'roadpali');
   const [linkCategoryId, setLinkCategoryId] = useState(BUSINESS_CATEGORIES[0]?.id || 'food-restaurants');
@@ -278,6 +292,11 @@ export default function AdminConsole({
     }
   }, [businesses, couponBusinessId]);
 
+  useEffect(() => {
+    if (!apiConfiguration) return;
+    setApiConfigDraft(apiConfiguration);
+  }, [apiConfiguration]);
+
   const parsePincodeList = (raw: string) => (
     raw
       .split(/[\s,]+/)
@@ -292,6 +311,7 @@ export default function AdminConsole({
     promo_banner: 'Promo Banner',
     featured_businesses: 'Featured Businesses',
     business_shelf: 'Business Shelf',
+    text_business_strip: 'Compact Service Strip',
     offers_list: 'Offers & Deals',
     updates_feed: 'Locality Updates',
     category_grid: 'Category Grid',
@@ -746,8 +766,8 @@ export default function AdminConsole({
       endDate: newSectionEndDate || undefined,
       localityIds: [homepageLocalityId],
       pincodes: parsePincodeList(newSectionPincodes),
-      categoryId: newSectionType === 'business_shelf' ? newSectionCategoryId : undefined,
-      subcategoryId: newSectionType === 'business_shelf' ? (newSectionSubcategoryId || undefined) : undefined,
+      categoryId: ['business_shelf', 'text_business_strip'].includes(newSectionType) ? newSectionCategoryId : undefined,
+      subcategoryId: ['business_shelf', 'text_business_strip'].includes(newSectionType) ? (newSectionSubcategoryId || undefined) : undefined,
       placementKey: newSectionType === 'promo_banner' ? newSectionPlacementKey.trim() || 'homepage_inline_primary' : undefined,
       maxItems: Number(newSectionMaxItems) > 0 ? Number(newSectionMaxItems) : undefined,
       ctaLabel: newSectionCtaLabel.trim() || undefined,
@@ -766,6 +786,12 @@ export default function AdminConsole({
     setNewSectionEndDate('');
     setNewSectionMaxItems('6');
     triggerNotification('Homepage section added.');
+  };
+
+  const handleSaveApiConfiguration = (e: React.FormEvent) => {
+    e.preventDefault();
+    onUpdateApiConfiguration?.(apiConfigDraft);
+    triggerNotification('API configuration saved.');
   };
 
   const updateHomepageSection = (section: HomepageSection, patch: Partial<HomepageSection>) => {
@@ -1892,7 +1918,7 @@ export default function AdminConsole({
                 rows={2}
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-white"
               />
-              {newSectionType === 'business_shelf' && (
+              {['business_shelf', 'text_business_strip'].includes(newSectionType) && (
                 <div className="grid grid-cols-2 gap-2">
                   <select
                     value={newSectionCategoryId}
@@ -2062,7 +2088,7 @@ export default function AdminConsole({
                       className="rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono"
                     />
                   </div>
-                  {section.sectionType === 'business_shelf' && (
+                  {['business_shelf', 'text_business_strip'].includes(section.sectionType) && (
                     <div className="grid grid-cols-2 gap-2">
                       <select
                         value={section.categoryId || ''}
@@ -2144,6 +2170,107 @@ export default function AdminConsole({
               )}
             </div>
           </div>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-base font-extrabold text-slate-950">API Configuration</h3>
+              <p className="text-[11px] text-slate-500 mt-1">
+                Control where homepage builder content syncs and whether browser edits autosave through the local API layer.
+              </p>
+            </div>
+            <span className="text-[10px] font-mono text-slate-500 bg-slate-100 border border-slate-200 rounded-lg px-2.5 py-1">
+              {apiConfigDraft.syncMode.toUpperCase()}
+            </span>
+          </div>
+
+          <form onSubmit={handleSaveApiConfiguration} className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs">
+            <div className="grid grid-cols-2 gap-2">
+              <label className="space-y-1">
+                <span className="font-semibold text-slate-700">Sync mode</span>
+                <select
+                  value={apiConfigDraft.syncMode}
+                  onChange={(e) => setApiConfigDraft((prev) => ({ ...prev, syncMode: e.target.value as ApiConfiguration['syncMode'] }))}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2"
+                >
+                  <option value="api">API + Local Fallback</option>
+                  <option value="local">Local Only</option>
+                </select>
+              </label>
+              <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                <div className="font-semibold text-slate-700">Last sync</div>
+                <div className="mt-1 text-[11px] text-slate-500">
+                  {apiConfigDraft.lastHomepageSyncAt ? new Date(apiConfigDraft.lastHomepageSyncAt).toLocaleString() : 'Not synced yet'}
+                </div>
+              </div>
+            </div>
+
+            <label className="block space-y-1">
+              <span className="font-semibold text-slate-700">Homepage config endpoint</span>
+              <input
+                value={apiConfigDraft.homepageConfigEndpoint}
+                onChange={(e) => setApiConfigDraft((prev) => ({ ...prev, homepageConfigEndpoint: e.target.value }))}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono"
+              />
+            </label>
+
+            <div className="grid grid-cols-2 gap-2">
+              <label className="space-y-1">
+                <span className="font-semibold text-slate-700">Businesses endpoint</span>
+                <input
+                  value={apiConfigDraft.businessesEndpoint}
+                  onChange={(e) => setApiConfigDraft((prev) => ({ ...prev, businessesEndpoint: e.target.value }))}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono"
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="font-semibold text-slate-700">Audit endpoint</span>
+                <input
+                  value={apiConfigDraft.auditEventsEndpoint}
+                  onChange={(e) => setApiConfigDraft((prev) => ({ ...prev, auditEventsEndpoint: e.target.value }))}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono"
+                />
+              </label>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <label className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={apiConfigDraft.autoSyncHomepage}
+                  onChange={(e) => setApiConfigDraft((prev) => ({ ...prev, autoSyncHomepage: e.target.checked }))}
+                />
+                <span>Auto-sync homepage config</span>
+              </label>
+              <label className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={apiConfigDraft.autoSyncBusinesses}
+                  onChange={(e) => setApiConfigDraft((prev) => ({ ...prev, autoSyncBusinesses: e.target.checked }))}
+                />
+                <span>Auto-sync businesses</span>
+              </label>
+            </div>
+
+            <div className="flex gap-2">
+              <button type="submit" className="flex-1 rounded-lg bg-indigo-600 py-2 font-bold text-white hover:bg-indigo-700">
+                Save API Settings
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onUpdateApiConfiguration?.(apiConfigDraft);
+                  onSyncHomepageConfig?.();
+                  triggerNotification('Homepage sync started.');
+                }}
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 font-bold text-slate-700"
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                <span>Sync Now</span>
+              </button>
+            </div>
+          </form>
         </div>
 
         <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">

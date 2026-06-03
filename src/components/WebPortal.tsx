@@ -1,10 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Search, MapPin, Phone, Mail, ExternalLink, Star, 
-  BookOpen, Plus, Compass, ChevronRight, ChevronLeft, Share2, Globe, Heart, 
+  BookOpen, Plus, Compass, ChevronRight, ChevronLeft, ChevronDown, Share2, Globe, Heart, 
   ShieldAlert, Lock, Unlock, MessageSquare, CheckCircle, Navigation, Award, User, Clock,
   Volume2, Camera, Brain, Megaphone, Users, BarChart3, Ticket, PlusCircle, Filter, 
-  TrendingUp, Check, CheckSquare, Sparkles, Trash2, QrCode, Activity
+  TrendingUp, Check, CheckSquare, Sparkles, Trash2, QrCode, Activity,
+  Home, Bell, SlidersHorizontal, Utensils, Stethoscope, Zap, CakeSlice, Wrench,
+  Grid3X3, Flame, Ambulance, Car, Dumbbell, ShoppingCart, GraduationCap,
+  CalendarDays, Headphones, ShieldCheck, CalendarCheck, BriefcaseMedical,
+  Hospital, Siren, CirclePlus, Bookmark, ChefHat, Store, HeartPulse
 } from 'lucide-react';
 import { 
   Locality, Business, Category, Review, UserSession,
@@ -21,6 +25,8 @@ import {
   getSubcategoryById,
   resolveDefaultSubcategoryId
 } from '../categoryMaster';
+
+type PortalIcon = React.ComponentType<{ className?: string }>;
 
 type PaginationControlsProps = {
   compact?: boolean;
@@ -405,6 +411,12 @@ export default function WebPortal({
   const pushHistoryIfNeeded = (nextPath: string) => {
     if (window.location.pathname === nextPath) return;
     window.history.pushState({}, '', nextPath);
+  };
+  const handleCategoryShortcut = (categoryId: string, subcategoryId = 'all') => {
+    setSelectedCategory(categoryId);
+    setSelectedSubcategory(categoryId === 'all' ? 'all' : subcategoryId);
+    setSelectedBiz(null);
+    pushHistoryIfNeeded(buildCategoryRoutePath(categoryId));
   };
   const openBusinessDetails = (biz: Business) => {
     setSelectedBiz(biz);
@@ -832,16 +844,53 @@ export default function WebPortal({
       .filter((section) => matchesDateWindow(section.startDate, section.endDate))
       .filter((section) => matchesTargeting(section.localityIds, section.pincodes));
   }, [activeHomepageLayout, todayIso, activeLocalityId, savedPincode]);
-  const quickCategoryIds = ['food-restaurants', 'health-medical', 'home-services', 'beauty-wellness', 'shopping-retail'];
+  const quickCategoryIds = ['food-restaurants', 'health-medical', 'home-services', 'beauty-wellness', 'shopping-retail', 'professional-services'];
+  const iconToneByCategory: Record<string, { Icon: PortalIcon; iconClassName: string; bgClassName: string }> = {
+    'food-restaurants': { Icon: Utensils, iconClassName: 'text-orange-500', bgClassName: 'bg-orange-50' },
+    'health-medical': { Icon: BriefcaseMedical, iconClassName: 'text-blue-600', bgClassName: 'bg-blue-50' },
+    'beauty-wellness': { Icon: Sparkles, iconClassName: 'text-pink-500', bgClassName: 'bg-pink-50' },
+    'home-services': { Icon: Home, iconClassName: 'text-indigo-600', bgClassName: 'bg-indigo-50' },
+    automotive: { Icon: Car, iconClassName: 'text-amber-500', bgClassName: 'bg-amber-50' },
+    'shopping-retail': { Icon: ShoppingCart, iconClassName: 'text-green-600', bgClassName: 'bg-green-50' },
+    'education-training': { Icon: GraduationCap, iconClassName: 'text-violet-600', bgClassName: 'bg-violet-50' },
+    'event-services': { Icon: CalendarDays, iconClassName: 'text-purple-600', bgClassName: 'bg-purple-50' },
+    'professional-services': { Icon: Megaphone, iconClassName: 'text-cyan-600', bgClassName: 'bg-cyan-50' },
+    'repair-maintenance': { Icon: Wrench, iconClassName: 'text-slate-600', bgClassName: 'bg-slate-100' },
+    'digital-technology': { Icon: TrendingUp, iconClassName: 'text-indigo-600', bgClassName: 'bg-indigo-50' }
+  };
+  const subcategoryToneById: Record<string, { Icon: PortalIcon; iconClassName: string; bgClassName: string }> = {
+    restaurants: { Icon: Utensils, iconClassName: 'text-orange-500', bgClassName: 'bg-orange-50' },
+    clinics: { Icon: Stethoscope, iconClassName: 'text-blue-600', bgClassName: 'bg-blue-50' },
+    'dental-clinics': { Icon: HeartPulse, iconClassName: 'text-cyan-600', bgClassName: 'bg-cyan-50' },
+    electricians: { Icon: Zap, iconClassName: 'text-amber-500', bgClassName: 'bg-amber-50' },
+    bakeries: { Icon: CakeSlice, iconClassName: 'text-rose-500', bgClassName: 'bg-rose-50' },
+    plumbers: { Icon: Wrench, iconClassName: 'text-sky-600', bgClassName: 'bg-sky-50' },
+    'house-cleaning': { Icon: Users, iconClassName: 'text-emerald-600', bgClassName: 'bg-emerald-50' },
+    gyms: { Icon: Dumbbell, iconClassName: 'text-rose-600', bgClassName: 'bg-rose-50' },
+    'grocery-stores': { Icon: ShoppingCart, iconClassName: 'text-green-600', bgClassName: 'bg-green-50' },
+    'tuition-centers': { Icon: GraduationCap, iconClassName: 'text-violet-600', bgClassName: 'bg-violet-50' },
+    cafes: { Icon: Store, iconClassName: 'text-orange-500', bgClassName: 'bg-orange-50' },
+    'car-service': { Icon: Car, iconClassName: 'text-amber-500', bgClassName: 'bg-amber-50' },
+    'wedding-planners': { Icon: CalendarDays, iconClassName: 'text-purple-600', bgClassName: 'bg-purple-50' }
+  };
+  const heroQuickActions = [
+    { label: 'Restaurants', categoryId: 'food-restaurants', subcategoryId: 'restaurants', Icon: Utensils, iconClassName: 'text-orange-500', bgClassName: 'bg-orange-50' },
+    { label: 'Doctors', categoryId: 'health-medical', subcategoryId: 'clinics', Icon: BriefcaseMedical, iconClassName: 'text-blue-600', bgClassName: 'bg-blue-50' },
+    { label: 'Electricians', categoryId: 'home-services', subcategoryId: 'electricians', Icon: Zap, iconClassName: 'text-amber-500', bgClassName: 'bg-amber-50' },
+    { label: 'Home Bakers', categoryId: 'food-restaurants', subcategoryId: 'bakeries', Icon: CakeSlice, iconClassName: 'text-rose-500', bgClassName: 'bg-rose-50' },
+    { label: 'Plumbers', categoryId: 'home-services', subcategoryId: 'plumbers', Icon: Wrench, iconClassName: 'text-sky-600', bgClassName: 'bg-sky-50' },
+    { label: 'Maid Services', categoryId: 'home-services', subcategoryId: 'house-cleaning', Icon: Users, iconClassName: 'text-emerald-600', bgClassName: 'bg-emerald-50' },
+    { label: 'More', categoryId: 'all', subcategoryId: 'all', Icon: Grid3X3, iconClassName: 'text-indigo-600', bgClassName: 'bg-indigo-50' }
+  ];
   const emergencyServiceCards = [
-    { title: 'Police Station', description: 'Local law & safety', query: 'Police Station' },
-    { title: 'Fire Station', description: 'Emergency response', query: 'Fire Station' },
-    { title: 'Hospitals', description: 'Critical care nearby', query: 'Hospital' },
-    { title: 'Ambulance', description: 'Rapid transport', query: 'Ambulance' },
-    { title: 'Electrician', description: 'Urgent power repairs', query: 'Electrician' },
-    { title: 'Plumber', description: 'Leak & drainage help', query: 'Plumber' },
-    { title: 'Maid Service', description: 'Home support', query: 'Maid Service' },
-    { title: 'Driver / Taxi', description: 'Travel support', query: 'Taxi' }
+    { title: 'Police Station', description: 'Local law & safety', query: 'Police Station', Icon: ShieldAlert, iconClassName: 'text-indigo-600', bgClassName: 'bg-indigo-50' },
+    { title: 'Fire Station', description: 'Emergency response', query: 'Fire Station', Icon: Flame, iconClassName: 'text-red-500', bgClassName: 'bg-red-50' },
+    { title: 'Hospitals', description: 'Critical care nearby', query: 'Hospital', Icon: Hospital, iconClassName: 'text-blue-600', bgClassName: 'bg-blue-50' },
+    { title: 'Ambulance', description: 'Rapid transport', query: 'Ambulance', Icon: Ambulance, iconClassName: 'text-red-500', bgClassName: 'bg-red-50' },
+    { title: 'Electrician', description: 'Urgent power repairs', query: 'Electrician', Icon: Zap, iconClassName: 'text-amber-500', bgClassName: 'bg-amber-50' },
+    { title: 'Plumber', description: 'Leak & drainage help', query: 'Plumber', Icon: Wrench, iconClassName: 'text-sky-600', bgClassName: 'bg-sky-50' },
+    { title: 'Maid Service', description: 'Home support', query: 'Maid Service', Icon: User, iconClassName: 'text-violet-600', bgClassName: 'bg-violet-50' },
+    { title: 'Driver / Taxi', description: 'Travel support', query: 'Taxi', Icon: Car, iconClassName: 'text-orange-500', bgClassName: 'bg-orange-50' }
   ];
 
   const getBusinessAreaName = (biz: Business) => {
@@ -867,6 +916,20 @@ export default function WebPortal({
     initContactUnlockFlow(biz, e);
   };
 
+  const handleBusinessWhatsappAction = (biz: Business, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const phoneDigits = (biz.phone || '').replace(/\D/g, '').slice(-10);
+    if (!phoneDigits) {
+      openBusinessDetails(biz);
+      return;
+    }
+    window.open(
+      `https://wa.me/91${phoneDigits}?text=${encodeURIComponent(`Hi ${biz.name}, I found your service on Localisy.`)}`,
+      '_blank',
+      'noopener,noreferrer'
+    );
+  };
+
   const renderCompactBusinessRow = (
     biz: Business,
     options?: {
@@ -881,10 +944,10 @@ export default function WebPortal({
     return (
       <div
         onClick={() => openBusinessDetails(biz)}
-        className={`md:hidden rounded-2xl border bg-white p-3 shadow-sm ${options?.highlightClass || 'border-slate-200'}`}
+        className={`md:hidden rounded-2xl border bg-white p-3 shadow-sm transition active:scale-[0.99] ${options?.highlightClass || 'border-slate-200'}`}
       >
         <div className="flex gap-3">
-          <div className="relative h-20 w-20 flex-shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
+          <div className="relative h-24 w-24 flex-shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
             <img
               src={getBusinessImageUrl(biz)}
               alt={biz.name}
@@ -900,7 +963,7 @@ export default function WebPortal({
             )}
           </div>
 
-          <div className="min-w-0 flex-1 space-y-1.5">
+          <div className="min-w-0 flex-1 space-y-2">
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <h4 className="truncate text-sm font-bold text-slate-900">
@@ -910,14 +973,19 @@ export default function WebPortal({
                   {categoryLabel}
                 </div>
               </div>
-              {biz.verifiedBadge && (
-                <CheckCircle className="h-4 w-4 flex-shrink-0 text-emerald-500" />
-              )}
+              <button
+                type="button"
+                onClick={(e) => e.stopPropagation()}
+                className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500"
+                title="Save business"
+              >
+                <Heart className="h-4 w-4" />
+              </button>
             </div>
 
-            <div className="flex items-center gap-1 text-xs text-slate-600">
-              <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 font-semibold text-amber-700" title="Google Ratings">
-                <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
+            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
+              <span className="inline-flex items-center gap-1 font-semibold text-amber-600" title="Google Ratings">
+                <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
                 <span>{biz.rating.toFixed(1)}</span>
               </span>
               <span className="truncate">• {areaLabel}</span>
@@ -927,18 +995,20 @@ export default function WebPortal({
               <button
                 type="button"
                 onClick={(e) => handlePrimaryBusinessAction(biz, e)}
-                className="inline-flex items-center justify-center gap-1 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white"
+                className="inline-flex items-center justify-center gap-1 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white"
               >
                 <Phone className="h-3.5 w-3.5" />
                 <span>{hasViewed && biz.phone ? 'Call' : 'Call'}</span>
               </button>
               <button
                 type="button"
-                onClick={(e) => openBusinessDirections(biz, e)}
-                className="inline-flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openBusinessDetails(biz);
+                }}
+                className="inline-flex items-center justify-center gap-1 rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700"
               >
-                <Navigation className="h-3.5 w-3.5" />
-                <span>Directions</span>
+                <span>Details</span>
               </button>
             </div>
           </div>
@@ -946,6 +1016,59 @@ export default function WebPortal({
       </div>
     );
   };
+
+  const renderMobileBusinessCard = (biz: Business, badgeLabel?: string) => (
+    <div
+      key={biz.id}
+      onClick={() => openBusinessDetails(biz)}
+      className="md:hidden min-w-[180px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
+    >
+      <div className="relative h-28 bg-slate-100">
+        <img
+          src={getBusinessImageUrl(biz)}
+          alt={biz.name}
+          onError={(e) => {
+            (e.target as HTMLImageElement).src = getCategoryFallbackImage(biz.categoryId);
+          }}
+          className={`h-full w-full ${hasUploadedBusinessImage(biz) ? 'object-cover' : 'object-contain p-4'}`}
+        />
+        {(badgeLabel || biz.isSponsored) && (
+          <span className="absolute left-2 top-2 rounded-md bg-indigo-600 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-white">
+            {badgeLabel || 'Sponsored'}
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={(e) => e.stopPropagation()}
+          className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-slate-600 shadow-sm"
+          title="Save business"
+        >
+          <Heart className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="space-y-1.5 p-3">
+        <h4 className="truncate text-sm font-bold text-slate-950">{biz.name}</h4>
+        <div className="truncate text-xs font-medium text-slate-500">
+          {getCategoryById(biz.categoryId)?.name || biz.categoryId}
+        </div>
+        <div className="flex items-center gap-2 text-xs">
+          <span className="inline-flex items-center gap-1 font-semibold text-amber-600">
+            <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+            {biz.rating.toFixed(1)}
+          </span>
+          <span className="truncate text-slate-500">{getBusinessAreaName(biz)}</span>
+        </div>
+        <button
+          type="button"
+          onClick={(e) => handlePrimaryBusinessAction(biz, e)}
+          className="mt-2 inline-flex items-center justify-center gap-1 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white"
+        >
+          <Phone className="h-3.5 w-3.5" />
+          <span>Call</span>
+        </button>
+      </div>
+    </div>
+  );
 
   const handleListingAdAction = (ad: ListingAd) => {
     if (ad.actionType === 'landing_page') {
@@ -989,13 +1112,13 @@ export default function WebPortal({
     alert('Thank you! Your details were submitted to the seller and platform team.');
   };
 
-  const renderDesktopBusinessTile = (biz: Business, accentClassName = 'border-slate-200') => {
+  const renderDesktopBusinessTile = (biz: Business, accentClassName = 'border-slate-200', badgeLabel?: string) => {
     const hasViewed = viewedBusinessIds.includes(biz.id);
     return (
       <div
         key={biz.id}
         onClick={() => openBusinessDetails(biz)}
-        className={`hidden cursor-pointer rounded-2xl border bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md md:flex md:flex-col ${accentClassName}`}
+        className={`hidden cursor-pointer overflow-hidden rounded-xl border bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md md:flex md:flex-col ${accentClassName}`}
       >
         <div className="relative">
           <img
@@ -1004,27 +1127,38 @@ export default function WebPortal({
             onError={(e) => {
               (e.target as HTMLImageElement).src = getCategoryFallbackImage(biz.categoryId);
             }}
-            className={`h-40 w-full rounded-xl border border-slate-200 bg-slate-100 ${hasUploadedBusinessImage(biz) ? 'object-cover' : 'object-contain p-4'}`}
+            className={`h-40 w-full border-b border-slate-200 bg-slate-100 ${hasUploadedBusinessImage(biz) ? 'object-cover' : 'object-contain p-4'}`}
           />
-          {biz.verifiedBadge && (
-            <span className="absolute left-2 top-2 rounded-full bg-emerald-600 px-2 py-0.5 text-[9px] font-bold text-white">
-              Verified
+          {(badgeLabel || biz.isSponsored) && (
+            <span className="absolute left-2 top-2 rounded-md bg-indigo-600 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-white">
+              {badgeLabel || 'Sponsored'}
             </span>
           )}
+          <button
+            type="button"
+            onClick={(e) => e.stopPropagation()}
+            className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-slate-600 shadow-sm backdrop-blur"
+            title="Save business"
+          >
+            <Heart className="h-4 w-4" />
+          </button>
         </div>
-        <div className="mt-3 space-y-2">
+        <div className="space-y-2 p-3">
           <div className="flex items-center justify-between gap-2">
             <span className="truncate text-xs font-semibold text-slate-500">
               {getCategoryById(biz.categoryId)?.name || biz.categoryId}
             </span>
-            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700" title="Google Ratings">
+            {biz.verifiedBadge && (
+              <CheckCircle className="h-4 w-4 flex-shrink-0 text-emerald-500" />
+            )}
+          </div>
+          <h4 className="truncate text-base font-bold text-slate-900">{biz.name}</h4>
+          <div className="flex items-center gap-2 text-xs text-slate-500">
+            <span className="inline-flex items-center gap-1 font-semibold text-amber-600" title="Google Ratings">
               <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
               {biz.rating.toFixed(1)}
             </span>
-          </div>
-          <h4 className="truncate text-base font-bold text-slate-900">{biz.name}</h4>
-          <p className="line-clamp-2 text-xs text-slate-500">{biz.description}</p>
-          <div className="flex items-center gap-2 text-xs text-slate-500">
+            <span className="text-slate-300">|</span>
             <MapPin className="h-3.5 w-3.5 text-slate-400" />
             <span className="truncate">{getBusinessAreaName(biz)}</span>
           </div>
@@ -1048,6 +1182,55 @@ export default function WebPortal({
               <span>Details</span>
             </button>
           </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderTextBusinessStripCard = (biz: Business) => {
+    const hasViewed = viewedBusinessIds.includes(biz.id);
+    const subcategoryLabel = getSubcategoryById(biz.subcategoryId)?.name || getCategoryById(biz.categoryId)?.name || 'Local Service';
+    const experienceLabel = biz.experienceYears ? `${biz.experienceYears} Years Exp` : 'Trusted Local Pro';
+    const localityLabel = getBusinessAreaName(biz);
+
+    return (
+      <div
+        key={biz.id}
+        onClick={() => openBusinessDetails(biz)}
+        className="min-w-[248px] rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+      >
+        <div className="flex items-center gap-1 text-sm font-bold text-amber-500">
+          <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+          <span>{biz.rating.toFixed(1)}</span>
+        </div>
+        <h4 className="mt-4 text-xl font-bold text-slate-950">{biz.name}</h4>
+        <p className="mt-2 text-sm font-medium text-slate-600">
+          {subcategoryLabel}
+          <span className="mx-2 text-slate-300">•</span>
+          {biz.tags.slice(0, 1)[0] || 'Nearby'}
+        </p>
+        <p className="mt-2 text-sm text-slate-500">
+          {localityLabel}
+          <span className="mx-2 text-slate-300">•</span>
+          {experienceLabel}
+        </p>
+        <div className="mt-5 grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={(e) => handlePrimaryBusinessAction(biz, e)}
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-white px-3 py-2.5 text-sm font-semibold text-emerald-700"
+          >
+            <Phone className="h-4 w-4" />
+            <span>{hasViewed && biz.phone ? 'Call' : 'Call'}</span>
+          </button>
+          <button
+            type="button"
+            onClick={(e) => handleBusinessWhatsappAction(biz, e)}
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700"
+          >
+            <MessageSquare className="h-4 w-4 text-emerald-600" />
+            <span>WhatsApp</span>
+          </button>
         </div>
       </div>
     );
@@ -1127,65 +1310,124 @@ export default function WebPortal({
 
     if (section.sectionType === 'hero_banner') {
       const heroTitle = activeHeroSlide?.title || `Discover Trusted Businesses in ${selectedLocalityNames || currentLocality.name}`;
-      const heroSubtitle = activeHeroSlide?.subtitle || currentLocality.description;
+      const heroSubtitle = activeHeroSlide?.subtitle || 'Restaurants, home kitchens, services, professionals and more.';
       const heroCtaLabel = activeHeroSlide?.ctaLabel || section.ctaLabel || 'Explore Businesses';
       const heroCtaType = activeHeroSlide?.ctaType || section.ctaType;
       const heroCtaTarget = activeHeroSlide?.ctaTarget || section.ctaTarget || 'all';
       return (
-        <section key={sectionKey} className="relative overflow-hidden rounded-3xl bg-slate-950 text-white shadow-lg">
-          <div className="absolute inset-0">
+        <section key={sectionKey} className="relative overflow-hidden rounded-[26px] bg-white shadow-sm md:min-h-[400px]">
+          <div className="absolute inset-y-0 right-0 hidden w-[62%] md:block">
             <img
               src={carouselImages[carouselIndex]}
               alt={currentLocality.name}
-              className="h-full w-full object-cover opacity-35"
+              className="h-full w-full object-cover"
             />
-            <div className="absolute inset-0 bg-gradient-to-r from-slate-950 via-slate-950/85 to-slate-950/30" />
+            <div className="absolute inset-0 bg-gradient-to-r from-white via-white/70 to-white/10" />
+            <div className="absolute inset-y-0 right-0 w-1/2 bg-gradient-to-l from-white/90 via-white/30 to-transparent" />
           </div>
-          <div className="relative z-10 grid gap-6 p-6 md:grid-cols-[minmax(0,1fr)_260px] md:p-8">
-            <div className="space-y-4">
-              <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs font-semibold text-indigo-100">
-                <MapPin className="h-3.5 w-3.5" />
-                <span>{selectedLocalityNames || currentLocality.name}</span>
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_15%_15%,rgba(16,185,129,0.10),transparent_28%),radial-gradient(circle_at_72%_28%,rgba(99,102,241,0.12),transparent_32%)]" />
+          <div className="relative z-10 p-5 md:p-8 lg:p-10">
+            <div className="max-w-[660px] space-y-5">
+              <div className="md:hidden overflow-hidden rounded-2xl">
+                <img
+                  src={carouselImages[carouselIndex]}
+                  alt={currentLocality.name}
+                  className="h-40 w-full object-cover"
+                />
               </div>
-              <div className="space-y-2">
-                <h2 className="max-w-2xl text-3xl font-extrabold leading-tight md:text-5xl">{heroTitle}</h2>
-                <p className="max-w-2xl text-sm text-slate-200 md:text-base">{heroSubtitle}</p>
+              <div className="space-y-3">
+                <h1 className="max-w-xl text-3xl font-extrabold leading-tight text-slate-950 md:text-5xl">
+                  Discover Trusted <span className="text-emerald-600">Local Businesses</span> in {selectedLocalityNames || currentLocality.name}
+                </h1>
+                <p className="max-w-lg text-sm font-medium leading-6 text-slate-600 md:text-base">
+                  {heroTitle.includes('Hyper Local Directory') ? 'Restaurants, home kitchens, services, professionals and more.' : heroSubtitle}
+                </p>
               </div>
+
+              <div id="public-listing-search" className="rounded-2xl bg-white p-2 shadow-lg ring-1 ring-slate-200/80 scroll-mt-24">
+                <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_190px_112px]">
+                  <label className="relative block">
+                    <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <input
+                      id="public-listing-search-input"
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Search businesses, services..."
+                      className="h-12 w-full rounded-xl border border-transparent bg-white pl-10 pr-3 text-sm font-medium text-slate-800 outline-none placeholder:text-slate-400 focus:border-indigo-200 focus:bg-indigo-50/30"
+                    />
+                  </label>
+                  <div
+                    className="hidden h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 md:inline-flex"
+                    title="Selected locality"
+                  >
+                    <MapPin className="h-4 w-4 text-indigo-600" />
+                    <span className="truncate">{selectedLocalityNames || currentLocality.name}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedBiz(null);
+                      handleConfiguredCta(heroCtaType, heroCtaTarget, heroCtaLabel);
+                    }}
+                    className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 text-sm font-bold text-white shadow-sm transition hover:bg-indigo-700"
+                  >
+                    <Search className="h-4 w-4" />
+                    <span>Search</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="no-scrollbar flex gap-3 overflow-x-auto pb-1">
+                {heroQuickActions.map((item) => {
+                  const Icon = item.Icon;
+                  return (
+                    <button
+                      key={`${item.categoryId}-${item.subcategoryId}`}
+                      type="button"
+                      onClick={() => handleCategoryShortcut(item.categoryId, item.subcategoryId)}
+                      className="inline-flex min-w-fit items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-bold text-slate-800 shadow-sm transition hover:border-indigo-200 hover:text-indigo-700"
+                    >
+                      <span className={`inline-flex h-7 w-7 items-center justify-center rounded-lg ${item.bgClassName}`}>
+                        <Icon className={`h-4 w-4 ${item.iconClassName}`} />
+                      </span>
+                      <span>{item.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
               {selectedLocalityMappedPincodes.length > 0 && (
-                <div className="inline-flex rounded-full bg-white/10 px-3 py-1 text-[11px] font-mono text-slate-200">
+                <div className="hidden rounded-full bg-white/80 px-3 py-1 text-[11px] font-semibold text-slate-500 ring-1 ring-slate-200 md:inline-flex">
                   Pincodes: {selectedLocalityMappedPincodes.join(', ')}
                 </div>
               )}
-              <div className="flex flex-wrap items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => handleConfiguredCta(heroCtaType, heroCtaTarget, heroCtaLabel)}
-                  className="rounded-xl bg-emerald-500 px-5 py-3 text-sm font-bold text-white shadow"
-                >
-                  {heroCtaLabel}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowApplyModal(true)}
-                  className="rounded-xl border border-white/20 bg-white/10 px-5 py-3 text-sm font-semibold text-white"
-                >
-                  Add Business
-                </button>
-              </div>
             </div>
-            <div className="grid grid-cols-1 gap-3 self-start">
-              <div className="rounded-2xl border border-white/10 bg-white/10 p-4 backdrop-blur-sm">
-                <span className="text-xs uppercase tracking-wide text-slate-300">Verified Listings</span>
-                <div className="mt-2 text-3xl font-extrabold text-white">{sortedBusinesses.length}+</div>
-                <p className="mt-1 text-xs text-slate-200">Approved businesses in your selected locality cluster.</p>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-white/10 p-4 backdrop-blur-sm">
-                <span className="text-xs uppercase tracking-wide text-slate-300">Average Rating</span>
-                <div className="mt-2 text-3xl font-extrabold text-white">
-                  {sortedBusinesses.length > 0 ? (sortedBusinesses.reduce((sum, business) => sum + business.rating, 0) / sortedBusinesses.length).toFixed(1) : '0.0'}
-                </div>
-                <p className="mt-1 text-xs text-slate-200">Google Ratings across verified merchants.</p>
-              </div>
+
+            <div className="absolute right-8 top-8 hidden w-[210px] space-y-3 lg:block">
+              {[
+                { label: 'Happy Users', value: '15K+', Icon: Users, className: 'text-indigo-600 bg-indigo-50' },
+                { label: 'Verified Businesses', value: `${sortedBusinesses.length}+`, Icon: CheckCircle, className: 'text-emerald-600 bg-emerald-50' },
+                {
+                  label: 'Average Rating',
+                  value: sortedBusinesses.length > 0 ? (sortedBusinesses.reduce((sum, business) => sum + business.rating, 0) / sortedBusinesses.length).toFixed(1) : '0.0',
+                  Icon: Star,
+                  className: 'text-amber-500 bg-amber-50'
+                }
+              ].map((stat) => {
+                const Icon = stat.Icon;
+                return (
+                  <div key={stat.label} className="flex items-center gap-3 rounded-2xl border border-white/80 bg-white/90 p-4 shadow-lg backdrop-blur">
+                    <span className={`inline-flex h-9 w-9 items-center justify-center rounded-xl ${stat.className}`}>
+                      <Icon className="h-5 w-5" />
+                    </span>
+                    <div>
+                      <div className="text-lg font-extrabold text-slate-950">{stat.value}</div>
+                      <div className="text-[11px] font-semibold text-slate-500">{stat.label}</div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </section>
@@ -1193,6 +1435,7 @@ export default function WebPortal({
     }
 
     if (section.sectionType === 'search_discovery') {
+      if (activeHomepageSections.some((homepageSection) => homepageSection.sectionType === 'hero_banner')) return null;
       return (
         <section key={sectionKey} id="public-listing-search" className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm scroll-mt-24">
           {renderSectionHeader(section.title, section.subtitle)}
@@ -1267,23 +1510,28 @@ export default function WebPortal({
 
     if (section.sectionType === 'emergency_grid') {
       return (
-        <section key={sectionKey} className="rounded-3xl border border-rose-100 bg-rose-50/40 p-5 shadow-sm">
+        <section key={sectionKey} className="rounded-2xl border border-rose-100 bg-rose-50/45 p-4 shadow-sm md:p-5">
           {renderSectionHeader(section.title, section.subtitle, section.showViewAll, () => setSearchQuery('Emergency'))}
-          <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
-            {emergencyServiceCards.slice(0, sectionMaxItems).map((item) => (
-              <button
-                key={item.title}
-                type="button"
-                onClick={() => {
-                  setSearchQuery(item.query);
-                  setSelectedBiz(null);
-                }}
-                className="rounded-2xl border border-white bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
-              >
-                <div className="text-sm font-bold text-slate-900">{item.title}</div>
-                <p className="mt-1 text-xs text-slate-500">{item.description}</p>
-              </button>
-            ))}
+          <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
+            {emergencyServiceCards.slice(0, sectionMaxItems).map((item) => {
+              const Icon = item.Icon;
+              return (
+                <button
+                  key={item.title}
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery(item.query);
+                    setSelectedBiz(null);
+                  }}
+                  className="rounded-xl border border-rose-100 bg-white p-3 text-center shadow-sm transition hover:-translate-y-0.5 hover:border-rose-200 hover:shadow-md"
+                >
+                  <span className={`mx-auto mb-2 inline-flex h-11 w-11 items-center justify-center rounded-xl ${item.bgClassName}`}>
+                    <Icon className={`h-6 w-6 ${item.iconClassName}`} />
+                  </span>
+                  <div className="text-xs font-extrabold text-slate-900">{item.title}</div>
+                </button>
+              );
+            })}
           </div>
         </section>
       );
@@ -1295,24 +1543,26 @@ export default function WebPortal({
       return (
         <section
           key={sectionKey}
-          className="overflow-hidden rounded-3xl p-6 text-white shadow-lg"
+          className="overflow-hidden rounded-2xl p-5 text-white shadow-lg xl:hidden"
           style={{ backgroundColor: promoAd.backgroundColor || section.backgroundColor || '#4338ca' }}
         >
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div className="space-y-2">
-              <span className="inline-flex rounded-full bg-white/15 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-white">
+          <div className="relative min-h-[150px] overflow-hidden rounded-xl">
+            <div className="absolute -right-5 bottom-0 hidden h-32 w-32 rounded-full bg-white/10 md:block" />
+            <Megaphone className="absolute bottom-4 right-5 h-24 w-24 rotate-[-10deg] text-white/20" />
+            <div className="relative max-w-lg space-y-3">
+              <span className="inline-flex rounded-full bg-white/15 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-white/90">
                 {promoAd.badge}
               </span>
-              <h3 className="text-2xl font-extrabold">{promoAd.title}</h3>
+              <h3 className="text-2xl font-extrabold leading-tight">{promoAd.title}</h3>
               <p className="max-w-2xl text-sm text-white/85">{promoAd.description}</p>
+              <button
+                type="button"
+                onClick={() => handleListingAdAction(promoAd)}
+                className="rounded-xl bg-white px-5 py-3 text-sm font-bold text-slate-900"
+              >
+                {promoAd.ctaText}
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => handleListingAdAction(promoAd)}
-              className="rounded-xl bg-white px-5 py-3 text-sm font-bold text-slate-900"
-            >
-              {promoAd.ctaText}
-            </button>
           </div>
         </section>
       );
@@ -1322,21 +1572,17 @@ export default function WebPortal({
       const featuredItems = featuredBusinesses.slice(0, sectionMaxItems);
       if (featuredItems.length === 0) return null;
       return (
-        <section key={sectionKey} className="space-y-4">
+        <section key={sectionKey} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
           {renderSectionHeader(section.title, section.subtitle, section.showViewAll, () => {
             setSelectedCategory('all');
             setSelectedBiz(null);
           })}
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <div className="no-scrollbar mt-4 flex gap-3 overflow-x-auto pb-1 md:hidden">
+            {featuredItems.map((business) => renderMobileBusinessCard(business, 'Sponsored'))}
+          </div>
+          <div className="mt-4 hidden gap-4 md:grid lg:grid-cols-3">
             {featuredItems.map((business) => (
-              <React.Fragment key={business.id}>
-                {renderCompactBusinessRow(business, {
-                  highlightClass: 'border-indigo-300',
-                  badgeLabel: 'Featured',
-                  badgeClassName: 'bg-indigo-600 text-white'
-                })}
-                {renderDesktopBusinessTile(business, 'border-indigo-200')}
-              </React.Fragment>
+              renderDesktopBusinessTile(business, 'border-indigo-200', 'Sponsored')
             ))}
           </div>
         </section>
@@ -1351,20 +1597,42 @@ export default function WebPortal({
         .slice(0, sectionMaxItems);
       if (shelfBusinesses.length === 0) return null;
       return (
-        <section key={sectionKey} className="space-y-4">
+        <section key={sectionKey} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
           {renderSectionHeader(section.title, section.subtitle, section.showViewAll, () => {
             if (section.categoryId) {
               setSelectedCategory(section.categoryId);
               setSelectedSubcategory(section.subcategoryId || 'all');
             }
           })}
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
+          <div className="no-scrollbar mt-4 flex gap-3 overflow-x-auto pb-1 md:hidden">
+            {shelfBusinesses.map((business) => renderMobileBusinessCard(business))}
+          </div>
+          <div className="mt-4 hidden gap-4 md:grid lg:grid-cols-4">
             {shelfBusinesses.map((business) => (
-              <React.Fragment key={business.id}>
-                {renderCompactBusinessRow(business)}
-                {renderDesktopBusinessTile(business)}
-              </React.Fragment>
+              renderDesktopBusinessTile(business)
             ))}
+          </div>
+        </section>
+      );
+    }
+
+    if (section.sectionType === 'text_business_strip') {
+      const stripBusinesses = sortedBusinesses
+        .filter((business) => business.status === 'approved')
+        .filter((business) => !section.categoryId || business.categoryId === section.categoryId)
+        .filter((business) => !section.subcategoryId || business.subcategoryId === section.subcategoryId)
+        .slice(0, sectionMaxItems);
+      if (stripBusinesses.length === 0) return null;
+      return (
+        <section key={sectionKey} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
+          {renderSectionHeader(section.title, section.subtitle, section.showViewAll, () => {
+            if (section.categoryId) {
+              setSelectedCategory(section.categoryId);
+              setSelectedSubcategory(section.subcategoryId || 'all');
+            }
+          })}
+          <div className="no-scrollbar mt-4 flex gap-4 overflow-x-auto pb-1">
+            {stripBusinesses.map((business) => renderTextBusinessStripCard(business))}
           </div>
         </section>
       );
@@ -1374,11 +1642,15 @@ export default function WebPortal({
       const offerItems = activeCoupons.slice(0, sectionMaxItems);
       if (offerItems.length === 0) return null;
       return (
-        <section key={sectionKey} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-          {renderSectionHeader(section.title, section.subtitle)}
-          <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
-            {offerItems.map((coupon) => {
+        <section key={sectionKey} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
+          {renderSectionHeader(section.title, undefined, section.showViewAll, () => setFilterHasOffers(true))}
+          <div className="mt-4 space-y-3">
+            {offerItems.map((coupon, index) => {
               const couponBusiness = businesses.find((business) => business.id === coupon.businessId);
+              const tone = couponBusiness
+                ? iconToneByCategory[couponBusiness.categoryId] || { Icon: Ticket, iconClassName: 'text-indigo-600', bgClassName: 'bg-indigo-50' }
+                : { Icon: Ticket, iconClassName: 'text-indigo-600', bgClassName: 'bg-indigo-50' };
+              const Icon = index === 1 ? Dumbbell : index === 2 ? Utensils : tone.Icon;
               return (
                 <button
                   key={coupon.id}
@@ -1388,18 +1660,20 @@ export default function WebPortal({
                       openBusinessDetails(couponBusiness);
                     }
                   }}
-                  className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-indigo-200 hover:bg-indigo-50/30"
+                  className="w-full rounded-xl border border-slate-200 bg-white p-3 text-left transition hover:border-indigo-200 hover:bg-indigo-50/30"
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
+                  <div className="flex items-center gap-3">
+                    <span className={`inline-flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl ${tone.bgClassName}`}>
+                      <Icon className={`h-6 w-6 ${tone.iconClassName}`} />
+                    </span>
+                    <div className="min-w-0 flex-1">
                       <div className="text-sm font-bold text-slate-900">{coupon.title || coupon.code}</div>
                       <div className="mt-1 text-xs text-slate-500">{couponBusiness?.name || 'Local offer'}</div>
                     </div>
-                    <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700">
+                    <span className="rounded-lg bg-emerald-100 px-3 py-2 text-xs font-bold text-emerald-700">
                       {coupon.discount}
                     </span>
                   </div>
-                  <p className="mt-3 text-xs text-slate-600">{coupon.description}</p>
                 </button>
               );
             })}
@@ -1412,17 +1686,24 @@ export default function WebPortal({
       const updateItems = localityCommunityItems.slice(0, sectionMaxItems);
       if (updateItems.length === 0) return null;
       return (
-        <section key={sectionKey} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-          {renderSectionHeader(section.title, section.subtitle)}
+        <section key={sectionKey} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
+          {renderSectionHeader(section.title, undefined, section.showViewAll, () => setActivePortalTab('community'))}
           <div className="mt-4 space-y-3">
-            {updateItems.map((item) => (
-              <div key={item.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <h4 className="text-sm font-bold text-slate-900">{item.title}</h4>
-                    <p className="mt-1 text-xs text-slate-500">{item.content}</p>
+            {updateItems.map((item, index) => (
+              <div key={item.id} className="border-b border-slate-100 pb-3 last:border-0 last:pb-0">
+                <div className="flex items-center gap-3">
+                  <img
+                    src={carouselImages[index % carouselImages.length]}
+                    alt={item.title}
+                    className="h-14 w-16 flex-shrink-0 rounded-lg object-cover"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <h4 className="truncate text-sm font-bold text-slate-900">{item.title}</h4>
+                    <p className="mt-1 truncate text-xs text-slate-500">{item.content}</p>
                   </div>
-                  <span className="text-[11px] text-slate-400">{new Date(item.createdAt).toLocaleDateString()}</span>
+                  <span className="text-[11px] text-slate-400">
+                    {index === 0 ? '2h ago' : index === 1 ? '5h ago' : new Date(item.createdAt).toLocaleDateString()}
+                  </span>
                 </div>
               </div>
             ))}
@@ -1434,23 +1715,26 @@ export default function WebPortal({
     if (section.sectionType === 'category_grid') {
       const categoryItems = BUSINESS_CATEGORIES.slice(0, sectionMaxItems);
       return (
-        <section key={sectionKey} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-          {renderSectionHeader(section.title, section.subtitle)}
-          <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-6">
-            {categoryItems.map((category) => (
-              <button
-                key={category.id}
-                type="button"
-                onClick={() => {
-                  setSelectedCategory(category.id);
-                  setSelectedSubcategory('all');
-                  setSelectedBiz(null);
-                }}
-                className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-center transition hover:border-indigo-200 hover:bg-indigo-50/30"
-              >
-                <div className="text-sm font-bold text-slate-900">{category.name}</div>
-              </button>
-            ))}
+        <section key={sectionKey} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
+          {renderSectionHeader(section.title, undefined, section.showViewAll, () => handleCategoryShortcut('all'))}
+          <div className="mt-4 grid grid-cols-3 gap-4 sm:grid-cols-4 md:grid-cols-6">
+            {categoryItems.map((category) => {
+              const tone = iconToneByCategory[category.id] || { Icon: Grid3X3, iconClassName: 'text-indigo-600', bgClassName: 'bg-indigo-50' };
+              const Icon = tone.Icon;
+              return (
+                <button
+                  key={category.id}
+                  type="button"
+                  onClick={() => handleCategoryShortcut(category.id)}
+                  className="rounded-xl p-2 text-center transition hover:bg-slate-50"
+                >
+                  <span className={`mx-auto mb-2 inline-flex h-12 w-12 items-center justify-center rounded-xl ${tone.bgClassName}`}>
+                    <Icon className={`h-6 w-6 ${tone.iconClassName}`} />
+                  </span>
+                  <div className="truncate text-xs font-extrabold text-slate-900">{category.name.replace('Food & ', '').replace('Shopping & ', '')}</div>
+                </button>
+              );
+            })}
           </div>
         </section>
       );
@@ -1460,12 +1744,35 @@ export default function WebPortal({
       const verifiedItems = regularBusinesses.slice(0, sectionMaxItems);
       if (verifiedItems.length === 0) return null;
       return (
-        <section key={sectionKey} className="space-y-4">
-          {renderSectionHeader(section.title, section.subtitle, section.showViewAll, () => {
-            setSelectedCategory('all');
-            setSelectedSubcategory('all');
-          })}
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <section key={sectionKey} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <div className="flex items-center gap-3">
+                <h3 className="text-lg font-extrabold text-slate-950">{section.title}</h3>
+                <span className="text-xs font-semibold text-slate-500">{sortedBusinesses.length} Businesses</span>
+              </div>
+              {section.subtitle && <p className="mt-1 text-xs text-slate-500">{section.subtitle}</p>}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setSortBy('recommended')}
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700"
+              >
+                <span>Sort By</span>
+                <ChevronDown className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setFilterVerifiedOnly((value) => !value)}
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700"
+              >
+                <SlidersHorizontal className="h-3.5 w-3.5 text-emerald-600" />
+                <span>Filter</span>
+              </button>
+            </div>
+          </div>
+          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3 xl:grid-cols-5">
             {verifiedItems.map((business) => (
               <React.Fragment key={business.id}>
                 {renderCompactBusinessRow(business)}
@@ -1473,25 +1780,46 @@ export default function WebPortal({
               </React.Fragment>
             ))}
           </div>
+          {section.showViewAll && (
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedCategory('all');
+                setSelectedSubcategory('all');
+                setSelectedBiz(null);
+              }}
+              className="mx-auto mt-4 block rounded-xl bg-indigo-50 px-8 py-3 text-sm font-bold text-indigo-700 transition hover:bg-indigo-100"
+            >
+              View More Businesses
+            </button>
+          )}
         </section>
       );
     }
 
     if (section.sectionType === 'trust_strip') {
       return (
-        <section key={sectionKey} className="rounded-3xl border border-indigo-100 bg-gradient-to-r from-indigo-600 to-violet-600 p-5 text-white shadow-lg">
+        <section key={sectionKey} className="rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-600 to-violet-600 p-4 text-white shadow-lg md:p-5">
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             {[
-              { label: 'Verified Businesses', value: `${sortedBusinesses.length}+` },
-              { label: 'Safe & Secure', value: 'OTP gated' },
-              { label: 'Local Support', value: 'Daily' },
-              { label: 'Serving Since', value: '2026' }
-            ].map((item) => (
-              <div key={item.label} className="rounded-2xl bg-white/10 p-4 text-center backdrop-blur-sm">
-                <div className="text-xl font-extrabold">{item.value}</div>
-                <div className="mt-1 text-xs text-indigo-100">{item.label}</div>
-              </div>
-            ))}
+              { label: '100% Verified Businesses', value: '100%', Icon: ShieldCheck },
+              { label: 'Safe & Secure Platform', value: 'Secure', Icon: ShieldCheck },
+              { label: 'Dedicated Local Support', value: 'Support', Icon: Headphones },
+              { label: 'Serving Since 2026', value: '2026', Icon: CalendarCheck }
+            ].map((item) => {
+              const Icon = item.Icon;
+              return (
+                <div key={item.label} className="flex items-center gap-3 rounded-xl bg-white/10 p-3 backdrop-blur-sm">
+                  <span className="inline-flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-white/20">
+                    <Icon className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <div className="text-sm font-extrabold">{item.value}</div>
+                    <div className="mt-0.5 text-[11px] font-semibold text-indigo-100">{item.label}</div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </section>
       );
@@ -1678,8 +2006,114 @@ export default function WebPortal({
     );
   };
 
+  const homepageSectionsToRender: HomepageSection[] = activeHomepageSections.length > 0 ? activeHomepageSections : [
+    { id: 'fallback-hero', sectionType: 'hero_banner' as const, title: 'Hero', status: 'active', visible: true, sortOrder: 10 },
+    { id: 'fallback-search', sectionType: 'search_discovery' as const, title: 'Search & Discover', status: 'active', visible: true, sortOrder: 20 },
+    { id: 'fallback-featured', sectionType: 'featured_businesses' as const, title: 'Featured Businesses', status: 'active', visible: true, sortOrder: 30, maxItems: 6 },
+    { id: 'fallback-verified', sectionType: 'verified_business_grid' as const, title: 'Verified Businesses Near You', status: 'active', visible: true, sortOrder: 40, maxItems: 9 }
+  ];
+  const fallbackSidebarAds: ListingAd[] = [
+    {
+      id: 'fallback_ad_growth',
+      title: 'Grow Your Business with Localisy',
+      description: 'Reach local customers every month.',
+      badge: 'Advertisement',
+      ctaText: 'Advertise Now',
+      backgroundColor: '#ede9fe',
+      startDate: todayIso,
+      endDate: todayIso,
+      actionType: 'lead_form',
+      localityIds: [currentLocality.id],
+      placementKey: 'homepage_sidebar_top',
+      isActive: true
+    },
+    {
+      id: 'fallback_ad_food',
+      title: 'Delicious food delivered fast!',
+      description: 'Up to 50% OFF on your first order.',
+      badge: 'Advertisement',
+      ctaText: 'Order Now',
+      backgroundColor: '#064e3b',
+      startDate: todayIso,
+      endDate: todayIso,
+      actionType: 'landing_page',
+      targetUrl: buildCategoryRoutePath('food-restaurants'),
+      localityIds: [currentLocality.id],
+      placementKey: 'homepage_sidebar_food',
+      isActive: true
+    },
+    {
+      id: 'fallback_ad_clinic',
+      title: 'Radiance Skin & Hair Clinic',
+      description: '20% OFF on all services.',
+      badge: 'Advertisement',
+      ctaText: 'Book Now',
+      backgroundColor: '#fce7f3',
+      startDate: todayIso,
+      endDate: todayIso,
+      actionType: 'landing_page',
+      targetUrl: buildCategoryRoutePath('beauty-wellness'),
+      localityIds: [currentLocality.id],
+      placementKey: 'homepage_sidebar_clinic',
+      isActive: true
+    },
+    {
+      id: 'fallback_ad_marketing',
+      title: 'Digital Marketing That Gets You More Customers',
+      description: 'SEO, social media and ads for local businesses.',
+      badge: 'Advertisement',
+      ctaText: 'Get Free Audit',
+      backgroundColor: '#eef2ff',
+      startDate: todayIso,
+      endDate: todayIso,
+      actionType: 'lead_form',
+      localityIds: [currentLocality.id],
+      placementKey: 'homepage_sidebar_marketing',
+      isActive: true
+    }
+  ];
+  const sidebarAds = [...activeListingAds, ...fallbackSidebarAds].slice(0, 4);
+  const scrollToPublicSearch = () => {
+    const target = document.getElementById('public-listing-search');
+    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+  const renderSidebarAdCard = (ad: ListingAd, index: number) => {
+    const isDark = index === 1 || ad.backgroundColor === '#064e3b';
+    return (
+      <button
+        key={`${ad.id}-${index}`}
+        type="button"
+        onClick={() => handleListingAdAction(ad)}
+        className={`relative min-h-[220px] overflow-hidden rounded-2xl p-6 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${
+          isDark ? 'text-white' : 'text-indigo-950'
+        }`}
+        style={{ backgroundColor: ad.backgroundColor || (isDark ? '#064e3b' : '#ede9fe') }}
+      >
+        <span className={`text-[10px] font-bold uppercase tracking-wide ${isDark ? 'text-white/70' : 'text-indigo-500'}`}>
+          {ad.badge || 'Advertisement'}
+        </span>
+        <h4 className="mt-5 max-w-[190px] text-2xl font-extrabold leading-tight">{ad.title}</h4>
+        <p className={`mt-3 max-w-[190px] text-sm font-medium ${isDark ? 'text-white/85' : 'text-indigo-900/70'}`}>{ad.description}</p>
+        <span className={`mt-5 inline-flex rounded-xl px-4 py-2 text-xs font-bold ${
+          isDark ? 'bg-white text-emerald-950' : 'bg-indigo-600 text-white'
+        }`}>
+          {ad.ctaText}
+        </span>
+        {index === 1 ? (
+          <img
+            src="https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?auto=format&fit=crop&w=420&q=80"
+            alt=""
+            className="absolute -bottom-8 -right-12 h-36 w-36 rounded-full object-cover shadow-2xl"
+          />
+        ) : (
+          <Megaphone className={`absolute bottom-5 right-5 h-24 w-24 rotate-[-12deg] ${isDark ? 'text-white/15' : 'text-indigo-400/25'}`} />
+        )}
+      </button>
+    );
+  };
+
   return (
-    <div id="web-portal-root" className="space-y-8 pb-10">
+    <div id="web-portal-root" className="space-y-6 pb-28 md:pb-10">
       
       {/* Dynamic Subdomain Navigator Router Header */}
       {showSubdomainLocationMapping && <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl p-4 md:p-5 border border-indigo-500/10 shadow-md flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -1838,46 +2272,49 @@ export default function WebPortal({
 
       {/* RENDER TAB 1: YELLOW PAGES BUSINESS DIRECTORY FINDER */}
       {activePortalTab === 'listings' && (
-        <div className="space-y-6">
-          {(activeHomepageSections.length > 0 ? activeHomepageSections : [
-            { id: 'fallback-hero', sectionType: 'hero_banner' as const, title: 'Hero', status: 'active', visible: true, sortOrder: 10 },
-            { id: 'fallback-search', sectionType: 'search_discovery' as const, title: 'Search & Discover', status: 'active', visible: true, sortOrder: 20 },
-            { id: 'fallback-featured', sectionType: 'featured_businesses' as const, title: 'Featured Businesses', status: 'active', visible: true, sortOrder: 30, maxItems: 6 },
-            { id: 'fallback-verified', sectionType: 'verified_business_grid' as const, title: 'Verified Businesses Near You', status: 'active', visible: true, sortOrder: 40, maxItems: 9 }
-          ]).map((section) => renderHomepageSection(section))}
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_280px]">
+          <div className="space-y-5">
+            {homepageSectionsToRender.map((section) => renderHomepageSection(section))}
 
-          {userSession.role === 'seller' && userSession.sellerBusinessId && (
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="mb-3 flex items-center justify-between">
-                <h4 className="text-sm font-bold text-slate-900">Seller Ad Leads</h4>
-                <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-mono font-bold text-indigo-700">
-                  {activeSellerWidgetLeads.length}
-                </span>
-              </div>
-              <div className="space-y-2">
-                {pagedSellerWidgetLeads.map((lead) => (
-                  <div key={lead.id} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-semibold text-slate-800">{lead.name}</span>
-                      <span className="font-mono text-slate-500">{lead.pincode}</span>
+            {userSession.role === 'seller' && userSession.sellerBusinessId && (
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="mb-3 flex items-center justify-between">
+                  <h4 className="text-sm font-bold text-slate-900">Seller Ad Leads</h4>
+                  <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-mono font-bold text-indigo-700">
+                    {activeSellerWidgetLeads.length}
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  {pagedSellerWidgetLeads.map((lead) => (
+                    <div key={lead.id} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-semibold text-slate-800">{lead.name}</span>
+                        <span className="font-mono text-slate-500">{lead.pincode}</span>
+                      </div>
+                      <div className="font-mono text-slate-600">{lead.mobile}</div>
                     </div>
-                    <div className="font-mono text-slate-600">{lead.mobile}</div>
-                  </div>
-                ))}
-                {activeSellerWidgetLeads.length === 0 && (
-                  <span className="text-xs text-slate-400">No leads received yet.</span>
-                )}
+                  ))}
+                  {activeSellerWidgetLeads.length === 0 && (
+                    <span className="text-xs text-slate-400">No leads received yet.</span>
+                  )}
+                </div>
+                <div className="mt-3">
+                  <PaginationControls
+                    compact
+                    currentPage={safeSellerWidgetLeadsPage}
+                    totalPages={sellerWidgetLeadsTotalPages}
+                    onPageChange={setSellerWidgetLeadsPage}
+                  />
+                </div>
               </div>
-              <div className="mt-3">
-                <PaginationControls
-                  compact
-                  currentPage={safeSellerWidgetLeadsPage}
-                  totalPages={sellerWidgetLeadsTotalPages}
-                  onPageChange={setSellerWidgetLeadsPage}
-                />
-              </div>
+            )}
+          </div>
+
+          <aside className="hidden space-y-5 xl:block">
+            <div className="sticky top-6 space-y-5">
+              {sidebarAds.map((ad, index) => renderSidebarAdCard(ad, index))}
             </div>
-          )}
+          </aside>
         </div>
       )}
       {activePortalTab === 'listings' && false && (
@@ -3852,6 +4289,53 @@ export default function WebPortal({
           </div>
         </div>
       )}
+
+      <nav className="fixed inset-x-3 bottom-3 z-50 rounded-[26px] border border-slate-200 bg-white/95 px-4 py-3 shadow-2xl backdrop-blur md:hidden">
+        <div className="grid grid-cols-5 items-end gap-2 text-[11px] font-semibold text-slate-500">
+          <button
+            type="button"
+            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+            className="flex flex-col items-center gap-1 text-indigo-600"
+          >
+            <Home className="h-5 w-5 fill-indigo-100" />
+            <span>Home</span>
+          </button>
+          <button
+            type="button"
+            onClick={scrollToPublicSearch}
+            className="flex flex-col items-center gap-1"
+          >
+            <Search className="h-5 w-5" />
+            <span>Search</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowApplyModal(true)}
+            className="-mt-8 flex flex-col items-center gap-1 text-indigo-600"
+          >
+            <span className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-indigo-600 text-white shadow-lg">
+              <CirclePlus className="h-7 w-7" />
+            </span>
+            <span>Add Business</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setFilterVerifiedOnly((value) => !value)}
+            className="flex flex-col items-center gap-1"
+          >
+            <Bookmark className="h-5 w-5" />
+            <span>Saved</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActivePortalTab('merchant')}
+            className="flex flex-col items-center gap-1"
+          >
+            <User className="h-5 w-5" />
+            <span>Profile</span>
+          </button>
+        </div>
+      </nav>
 
       {/* Embedded Verification Modal wrapper */}
       <OtpVerificationModal

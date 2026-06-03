@@ -1,0 +1,1582 @@
+[
+  {
+    "id": "s1",
+    "name": "5 Elements | Family Salon",
+    "categoryId": "beauty-wellness",
+    "subcategoryId": "salons",
+    "localityId": "roadpali",
+    "stateId": "mh",
+    "cityId": "navimumbai",
+    "areaId": "roadpali-sec17",
+    "areasOfOperation": [
+      "roadpali-sec17",
+      "roadpali-sec15",
+      "kalamboli-sec11"
+    ],
+    "address": "Shop 11, Phoenix Heights, Sector 17, Roadpali, Navi Mumbai, Maharashtra 410218",
+    "phone": "+91 8655900456",
+    "email": "info@5elementsfamily.in",
+    "website": "https://5elementssalon.co.in",
+    "description": "Premier family salon in Sector 17 providing luxury haircuts, dynamic hair styling, refreshing facials, and personalized grooming services inside an elite ambience.",
+    "rating": 4.9,
+    "reviewCount": 3,
+    "imageUrl": "https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=500&q=80",
+    "featured": true,
+    "status": "approved",
+    "createdAt": "2026-01-10T11:00:00Z",
+    "tags": [
+      "Haircut",
+      "Styling",
+      "Facial",
+      "Grooming",
+      "Family Salon"
+    ],
+    "hours": "09:00 AM - 09:30 PM",
+    "ownerName": "Vikas Jaiswal",
+    "gpsCoordinates": {
+      "lat": 19.0324,
+      "lng": 73.1042
+    },
+    "distance": 0.3,
+    "priceRange": "₹₹₹",
+    "deliveryAvailable": false,
+    "hasOffers": true,
+    "languagesSpoken": [
+      "Hindi",
+      "English",
+      "Marathi"
+    ],
+    "paymentMethods": [
+      "UPI",
+      "Card",
+      "Cash"
+    ],
+    "experienceYears": 7,
+    "isSponsored": true,
+    "cpcBudget": 150,
+    "verifiedBadge": true,
+    "kycStatus": "verified",
+    "govRegistered": true,
+    "responseTime": "< 10 mins",
+    "customerSatisfaction": 98,
+    "repeatCustomerScore": 92,
+    "isMonthlySubscriber": true,
+    "subscriptionPlan": "premium",
+    "pincode": "410218"
+  },
+  {
+    "id": "s2",
+    "name": "Majestic Salon Spa & Academy",
+    "categoryId": "beauty-wellness",
+    "subcategoryId": "salons",
+    "localityId": "kalamboli",
+    "stateId": "mh",
+    "cityId": "navimumbai",
+    "areaId": "kalamboli-sec11",
+    "areasOfOperation": [
+      "kalamboli-sec11",
+      "roadpali-sec17",
+      "kalamboli-sec2"
+    ],
+    "address": "Shop 8, Matruchaya Heritage Society, Sector 11, Kalamboli, Navi Mumbai, Maharashtra 410218",
+    "phone": "+91 8104084732",
+    "email": "contact@majesticacademy.com",
+    "website": "https://majesticsalonacademy.in",
+    "description": "Elite cosmetic training institute and full-service beauty spa specializing in bridal transformations, deep therapeutic spa processes, and certified hairdressing styles.",
+    "rating": 4.7,
+    "reviewCount": 2,
+    "imageUrl": "https://images.unsplash.com/photo-1521590832167-7bcbfaa6381f?auto=format&fit=crop&w=500&q=80",
+    "featured": true,
+    "status": "approved",
+    "createdAt": "2026-01-18T10:00:00Z",
+    "tags": [
+      "Spa",
+      "Hair Academy",
+      "Bridal",
+      "Course",
+      "Nail Art"
+    ],
+    "hours": "10:00 AM - 09:00 PM",
+    "ownerName": "Priya Shinde",
+    "gpsCoordinates": {
+      "lat": 19.027,
+      "lng": 73.1012
+    },
+    "distance": 1.1,
+    "priceRange": "₹₹₹",
+    "deliveryAvailable": false,
+    "hasOffers": true,
+    "languagesSpoken": [
+      "Hindi",
+      "Marathi",
+      "English"
+    ],
+    "paymentMethods": [
+      "UPI",
+      "Card",
+      "Cash"
+    ],
+    "experienceYears": 10,
+    "isSponsored": true,
+    "cpcBudget": 200,
+    "verifiedBadge": true,
+    "kycStatus": "verified",
+    "govRegistered": true,
+    "responseTime": "< 15 mins",
+    "customerSatisfaction": 95,
+    "repeatCustomerScore": 88,
+    "isMonthlySubscriber": true,
+    "subscriptionPlan": "premium",
+    "pincode": "410218"
+  },
+  {
+    "id": "s3",
+    "name": "ColorQ International Salon Beauty & Wellness Clinic",
+    "categoryId": "beauty-wellness",
+    "subcategoryId": "salons",
+    "localityId": "roadpali",
+    "stateId": "mh",
+    "cityId": "navimumbai",
+    "areaId": "roadpali-sec9e",
+    "areasOfOperation": [
+      "roadpali-sec9e",
+      "roadpali-sec17",
+      "kalamboli-sec11"
+    ],
+    "address": "G-33, Neelsiddhi Amarante, Sector 9E, D-Mart Road, Roadpali, Navi Mumbai, Maharashtra 410218",
+    "phone": "+91 8080506616",
+    "email": "wellness@colorqinternational.in",
+    "website": "https://colorqsalon.co.in",
+    "description": "International benchmark standards in hair highlights, advanced Keratin and Botox hair therapies, facial clinical aesthetics, and expert beauty counseling.",
+    "rating": 4.5,
+    "reviewCount": 1,
+    "imageUrl": "https://images.unsplash.com/photo-1562322140-8baeececf3df?auto=format&fit=crop&w=500&q=80",
+    "featured": true,
+    "status": "approved",
+    "createdAt": "2026-02-01T14:30:00Z",
+    "tags": [
+      "Hair Coloring",
+      "Botox Treatment",
+      "Skin Clinic",
+      "Spa"
+    ],
+    "hours": "10:00 AM - 08:30 PM",
+    "ownerName": "Meenakshi Shetty",
+    "gpsCoordinates": {
+      "lat": 19.0305,
+      "lng": 73.1022
+    },
+    "distance": 0.6,
+    "priceRange": "₹₹₹₹",
+    "deliveryAvailable": false,
+    "hasOffers": false,
+    "languagesSpoken": [
+      "English",
+      "Hindi",
+      "Kannada"
+    ],
+    "paymentMethods": [
+      "Card",
+      "UPI"
+    ],
+    "experienceYears": 12,
+    "isSponsored": false,
+    "cpcBudget": 80,
+    "verifiedBadge": true,
+    "kycStatus": "verified",
+    "govRegistered": true,
+    "responseTime": "< 30 mins",
+    "customerSatisfaction": 94,
+    "repeatCustomerScore": 86,
+    "isMonthlySubscriber": true,
+    "subscriptionPlan": "basic",
+    "pincode": "410218"
+  },
+  {
+    "id": "s4",
+    "name": "Cutz N Curlz Unisex Salon & Academy",
+    "categoryId": "beauty-wellness",
+    "subcategoryId": "salons",
+    "localityId": "kalamboli",
+    "stateId": "mh",
+    "cityId": "navimumbai",
+    "areaId": "roadpali-sec17",
+    "areasOfOperation": [
+      "roadpali-sec17",
+      "kalamboli-sec11"
+    ],
+    "address": "Bhoomi Gardenia, Sector 17, Kalamboli, Navi Mumbai, Maharashtra 410218",
+    "phone": "+91 9619134803",
+    "website": "https://cutzncurlz.in",
+    "description": "Popular unisex styling parlour and training institute with complete courses in hairdressing, barbering, and skin care programs.",
+    "rating": 4.5,
+    "reviewCount": 0,
+    "imageUrl": "https://images.unsplash.com/photo-1605497746444-ac9dbd4d3ce9?auto=format&fit=crop&w=500&q=80",
+    "featured": false,
+    "status": "approved",
+    "createdAt": "2026-02-15T09:15:00Z",
+    "tags": [
+      "Hair Styling",
+      "Unisex Grooming",
+      "Barber",
+      "Nails"
+    ],
+    "hours": "09:30 AM - 09:00 PM",
+    "ownerName": "Zubair Shaikh",
+    "gpsCoordinates": {
+      "lat": 19.0315,
+      "lng": 73.105
+    },
+    "distance": 0.8,
+    "priceRange": "₹₹",
+    "deliveryAvailable": false,
+    "hasOffers": true,
+    "languagesSpoken": [
+      "Hindi",
+      "English"
+    ],
+    "paymentMethods": [
+      "Cash",
+      "UPI",
+      "Card"
+    ],
+    "experienceYears": 6,
+    "isSponsored": false,
+    "cpcBudget": 40,
+    "verifiedBadge": true,
+    "kycStatus": "verified",
+    "govRegistered": true,
+    "responseTime": "< 20 mins",
+    "customerSatisfaction": 91,
+    "repeatCustomerScore": 84,
+    "isMonthlySubscriber": false,
+    "subscriptionPlan": "free",
+    "pincode": "410218"
+  },
+  {
+    "id": "s5",
+    "name": "VRoyal Family Salon",
+    "categoryId": "beauty-wellness",
+    "subcategoryId": "salons",
+    "localityId": "roadpali",
+    "stateId": "mh",
+    "cityId": "navimumbai",
+    "areaId": "roadpali-sec15",
+    "areasOfOperation": [
+      "roadpali-sec15",
+      "roadpali-sec17"
+    ],
+    "address": "Emerald Heights, Shop 14, Sector 15, Roadpali, Navi Mumbai, Maharashtra 410218",
+    "phone": "+91 8591575526",
+    "website": "https://vroyalfamily.co.in",
+    "description": "Bespoke grooming services, modern hair setups, beard contouring, and express facials for families on Sector 15.",
+    "rating": 0,
+    "reviewCount": 0,
+    "imageUrl": "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=500&q=80",
+    "featured": false,
+    "status": "approved",
+    "createdAt": "2026-02-28T16:00:00Z",
+    "tags": [
+      "Haircut",
+      "Grooming",
+      "Beard Trim"
+    ],
+    "hours": "10:00 AM - 09:30 PM",
+    "ownerName": "Vicky Rajput",
+    "gpsCoordinates": {
+      "lat": 19.0345,
+      "lng": 73.107
+    },
+    "distance": 1.4,
+    "priceRange": "₹₹",
+    "deliveryAvailable": false,
+    "hasOffers": false,
+    "languagesSpoken": [
+      "Hindi",
+      "Marathi"
+    ],
+    "paymentMethods": [
+      "UPI",
+      "Cash"
+    ],
+    "experienceYears": 4,
+    "isSponsored": false,
+    "cpcBudget": 0,
+    "verifiedBadge": false,
+    "kycStatus": "none",
+    "govRegistered": false,
+    "responseTime": "< 1 hour",
+    "customerSatisfaction": 85,
+    "repeatCustomerScore": 75,
+    "isMonthlySubscriber": false,
+    "subscriptionPlan": "free",
+    "pincode": "410218"
+  },
+  {
+    "id": "s7",
+    "name": "Goodfellas Family Salon",
+    "categoryId": "beauty-wellness",
+    "subcategoryId": "salons",
+    "localityId": "roadpali",
+    "stateId": "mh",
+    "cityId": "navimumbai",
+    "areaId": "roadpali-sec17",
+    "areasOfOperation": [
+      "roadpali-sec17"
+    ],
+    "address": "Platinum Experio, Sector 17, Roadpali, Navi Mumbai, Maharashtra 410218",
+    "phone": "+91 9004165277",
+    "website": "https://goodfellassalon.in",
+    "description": "Laid-back premium gentlemen & family grooming zone featuring high-tech reclining barber chairs, hot towel massages, and bespoke aesthetic cuts.",
+    "rating": 4.7,
+    "reviewCount": 0,
+    "imageUrl": "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=500&q=80",
+    "featured": false,
+    "status": "approved",
+    "createdAt": "2026-03-05T09:30:00Z",
+    "tags": [
+      "Family Salon",
+      "Barber Shop",
+      "Hot Towel",
+      "Head Massage"
+    ],
+    "hours": "09:00 AM - 10:00 PM",
+    "ownerName": "John DSouza",
+    "gpsCoordinates": {
+      "lat": 19.0321,
+      "lng": 73.104
+    },
+    "distance": 0.2,
+    "priceRange": "₹₹₹",
+    "deliveryAvailable": false,
+    "hasOffers": true,
+    "languagesSpoken": [
+      "English",
+      "Hindi"
+    ],
+    "paymentMethods": [
+      "UPI",
+      "Card",
+      "Cash"
+    ],
+    "experienceYears": 8,
+    "isSponsored": false,
+    "cpcBudget": 30,
+    "verifiedBadge": true,
+    "kycStatus": "verified",
+    "govRegistered": true,
+    "responseTime": "< 15 mins",
+    "customerSatisfaction": 94,
+    "repeatCustomerScore": 85,
+    "isMonthlySubscriber": false,
+    "subscriptionPlan": "free",
+    "pincode": "410218"
+  },
+  {
+    "id": "s8",
+    "name": "Barberry Bliss Family Salon",
+    "categoryId": "beauty-wellness",
+    "subcategoryId": "salons",
+    "localityId": "roadpali",
+    "stateId": "mh",
+    "cityId": "navimumbai",
+    "areaId": "roadpali-sec17",
+    "areasOfOperation": [
+      "roadpali-sec17",
+      "roadpali-sec15"
+    ],
+    "address": "Platinum Experio, Sector 17, Roadpali, Navi Mumbai, Maharashtra 410218",
+    "phone": "+91 7208081707",
+    "website": "https://barberryblisssalon.in",
+    "description": "Luxurious family hair parlour and nail clinic with standard kids haircuts, modern hair spa treatments, and high-fashion aesthetics coloring.",
+    "rating": 4.9,
+    "reviewCount": 0,
+    "imageUrl": "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+    "featured": false,
+    "status": "approved",
+    "createdAt": "2026-03-12T10:00:00Z",
+    "tags": [
+      "Haircut",
+      "Family Grooming",
+      "Kids Cut",
+      "Nails"
+    ],
+    "hours": "10:00 AM - 09:30 PM",
+    "ownerName": "Nisha Thakur",
+    "gpsCoordinates": {
+      "lat": 19.0322,
+      "lng": 73.1041
+    },
+    "distance": 0.2,
+    "priceRange": "₹₹₹",
+    "deliveryAvailable": false,
+    "hasOffers": false,
+    "languagesSpoken": [
+      "Hindi",
+      "English",
+      "Marathi"
+    ],
+    "paymentMethods": [
+      "UPI",
+      "Card",
+      "Cash"
+    ],
+    "experienceYears": 5,
+    "isSponsored": false,
+    "cpcBudget": 0,
+    "verifiedBadge": true,
+    "kycStatus": "pending",
+    "govRegistered": true,
+    "responseTime": "< 10 mins",
+    "customerSatisfaction": 97,
+    "repeatCustomerScore": 90,
+    "isMonthlySubscriber": false,
+    "subscriptionPlan": "free",
+    "pincode": "410218"
+  },
+  {
+    "id": "s6",
+    "name": "Final Touch Unisex Salon",
+    "categoryId": "beauty-wellness",
+    "subcategoryId": "salons",
+    "localityId": "kalamboli",
+    "stateId": "mh",
+    "cityId": "navimumbai",
+    "areaId": "roadpali-sec9e",
+    "areasOfOperation": [
+      "roadpali-sec9e",
+      "kalamboli-sec11"
+    ],
+    "address": "Amarante Building, Sector 9E, Near D-Mart, Kalamboli, Navi Mumbai, Maharashtra 410218",
+    "phone": "+91 9594368503",
+    "website": "https://finaltouchsalon.co.in",
+    "description": "Expert highlights, skin clarifying therapies, complete bridal groom packages, and dynamic haircuts for all age brackets.",
+    "rating": 0,
+    "reviewCount": 0,
+    "imageUrl": "https://images.unsplash.com/photo-1562322140-8baeececf3df?auto=format&fit=crop&w=500&q=80",
+    "featured": false,
+    "status": "approved",
+    "createdAt": "2026-03-24T12:00:00Z",
+    "tags": [
+      "Haircut",
+      "Beauty",
+      "Unisex Salon",
+      "Nails"
+    ],
+    "hours": "10:00 AM - 09:00 PM",
+    "ownerName": "Imran Khan",
+    "gpsCoordinates": {
+      "lat": 19.0298,
+      "lng": 73.1018
+    },
+    "distance": 0.7,
+    "priceRange": "₹₹",
+    "deliveryAvailable": false,
+    "hasOffers": true,
+    "languagesSpoken": [
+      "Hindi",
+      "Marathi"
+    ],
+    "paymentMethods": [
+      "Cash",
+      "UPI"
+    ],
+    "experienceYears": 6,
+    "isSponsored": false,
+    "cpcBudget": 0,
+    "verifiedBadge": false,
+    "kycStatus": "none",
+    "govRegistered": false,
+    "responseTime": "< 45 mins",
+    "customerSatisfaction": 80,
+    "repeatCustomerScore": 70,
+    "isMonthlySubscriber": false,
+    "subscriptionPlan": "free",
+    "pincode": "410218"
+  },
+  {
+    "id": "s9",
+    "name": "Kaya Ladies Beauty Parlour",
+    "categoryId": "beauty-wellness",
+    "subcategoryId": "salons",
+    "localityId": "kalamboli",
+    "stateId": "mh",
+    "cityId": "navimumbai",
+    "areaId": "kalamboli-sec5",
+    "areasOfOperation": [
+      "kalamboli-sec5",
+      "kalamboli-sec11"
+    ],
+    "address": "Sector 5E, Opp Bharat Petrol Pump, Kalamboli, Navi Mumbai, Maharashtra 410218",
+    "phone": "+91 8652660795",
+    "website": "https://kayabeautyparlour.in",
+    "description": "Exclusive ladies-only salon setting specialized in waxing, organic facial therapies, threading, and traditional mehendi decorations.",
+    "rating": 0,
+    "reviewCount": 0,
+    "imageUrl": "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+    "featured": false,
+    "status": "approved",
+    "createdAt": "2026-03-18T14:00:00Z",
+    "tags": [
+      "Ladies Salon",
+      "Beauty Services",
+      "Facials",
+      "Mehendi"
+    ],
+    "hours": "11:00 AM - 08:00 PM",
+    "ownerName": "Kaya Deshmukh",
+    "gpsCoordinates": {
+      "lat": 19.0255,
+      "lng": 73.0995
+    },
+    "distance": 1.5,
+    "priceRange": "₹",
+    "deliveryAvailable": false,
+    "hasOffers": false,
+    "languagesSpoken": [
+      "Marathi",
+      "Hindi"
+    ],
+    "paymentMethods": [
+      "Cash",
+      "UPI"
+    ],
+    "experienceYears": 11,
+    "isSponsored": false,
+    "cpcBudget": 0,
+    "verifiedBadge": false,
+    "kycStatus": "none",
+    "govRegistered": true,
+    "responseTime": "< 30 mins",
+    "customerSatisfaction": 86,
+    "repeatCustomerScore": 80,
+    "isMonthlySubscriber": false,
+    "subscriptionPlan": "free",
+    "pincode": "410218"
+  },
+  {
+    "id": "s10",
+    "name": "Adaa Salon",
+    "categoryId": "beauty-wellness",
+    "subcategoryId": "salons",
+    "localityId": "roadpali",
+    "stateId": "mh",
+    "cityId": "navimumbai",
+    "areaId": "roadpali-sec20",
+    "areasOfOperation": [
+      "roadpali-sec20",
+      "roadpali-sec17"
+    ],
+    "address": "Platinum Avior, Sector 20, Roadpali, Navi Mumbai, Maharashtra 410218",
+    "phone": "+91 9167738179",
+    "website": "https://adaasalon.co.in",
+    "description": "Exquisite salon setup utilizing foreign cosmetic brands for deep nourishing facials, hair volume blowouts, and precise grooming.",
+    "rating": 4.7,
+    "reviewCount": 0,
+    "imageUrl": "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+    "featured": false,
+    "status": "approved",
+    "createdAt": "2026-03-29T11:00:00Z",
+    "tags": [
+      "Hair Styling",
+      "Facial",
+      "Grooming",
+      "Nail Art"
+    ],
+    "hours": "10:00 AM - 09:00 PM",
+    "ownerName": "Sonali Patil",
+    "gpsCoordinates": {
+      "lat": 19.0358,
+      "lng": 73.1092
+    },
+    "distance": 1.8,
+    "priceRange": "₹₹₹",
+    "deliveryAvailable": false,
+    "hasOffers": true,
+    "languagesSpoken": [
+      "Hindi",
+      "Marathi",
+      "English"
+    ],
+    "paymentMethods": [
+      "UPI",
+      "Card",
+      "Cash"
+    ],
+    "experienceYears": 5,
+    "isSponsored": false,
+    "cpcBudget": 0,
+    "verifiedBadge": true,
+    "kycStatus": "pending",
+    "govRegistered": true,
+    "responseTime": "< 15 mins",
+    "customerSatisfaction": 94,
+    "repeatCustomerScore": 86,
+    "isMonthlySubscriber": false,
+    "subscriptionPlan": "free",
+    "pincode": "410218"
+  },
+  {
+    "id": "s11",
+    "name": "Dieu Unisex Salon",
+    "categoryId": "beauty-wellness",
+    "subcategoryId": "salons",
+    "localityId": "roadpali",
+    "stateId": "mh",
+    "cityId": "navimumbai",
+    "areaId": "roadpali-sec20",
+    "areasOfOperation": [
+      "roadpali-sec20",
+      "roadpali-sec15"
+    ],
+    "address": "Sector 20, Roadpali, Navi Mumbai, Maharashtra 410218",
+    "phone": "+91 9321778130",
+    "website": "https://dieusalon.in",
+    "description": "Expert scissors architecture, contemporary shaving sessions, smoothing organic hair therapies, and express herbal grooming packages.",
+    "rating": 4.5,
+    "reviewCount": 0,
+    "imageUrl": "https://images.unsplash.com/photo-1605497746444-ac9dbd4d3ce9?auto=format&fit=crop&w=500&q=80",
+    "featured": false,
+    "status": "approved",
+    "createdAt": "2026-04-01T10:30:00Z",
+    "tags": [
+      "Hair Styling",
+      "Grooming",
+      "Barbering"
+    ],
+    "hours": "09:30 AM - 09:30 PM",
+    "ownerName": "Ajay Mishra",
+    "gpsCoordinates": {
+      "lat": 19.036,
+      "lng": 73.1098
+    },
+    "distance": 1.9,
+    "priceRange": "₹₹",
+    "deliveryAvailable": false,
+    "hasOffers": false,
+    "languagesSpoken": [
+      "Hindi",
+      "English"
+    ],
+    "paymentMethods": [
+      "Cash",
+      "UPI"
+    ],
+    "experienceYears": 6,
+    "isSponsored": false,
+    "cpcBudget": 0,
+    "verifiedBadge": false,
+    "kycStatus": "none",
+    "govRegistered": false,
+    "responseTime": "< 30 mins",
+    "customerSatisfaction": 90,
+    "repeatCustomerScore": 82,
+    "isMonthlySubscriber": false,
+    "subscriptionPlan": "free",
+    "pincode": "410218"
+  },
+  {
+    "id": "s12",
+    "name": "Bliss Beauty",
+    "categoryId": "beauty-wellness",
+    "subcategoryId": "salons",
+    "localityId": "kalamboli",
+    "stateId": "mh",
+    "cityId": "navimumbai",
+    "areaId": "kalamboli-sec2",
+    "areasOfOperation": [
+      "kalamboli-sec2",
+      "kalamboli-sec11"
+    ],
+    "address": "Sector 2E, Kalamboli, Navi Mumbai, Maharashtra 410218",
+    "phone": "+91 8692044082",
+    "website": "https://blissbeautykalamboli.in",
+    "description": "Cosmetology parlor featuring deep pore hydration, facial gold mask treatments, dandruff control regimes, and nail manicure therapies.",
+    "rating": 4.4,
+    "reviewCount": 0,
+    "imageUrl": "https://images.unsplash.com/photo-1562322140-8baeececf3df?auto=format&fit=crop&w=500&q=80",
+    "featured": false,
+    "status": "approved",
+    "createdAt": "2026-04-03T11:00:00Z",
+    "tags": [
+      "Beauty Treatments",
+      "Hair Services",
+      "Gold Facial",
+      "Manicure"
+    ],
+    "hours": "10:30 AM - 08:30 PM",
+    "ownerName": "Snehal Patil",
+    "gpsCoordinates": {
+      "lat": 19.0234,
+      "lng": 73.0976
+    },
+    "distance": 2.2,
+    "priceRange": "₹₹",
+    "deliveryAvailable": false,
+    "hasOffers": true,
+    "languagesSpoken": [
+      "Marathi",
+      "Hindi"
+    ],
+    "paymentMethods": [
+      "Cash",
+      "UPI"
+    ],
+    "experienceYears": 4,
+    "isSponsored": false,
+    "cpcBudget": 0,
+    "verifiedBadge": true,
+    "kycStatus": "verified",
+    "govRegistered": true,
+    "responseTime": "< 25 mins",
+    "customerSatisfaction": 89,
+    "repeatCustomerScore": 81,
+    "isMonthlySubscriber": false,
+    "subscriptionPlan": "free",
+    "pincode": "410218"
+  },
+  {
+    "id": "s13",
+    "name": "Royal Salon",
+    "categoryId": "beauty-wellness",
+    "subcategoryId": "salons",
+    "localityId": "roadpali",
+    "stateId": "mh",
+    "cityId": "navimumbai",
+    "areaId": "roadpali-sec17",
+    "areasOfOperation": [
+      "roadpali-sec17",
+      "kalamboli-sec11"
+    ],
+    "address": "Roadpali, Kalamboli, Navi Mumbai, Maharashtra 410218",
+    "phone": "Not Available",
+    "website": "https://royalsalonroadpali.co.in",
+    "description": "Budget-friendly mens hair salon crafting trendsetting look designs, sleek beard trims, and relaxing head oil massage sessions.",
+    "rating": 5,
+    "reviewCount": 0,
+    "imageUrl": "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=500&q=80",
+    "featured": false,
+    "status": "approved",
+    "createdAt": "2026-04-05T09:00:00Z",
+    "tags": [
+      "Haircut",
+      "Beard Styling",
+      "Men Grooming",
+      "Scalp Care"
+    ],
+    "hours": "08:30 AM - 09:30 PM",
+    "ownerName": "Sanjay Salunkhe",
+    "gpsCoordinates": {
+      "lat": 19.0309,
+      "lng": 73.103
+    },
+    "distance": 0.5,
+    "priceRange": "₹",
+    "deliveryAvailable": false,
+    "hasOffers": false,
+    "languagesSpoken": [
+      "Marathi",
+      "Hindi"
+    ],
+    "paymentMethods": [
+      "Cash",
+      "UPI"
+    ],
+    "experienceYears": 12,
+    "isSponsored": false,
+    "cpcBudget": 0,
+    "verifiedBadge": false,
+    "kycStatus": "none",
+    "govRegistered": false,
+    "responseTime": "< 1 hour",
+    "customerSatisfaction": 98,
+    "repeatCustomerScore": 92,
+    "isMonthlySubscriber": false,
+    "subscriptionPlan": "free",
+    "pincode": "410218"
+  },
+  {
+    "id": "s14",
+    "name": "RK Skin & Hair Studio",
+    "categoryId": "beauty-wellness",
+    "subcategoryId": "salons",
+    "localityId": "kalamboli",
+    "stateId": "mh",
+    "cityId": "navimumbai",
+    "areaId": "roadpali-sec9e",
+    "areasOfOperation": [
+      "roadpali-sec9e",
+      "kalamboli-sec11"
+    ],
+    "address": "D-Mart Road, Kalamboli, Navi Mumbai, Maharashtra 410218",
+    "phone": "+91 7977767729",
+    "website": "https://rkkalamoboli.in",
+    "description": "Professional trichology care, hair fall mitigation therapies, clinical facials, skin brightening, and expert styling setups.",
+    "rating": 4.3,
+    "reviewCount": 0,
+    "imageUrl": "https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=500&q=80",
+    "featured": false,
+    "status": "approved",
+    "createdAt": "2026-04-08T10:00:00Z",
+    "tags": [
+      "Hair Treatment",
+      "Skin Services",
+      "Trichologist",
+      "Clinic"
+    ],
+    "hours": "10:00 AM - 08:30 PM",
+    "ownerName": "Dr. R. K. Sawant",
+    "gpsCoordinates": {
+      "lat": 19.0289,
+      "lng": 73.102
+    },
+    "distance": 0.9,
+    "priceRange": "₹₹₹",
+    "deliveryAvailable": false,
+    "hasOffers": true,
+    "languagesSpoken": [
+      "Hindi",
+      "English",
+      "Marathi"
+    ],
+    "paymentMethods": [
+      "UPI",
+      "Card",
+      "Cash"
+    ],
+    "experienceYears": 9,
+    "isSponsored": false,
+    "cpcBudget": 50,
+    "verifiedBadge": true,
+    "kycStatus": "verified",
+    "govRegistered": true,
+    "responseTime": "< 20 mins",
+    "customerSatisfaction": 92,
+    "repeatCustomerScore": 84,
+    "isMonthlySubscriber": false,
+    "subscriptionPlan": "free",
+    "pincode": "410218"
+  },
+  {
+    "id": "s15",
+    "name": "Krishna Beauty Parlour & Boutique",
+    "categoryId": "beauty-wellness",
+    "subcategoryId": "salons",
+    "localityId": "kalamboli",
+    "stateId": "mh",
+    "cityId": "navimumbai",
+    "areaId": "kalamboli-sec11",
+    "areasOfOperation": [
+      "kalamboli-sec11",
+      "roadpali-sec17"
+    ],
+    "address": "Sector 11, Kalamboli, Navi Mumbai, Maharashtra 410218",
+    "phone": "+91 9323255005",
+    "website": "https://krishnabeautyboutique.co.in",
+    "description": "Elite home style ladies beauty parlor and handcrafted designer clothing boutique. Specialized in tailored bloused, anarkali suits, and facial treatments.",
+    "rating": 4.9,
+    "reviewCount": 0,
+    "imageUrl": "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+    "featured": false,
+    "status": "approved",
+    "createdAt": "2026-04-12T11:15:00Z",
+    "tags": [
+      "Beauty Parlour",
+      "Boutique",
+      "Tailoring",
+      "Ladies Wear"
+    ],
+    "hours": "11:00 AM - 08:30 PM",
+    "ownerName": "Krishna Sharma",
+    "gpsCoordinates": {
+      "lat": 19.0268,
+      "lng": 73.1008
+    },
+    "distance": 1.2,
+    "priceRange": "₹₹",
+    "deliveryAvailable": false,
+    "hasOffers": false,
+    "languagesSpoken": [
+      "Hindi",
+      "English"
+    ],
+    "paymentMethods": [
+      "UPI",
+      "Cash"
+    ],
+    "experienceYears": 15,
+    "isSponsored": false,
+    "cpcBudget": 0,
+    "verifiedBadge": true,
+    "kycStatus": "verified",
+    "govRegistered": false,
+    "responseTime": "< 15 mins",
+    "customerSatisfaction": 98,
+    "repeatCustomerScore": 94,
+    "isMonthlySubscriber": false,
+    "subscriptionPlan": "free",
+    "pincode": "410218"
+  },
+  {
+    "id": "b11",
+    "name": "Utsav Grand pure Veg Restaurant",
+    "categoryId": "food-restaurants",
+    "subcategoryId": "restaurants",
+    "localityId": "roadpali",
+    "stateId": "mh",
+    "cityId": "navimumbai",
+    "areaId": "roadpali-sec17",
+    "areasOfOperation": [
+      "roadpali-sec17",
+      "kalamboli-sec11"
+    ],
+    "address": "Shop 1-4, Ground Floor, Sector 17, Roadpali, Navi Mumbai, MH 410218",
+    "phone": "+91 22 2740 9012",
+    "email": "contact@utsavgrand.co.in",
+    "website": "https://utsavgrand.in",
+    "description": "Famous family restaurant serving pure vegetarian North Indian delis, authentic South Indian crispy dosa plates, sizzling paneer, and rich kulfis.",
+    "rating": 4.5,
+    "reviewCount": 2,
+    "imageUrl": "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=500&q=80",
+    "featured": true,
+    "status": "approved",
+    "createdAt": "2026-02-10T12:00:00Z",
+    "tags": [
+      "Pure Veg",
+      "North Indian",
+      "Family Dining",
+      "Dosa"
+    ],
+    "hours": "11:00 AM - 11:30 PM",
+    "ownerName": "Harish Shetty",
+    "gpsCoordinates": {
+      "lat": 19.032,
+      "lng": 73.1045
+    },
+    "distance": 0.4,
+    "priceRange": "₹₹",
+    "deliveryAvailable": true,
+    "hasOffers": true,
+    "languagesSpoken": [
+      "Hindi",
+      "Marathi",
+      "English"
+    ],
+    "paymentMethods": [
+      "Cash",
+      "UPI",
+      "Card"
+    ],
+    "experienceYears": 14,
+    "isSponsored": false,
+    "cpcBudget": 60,
+    "verifiedBadge": true,
+    "kycStatus": "verified",
+    "govRegistered": true,
+    "responseTime": "< 10 mins",
+    "customerSatisfaction": 93,
+    "repeatCustomerScore": 85,
+    "isMonthlySubscriber": true,
+    "subscriptionPlan": "basic",
+    "pincode": "410218"
+  },
+  {
+    "id": "b12",
+    "name": "Apollo Pharmacy Kalamboli",
+    "categoryId": "health-medical",
+    "subcategoryId": "clinics",
+    "localityId": "kalamboli",
+    "stateId": "mh",
+    "cityId": "navimumbai",
+    "areaId": "kalamboli-sec11",
+    "areasOfOperation": [
+      "kalamboli-sec11",
+      "roadpali-sec17",
+      "roadpali-sec20"
+    ],
+    "address": "Shop B, Opp. MGM Hospital, Sector 11, Kalamboli, Navi Mumbai, MH 410218",
+    "phone": "+91 22 2740 4321",
+    "website": "https://apollopharmacy.in",
+    "description": "24/7 diagnostic pharmacy stocking pediatric medications, wellness supplements, surgical gloves, life-critical drugs, and baby nutrition supplies.",
+    "rating": 4.6,
+    "reviewCount": 1,
+    "imageUrl": "https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=500&q=80",
+    "featured": false,
+    "status": "approved",
+    "createdAt": "2026-01-25T08:00:00Z",
+    "tags": [
+      "Pharmacy",
+      "24 Hours",
+      "Medicines",
+      "Medical Store"
+    ],
+    "hours": "24 Hours Open",
+    "ownerName": "Apollo Group",
+    "gpsCoordinates": {
+      "lat": 19.0265,
+      "lng": 73.101
+    },
+    "distance": 1.2,
+    "priceRange": "₹₹",
+    "deliveryAvailable": true,
+    "hasOffers": false,
+    "languagesSpoken": [
+      "Hindi",
+      "English",
+      "Marathi"
+    ],
+    "paymentMethods": [
+      "UPI",
+      "Card",
+      "Cash"
+    ],
+    "experienceYears": 20,
+    "isSponsored": false,
+    "cpcBudget": 0,
+    "verifiedBadge": true,
+    "kycStatus": "verified",
+    "govRegistered": true,
+    "responseTime": "< 5 mins",
+    "customerSatisfaction": 96,
+    "repeatCustomerScore": 94,
+    "isMonthlySubscriber": false,
+    "subscriptionPlan": "free",
+    "pincode": "410218"
+  },
+  {
+    "id": "b_kh1",
+    "name": "The Central Perks Cafe & Bakery",
+    "categoryId": "food-restaurants",
+    "subcategoryId": "restaurants",
+    "localityId": "kharghar",
+    "stateId": "mh",
+    "cityId": "navimumbai",
+    "areaId": "roadpali-sec17",
+    "areasOfOperation": [
+      "roadpali-sec17",
+      "roadpali-sec15"
+    ],
+    "address": "Glomax Mall, Sector 15, Kharghar, Navi Mumbai, MH 410210",
+    "phone": "+91 22 2774 9081",
+    "website": "https://centralperkskharghar.in",
+    "description": "Trendy student-friendly cafe and premium artisan bakery specializing in customized tiered cakes, sourdough breads, espresso blends, and delicious Italian pastas.",
+    "rating": 4.8,
+    "reviewCount": 1,
+    "imageUrl": "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=500&q=80",
+    "featured": true,
+    "status": "approved",
+    "createdAt": "2026-02-15T12:00:00Z",
+    "tags": [
+      "Cafe",
+      "Bakery",
+      "Coffee",
+      "Custom Cakes"
+    ],
+    "hours": "10:00 AM - 11:00 PM",
+    "ownerName": "Sumit Mehra",
+    "gpsCoordinates": {
+      "lat": 19.025,
+      "lng": 73.065
+    },
+    "distance": 0.5,
+    "priceRange": "₹₹",
+    "deliveryAvailable": true,
+    "hasOffers": true,
+    "languagesSpoken": [
+      "English",
+      "Hindi"
+    ],
+    "paymentMethods": [
+      "UPI",
+      "Card",
+      "Cash"
+    ],
+    "experienceYears": 5,
+    "isSponsored": false,
+    "verifiedBadge": true,
+    "kycStatus": "verified",
+    "govRegistered": true,
+    "responseTime": "< 15 mins",
+    "customerSatisfaction": 95,
+    "repeatCustomerScore": 90,
+    "isMonthlySubscriber": true,
+    "subscriptionPlan": "basic",
+    "pincode": "410218"
+  },
+  {
+    "id": "b_kh2",
+    "name": "Aura Glow Salon & Medi-Spa",
+    "categoryId": "beauty-wellness",
+    "subcategoryId": "salons",
+    "localityId": "kharghar",
+    "stateId": "mh",
+    "cityId": "navimumbai",
+    "areaId": "roadpali-sec17",
+    "areasOfOperation": [
+      "roadpali-sec17"
+    ],
+    "address": "Sector 7, Near Little World Mall, Kharghar, Navi Mumbai, MH 410210",
+    "phone": "+91 80970 41122",
+    "website": "https://auraglowspa.in",
+    "description": "Expert skin clinical therapies, therapeutic full body couples therapies, premium bridal makeover registries, and advanced cosmetic hair treatments by globally certified aesthetics practitioners.",
+    "rating": 4.9,
+    "reviewCount": 1,
+    "imageUrl": "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+    "featured": true,
+    "status": "approved",
+    "createdAt": "2026-03-01T10:00:00Z",
+    "tags": [
+      "Premium Spa",
+      "Bridal Makeover",
+      "Skin Care",
+      "Wellness"
+    ],
+    "hours": "10:00 AM - 09:30 PM",
+    "ownerName": "Ananya Sen",
+    "gpsCoordinates": {
+      "lat": 19.031,
+      "lng": 73.072
+    },
+    "distance": 0.8,
+    "priceRange": "₹₹₹",
+    "deliveryAvailable": false,
+    "hasOffers": true,
+    "languagesSpoken": [
+      "English",
+      "Hindi",
+      "Bengali"
+    ],
+    "paymentMethods": [
+      "UPI",
+      "Card",
+      "Cash"
+    ],
+    "experienceYears": 8,
+    "isSponsored": true,
+    "cpcBudget": 180,
+    "verifiedBadge": true,
+    "kycStatus": "verified",
+    "govRegistered": true,
+    "responseTime": "< 10 mins",
+    "customerSatisfaction": 98,
+    "repeatCustomerScore": 94,
+    "isMonthlySubscriber": true,
+    "subscriptionPlan": "premium",
+    "pincode": "410218"
+  },
+  {
+    "id": "b_km1",
+    "name": "Kamothe Wellness Dental Clinic",
+    "categoryId": "health-medical",
+    "subcategoryId": "clinics",
+    "localityId": "kamothe",
+    "stateId": "mh",
+    "cityId": "navimumbai",
+    "areaId": "roadpali-sec17",
+    "areasOfOperation": [
+      "roadpali-sec17"
+    ],
+    "address": "Shop 12, Sector 20, Kamothe, Navi Mumbai, MH 410209",
+    "phone": "+91 91670 12344",
+    "website": "https://kamothedentalclinic.in",
+    "description": "Comprehensive family dental treatments: pain-free root canals, orthodontic braces, pediatric oral care, cosmetic tooth whitening, and advanced implants under absolute clean clinical environments.",
+    "rating": 4.7,
+    "reviewCount": 0,
+    "imageUrl": "https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=500&q=80",
+    "featured": true,
+    "status": "approved",
+    "createdAt": "2026-01-18T09:00:00Z",
+    "tags": [
+      "Dentist",
+      "Root Canal",
+      "Implants",
+      "Orthodontist"
+    ],
+    "hours": "11:00 AM - 09:00 PM",
+    "ownerName": "Dr. Vivek Patil",
+    "gpsCoordinates": {
+      "lat": 19.022,
+      "lng": 73.09
+    },
+    "distance": 1.2,
+    "priceRange": "₹₹",
+    "deliveryAvailable": false,
+    "hasOffers": false,
+    "languagesSpoken": [
+      "Hindi",
+      "Marathi",
+      "English"
+    ],
+    "paymentMethods": [
+      "UPI",
+      "Check",
+      "Cash"
+    ],
+    "experienceYears": 10,
+    "isSponsored": false,
+    "verifiedBadge": true,
+    "kycStatus": "verified",
+    "govRegistered": true,
+    "responseTime": "< 30 mins",
+    "customerSatisfaction": 92,
+    "repeatCustomerScore": 88,
+    "isMonthlySubscriber": true,
+    "subscriptionPlan": "basic",
+    "pincode": "410218"
+  },
+  {
+    "id": "b_km2",
+    "name": "Techno Home Appliances & Repair",
+    "categoryId": "home-services",
+    "subcategoryId": "electricians",
+    "localityId": "kamothe",
+    "stateId": "mh",
+    "cityId": "navimumbai",
+    "areaId": "roadpali-sec17",
+    "areasOfOperation": [
+      "roadpali-sec17"
+    ],
+    "address": "Sector 6, Near Kamothe Railway Bridge, Kamothe, Navi Mumbai, MH 410209",
+    "phone": "+91 98920 88776",
+    "website": "https://technoappliances.in",
+    "description": "On-demand doorstep repair and general maintenance for washing machines, split AC units, double-door refrigerators, microwave ovens, and induction chimneys with 90-day parts warranty.",
+    "rating": 4.5,
+    "reviewCount": 0,
+    "imageUrl": "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=500&q=80",
+    "featured": false,
+    "status": "approved",
+    "createdAt": "2026-03-12T08:30:00Z",
+    "tags": [
+      "AC Repair",
+      "Washing Machine Repair",
+      "Refrigerator Specialist"
+    ],
+    "hours": "09:00 AM - 08:30 PM",
+    "ownerName": "Sandip Thorat",
+    "gpsCoordinates": {
+      "lat": 19.019,
+      "lng": 73.095
+    },
+    "distance": 1.4,
+    "priceRange": "₹₹",
+    "deliveryAvailable": true,
+    "hasOffers": true,
+    "languagesSpoken": [
+      "Marathi",
+      "Hindi"
+    ],
+    "paymentMethods": [
+      "UPI",
+      "Cash"
+    ],
+    "experienceYears": 6,
+    "isSponsored": false,
+    "verifiedBadge": true,
+    "kycStatus": "verified",
+    "govRegistered": true,
+    "responseTime": "< 15 mins",
+    "customerSatisfaction": 89,
+    "repeatCustomerScore": 82,
+    "isMonthlySubscriber": false,
+    "subscriptionPlan": "free",
+    "pincode": "410218"
+  },
+  {
+    "id": "b_pv1",
+    "name": "Panvel Diagnostic Center & Lab",
+    "categoryId": "health-medical",
+    "subcategoryId": "clinics",
+    "localityId": "panvel",
+    "stateId": "mh",
+    "cityId": "navimumbai",
+    "areaId": "roadpali-sec17",
+    "areasOfOperation": [
+      "roadpali-sec17"
+    ],
+    "address": "M.G. Road, Opp Municipal Corporation, Old Panvel, MH 410206",
+    "phone": "+91 22 2745 1122",
+    "website": "https://panveldiagnostics.in",
+    "description": "Fully automated medical diagnostic laboratory providing full body checkups, thyroid panels, digital X-Rays, high resolution sonography, ECG, and free doorstep blood sample collection services.",
+    "rating": 4.6,
+    "reviewCount": 0,
+    "imageUrl": "https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=500&q=80",
+    "featured": true,
+    "status": "approved",
+    "createdAt": "2026-02-10T07:15:00Z",
+    "tags": [
+      "Blood Test",
+      "Diagnostics",
+      "X-Ray",
+      "Health Checkup"
+    ],
+    "hours": "07:30 AM - 09:30 PM",
+    "ownerName": "Dr. Suresh Jha",
+    "gpsCoordinates": {
+      "lat": 18.995,
+      "lng": 73.118
+    },
+    "distance": 2.5,
+    "priceRange": "₹₹",
+    "deliveryAvailable": true,
+    "hasOffers": true,
+    "languagesSpoken": [
+      "Hindi",
+      "English",
+      "Marathi"
+    ],
+    "paymentMethods": [
+      "UPI",
+      "Card",
+      "Cash"
+    ],
+    "experienceYears": 15,
+    "isSponsored": false,
+    "verifiedBadge": true,
+    "kycStatus": "verified",
+    "govRegistered": true,
+    "responseTime": "< 5 mins",
+    "customerSatisfaction": 94,
+    "repeatCustomerScore": 91,
+    "isMonthlySubscriber": true,
+    "subscriptionPlan": "basic",
+    "pincode": "410218"
+  },
+  {
+    "id": "b_pv2",
+    "name": "Hotel Sharan Fine Dine & Banquet",
+    "categoryId": "food-restaurants",
+    "subcategoryId": "restaurants",
+    "localityId": "panvel",
+    "stateId": "mh",
+    "cityId": "navimumbai",
+    "areaId": "roadpali-sec17",
+    "areasOfOperation": [
+      "roadpali-sec17"
+    ],
+    "address": "Sion-Panvel Highway, New Panvel, MH 410206",
+    "phone": "+91 92231 44556",
+    "website": "https://sharanfinedine.co.in",
+    "description": "Legendary multi-cuisine restaurant serving traditional Maharashtrian Thalis, rich slow-cooked Dum Biryanis, Butter Chicken, and exotic Chinese dishes with spacious family seating.",
+    "rating": 4.4,
+    "reviewCount": 0,
+    "imageUrl": "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=500&q=80",
+    "featured": false,
+    "status": "approved",
+    "createdAt": "2026-02-28T11:45:00Z",
+    "tags": [
+      "Fine Dine",
+      "Maharashtrian Thali",
+      "Biryani",
+      "Family Restaurant"
+    ],
+    "hours": "11:00 AM - 11:30 PM",
+    "ownerName": "Ramesh Sawant",
+    "gpsCoordinates": {
+      "lat": 19.002,
+      "lng": 73.125
+    },
+    "distance": 2.1,
+    "priceRange": "₹₹₹",
+    "deliveryAvailable": true,
+    "hasOffers": true,
+    "languagesSpoken": [
+      "Marathi",
+      "Hindi",
+      "English"
+    ],
+    "paymentMethods": [
+      "UPI",
+      "Card",
+      "Cash"
+    ],
+    "experienceYears": 18,
+    "isSponsored": false,
+    "verifiedBadge": true,
+    "kycStatus": "verified",
+    "govRegistered": true,
+    "responseTime": "< 10 mins",
+    "customerSatisfaction": 91,
+    "repeatCustomerScore": 89,
+    "isMonthlySubscriber": false,
+    "subscriptionPlan": "free",
+    "pincode": "410218"
+  },
+  {
+    "id": "b_tj1",
+    "name": "Taloja Industrial Tooling Corp",
+    "categoryId": "professional-services",
+    "subcategoryId": "business-consultants",
+    "localityId": "taloja",
+    "stateId": "mh",
+    "cityId": "navimumbai",
+    "areaId": "roadpali-sec17",
+    "areasOfOperation": [
+      "roadpali-sec17"
+    ],
+    "address": "MIDC Industrial Area, Phase II, Taloja, Navi Mumbai, MH 410208",
+    "phone": "+91 22 2741 8092",
+    "website": "https://talojatooling.co.in",
+    "description": "High-precision steel CNC tooling, customized machine component engineering, custom aluminum castings, sheet metal stamping, and specialized industrial design services for manufacturing plants.",
+    "rating": 4.9,
+    "reviewCount": 0,
+    "imageUrl": "https://images.unsplash.com/photo-1544197150-b99a580bb7a8?auto=format&fit=crop&w=500&q=80",
+    "featured": true,
+    "status": "approved",
+    "createdAt": "2026-01-10T10:00:00Z",
+    "tags": [
+      "MIDC Tooling",
+      "CNC Machining",
+      "Steel Fabrication",
+      "Engineering"
+    ],
+    "hours": "09:00 AM - 06:00 PM",
+    "ownerName": "Vipin Sangwan",
+    "gpsCoordinates": {
+      "lat": 19.065,
+      "lng": 73.135
+    },
+    "distance": 3.8,
+    "priceRange": "₹₹₹₹",
+    "deliveryAvailable": true,
+    "hasOffers": false,
+    "languagesSpoken": [
+      "Hindi",
+      "English"
+    ],
+    "paymentMethods": [
+      "Check",
+      "RTGS",
+      "UPI"
+    ],
+    "experienceYears": 15,
+    "isSponsored": true,
+    "cpcBudget": 150,
+    "verifiedBadge": true,
+    "kycStatus": "verified",
+    "govRegistered": true,
+    "responseTime": "< 1 hour",
+    "customerSatisfaction": 97,
+    "repeatCustomerScore": 92,
+    "isMonthlySubscriber": true,
+    "subscriptionPlan": "premium",
+    "pincode": "410218"
+  },
+  {
+    "id": "b_tj2",
+    "name": "Steel City Building Materials & Tools",
+    "categoryId": "shopping-retail",
+    "subcategoryId": "grocery-stores",
+    "localityId": "taloja",
+    "stateId": "mh",
+    "cityId": "navimumbai",
+    "areaId": "roadpali-sec17",
+    "areasOfOperation": [
+      "roadpali-sec17"
+    ],
+    "address": "Sector 5, Near Taloja Metro Station, Taloja, MH 410208",
+    "phone": "+91 97732 44321",
+    "website": "https://steelcitysupply.in",
+    "description": "Primary wholesale dealers for premium cement, structural steel rods, building aggregates, premium brass sanitary fittings, plumbing essentials, and general power construction tools.",
+    "rating": 4.5,
+    "reviewCount": 0,
+    "imageUrl": "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=500&q=80",
+    "featured": false,
+    "status": "approved",
+    "createdAt": "2026-03-24T11:00:00Z",
+    "tags": [
+      "Hardware Store",
+      "Cement rods",
+      "Construction Materials"
+    ],
+    "hours": "08:30 AM - 07:30 PM",
+    "ownerName": "Madan Lal",
+    "gpsCoordinates": {
+      "lat": 19.055,
+      "lng": 73.125
+    },
+    "distance": 3.2,
+    "priceRange": "₹₹",
+    "deliveryAvailable": true,
+    "hasOffers": true,
+    "languagesSpoken": [
+      "Hindi",
+      "Punjabi"
+    ],
+    "paymentMethods": [
+      "Cash",
+      "UPI",
+      "Check"
+    ],
+    "experienceYears": 12,
+    "isSponsored": false,
+    "verifiedBadge": true,
+    "kycStatus": "verified",
+    "govRegistered": true,
+    "responseTime": "< 20 mins",
+    "customerSatisfaction": 90,
+    "repeatCustomerScore": 86,
+    "isMonthlySubscriber": false,
+    "subscriptionPlan": "free",
+    "pincode": "410218"
+  },
+  {
+    "id": "b8_pending",
+    "name": "Roadpali Organic Food Store",
+    "categoryId": "shopping-retail",
+    "subcategoryId": "grocery-stores",
+    "localityId": "roadpali",
+    "stateId": "mh",
+    "cityId": "navimumbai",
+    "areaId": "roadpali-sec15",
+    "areasOfOperation": [
+      "roadpali-sec15",
+      "roadpali-sec17"
+    ],
+    "address": "Shop 2, Sector 15 Near Petrol Pump, Roadpali, Navi Mumbai, MH 410218",
+    "phone": "+91 8850022334",
+    "email": "info@roadpaliorganics.in",
+    "website": "https://roadpaliorganics.in",
+    "description": "Organic natural pulses, farm-fresh millets, cold-pressed mustard oil, and pesticide-free multi-grain flours for health-first cooking.",
+    "rating": 0,
+    "reviewCount": 0,
+    "imageUrl": "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=500&q=80",
+    "featured": false,
+    "status": "pending",
+    "createdAt": "2026-05-18T05:00:00Z",
+    "tags": [
+      "Organic Food",
+      "Pantry",
+      "Pesticide Free"
+    ],
+    "hours": "09:00 AM - 09:00 PM",
+    "ownerName": "Rajesh Patil",
+    "gpsCoordinates": {
+      "lat": 19.034,
+      "lng": 73.1065
+    },
+    "distance": 1.6,
+    "priceRange": "₹₹",
+    "deliveryAvailable": true,
+    "hasOffers": true,
+    "languagesSpoken": [
+      "Hindi",
+      "Marathi"
+    ],
+    "paymentMethods": [
+      "UPI",
+      "Cash"
+    ],
+    "experienceYears": 3,
+    "isSponsored": false,
+    "cpcBudget": 0,
+    "verifiedBadge": false,
+    "kycStatus": "pending",
+    "govRegistered": true,
+    "responseTime": "< 20 mins",
+    "customerSatisfaction": 0,
+    "repeatCustomerScore": 0,
+    "isMonthlySubscriber": false,
+    "subscriptionPlan": "free",
+    "pincode": "410218"
+  }
+]

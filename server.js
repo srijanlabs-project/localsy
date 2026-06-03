@@ -11,6 +11,7 @@ const distPath = path.join(__dirname, 'dist');
 const auditLogPath = path.join(__dirname, 'audit-events.jsonl');
 const usersPath = path.join(__dirname, 'users.json');
 const businessesPath = path.join(__dirname, 'businesses.json');
+const homepageConfigPath = path.join(__dirname, 'homepage-config.json');
 const TOKEN_SECRET = process.env.AUTH_SECRET || 'replace-this-in-production';
 const TOKEN_TTL_SEC = 60 * 60 * 12; // 12 hours
 
@@ -28,6 +29,7 @@ let pgClient = null;
 let pgInitAttempted = false;
 let memoryUsers = null;
 let memoryBusinesses = null;
+let memoryHomepageConfig = null;
 
 const PUBLIC_USER_TYPES = ['buyer', 'seller', 'resource'];
 const ALL_USER_TYPES = ['platform_admin', 'developer', 'buyer', 'seller', 'resource'];
@@ -688,6 +690,85 @@ async function writeBusinessListings(businesses) {
   }
 }
 
+function sanitizeHomepageConfig(value) {
+  if (!value || typeof value !== 'object') return null;
+  const config = value;
+  return {
+    heroBanners: Array.isArray(config.heroBanners) ? config.heroBanners : [],
+    listingAds: Array.isArray(config.listingAds) ? config.listingAds : [],
+    coupons: Array.isArray(config.coupons) ? config.coupons : [],
+    homepageLayouts: Array.isArray(config.homepageLayouts) ? config.homepageLayouts : [],
+    localityCategoryLinks: Array.isArray(config.localityCategoryLinks) ? config.localityCategoryLinks : [],
+    communityItems: Array.isArray(config.communityItems) ? config.communityItems : [],
+    apiConfiguration: config.apiConfiguration && typeof config.apiConfiguration === 'object'
+      ? config.apiConfiguration
+      : {
+          syncMode: 'api',
+          homepageConfigEndpoint: '/api/homepage-config',
+          businessesEndpoint: '/api/businesses',
+          auditEventsEndpoint: '/api/audit-events',
+          autoSyncHomepage: true,
+          autoSyncBusinesses: true,
+        },
+  };
+}
+
+async function readHomepageConfig() {
+  const client = await getPgClient();
+  if (client) {
+    const result = await client.query(
+      `SELECT value
+       FROM app_state
+       WHERE key = $1
+       LIMIT 1`,
+      ['homepage_config'],
+    );
+    const data = result.rows[0]?.value;
+    return sanitizeHomepageConfig(data);
+  }
+
+  if (memoryHomepageConfig && typeof memoryHomepageConfig === 'object') {
+    return memoryHomepageConfig;
+  }
+
+  try {
+    const raw = await fs.readFile(homepageConfigPath, 'utf8');
+    const data = JSON.parse(raw);
+    const sanitized = sanitizeHomepageConfig(data);
+    memoryHomepageConfig = sanitized;
+    return sanitized;
+  } catch {
+    return null;
+  }
+}
+
+async function writeHomepageConfig(config) {
+  const sanitized = sanitizeHomepageConfig(config);
+  if (!sanitized) throw new Error('Invalid homepage config payload');
+
+  const client = await getPgClient();
+  if (client) {
+    await client.query(
+      `INSERT INTO app_state (key, value, updated_at)
+       VALUES ($1, $2::jsonb, NOW())
+       ON CONFLICT (key)
+       DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+      ['homepage_config', JSON.stringify(sanitized)],
+    );
+    return sanitized;
+  }
+
+  try {
+    await fs.writeFile(homepageConfigPath, JSON.stringify(sanitized, null, 2), 'utf8');
+    memoryHomepageConfig = sanitized;
+    return sanitized;
+  } catch (err) {
+    console.warn('homepage-config.json write failed, using in-memory homepage config store:', err?.message || err);
+    memoryHomepageConfig = sanitized;
+    return sanitized;
+  }
+}
+
 async function ensureBootstrapUsers() {
   const users = await readUsers();
   const adminEmail = process.env.BOOTSTRAP_ADMIN_EMAIL || 'admin@localsy.test';
@@ -836,6 +917,31 @@ app.put('/api/businesses', async (req, res) => {
   } catch (err) {
     console.error('Failed to sync business listings:', err);
     res.status(500).json({ ok: false, error: 'Failed to sync business listings' });
+  }
+});
+
+app.get('/api/homepage-config', async (_req, res) => {
+  try {
+    const config = await readHomepageConfig();
+    res.json({ ok: true, config });
+  } catch (err) {
+    console.error('Failed to read homepage config:', err);
+    res.status(500).json({ ok: false, error: 'Failed to read homepage config' });
+  }
+});
+
+app.put('/api/homepage-config', async (req, res) => {
+  const config = sanitizeHomepageConfig(req.body?.config);
+  if (!config) {
+    return res.status(400).json({ ok: false, error: 'config object is required' });
+  }
+
+  try {
+    const savedConfig = await writeHomepageConfig(config);
+    res.json({ ok: true, config: savedConfig });
+  } catch (err) {
+    console.error('Failed to sync homepage config:', err);
+    res.status(500).json({ ok: false, error: 'Failed to sync homepage config' });
   }
 });
 

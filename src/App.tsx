@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, Suspense, lazy } from 'react';
+import React, { useState, useEffect, useMemo, useRef, Suspense, lazy } from 'react';
 import { 
   INITIAL_LOCALITIES, INITIAL_BUSINESSES, INITIAL_CATEGORIES, INITIAL_REVIEWS,
   INITIAL_COMMUNITY_ITEMS, INITIAL_CRM_CONTACTS, INITIAL_COUPONS, MASTER_AREAS
@@ -6,7 +6,7 @@ import {
 import { 
   Locality, Business, SubdomainMapping, Review, UserSession, UserRole,
   CommunityItem, CRMContact, MarketingCoupon, AuditEvent, ListingAd, AdLead, HeroBanner,
-  HomepageLayout, HomepageSection, HomepageSectionType
+  HomepageLayout, HomepageSection, HomepageSectionType, ApiConfiguration, HomepageConfigState
 } from './types';
 import WebPortal from './components/WebPortal';
 import PincodeSelectionModal from './components/PincodeSelectionModal';
@@ -15,7 +15,7 @@ import happyBusinessLogo from './assets/happy-business-logo.png';
 import { 
   Layout, Smartphone, Shield, BookOpen, Layers, RefreshCw, 
   User, CheckCircle, ShieldAlert, KeyRound, Wrench, Briefcase, HelpCircle,
-  Sliders, Settings, X, Database, MapPin, Search, LogOut, ChevronDown
+  Sliders, Settings, X, Database, MapPin, Search, LogOut, ChevronDown, Bell
 } from 'lucide-react';
 import {
   BUSINESS_CATEGORIES,
@@ -76,6 +76,15 @@ type LocalityCategoryLink = {
   slug: string;
 };
 
+const DEFAULT_API_CONFIGURATION: ApiConfiguration = {
+  syncMode: 'api',
+  homepageConfigEndpoint: '/api/homepage-config',
+  businessesEndpoint: '/api/businesses',
+  auditEventsEndpoint: '/api/audit-events',
+  autoSyncHomepage: true,
+  autoSyncBusinesses: true
+};
+
 type SeoRouteIntent = {
   id: string;
   slug: string;
@@ -109,6 +118,23 @@ const normalizeStringList = (value: unknown): string[] => (
 );
 
 const getTodayIso = () => new Date().toISOString().slice(0, 10);
+
+const normalizeApiConfiguration = (value?: Partial<ApiConfiguration> | null): ApiConfiguration => ({
+  syncMode: value?.syncMode === 'local' ? 'local' : 'api',
+  homepageConfigEndpoint: value?.homepageConfigEndpoint || DEFAULT_API_CONFIGURATION.homepageConfigEndpoint,
+  businessesEndpoint: value?.businessesEndpoint || DEFAULT_API_CONFIGURATION.businessesEndpoint,
+  auditEventsEndpoint: value?.auditEventsEndpoint || DEFAULT_API_CONFIGURATION.auditEventsEndpoint,
+  autoSyncHomepage: value?.autoSyncHomepage ?? DEFAULT_API_CONFIGURATION.autoSyncHomepage,
+  autoSyncBusinesses: value?.autoSyncBusinesses ?? DEFAULT_API_CONFIGURATION.autoSyncBusinesses,
+  lastHomepageSyncAt: value?.lastHomepageSyncAt,
+  lastBusinessesSyncAt: value?.lastBusinessesSyncAt
+});
+
+const getPersistableApiConfiguration = (value: ApiConfiguration): ApiConfiguration => ({
+  ...normalizeApiConfiguration(value),
+  lastHomepageSyncAt: undefined,
+  lastBusinessesSyncAt: undefined
+});
 
 const normalizeStoredCoupon = (coupon: MarketingCoupon): MarketingCoupon => {
   const endDate = coupon.endDate || coupon.expiryDate || getTodayIso();
@@ -158,6 +184,8 @@ const getSectionLabel = (sectionType: HomepageSectionType) => {
       return 'Featured Businesses';
     case 'business_shelf':
       return 'Business Shelf';
+    case 'text_business_strip':
+      return 'Compact Service Strip';
     case 'offers_list':
       return 'Offers & Deals';
     case 'updates_feed':
@@ -282,6 +310,32 @@ const buildDefaultHomepageLayout = (locality: Locality): HomepageLayout => {
       showViewAll: true
     },
     {
+      id: `home_${locality.id}_services_domestic`,
+      sectionType: 'text_business_strip',
+      title: 'Maid & Domestic Help',
+      subtitle: 'Trusted daily support professionals nearby',
+      status: 'active',
+      visible: true,
+      sortOrder: 65,
+      localityIds: [locality.id],
+      categoryId: 'home-services',
+      maxItems: 4,
+      showViewAll: true
+    },
+    {
+      id: `home_${locality.id}_services_care`,
+      sectionType: 'text_business_strip',
+      title: 'Clinic & Care Experts',
+      subtitle: 'Text-first local listings for quick comparison',
+      status: 'active',
+      visible: true,
+      sortOrder: 68,
+      localityIds: [locality.id],
+      categoryId: 'health-medical',
+      maxItems: 4,
+      showViewAll: true
+    },
+    {
       id: `home_${locality.id}_categories`,
       sectionType: 'category_grid',
       title: 'Explore by Categories',
@@ -359,9 +413,16 @@ const normalizeHomepageLayout = (
 ): HomepageLayout => {
   const locality = localities.find((entry) => entry.id === layout.localityId);
   const fallbackLocality = locality || localities[0];
-  const normalizedSections = reindexHomepageSections(
-    (layout.sections || []).map((section, index) => normalizeHomepageSection(section, layout.localityId, index))
-  );
+  const defaultSections = fallbackLocality ? buildDefaultHomepageLayout(fallbackLocality).sections : [];
+  const layoutSections = (layout.sections || []).map((section, index) => normalizeHomepageSection(section, layout.localityId, index));
+  const existingIds = new Set(layoutSections.map((section) => section.id));
+  const mergedSections = [
+    ...layoutSections,
+    ...defaultSections
+      .filter((section) => !existingIds.has(section.id))
+      .map((section, index) => normalizeHomepageSection(section, layout.localityId, layoutSections.length + index))
+  ];
+  const normalizedSections = reindexHomepageSections(mergedSections);
   return {
     ...layout,
     id: layout.id || `homepage_${layout.localityId}`,
@@ -384,6 +445,27 @@ const ensureHomepageLayouts = (
     .map((locality) => buildDefaultHomepageLayout(locality));
   return [...normalizedLayouts, ...missingLayouts];
 };
+
+const normalizeHomepageConfigState = (
+  value: Partial<HomepageConfigState> | null | undefined,
+  localities: Locality[]
+): HomepageConfigState => ({
+  heroBanners: Array.isArray(value?.heroBanners) ? value!.heroBanners.map(normalizeStoredHeroBanner) : [],
+  listingAds: Array.isArray(value?.listingAds) ? value!.listingAds.map(normalizeStoredListingAd) : [],
+  coupons: Array.isArray(value?.coupons) ? value!.coupons.map(normalizeStoredCoupon) : [],
+  homepageLayouts: ensureHomepageLayouts(Array.isArray(value?.homepageLayouts) ? value!.homepageLayouts : [], localities),
+  localityCategoryLinks: Array.isArray(value?.localityCategoryLinks)
+    ? value!.localityCategoryLinks.map((link) => ({
+        id: String(link.id || ''),
+        localityId: String(link.localityId || ''),
+        categoryId: String(link.categoryId || ''),
+        subcategoryId: link.subcategoryId ? String(link.subcategoryId) : undefined,
+        slug: String(link.slug || '')
+      })).filter((link) => link.id && link.localityId && link.categoryId && link.slug)
+    : [],
+  communityItems: Array.isArray(value?.communityItems) ? value!.communityItems as CommunityItem[] : [],
+  apiConfiguration: normalizeApiConfiguration(value?.apiConfiguration)
+});
 
 const ProposalPanel = lazy(() => import('./components/ProposalPanel'));
 const AndroidSimulator = lazy(() => import('./components/AndroidSimulator'));
@@ -412,6 +494,7 @@ export default function App() {
       localStorage.removeItem('yp_hero_banners');
       localStorage.removeItem('yp_locality_category_links');
       localStorage.removeItem('yp_homepage_layouts');
+      localStorage.removeItem('yp_api_configuration');
       localStorage.setItem('yp_cache_version', CURRENT_DB_VERSION);
     }
   });
@@ -444,6 +527,7 @@ export default function App() {
       localStorage.removeItem('yp_hero_banners');
       localStorage.removeItem('yp_locality_category_links');
       localStorage.removeItem('yp_homepage_layouts');
+      localStorage.removeItem('yp_api_configuration');
     }
     return INITIAL_LOCALITIES;
   });
@@ -513,7 +597,7 @@ export default function App() {
     const now = new Date();
     const startDate = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
     const endDate = new Date(now.getFullYear(), now.getMonth() + 2, 0).toISOString().slice(0, 10);
-    return [
+    const seededListingAds: ListingAd[] = [
       {
         id: 'ad_seed_1',
         title: 'Roadpali Fiber Upgrade Drive',
@@ -530,7 +614,8 @@ export default function App() {
         deviceTarget: 'all',
         isActive: true
       }
-    ].map(normalizeStoredListingAd);
+    ];
+    return seededListingAds.map(normalizeStoredListingAd);
   });
 
   const [adLeads, setAdLeads] = useState<AdLead[]>(() => {
@@ -543,7 +628,7 @@ export default function App() {
     if (saved) return JSON.parse(saved).map(normalizeStoredHeroBanner);
     const startDate = new Date().toISOString().slice(0, 10);
     const endDate = new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().slice(0, 10);
-    return INITIAL_LOCALITIES.map((locality) => ({
+    const seededHeroBanners: HeroBanner[] = INITIAL_LOCALITIES.map((locality) => ({
       id: `hero_${locality.id}`,
       localityId: locality.id,
       title: `Hyper Local Directory for ${locality.name.split(',')[0]}`,
@@ -555,7 +640,8 @@ export default function App() {
       ctaType: 'search_category',
       ctaTarget: 'all',
       isActive: true
-    })).map(normalizeStoredHeroBanner);
+    }));
+    return seededHeroBanners.map(normalizeStoredHeroBanner);
   });
 
   const [urlCategoryFilter, setUrlCategoryFilter] = useState<string | null>(null);
@@ -581,6 +667,18 @@ export default function App() {
       }
     }
     return localities.map((locality) => buildDefaultHomepageLayout(locality));
+  });
+
+  const [apiConfiguration, setApiConfiguration] = useState<ApiConfiguration>(() => {
+    const saved = localStorage.getItem('yp_api_configuration');
+    if (saved) {
+      try {
+        return normalizeApiConfiguration(JSON.parse(saved));
+      } catch (error) {
+        localStorage.removeItem('yp_api_configuration');
+      }
+    }
+    return DEFAULT_API_CONFIGURATION;
   });
 
   const seoIntentBySlug = useMemo(() => {
@@ -664,6 +762,45 @@ export default function App() {
       });
   }, []);
 
+  useEffect(() => {
+    if (homepageConfigLoadedRef.current || localities.length === 0) return;
+    let cancelled = false;
+
+    fetch(apiConfiguration.homepageConfigEndpoint)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { config?: Partial<HomepageConfigState> } | null) => {
+        if (cancelled || !data?.config) {
+          homepageConfigLoadedRef.current = true;
+          return;
+        }
+
+        const normalizedConfig = normalizeHomepageConfigState(data.config, localities);
+        setHeroBanners((prev) => normalizedConfig.heroBanners.length > 0 ? normalizedConfig.heroBanners : prev);
+        setListingAds((prev) => normalizedConfig.listingAds.length > 0 ? normalizedConfig.listingAds : prev);
+        setCoupons((prev) => normalizedConfig.coupons.length > 0 ? normalizedConfig.coupons : prev);
+        setHomepageLayouts(normalizedConfig.homepageLayouts);
+        setLocalityCategoryLinks(normalizedConfig.localityCategoryLinks);
+        setCommunityItems((prev) => normalizedConfig.communityItems.length > 0 ? normalizedConfig.communityItems : prev);
+        setApiConfiguration((prev) => normalizeApiConfiguration({
+          ...prev,
+          ...normalizedConfig.apiConfiguration,
+          lastHomepageSyncAt: normalizedConfig.apiConfiguration.lastHomepageSyncAt || prev.lastHomepageSyncAt
+        }));
+        lastHomepageSyncSignatureRef.current = JSON.stringify({
+          ...normalizedConfig,
+          apiConfiguration: getPersistableApiConfiguration(normalizedConfig.apiConfiguration)
+        });
+        homepageConfigLoadedRef.current = true;
+      })
+      .catch(() => {
+        homepageConfigLoadedRef.current = true;
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [apiConfiguration.homepageConfigEndpoint, localities]);
+
   // Track the business IDs for which the current user has performed OTP verification to unlock contact details
   const [viewedBusinessIds, setViewedBusinessIds] = useState<string[]>(() => {
     const saved = localStorage.getItem('yp_viewed_bizs');
@@ -713,30 +850,67 @@ export default function App() {
     ];
   });
 
+  const homepageConfigLoadedRef = useRef(false);
+  const lastHomepageSyncSignatureRef = useRef('');
+
+  const buildHomepageConfigPayload = (): HomepageConfigState => ({
+    heroBanners,
+    listingAds,
+    coupons,
+    homepageLayouts,
+    localityCategoryLinks,
+    communityItems,
+    apiConfiguration: getPersistableApiConfiguration(apiConfiguration)
+  });
+
+  const persistHomepageConfigToServer = (nextPayload?: HomepageConfigState) => {
+    const payload = nextPayload || buildHomepageConfigPayload();
+    return fetch(apiConfiguration.homepageConfigEndpoint, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ config: payload })
+    });
+  };
+
   const persistBusinessesToServer = (nextBusinesses: Business[]) => {
-    fetch('/api/businesses', {
+    if (apiConfiguration.syncMode !== 'api' || !apiConfiguration.autoSyncBusinesses) {
+      return;
+    }
+    fetch(apiConfiguration.businessesEndpoint, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ businesses: nextBusinesses })
-    }).catch(() => {
+    })
+      .then((response) => {
+        if (!response.ok) throw new Error('Failed to sync businesses');
+        setApiConfiguration((prev) => ({
+          ...prev,
+          lastBusinessesSyncAt: new Date().toISOString()
+        }));
+      })
+      .catch(() => {
       // Local cache remains the fallback when the API is unavailable.
-    });
+      });
   };
 
   useEffect(() => {
     let cancelled = false;
-    fetch('/api/businesses')
+    fetch(apiConfiguration.businessesEndpoint)
       .then((response) => (response.ok ? response.json() : null))
       .then((data: { businesses?: Business[] } | null) => {
         if (cancelled || !Array.isArray(data?.businesses)) return;
         if (data.businesses.length === 0) {
-          persistBusinessesToServer(businesses);
+          if (apiConfiguration.syncMode === 'api' && apiConfiguration.autoSyncBusinesses) {
+            persistBusinessesToServer(businesses);
+          }
           return;
         }
         setBusinesses((prev) => {
           const remoteBusinesses = data.businesses || [];
           const next = mergeBusinessCollections(prev, remoteBusinesses);
-          if (next.length > remoteBusinesses.length) persistBusinessesToServer(next);
+          if (next.length > remoteBusinesses.length && apiConfiguration.syncMode === 'api' && apiConfiguration.autoSyncBusinesses) {
+            persistBusinessesToServer(next);
+          }
           return next;
         });
       })
@@ -747,7 +921,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [apiConfiguration.autoSyncBusinesses, apiConfiguration.businessesEndpoint, apiConfiguration.syncMode]);
 
   // Push state to localStorage on any updates
   useEffect(() => {
@@ -815,8 +989,42 @@ export default function App() {
   }, [homepageLayouts]);
 
   useEffect(() => {
+    localStorage.setItem('yp_api_configuration', JSON.stringify(apiConfiguration));
+  }, [apiConfiguration]);
+
+  useEffect(() => {
     localStorage.setItem('yp_audit_logs', JSON.stringify(auditLogs));
   }, [auditLogs]);
+
+  useEffect(() => {
+    if (!homepageConfigLoadedRef.current) return;
+    if (apiConfiguration.syncMode !== 'api' || !apiConfiguration.autoSyncHomepage) return;
+
+    const payload = buildHomepageConfigPayload();
+    const signature = JSON.stringify(payload);
+    if (signature === lastHomepageSyncSignatureRef.current) return;
+
+    lastHomepageSyncSignatureRef.current = signature;
+    persistHomepageConfigToServer(payload)
+      .then((response) => {
+        if (!response.ok) throw new Error('Failed to sync homepage config');
+        setApiConfiguration((prev) => ({
+          ...prev,
+          lastHomepageSyncAt: new Date().toISOString()
+        }));
+      })
+      .catch(() => {
+        lastHomepageSyncSignatureRef.current = '';
+      });
+  }, [
+    apiConfiguration,
+    heroBanners,
+    listingAds,
+    coupons,
+    homepageLayouts,
+    localityCategoryLinks,
+    communityItems
+  ]);
 
   useEffect(() => {
     logAuditEvent('data_entry', 'Active locality changed', `Locality switched to: ${activeLocalityId}`);
@@ -946,7 +1154,7 @@ export default function App() {
 
     // Persist audit events server-side for public deployment traceability.
     // This is best-effort and should never block UX interactions.
-    fetch('/api/audit-events', {
+    fetch(apiConfiguration.auditEventsEndpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(freshLog),
@@ -1122,6 +1330,33 @@ export default function App() {
       };
     });
     logAuditEvent('data_entry', 'Reordered homepage section', `Locality: ${localityId} | Section ID: ${sectionId} | Direction: ${direction}`);
+  };
+
+  const handleUpdateApiConfiguration = (nextConfiguration: ApiConfiguration) => {
+    setApiConfiguration(normalizeApiConfiguration(nextConfiguration));
+    lastHomepageSyncSignatureRef.current = '';
+    logAuditEvent(
+      'data_entry',
+      'Updated API configuration',
+      `Sync mode: ${nextConfiguration.syncMode} | Homepage autosync: ${nextConfiguration.autoSyncHomepage ? 'on' : 'off'} | Business autosync: ${nextConfiguration.autoSyncBusinesses ? 'on' : 'off'}`
+    );
+  };
+
+  const handleManualHomepageConfigSync = () => {
+    const payload = buildHomepageConfigPayload();
+    persistHomepageConfigToServer(payload)
+      .then((response) => {
+        if (!response.ok) throw new Error('Failed to sync homepage config');
+        lastHomepageSyncSignatureRef.current = JSON.stringify(payload);
+        setApiConfiguration((prev) => ({
+          ...prev,
+          lastHomepageSyncAt: new Date().toISOString()
+        }));
+        logAuditEvent('data_entry', 'Manually synced homepage config', `Endpoint: ${apiConfiguration.homepageConfigEndpoint}`);
+      })
+      .catch(() => {
+        alert('Homepage configuration sync failed. Please verify the API endpoint and try again.');
+      });
   };
 
   const handleSubmitAdLead = (leadInput: Omit<AdLead, 'id' | 'createdAt'>) => {
@@ -1346,6 +1581,7 @@ export default function App() {
       localStorage.removeItem('yp_hero_banners');
       localStorage.removeItem('yp_locality_category_links');
       localStorage.removeItem('yp_homepage_layouts');
+      localStorage.removeItem('yp_api_configuration');
       
       setLocalities(INITIAL_LOCALITIES);
       setBusinesses(INITIAL_BUSINESSES.map(normalizeStoredBusiness));
@@ -1355,7 +1591,7 @@ export default function App() {
       setCoupons(INITIAL_COUPONS.map(normalizeStoredCoupon));
       setListingAds([]);
       setAdLeads([]);
-      setHeroBanners(INITIAL_LOCALITIES.map((locality) => ({
+      const resetHeroBanners: HeroBanner[] = INITIAL_LOCALITIES.map((locality) => ({
         id: `hero_${locality.id}`,
         localityId: locality.id,
         title: `Hyper Local Directory for ${locality.name.split(',')[0]}`,
@@ -1367,9 +1603,12 @@ export default function App() {
         ctaType: 'search_category',
         ctaTarget: 'all',
         isActive: true
-      })).map(normalizeStoredHeroBanner));
+      }));
+      setHeroBanners(resetHeroBanners.map(normalizeStoredHeroBanner));
       setLocalityCategoryLinks([]);
       setHomepageLayouts(INITIAL_LOCALITIES.map((locality) => buildDefaultHomepageLayout(locality)));
+      setApiConfiguration(DEFAULT_API_CONFIGURATION);
+      lastHomepageSyncSignatureRef.current = '';
       setSubdomains(INITIAL_LOCALITIES.map(l => ({
         domain: l.subdomain,
         localityId: l.id,
@@ -1988,18 +2227,18 @@ export default function App() {
     <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans selection:bg-indigo-600/15 relative">
       
       {/* Top Navigation Frame - Pristine, Live, Human-labeled web directory */}
-      <nav id="platform-navbar" className="bg-white border-b border-slate-200 sticky top-0 md:top-auto z-40 px-3 sm:px-4 md:px-8 py-2.5 md:py-4 shadow-xs">
+      <nav id="platform-navbar" className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 px-4 py-2.5 shadow-sm backdrop-blur md:top-auto md:px-8 md:py-0">
         <div className="flex items-center gap-2.5 md:hidden">
           <button
             type="button"
             onClick={handleMainLogoHome}
-            className="shrink-0 rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="shrink-0 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
             title="Happy Business home"
           >
           <img
             src={happyBusinessLogo}
             alt="Localisy"
-            className="h-8 sm:h-9 w-auto max-w-[128px] object-contain"
+            className="h-8 w-auto max-w-[116px] object-contain"
           />
           </button>
 
@@ -2007,14 +2246,14 @@ export default function App() {
           <button
             type="button"
             onClick={() => setShowPincodeModal(true)}
-            className="min-w-0 flex-1 md:flex-none md:min-w-[320px] inline-flex h-11 md:h-12 items-center gap-2 bg-indigo-50 border border-indigo-200 hover:border-indigo-400 hover:bg-slate-100 text-indigo-950 px-3 md:px-4 rounded-2xl text-xs md:text-sm font-semibold font-mono shadow-xs transition cursor-pointer"
+            className="min-w-0 flex-1 md:flex-none md:min-w-[320px] inline-flex h-10 md:h-12 items-center gap-2 rounded-full border border-indigo-100 bg-indigo-50 px-3 md:px-4 text-xs md:text-sm font-bold text-indigo-950 shadow-sm transition hover:border-indigo-200"
             title="Change pincode or locality"
           >
-            <MapPin className="w-4 h-4 text-slate-600 shrink-0" />
+            <MapPin className="w-4 h-4 text-indigo-600 shrink-0" />
             <span className="truncate">
               <span className="font-extrabold text-slate-800">{displayedPincode}</span>
               <span className="text-indigo-500 font-sans font-semibold ml-1">
-                <span className="md:hidden">({compactNodeLabel})</span>
+                <span className="md:hidden">{compactNodeLabel}</span>
                 <span className="hidden md:inline">({activeNodeLabel})</span>
               </span>
             </span>
@@ -2023,11 +2262,11 @@ export default function App() {
 
           <button
             type="button"
-            onClick={handleSearchShortcut}
-            className="h-11 md:h-12 w-14 md:w-16 inline-flex items-center justify-center rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm transition cursor-pointer shrink-0"
-            title="Jump to listing search"
+            onClick={() => userSession.isAuthenticated ? setShowUserMenu((open) => !open) : setShowAuthModal(true)}
+            className="h-10 md:h-12 w-10 md:w-16 inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-800 shadow-sm transition hover:border-indigo-200 hover:text-indigo-600 cursor-pointer shrink-0"
+            title="Notifications and profile"
           >
-            <Search className="w-5 h-5 md:w-6 md:h-6" />
+            <Bell className="w-5 h-5" />
           </button>
           
           <button
@@ -2043,7 +2282,7 @@ export default function App() {
             Advertise Business
           </button>
 
-          <div className="relative shrink-0">
+          <div className="hidden">
             {userSession.isAuthenticated && userSession.userPhone ? (
               <>
                 <button
@@ -2148,31 +2387,31 @@ export default function App() {
           )}
         </div>
 
-        <div className="hidden md:flex items-center justify-between gap-4">
+        <div className="hidden h-[72px] items-center justify-between gap-5 md:flex">
           <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={handleMainLogoHome}
-              className="rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
               title="Open home page for selected pincode"
             >
               <img
                 src={happyBusinessLogo}
                 alt="Localisy"
-                className="h-12 md:h-14 w-auto object-contain"
+                className="h-10 w-auto object-contain"
               />
             </button>
           </div>
 
           {/* Real-time Pincode and Locality tracker */}
-          <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex flex-wrap items-center justify-end gap-2.5">
             <button
               type="button"
               onClick={() => setShowPincodeModal(true)}
-              className="flex items-center gap-2 bg-indigo-50 border border-indigo-200 hover:border-indigo-400 hover:bg-slate-100 text-indigo-850 px-3.5 py-1.5 rounded-2xl text-xs font-semibold font-mono shadow-xs transition cursor-pointer"
+              className="flex items-center gap-2 rounded-full border border-indigo-100 bg-indigo-50 px-4 py-2 text-xs font-bold text-indigo-950 shadow-sm transition hover:border-indigo-200"
               title="Click to switch regional portal using pincode"
             >
-              <MapPin className="w-3.5 h-3.5 text-indigo-650 animate-bounce" />
+              <MapPin className="w-3.5 h-3.5 text-indigo-600" />
               <span>
                 Pincode: {savedPincode ? savedPincode : 'None'}
                 <span className="text-indigo-400 font-sans ml-1 text-[10px] font-normal">
@@ -2195,7 +2434,7 @@ export default function App() {
                 if (seekWebPortal) seekWebPortal.scrollIntoView({ behavior: 'smooth' });
               }}
               title="Open the listing application form for merchants who want to be promoted on the directory"
-              className="hidden sm:inline-flex bg-slate-900 hover:bg-slate-800 text-white font-medium text-xs px-4 py-2 rounded-xl transition cursor-pointer"
+              className="hidden sm:inline-flex rounded-xl bg-indigo-600 px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-indigo-700 cursor-pointer"
             >
               Advertise Business
             </button>
@@ -2204,7 +2443,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setActiveViewWithAudit('admin')}
-                className="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-4 py-2 rounded-xl transition cursor-pointer shadow-sm"
+                className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-3 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-700 cursor-pointer"
                 title="Open Admin moderation and bulk import console"
               >
                 <Shield className="w-3.5 h-3.5" />
@@ -2230,7 +2469,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setShowAuthModal(true)}
-                className="inline-flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-4 py-2 rounded-xl transition cursor-pointer shadow-sm"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-white px-4 py-3 text-xs font-bold text-indigo-700 shadow-sm transition hover:border-indigo-300 hover:bg-indigo-50 cursor-pointer"
                 title="Sign in to post reviews & manage role-based access"
               >
                 <User className="w-3.5 h-3.5" />
@@ -2242,7 +2481,7 @@ export default function App() {
       </nav>
 
       {/* Main Workspace Frame */}
-      <main className="flex-1 w-full max-w-7xl mx-auto px-4 md:px-8 py-8 space-y-8">
+      <main className="flex-1 w-full max-w-[1440px] mx-auto px-4 md:px-8 py-5 md:py-8 space-y-8">
         
         {/* Workspace Active Presentation Render */}
         {!PRODUCTION_MODE && activeView === 'proposal' && (
@@ -2374,6 +2613,9 @@ export default function App() {
               onDuplicateHomepageSection={handleDuplicateHomepageSection}
               onMoveHomepageSection={handleMoveHomepageSection}
               adLeads={adLeads}
+              apiConfiguration={apiConfiguration}
+              onUpdateApiConfiguration={handleUpdateApiConfiguration}
+              onSyncHomepageConfig={handleManualHomepageConfigSync}
               localityCategoryLinks={localityCategoryLinks}
               onCreateLocalityCategoryLink={handleCreateLocalityCategoryLink}
               onDeleteLocalityCategoryLink={handleDeleteLocalityCategoryLink}

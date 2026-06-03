@@ -195,6 +195,7 @@ export type HomepageSectionType =
   | 'promo_banner'
   | 'featured_businesses'
   | 'business_shelf'
+  | 'text_business_strip'
   | 'offers_list'
   | 'updates_feed'
   | 'category_grid'
@@ -239,6 +240,33 @@ export interface HomepageLayout {
   visible: boolean;
   sections: HomepageSection[];
   updatedAt: string;
+}
+
+export interface ApiConfiguration {
+  syncMode: 'local' | 'api';
+  homepageConfigEndpoint: string;
+  businessesEndpoint: string;
+  auditEventsEndpoint: string;
+  autoSyncHomepage: boolean;
+  autoSyncBusinesses: boolean;
+  lastHomepageSyncAt?: string;
+  lastBusinessesSyncAt?: string;
+}
+
+export interface HomepageConfigState {
+  heroBanners: HeroBanner[];
+  listingAds: ListingAd[];
+  coupons: MarketingCoupon[];
+  homepageLayouts: HomepageLayout[];
+  localityCategoryLinks: Array<{
+    id: string;
+    localityId: string;
+    categoryId: string;
+    subcategoryId?: string;
+    slug: string;
+  }>;
+  communityItems: CommunityItem[];
+  apiConfiguration: ApiConfiguration;
 }
 
 export interface Category {
