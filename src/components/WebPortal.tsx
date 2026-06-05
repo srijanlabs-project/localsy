@@ -175,6 +175,27 @@ function MobileAdCarousel({ ads, onAdClick }: MobileAdCarouselProps) {
   );
 }
 
+type SwipeDotsProps = {
+  totalDots: number;
+  activeIndex?: number;
+  className?: string;
+};
+
+function SwipeDots({ totalDots, activeIndex = 0, className = '' }: SwipeDotsProps) {
+  if (totalDots <= 1) return null;
+
+  return (
+    <div className={`flex items-center justify-center gap-2 ${className}`}>
+      {Array.from({ length: totalDots }, (_, index) => (
+        <span
+          key={`swipe-dot-${index}`}
+          className={`h-2.5 w-2.5 rounded-full transition ${index === activeIndex ? 'bg-indigo-600' : 'bg-slate-300'}`}
+        />
+      ))}
+    </div>
+  );
+}
+
 interface WebPortalProps {
   localities: Locality[];
   businesses: Business[];
@@ -1040,6 +1061,14 @@ export default function WebPortal({
   const getDesktopSectionItems = <T,>(items: T[], sectionMaxItems: number) => (
     items.slice(0, sectionMaxItems)
   );
+  const getSwipeDotCount = (itemCount: number, visibleCount: number) => (
+    Math.max(1, Math.ceil(itemCount / Math.max(1, visibleCount)))
+  );
+  const getSwipeDotActiveIndex = (itemCount: number, visibleCount: number) => {
+    if (itemCount <= visibleCount) return 0;
+    const pageCount = getSwipeDotCount(itemCount, visibleCount);
+    return Math.min(pageCount - 1, Math.floor((homepageRotationTick % itemCount) / Math.max(1, visibleCount)));
+  };
 
   const getBusinessAreaName = (biz: Business) => {
     const areaName = MASTER_AREAS.find((area) => area.id === biz.areaId)?.name;
@@ -1798,6 +1827,7 @@ export default function WebPortal({
 
     if (section.sectionType === 'emergency_grid') {
       const emergencyCategories = getConfiguredCategories(section).slice(0, sectionMaxItems);
+      const emergencyDotCount = getSwipeDotCount(emergencyCategories.length, 3);
       return (
         <section key={sectionKey} className="rounded-2xl border border-rose-100 bg-rose-50/45 p-4 shadow-sm md:p-5">
           {renderSectionHeader(section.title, section.subtitle, section.showViewAll, () => setSearchQuery('Emergency'))}
@@ -1822,6 +1852,7 @@ export default function WebPortal({
               );
             })}
           </div>
+          <SwipeDots totalDots={emergencyDotCount} className="mt-3 md:hidden" />
         </section>
       );
     }
@@ -1869,6 +1900,8 @@ export default function WebPortal({
         : getRotatedItems(featuredPool, Math.min(mobileCardCount, sectionMaxItems), section.autoRotate);
       const desktopFeaturedItems = getDesktopSectionItems(featuredPool, sectionMaxItems);
       const desktopFeaturedGridCount = getDesktopGridCount(desktopCardCount, desktopFeaturedItems.length);
+      const featuredDotCount = getSwipeDotCount(featuredPool.length, mobileCardCount);
+      const featuredDotIndex = getSwipeDotActiveIndex(featuredPool.length, mobileCardCount);
       if (mobileFeaturedItems.length === 0 && desktopFeaturedItems.length === 0) return null;
       return (
         <section key={sectionKey} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
@@ -1881,9 +1914,12 @@ export default function WebPortal({
               {mobileFeaturedItems.map((business) => renderCompactBusinessRow(business))}
             </div>
           ) : (
-            <div className="no-scrollbar mt-4 flex snap-x snap-mandatory gap-3 overflow-x-auto pb-1 md:hidden">
-              {mobileFeaturedItems.map((business) => renderMobileBusinessCard(business, 'Sponsored', mobileCardCount))}
-            </div>
+            <>
+              <div className="no-scrollbar mt-4 flex snap-x snap-mandatory gap-3 overflow-x-auto pb-1 md:hidden">
+                {mobileFeaturedItems.map((business) => renderMobileBusinessCard(business, 'Sponsored', mobileCardCount))}
+              </div>
+              <SwipeDots totalDots={featuredDotCount} activeIndex={featuredDotIndex} className="mt-3 md:hidden" />
+            </>
           )}
           <div
             className="mt-4 hidden gap-4 md:grid md:justify-start"
@@ -1907,6 +1943,8 @@ export default function WebPortal({
         : getRotatedItems(shelfBusinessMatches, Math.min(mobileCardCount, sectionMaxItems), section.autoRotate);
       const desktopShelfItems = getDesktopSectionItems(shelfBusinessMatches, sectionMaxItems);
       const desktopShelfGridCount = getDesktopGridCount(desktopCardCount, desktopShelfItems.length);
+      const shelfDotCount = getSwipeDotCount(shelfBusinessMatches.length, mobileCardCount);
+      const shelfDotIndex = getSwipeDotActiveIndex(shelfBusinessMatches.length, mobileCardCount);
       if (mobileShelfItems.length === 0 && desktopShelfItems.length === 0) return null;
       return (
         <section key={sectionKey} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
@@ -1922,9 +1960,12 @@ export default function WebPortal({
               {mobileShelfItems.map((business) => renderCompactBusinessRow(business))}
             </div>
           ) : (
-            <div className="no-scrollbar mt-4 flex snap-x snap-mandatory gap-3 overflow-x-auto pb-1 md:hidden">
-              {mobileShelfItems.map((business) => renderMobileBusinessCard(business, undefined, mobileCardCount))}
-            </div>
+            <>
+              <div className="no-scrollbar mt-4 flex snap-x snap-mandatory gap-3 overflow-x-auto pb-1 md:hidden">
+                {mobileShelfItems.map((business) => renderMobileBusinessCard(business, undefined, mobileCardCount))}
+              </div>
+              <SwipeDots totalDots={shelfDotCount} activeIndex={shelfDotIndex} className="mt-3 md:hidden" />
+            </>
           )}
           <div
             className="mt-4 hidden gap-4 md:grid md:justify-start"
@@ -1948,6 +1989,8 @@ export default function WebPortal({
         : getRotatedItems(stripPool, Math.min(mobileCardCount, sectionMaxItems), section.autoRotate);
       const desktopStripItems = getDesktopSectionItems(stripPool, sectionMaxItems);
       const desktopStripGridCount = getDesktopGridCount(desktopCardCount, desktopStripItems.length);
+      const stripDotCount = getSwipeDotCount(stripPool.length, mobileCardCount);
+      const stripDotIndex = getSwipeDotActiveIndex(stripPool.length, mobileCardCount);
       if (mobileStripItems.length === 0 && desktopStripItems.length === 0) return null;
       return (
         <section key={sectionKey} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
@@ -1962,9 +2005,12 @@ export default function WebPortal({
               {mobileStripItems.map((business) => renderTextBusinessStripCard(business, { stack: true }))}
             </div>
           ) : (
-            <div className="no-scrollbar mt-4 flex snap-x snap-mandatory gap-4 overflow-x-auto pb-1 md:hidden">
-              {mobileStripItems.map((business) => renderTextBusinessStripCard(business, { cardsPerView: mobileCardCount }))}
-            </div>
+            <>
+              <div className="no-scrollbar mt-4 flex snap-x snap-mandatory gap-4 overflow-x-auto pb-1 md:hidden">
+                {mobileStripItems.map((business) => renderTextBusinessStripCard(business, { cardsPerView: mobileCardCount }))}
+              </div>
+              <SwipeDots totalDots={stripDotCount} activeIndex={stripDotIndex} className="mt-3 md:hidden" />
+            </>
           )}
           <div
             className="mt-4 hidden gap-4 md:grid md:justify-start"
@@ -2092,6 +2138,8 @@ export default function WebPortal({
         : getRotatedItems(verifiedPool, Math.min(mobileCardCount, sectionMaxItems), section.autoRotate);
       const desktopVerifiedItems = getDesktopSectionItems(verifiedPool, sectionMaxItems);
       const desktopVerifiedGridCount = getDesktopGridCount(desktopCardCount, desktopVerifiedItems.length);
+      const verifiedDotCount = getSwipeDotCount(verifiedPool.length, mobileCardCount);
+      const verifiedDotIndex = getSwipeDotActiveIndex(verifiedPool.length, mobileCardCount);
       if (mobileVerifiedItems.length === 0 && desktopVerifiedItems.length === 0) return null;
       return (
         <section key={sectionKey} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
@@ -2127,9 +2175,12 @@ export default function WebPortal({
               {mobileVerifiedItems.map((business) => renderCompactBusinessRow(business))}
             </div>
           ) : (
-            <div className="no-scrollbar mt-4 flex snap-x snap-mandatory gap-3 overflow-x-auto pb-1 md:hidden">
-              {mobileVerifiedItems.map((business) => renderMobileBusinessCard(business, undefined, mobileCardCount))}
-            </div>
+            <>
+              <div className="no-scrollbar mt-4 flex snap-x snap-mandatory gap-3 overflow-x-auto pb-1 md:hidden">
+                {mobileVerifiedItems.map((business) => renderMobileBusinessCard(business, undefined, mobileCardCount))}
+              </div>
+              <SwipeDots totalDots={verifiedDotCount} activeIndex={verifiedDotIndex} className="mt-3 md:hidden" />
+            </>
           )}
           <div
             className="mt-4 hidden gap-4 md:grid md:justify-start"
