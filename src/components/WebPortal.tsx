@@ -1,13 +1,13 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Search, MapPin, Phone, Mail, ExternalLink, Star, 
   BookOpen, Plus, Compass, ChevronRight, ChevronLeft, ChevronDown, Share2, Globe, Heart, 
   ShieldAlert, Lock, Unlock, MessageSquare, CheckCircle, Navigation, Award, User, Clock,
   Volume2, Camera, Brain, Megaphone, Users, BarChart3, Ticket, PlusCircle, Filter, 
   TrendingUp, Check, CheckSquare, Sparkles, Trash2, QrCode, Activity,
-  Home, Bell, SlidersHorizontal, Utensils, Stethoscope, Zap, CakeSlice, Wrench,
+  Home, SlidersHorizontal, Utensils, Stethoscope, Zap, CakeSlice, Wrench,
   Grid3X3, Flame, Ambulance, Car, Dumbbell, ShoppingCart, GraduationCap,
-  CalendarDays, Headphones, ShieldCheck, CalendarCheck, BriefcaseMedical,
+  CalendarDays, Headphones, ShieldCheck, CalendarCheck, BriefcaseMedical, X,
   Hospital, Siren, CirclePlus, Bookmark, ChefHat, Store, HeartPulse
 } from 'lucide-react';
 import { 
@@ -70,6 +70,107 @@ function PaginationControls({
         <span>Next</span>
         <ChevronRight className="h-3.5 w-3.5" />
       </button>
+    </div>
+  );
+}
+
+type MobileAdCarouselProps = {
+  ads: ListingAd[];
+  onAdClick: (ad: ListingAd) => void;
+};
+
+function MobileAdCarousel({ ads, onAdClick }: MobileAdCarouselProps) {
+  const railRef = useRef<HTMLDivElement | null>(null);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const adSignature = ads.map((ad) => ad.id).join('|');
+
+  useEffect(() => {
+    setActiveIndex(0);
+    railRef.current?.scrollTo({ left: 0, behavior: 'auto' });
+  }, [adSignature]);
+
+  useEffect(() => {
+    if (ads.length <= 1) return;
+    const slideWidth = 212;
+    const interval = window.setInterval(() => {
+      setActiveIndex((current) => {
+        const next = (current + 1) % ads.length;
+        railRef.current?.scrollTo({ left: next * slideWidth, behavior: 'smooth' });
+        return next;
+      });
+    }, 3000);
+    return () => window.clearInterval(interval);
+  }, [adSignature, ads.length]);
+
+  const handleScroll = () => {
+    if (!railRef.current) return;
+    const nextIndex = Math.round(railRef.current.scrollLeft / 212);
+    const boundedIndex = Math.max(0, Math.min(ads.length - 1, nextIndex));
+    if (boundedIndex !== activeIndex) {
+      setActiveIndex(boundedIndex);
+    }
+  };
+
+  return (
+    <div className="space-y-3 xl:hidden">
+      <div
+        ref={railRef}
+        onScroll={handleScroll}
+        className="no-scrollbar flex snap-x snap-mandatory gap-3 overflow-x-auto pb-1"
+      >
+        {ads.map((ad, index) => {
+          const isDark = index % 4 === 1 || ad.backgroundColor === '#064e3b';
+          return (
+            <button
+              key={`${ad.id}-mobile-${index}`}
+              type="button"
+              onClick={() => onAdClick(ad)}
+              className={`relative min-h-[220px] w-[200px] min-w-[200px] snap-start overflow-hidden rounded-2xl p-5 text-left shadow-sm ${
+                isDark ? 'text-white' : 'text-indigo-950'
+              }`}
+              style={{ backgroundColor: ad.backgroundColor || (isDark ? '#064e3b' : '#ede9fe') }}
+            >
+              <span className={`text-[10px] font-bold uppercase tracking-wide ${isDark ? 'text-white/70' : 'text-indigo-500'}`}>
+                {ad.badge || 'Advertisement'}
+              </span>
+              <h4 className="mt-4 max-w-[120px] text-xl font-extrabold leading-tight">{ad.title}</h4>
+              <p className={`mt-2 max-w-[132px] text-xs font-medium leading-5 ${isDark ? 'text-white/85' : 'text-indigo-900/70'}`}>
+                {ad.description}
+              </p>
+              <span className={`mt-4 inline-flex rounded-xl px-4 py-2 text-xs font-bold ${
+                isDark ? 'bg-white text-emerald-950' : 'bg-indigo-600 text-white'
+              }`}>
+                {ad.ctaText}
+              </span>
+              {ad.imageUrl ? (
+                <img
+                  src={ad.imageUrl}
+                  alt=""
+                  className="absolute bottom-0 right-0 h-24 w-24 rounded-tl-3xl object-cover"
+                />
+              ) : (
+                <Megaphone className={`absolute bottom-4 right-4 h-16 w-16 rotate-[-12deg] ${isDark ? 'text-white/15' : 'text-indigo-400/25'}`} />
+              )}
+            </button>
+          );
+        })}
+      </div>
+      {ads.length > 1 && (
+        <div className="flex items-center justify-center gap-2">
+          {ads.map((ad, index) => (
+            <button
+              key={`${ad.id}-dot-${index}`}
+              type="button"
+              onClick={() => {
+                railRef.current?.scrollTo({ left: index * 212, behavior: 'smooth' });
+                setActiveIndex(index);
+              }}
+              className={`h-2.5 w-2.5 rounded-full transition ${index === activeIndex ? 'bg-indigo-600' : 'bg-slate-300'}`}
+              aria-label={`Go to ad ${index + 1}`}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -284,6 +385,8 @@ export default function WebPortal({
   const [merchantLeadsPage, setMerchantLeadsPage] = useState(1);
   const [sellerWidgetLeadsPage, setSellerWidgetLeadsPage] = useState(1);
   const [reviewsPage, setReviewsPage] = useState(1);
+  const [homepageRotationTick, setHomepageRotationTick] = useState(0);
+  const [showAllCategoriesModal, setShowAllCategoriesModal] = useState(false);
 
   useEffect(() => {
     if (SIMPLE_SEARCH_FORM) {
@@ -492,6 +595,13 @@ export default function WebPortal({
   useEffect(() => {
     setReviewsPage(1);
   }, [selectedBiz?.id]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      setHomepageRotationTick((value) => value + 1);
+    }, 3000);
+    return () => window.clearInterval(interval);
+  }, []);
 
   // Audit log tracker for user search operations (debounced/distinct values)
   useEffect(() => {
@@ -879,8 +989,7 @@ export default function WebPortal({
     { label: 'Electricians', categoryId: 'home-services', subcategoryId: 'electricians', Icon: Zap, iconClassName: 'text-amber-500', bgClassName: 'bg-amber-50' },
     { label: 'Home Bakers', categoryId: 'food-restaurants', subcategoryId: 'bakeries', Icon: CakeSlice, iconClassName: 'text-rose-500', bgClassName: 'bg-rose-50' },
     { label: 'Plumbers', categoryId: 'home-services', subcategoryId: 'plumbers', Icon: Wrench, iconClassName: 'text-sky-600', bgClassName: 'bg-sky-50' },
-    { label: 'Maid Services', categoryId: 'home-services', subcategoryId: 'house-cleaning', Icon: Users, iconClassName: 'text-emerald-600', bgClassName: 'bg-emerald-50' },
-    { label: 'More', categoryId: 'all', subcategoryId: 'all', Icon: Grid3X3, iconClassName: 'text-indigo-600', bgClassName: 'bg-indigo-50' }
+    { label: 'Maid Services', categoryId: 'home-services', subcategoryId: 'house-cleaning', Icon: Users, iconClassName: 'text-emerald-600', bgClassName: 'bg-emerald-50' }
   ];
   const emergencyServiceCards = [
     { title: 'Police Station', description: 'Local law & safety', query: 'Police Station', Icon: ShieldAlert, iconClassName: 'text-indigo-600', bgClassName: 'bg-indigo-50' },
@@ -892,6 +1001,45 @@ export default function WebPortal({
     { title: 'Maid Service', description: 'Home support', query: 'Maid Service', Icon: User, iconClassName: 'text-violet-600', bgClassName: 'bg-violet-50' },
     { title: 'Driver / Taxi', description: 'Travel support', query: 'Taxi', Icon: Car, iconClassName: 'text-orange-500', bgClassName: 'bg-orange-50' }
   ];
+  const getSectionBusinessPool = (section: HomepageSection) => {
+    const scopedBusinesses = sortedBusinesses
+      .filter((business) => business.status === 'approved')
+      .filter((business) => !section.categoryId || business.categoryId === section.categoryId)
+      .filter((business) => !section.subcategoryId || business.subcategoryId === section.subcategoryId);
+
+    if (section.listingSourceMode === 'manual' && (section.pinnedBusinessIds || []).length > 0) {
+      return (section.pinnedBusinessIds || [])
+        .map((businessId) => scopedBusinesses.find((business) => business.id === businessId))
+        .filter(Boolean) as Business[];
+    }
+
+    return scopedBusinesses;
+  };
+  const getRotatedItems = <T,>(items: T[], visibleSlots: number, autoRotate = true) => {
+    if (items.length <= visibleSlots) return items;
+    if (!autoRotate) return items.slice(0, visibleSlots);
+    const startIndex = homepageRotationTick % items.length;
+    return Array.from({ length: visibleSlots }, (_, offset) => items[(startIndex + offset) % items.length]);
+  };
+  const getConfiguredCategories = (section: HomepageSection) => {
+    const configured = (section.categoryIds || []).map((categoryId) => getCategoryById(categoryId)).filter(Boolean) as typeof BUSINESS_CATEGORIES;
+    return configured.length > 0 ? configured : BUSINESS_CATEGORIES.slice(0, section.maxItems || 8);
+  };
+  const getDesktopCardCount = (section: HomepageSection, fallback: number) => (
+    section.desktopCardCount || section.visibleSlots || fallback
+  );
+  const getMobileCardCount = (section: HomepageSection, fallback = 2) => (
+    section.mobileCardCount || fallback
+  );
+  const getMobileDisplayMode = (section: HomepageSection) => (
+    section.mobileDisplayMode || (section.sectionType === 'verified_business_grid' ? 'stack' : 'carousel')
+  );
+  const getDesktopGridCount = (_requestedCount: number, itemCount: number) => (
+    Math.max(1, Math.min(Math.max(1, itemCount), 4))
+  );
+  const getDesktopSectionItems = <T,>(items: T[], sectionMaxItems: number) => (
+    items.slice(0, sectionMaxItems)
+  );
 
   const getBusinessAreaName = (biz: Business) => {
     const areaName = MASTER_AREAS.find((area) => area.id === biz.areaId)?.name;
@@ -940,11 +1088,11 @@ export default function WebPortal({
   ) => {
     const categoryLabel = getCategoryById(biz.categoryId)?.name || biz.categoryId;
     const areaLabel = getBusinessAreaName(biz);
-    const hasViewed = viewedBusinessIds.includes(biz.id);
+    const hasPhone = Boolean((biz.phone || '').replace(/\D/g, '').slice(-10));
     return (
       <div
         onClick={() => openBusinessDetails(biz)}
-        className={`md:hidden rounded-2xl border bg-white p-3 shadow-sm transition active:scale-[0.99] ${options?.highlightClass || 'border-slate-200'}`}
+        className={`md:hidden w-full min-w-0 overflow-hidden rounded-2xl border bg-white p-3 shadow-sm transition active:scale-[0.99] ${options?.highlightClass || 'border-slate-200'}`}
       >
         <div className="flex gap-3">
           <div className="relative h-24 w-24 flex-shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
@@ -991,84 +1139,122 @@ export default function WebPortal({
               <span className="truncate">• {areaLabel}</span>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 pt-1">
-              <button
-                type="button"
-                onClick={(e) => handlePrimaryBusinessAction(biz, e)}
-                className="inline-flex items-center justify-center gap-1 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white"
-              >
-                <Phone className="h-3.5 w-3.5" />
-                <span>{hasViewed && biz.phone ? 'Call' : 'Call'}</span>
-              </button>
+            {hasPhone ? (
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={(e) => handlePrimaryBusinessAction(biz, e)}
+                  className="inline-flex items-center justify-center gap-1 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white"
+                >
+                  <Phone className="h-3.5 w-3.5" />
+                  <span>Call</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openBusinessDetails(biz);
+                  }}
+                  className="inline-flex items-center justify-center gap-1 rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  <span>Details</span>
+                </button>
+              </div>
+            ) : (
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
                   openBusinessDetails(biz);
                 }}
-                className="inline-flex items-center justify-center gap-1 rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700"
+                className="inline-flex w-full items-center justify-center gap-1 rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700"
               >
+                <ExternalLink className="h-3.5 w-3.5" />
                 <span>Details</span>
               </button>
-            </div>
+            )}
           </div>
         </div>
       </div>
     );
   };
 
-  const renderMobileBusinessCard = (biz: Business, badgeLabel?: string) => (
-    <div
-      key={biz.id}
-      onClick={() => openBusinessDetails(biz)}
-      className="md:hidden min-w-[180px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
-    >
-      <div className="relative h-28 bg-slate-100">
-        <img
-          src={getBusinessImageUrl(biz)}
-          alt={biz.name}
-          onError={(e) => {
-            (e.target as HTMLImageElement).src = getCategoryFallbackImage(biz.categoryId);
-          }}
-          className={`h-full w-full ${hasUploadedBusinessImage(biz) ? 'object-cover' : 'object-contain p-4'}`}
-        />
-        {(badgeLabel || biz.isSponsored) && (
-          <span className="absolute left-2 top-2 rounded-md bg-indigo-600 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-white">
-            {badgeLabel || 'Sponsored'}
-          </span>
-        )}
-        <button
-          type="button"
-          onClick={(e) => e.stopPropagation()}
-          className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-slate-600 shadow-sm"
-          title="Save business"
-        >
-          <Heart className="h-4 w-4" />
-        </button>
-      </div>
-      <div className="space-y-1.5 p-3">
-        <h4 className="truncate text-sm font-bold text-slate-950">{biz.name}</h4>
-        <div className="truncate text-xs font-medium text-slate-500">
-          {getCategoryById(biz.categoryId)?.name || biz.categoryId}
+  const renderMobileBusinessCard = (biz: Business, badgeLabel?: string, cardsPerView = 2) => {
+    const hasPhone = Boolean((biz.phone || '').replace(/\D/g, '').slice(-10));
+    return (
+      <div
+        key={biz.id}
+        onClick={() => openBusinessDetails(biz)}
+        className="md:hidden min-w-0 flex-shrink-0 snap-start overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
+        style={{
+          width: cardsPerView <= 1
+            ? '100%'
+            : `calc((100% - ${(cardsPerView - 1) * 12}px) / ${cardsPerView})`,
+          minWidth: cardsPerView <= 1 ? '100%' : `calc((100% - ${(cardsPerView - 1) * 12}px) / ${cardsPerView})`
+        }}
+      >
+        <div className="relative h-28 bg-slate-100">
+          <img
+            src={getBusinessImageUrl(biz)}
+            alt={biz.name}
+            onError={(e) => {
+              (e.target as HTMLImageElement).src = getCategoryFallbackImage(biz.categoryId);
+            }}
+            className={`h-full w-full ${hasUploadedBusinessImage(biz) ? 'object-cover' : 'object-contain p-4'}`}
+          />
+          {(badgeLabel || biz.isSponsored) && (
+            <span className="absolute left-2 top-2 rounded-md bg-indigo-600 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-white">
+              {badgeLabel || 'Sponsored'}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={(e) => e.stopPropagation()}
+            className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-slate-600 shadow-sm"
+            title="Save business"
+          >
+            <Heart className="h-4 w-4" />
+          </button>
         </div>
-        <div className="flex items-center gap-2 text-xs">
-          <span className="inline-flex items-center gap-1 font-semibold text-amber-600">
-            <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
-            {biz.rating.toFixed(1)}
-          </span>
-          <span className="truncate text-slate-500">{getBusinessAreaName(biz)}</span>
+        <div className="space-y-1.5 p-3">
+          <h4 className="truncate text-sm font-bold text-slate-950">{biz.name}</h4>
+          <div className="truncate text-xs font-medium text-slate-500">
+            {getCategoryById(biz.categoryId)?.name || biz.categoryId}
+          </div>
+          <div className="flex items-center gap-2 text-xs">
+            <span className="inline-flex items-center gap-1 font-semibold text-amber-600">
+              <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+              {biz.rating.toFixed(1)}
+            </span>
+            <span className="truncate text-slate-500">{getBusinessAreaName(biz)}</span>
+          </div>
+          {hasPhone ? (
+            <button
+              type="button"
+              onClick={(e) => handlePrimaryBusinessAction(biz, e)}
+              className="mt-2 inline-flex w-full items-center justify-center gap-1 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white"
+            >
+              <Phone className="h-3.5 w-3.5" />
+              <span>Call</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                openBusinessDetails(biz);
+              }}
+              className="mt-2 inline-flex w-full items-center justify-center gap-1 rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+              <span>Details</span>
+            </button>
+          )}
         </div>
-        <button
-          type="button"
-          onClick={(e) => handlePrimaryBusinessAction(biz, e)}
-          className="mt-2 inline-flex items-center justify-center gap-1 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white"
-        >
-          <Phone className="h-3.5 w-3.5" />
-          <span>Call</span>
-        </button>
       </div>
-    </div>
-  );
+    );
+  };
 
   const handleListingAdAction = (ad: ListingAd) => {
     if (ad.actionType === 'landing_page') {
@@ -1113,12 +1299,12 @@ export default function WebPortal({
   };
 
   const renderDesktopBusinessTile = (biz: Business, accentClassName = 'border-slate-200', badgeLabel?: string) => {
-    const hasViewed = viewedBusinessIds.includes(biz.id);
+    const hasPhone = Boolean((biz.phone || '').replace(/\D/g, '').slice(-10));
     return (
       <div
         key={biz.id}
         onClick={() => openBusinessDetails(biz)}
-        className={`hidden cursor-pointer overflow-hidden rounded-xl border bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md md:flex md:flex-col ${accentClassName}`}
+        className={`hidden h-full w-full min-w-0 cursor-pointer overflow-hidden rounded-xl border bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md md:flex md:flex-col ${accentClassName}`}
       >
         <div className="relative">
           <img
@@ -1143,95 +1329,151 @@ export default function WebPortal({
             <Heart className="h-4 w-4" />
           </button>
         </div>
-        <div className="space-y-2 p-3">
+        <div className="flex min-h-0 flex-1 flex-col space-y-2 p-3">
           <div className="flex items-center justify-between gap-2">
-            <span className="truncate text-xs font-semibold text-slate-500">
+            <span className="min-w-0 flex-1 truncate text-xs font-semibold text-slate-500">
               {getCategoryById(biz.categoryId)?.name || biz.categoryId}
             </span>
             {biz.verifiedBadge && (
               <CheckCircle className="h-4 w-4 flex-shrink-0 text-emerald-500" />
             )}
           </div>
-          <h4 className="truncate text-base font-bold text-slate-900">{biz.name}</h4>
-          <div className="flex items-center gap-2 text-xs text-slate-500">
+          <h4 className="line-clamp-2 min-h-[2.75rem] break-words text-sm font-bold leading-5 text-slate-900 lg:text-base">{biz.name}</h4>
+          <div className="flex min-w-0 items-center gap-2 text-xs text-slate-500">
             <span className="inline-flex items-center gap-1 font-semibold text-amber-600" title="Google Ratings">
               <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
               {biz.rating.toFixed(1)}
             </span>
             <span className="text-slate-300">|</span>
-            <MapPin className="h-3.5 w-3.5 text-slate-400" />
+            <MapPin className="h-3.5 w-3.5 flex-shrink-0 text-slate-400" />
             <span className="truncate">{getBusinessAreaName(biz)}</span>
           </div>
-          <div className="grid grid-cols-2 gap-2 pt-2">
+          {hasPhone ? (
             <button
               type="button"
               onClick={(e) => handlePrimaryBusinessAction(biz, e)}
-              className="inline-flex items-center justify-center gap-1 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white"
+              className="mt-auto inline-flex w-full items-center justify-center gap-1 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white"
+              title="Call business"
             >
               <Phone className="h-3.5 w-3.5" />
-              <span>{hasViewed && biz.phone ? 'Call' : 'Call'}</span>
+              <span>Call</span>
             </button>
+          ) : (
             <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
                 openBusinessDetails(biz);
               }}
-              className="inline-flex items-center justify-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700"
+              className="mt-auto inline-flex w-full items-center justify-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700"
             >
+              <ExternalLink className="h-3.5 w-3.5" />
               <span>Details</span>
             </button>
-          </div>
+          )}
         </div>
       </div>
     );
   };
 
-  const renderTextBusinessStripCard = (biz: Business) => {
-    const hasViewed = viewedBusinessIds.includes(biz.id);
+  const renderTextBusinessStripCard = (biz: Business, options?: { stack?: boolean; cardsPerView?: number }) => {
+    const hasPhone = Boolean((biz.phone || '').replace(/\D/g, '').slice(-10));
     const subcategoryLabel = getSubcategoryById(biz.subcategoryId)?.name || getCategoryById(biz.categoryId)?.name || 'Local Service';
     const experienceLabel = biz.experienceYears ? `${biz.experienceYears} Years Exp` : 'Trusted Local Pro';
     const localityLabel = getBusinessAreaName(biz);
+    const cardsPerView = options?.cardsPerView || 2;
 
     return (
       <div
         key={biz.id}
         onClick={() => openBusinessDetails(biz)}
-        className="min-w-[248px] rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+        className={`rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${
+          options?.stack ? 'h-full w-full min-w-0' : 'min-w-0 flex-shrink-0 snap-start'
+        }`}
+        style={options?.stack ? undefined : {
+          width: cardsPerView <= 1
+            ? '100%'
+            : `calc((100% - ${(cardsPerView - 1) * 16}px) / ${cardsPerView})`,
+          minWidth: cardsPerView <= 1
+            ? '100%'
+            : `calc((100% - ${(cardsPerView - 1) * 16}px) / ${cardsPerView})`
+        }}
       >
         <div className="flex items-center gap-1 text-sm font-bold text-amber-500">
           <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
           <span>{biz.rating.toFixed(1)}</span>
         </div>
-        <h4 className="mt-4 text-xl font-bold text-slate-950">{biz.name}</h4>
-        <p className="mt-2 text-sm font-medium text-slate-600">
+        <h4 className={`mt-4 break-words font-bold text-slate-950 ${options?.stack ? 'line-clamp-2 min-h-[3.25rem] text-lg leading-6' : 'text-xl leading-7'}`}>{biz.name}</h4>
+        <p className="mt-2 line-clamp-2 break-words text-sm font-medium text-slate-600">
           {subcategoryLabel}
           <span className="mx-2 text-slate-300">•</span>
           {biz.tags.slice(0, 1)[0] || 'Nearby'}
         </p>
-        <p className="mt-2 text-sm text-slate-500">
+        <p className="mt-2 line-clamp-2 break-words text-sm text-slate-500">
           {localityLabel}
           <span className="mx-2 text-slate-300">•</span>
           {experienceLabel}
         </p>
-        <div className="mt-5 grid grid-cols-2 gap-2">
+        {options?.stack ? (
+          hasPhone ? (
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={(e) => handlePrimaryBusinessAction(biz, e)}
+                className="inline-flex min-w-0 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-white px-3 py-2.5 text-sm font-semibold text-emerald-700"
+                title="Call business"
+              >
+                <Phone className="h-4 w-4" />
+                <span className="truncate">Call</span>
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openBusinessDetails(biz);
+                }}
+                className="inline-flex min-w-0 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700"
+              >
+                <ExternalLink className="h-4 w-4 text-indigo-600" />
+                <span className="truncate">Details</span>
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                openBusinessDetails(biz);
+              }}
+              className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700"
+            >
+              <ExternalLink className="h-4 w-4 text-indigo-600" />
+              <span className="truncate">Details</span>
+            </button>
+          )
+        ) : hasPhone ? (
           <button
             type="button"
             onClick={(e) => handlePrimaryBusinessAction(biz, e)}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-white px-3 py-2.5 text-sm font-semibold text-emerald-700"
+            className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-white px-3 py-2.5 text-sm font-semibold text-emerald-700"
+            title="Call business"
           >
             <Phone className="h-4 w-4" />
-            <span>{hasViewed && biz.phone ? 'Call' : 'Call'}</span>
+            <span className="truncate">Call</span>
           </button>
+        ) : (
           <button
             type="button"
-            onClick={(e) => handleBusinessWhatsappAction(biz, e)}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700"
+            onClick={(e) => {
+              e.stopPropagation();
+              openBusinessDetails(biz);
+            }}
+            className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700"
           >
-            <MessageSquare className="h-4 w-4 text-emerald-600" />
-            <span>WhatsApp</span>
+            <ExternalLink className="h-4 w-4 text-indigo-600" />
+            <span className="truncate">Details</span>
           </button>
-        </div>
+        )}
       </div>
     );
   };
@@ -1303,6 +1545,36 @@ export default function WebPortal({
       )}
     </div>
   );
+  const renderHeroCategoryCard = (
+    item: {
+      label: string;
+      categoryId: string;
+      subcategoryId: string;
+      Icon: PortalIcon;
+      iconClassName: string;
+      bgClassName: string;
+    },
+    compact = false
+  ) => {
+    const Icon = item.Icon;
+    return (
+      <button
+        key={`${item.categoryId}-${item.subcategoryId}`}
+        type="button"
+        onClick={() => handleCategoryShortcut(item.categoryId, item.subcategoryId)}
+        className={`min-w-0 rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:border-indigo-200 hover:text-indigo-700 ${
+          compact ? 'px-2 py-3 text-center' : 'flex flex-col items-center gap-2 px-2.5 py-2 text-center'
+        }`}
+      >
+        <span className={`inline-flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl ${item.bgClassName}`}>
+          <Icon className={`h-4 w-4 ${item.iconClassName}`} />
+        </span>
+        <span className={`${compact ? 'mt-2 block text-[11px] font-medium' : 'text-[11px] font-medium'} leading-tight text-slate-700 whitespace-normal break-words`}>
+          {item.label}
+        </span>
+      </button>
+    );
+  };
 
   const renderHomepageSection = (section: HomepageSection) => {
     const sectionKey = `${section.sectionType}-${section.id}`;
@@ -1315,7 +1587,7 @@ export default function WebPortal({
       const heroCtaType = activeHeroSlide?.ctaType || section.ctaType;
       const heroCtaTarget = activeHeroSlide?.ctaTarget || section.ctaTarget || 'all';
       return (
-        <section key={sectionKey} className="relative overflow-hidden rounded-[26px] bg-white shadow-sm md:min-h-[400px]">
+        <section key={sectionKey} className="relative w-full min-w-0 overflow-hidden rounded-[26px] bg-white shadow-sm md:min-h-[400px]">
           <div className="absolute inset-y-0 right-0 hidden w-[62%] md:block">
             <img
               src={carouselImages[carouselIndex]}
@@ -1326,27 +1598,36 @@ export default function WebPortal({
             <div className="absolute inset-y-0 right-0 w-1/2 bg-gradient-to-l from-white/90 via-white/30 to-transparent" />
           </div>
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_15%_15%,rgba(16,185,129,0.10),transparent_28%),radial-gradient(circle_at_72%_28%,rgba(99,102,241,0.12),transparent_32%)]" />
-          <div className="relative z-10 p-5 md:p-8 lg:p-10">
-            <div className="max-w-[660px] space-y-5">
+          <div className="relative z-10 p-4 md:p-8 lg:p-10">
+            <div className="w-full min-w-0 max-w-[660px] space-y-4 md:space-y-5">
               <div className="md:hidden overflow-hidden rounded-2xl">
                 <img
                   src={carouselImages[carouselIndex]}
                   alt={currentLocality.name}
-                  className="h-40 w-full object-cover"
+                  className="h-44 w-full object-cover"
                 />
               </div>
               <div className="space-y-3">
-                <h1 className="max-w-xl text-3xl font-extrabold leading-tight text-slate-950 md:text-5xl">
-                  Discover Trusted <span className="text-emerald-600">Local Businesses</span> in {selectedLocalityNames || currentLocality.name}
+                <h1 className="max-w-full whitespace-pre-line break-words text-[2rem] font-extrabold leading-[1.08] text-slate-950 md:max-w-xl md:text-5xl">
+                  {heroTitle}
                 </h1>
-                <p className="max-w-lg text-sm font-medium leading-6 text-slate-600 md:text-base">
-                  {heroTitle.includes('Hyper Local Directory') ? 'Restaurants, home kitchens, services, professionals and more.' : heroSubtitle}
+                <p className="max-w-full text-sm font-medium leading-6 text-slate-600 md:max-w-lg md:text-base">
+                  {heroSubtitle}
                 </p>
+                {heroCtaType && heroCtaType !== 'none' && (
+                  <button
+                    type="button"
+                    onClick={() => handleConfiguredCta(heroCtaType, heroCtaTarget, heroCtaLabel)}
+                    className="inline-flex max-w-full items-center justify-center self-start rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-sm font-bold text-indigo-700 transition hover:bg-indigo-100"
+                  >
+                    {heroCtaLabel}
+                  </button>
+                )}
               </div>
 
               <div id="public-listing-search" className="rounded-2xl bg-white p-2 shadow-lg ring-1 ring-slate-200/80 scroll-mt-24">
-                <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_190px_112px]">
-                  <label className="relative block">
+                <div className="grid grid-cols-[minmax(0,1fr)_56px] gap-2 md:grid-cols-[minmax(0,1fr)_190px_112px]">
+                  <label className="relative block min-w-0">
                     <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                     <input
                       id="public-listing-search-input"
@@ -1368,40 +1649,47 @@ export default function WebPortal({
                     type="button"
                     onClick={() => {
                       setSelectedBiz(null);
-                      handleConfiguredCta(heroCtaType, heroCtaTarget, heroCtaLabel);
+                      pushHistoryIfNeeded(buildCategoryRoutePath(selectedCategory));
+                      scrollToHomepageResults();
                     }}
-                    className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 text-sm font-bold text-white shadow-sm transition hover:bg-indigo-700"
+                    className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-indigo-700"
                   >
                     <Search className="h-4 w-4" />
-                    <span>Search</span>
+                    <span className="hidden md:inline">Search</span>
                   </button>
                 </div>
               </div>
 
-              <div className="no-scrollbar flex gap-3 overflow-x-auto pb-1">
-                {heroQuickActions.map((item) => {
-                  const Icon = item.Icon;
-                  return (
-                    <button
-                      key={`${item.categoryId}-${item.subcategoryId}`}
-                      type="button"
-                      onClick={() => handleCategoryShortcut(item.categoryId, item.subcategoryId)}
-                      className="inline-flex min-w-fit items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-bold text-slate-800 shadow-sm transition hover:border-indigo-200 hover:text-indigo-700"
-                    >
-                      <span className={`inline-flex h-7 w-7 items-center justify-center rounded-lg ${item.bgClassName}`}>
-                        <Icon className={`h-4 w-4 ${item.iconClassName}`} />
-                      </span>
-                      <span>{item.label}</span>
-                    </button>
-                  );
-                })}
+              <div className="grid grid-cols-3 gap-3 pb-1 md:hidden">
+                {heroQuickActions.slice(0, 5).map((item) => renderHeroCategoryCard(item, true))}
+                <button
+                  type="button"
+                  onClick={() => setShowAllCategoriesModal(true)}
+                  className="min-w-0 rounded-2xl border border-slate-200 bg-white px-2 py-3 text-center shadow-sm transition hover:border-indigo-200 hover:text-indigo-700"
+                >
+                  <span className="mx-auto inline-flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50">
+                    <Grid3X3 className="h-4 w-4 text-indigo-600" />
+                  </span>
+                  <span className="mt-2 block text-[11px] font-bold leading-tight text-slate-800">
+                    View All
+                  </span>
+                </button>
               </div>
 
-              {selectedLocalityMappedPincodes.length > 0 && (
-                <div className="hidden rounded-full bg-white/80 px-3 py-1 text-[11px] font-semibold text-slate-500 ring-1 ring-slate-200 md:inline-flex">
-                  Pincodes: {selectedLocalityMappedPincodes.join(', ')}
-                </div>
-              )}
+              <div className="hidden grid-cols-6 gap-3 pb-1 md:grid">
+                {heroQuickActions.slice(0, 5).map((item) => renderHeroCategoryCard(item))}
+                <button
+                  type="button"
+                  onClick={() => setShowAllCategoriesModal(true)}
+                  className="flex min-w-0 flex-col items-center gap-2 rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-center text-[11px] font-medium text-slate-700 shadow-sm transition hover:border-indigo-200 hover:text-indigo-700"
+                >
+                  <span className="inline-flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-indigo-50">
+                    <Grid3X3 className="h-4 w-4 text-indigo-600" />
+                  </span>
+                  <span className="min-w-0 whitespace-normal break-words leading-tight">View All</span>
+                </button>
+              </div>
+
             </div>
 
             <div className="absolute right-8 top-8 hidden w-[210px] space-y-3 lg:block">
@@ -1509,26 +1797,27 @@ export default function WebPortal({
     }
 
     if (section.sectionType === 'emergency_grid') {
+      const emergencyCategories = getConfiguredCategories(section).slice(0, sectionMaxItems);
       return (
         <section key={sectionKey} className="rounded-2xl border border-rose-100 bg-rose-50/45 p-4 shadow-sm md:p-5">
           {renderSectionHeader(section.title, section.subtitle, section.showViewAll, () => setSearchQuery('Emergency'))}
-          <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
-            {emergencyServiceCards.slice(0, sectionMaxItems).map((item) => {
-              const Icon = item.Icon;
+          <div className="no-scrollbar mt-4 flex gap-3 overflow-x-auto pb-1">
+            {emergencyCategories.map((category) => {
+              const tone = iconToneByCategory[category.id] || { Icon: Siren, iconClassName: 'text-rose-600', bgClassName: 'bg-rose-50' };
+              const Icon = tone.Icon;
               return (
                 <button
-                  key={item.title}
+                  key={category.id}
                   type="button"
                   onClick={() => {
-                    setSearchQuery(item.query);
-                    setSelectedBiz(null);
+                    handleCategoryShortcut(category.id);
                   }}
-                  className="rounded-xl border border-rose-100 bg-white p-3 text-center shadow-sm transition hover:-translate-y-0.5 hover:border-rose-200 hover:shadow-md"
+                  className="min-w-[122px] rounded-xl border border-rose-100 bg-white p-3 text-center shadow-sm transition hover:-translate-y-0.5 hover:border-rose-200 hover:shadow-md"
                 >
-                  <span className={`mx-auto mb-2 inline-flex h-11 w-11 items-center justify-center rounded-xl ${item.bgClassName}`}>
-                    <Icon className={`h-6 w-6 ${item.iconClassName}`} />
+                  <span className={`mx-auto mb-2 inline-flex h-11 w-11 items-center justify-center rounded-xl ${tone.bgClassName}`}>
+                    <Icon className={`h-6 w-6 ${tone.iconClassName}`} />
                   </span>
-                  <div className="text-xs font-extrabold text-slate-900">{item.title}</div>
+                  <div className="text-xs font-extrabold text-slate-900">{category.name.replace(' & ', ' ')}</div>
                 </button>
               );
             })}
@@ -1569,19 +1858,38 @@ export default function WebPortal({
     }
 
     if (section.sectionType === 'featured_businesses') {
-      const featuredItems = featuredBusinesses.slice(0, sectionMaxItems);
-      if (featuredItems.length === 0) return null;
+      const featuredPool = section.listingSourceMode === 'manual' && (section.pinnedBusinessIds || []).length > 0
+        ? getSectionBusinessPool(section)
+        : featuredBusinesses;
+      const desktopCardCount = getDesktopCardCount(section, Math.min(3, sectionMaxItems));
+      const mobileCardCount = getMobileCardCount(section, 2);
+      const mobileDisplayMode = getMobileDisplayMode(section);
+      const mobileFeaturedItems = mobileDisplayMode === 'stack'
+        ? featuredPool.slice(0, mobileCardCount)
+        : getRotatedItems(featuredPool, Math.min(mobileCardCount, sectionMaxItems), section.autoRotate);
+      const desktopFeaturedItems = getDesktopSectionItems(featuredPool, sectionMaxItems);
+      const desktopFeaturedGridCount = getDesktopGridCount(desktopCardCount, desktopFeaturedItems.length);
+      if (mobileFeaturedItems.length === 0 && desktopFeaturedItems.length === 0) return null;
       return (
         <section key={sectionKey} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
           {renderSectionHeader(section.title, section.subtitle, section.showViewAll, () => {
             setSelectedCategory('all');
             setSelectedBiz(null);
           })}
-          <div className="no-scrollbar mt-4 flex gap-3 overflow-x-auto pb-1 md:hidden">
-            {featuredItems.map((business) => renderMobileBusinessCard(business, 'Sponsored'))}
-          </div>
-          <div className="mt-4 hidden gap-4 md:grid lg:grid-cols-3">
-            {featuredItems.map((business) => (
+          {mobileDisplayMode === 'stack' ? (
+            <div className="mt-4 space-y-3 md:hidden">
+              {mobileFeaturedItems.map((business) => renderCompactBusinessRow(business))}
+            </div>
+          ) : (
+            <div className="no-scrollbar mt-4 flex snap-x snap-mandatory gap-3 overflow-x-auto pb-1 md:hidden">
+              {mobileFeaturedItems.map((business) => renderMobileBusinessCard(business, 'Sponsored', mobileCardCount))}
+            </div>
+          )}
+          <div
+            className="mt-4 hidden gap-4 md:grid md:justify-start"
+            style={{ gridTemplateColumns: `repeat(${desktopFeaturedGridCount}, 200px)` }}
+          >
+            {desktopFeaturedItems.map((business) => (
               renderDesktopBusinessTile(business, 'border-indigo-200', 'Sponsored')
             ))}
           </div>
@@ -1590,25 +1898,39 @@ export default function WebPortal({
     }
 
     if (section.sectionType === 'business_shelf') {
-      const shelfBusinesses = sortedBusinesses
-        .filter((business) => business.status === 'approved')
-        .filter((business) => !section.categoryId || business.categoryId === section.categoryId)
-        .filter((business) => !section.subcategoryId || business.subcategoryId === section.subcategoryId)
-        .slice(0, sectionMaxItems);
-      if (shelfBusinesses.length === 0) return null;
+      const shelfBusinessMatches = getSectionBusinessPool(section);
+      const desktopCardCount = getDesktopCardCount(section, Math.min(4, sectionMaxItems));
+      const mobileCardCount = getMobileCardCount(section, 2);
+      const mobileDisplayMode = getMobileDisplayMode(section);
+      const mobileShelfItems = mobileDisplayMode === 'stack'
+        ? shelfBusinessMatches.slice(0, mobileCardCount)
+        : getRotatedItems(shelfBusinessMatches, Math.min(mobileCardCount, sectionMaxItems), section.autoRotate);
+      const desktopShelfItems = getDesktopSectionItems(shelfBusinessMatches, sectionMaxItems);
+      const desktopShelfGridCount = getDesktopGridCount(desktopCardCount, desktopShelfItems.length);
+      if (mobileShelfItems.length === 0 && desktopShelfItems.length === 0) return null;
       return (
         <section key={sectionKey} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
           {renderSectionHeader(section.title, section.subtitle, section.showViewAll, () => {
             if (section.categoryId) {
               setSelectedCategory(section.categoryId);
               setSelectedSubcategory(section.subcategoryId || 'all');
+              scrollToPublicSearch();
             }
           })}
-          <div className="no-scrollbar mt-4 flex gap-3 overflow-x-auto pb-1 md:hidden">
-            {shelfBusinesses.map((business) => renderMobileBusinessCard(business))}
-          </div>
-          <div className="mt-4 hidden gap-4 md:grid lg:grid-cols-4">
-            {shelfBusinesses.map((business) => (
+          {mobileDisplayMode === 'stack' ? (
+            <div className="mt-4 space-y-3 md:hidden">
+              {mobileShelfItems.map((business) => renderCompactBusinessRow(business))}
+            </div>
+          ) : (
+            <div className="no-scrollbar mt-4 flex snap-x snap-mandatory gap-3 overflow-x-auto pb-1 md:hidden">
+              {mobileShelfItems.map((business) => renderMobileBusinessCard(business, undefined, mobileCardCount))}
+            </div>
+          )}
+          <div
+            className="mt-4 hidden gap-4 md:grid md:justify-start"
+            style={{ gridTemplateColumns: `repeat(${desktopShelfGridCount}, 200px)` }}
+          >
+            {desktopShelfItems.map((business) => (
               renderDesktopBusinessTile(business)
             ))}
           </div>
@@ -1617,12 +1939,16 @@ export default function WebPortal({
     }
 
     if (section.sectionType === 'text_business_strip') {
-      const stripBusinesses = sortedBusinesses
-        .filter((business) => business.status === 'approved')
-        .filter((business) => !section.categoryId || business.categoryId === section.categoryId)
-        .filter((business) => !section.subcategoryId || business.subcategoryId === section.subcategoryId)
-        .slice(0, sectionMaxItems);
-      if (stripBusinesses.length === 0) return null;
+      const stripPool = getSectionBusinessPool(section);
+      const desktopCardCount = getDesktopCardCount(section, Math.min(4, sectionMaxItems));
+      const mobileCardCount = getMobileCardCount(section, 2);
+      const mobileDisplayMode = getMobileDisplayMode(section);
+      const mobileStripItems = mobileDisplayMode === 'stack'
+        ? stripPool.slice(0, mobileCardCount)
+        : getRotatedItems(stripPool, Math.min(mobileCardCount, sectionMaxItems), section.autoRotate);
+      const desktopStripItems = getDesktopSectionItems(stripPool, sectionMaxItems);
+      const desktopStripGridCount = getDesktopGridCount(desktopCardCount, desktopStripItems.length);
+      if (mobileStripItems.length === 0 && desktopStripItems.length === 0) return null;
       return (
         <section key={sectionKey} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
           {renderSectionHeader(section.title, section.subtitle, section.showViewAll, () => {
@@ -1631,8 +1957,20 @@ export default function WebPortal({
               setSelectedSubcategory(section.subcategoryId || 'all');
             }
           })}
-          <div className="no-scrollbar mt-4 flex gap-4 overflow-x-auto pb-1">
-            {stripBusinesses.map((business) => renderTextBusinessStripCard(business))}
+          {mobileDisplayMode === 'stack' ? (
+            <div className="mt-4 space-y-3 md:hidden">
+              {mobileStripItems.map((business) => renderTextBusinessStripCard(business, { stack: true }))}
+            </div>
+          ) : (
+            <div className="no-scrollbar mt-4 flex snap-x snap-mandatory gap-4 overflow-x-auto pb-1 md:hidden">
+              {mobileStripItems.map((business) => renderTextBusinessStripCard(business, { cardsPerView: mobileCardCount }))}
+            </div>
+          )}
+          <div
+            className="mt-4 hidden gap-4 md:grid md:justify-start"
+            style={{ gridTemplateColumns: `repeat(${desktopStripGridCount}, 200px)` }}
+          >
+            {desktopStripItems.map((business) => renderTextBusinessStripCard(business, { stack: true }))}
           </div>
         </section>
       );
@@ -1713,11 +2051,11 @@ export default function WebPortal({
     }
 
     if (section.sectionType === 'category_grid') {
-      const categoryItems = BUSINESS_CATEGORIES.slice(0, sectionMaxItems);
+      const categoryItems = getConfiguredCategories(section).slice(0, sectionMaxItems);
       return (
         <section key={sectionKey} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
           {renderSectionHeader(section.title, undefined, section.showViewAll, () => handleCategoryShortcut('all'))}
-          <div className="mt-4 grid grid-cols-3 gap-4 sm:grid-cols-4 md:grid-cols-6">
+          <div className="mt-4 grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-6">
             {categoryItems.map((category) => {
               const tone = iconToneByCategory[category.id] || { Icon: Grid3X3, iconClassName: 'text-indigo-600', bgClassName: 'bg-indigo-50' };
               const Icon = tone.Icon;
@@ -1726,12 +2064,16 @@ export default function WebPortal({
                   key={category.id}
                   type="button"
                   onClick={() => handleCategoryShortcut(category.id)}
-                  className="rounded-xl p-2 text-center transition hover:bg-slate-50"
+                  className="min-w-0 rounded-xl p-2 text-center transition hover:bg-slate-50"
                 >
                   <span className={`mx-auto mb-2 inline-flex h-12 w-12 items-center justify-center rounded-xl ${tone.bgClassName}`}>
                     <Icon className={`h-6 w-6 ${tone.iconClassName}`} />
                   </span>
-                  <div className="truncate text-xs font-extrabold text-slate-900">{category.name.replace('Food & ', '').replace('Shopping & ', '')}</div>
+                  <div className="text-[11px] font-extrabold leading-tight text-slate-900 md:text-xs">
+                    <span className="line-clamp-2 break-words">
+                      {category.name.replace('Food & ', '').replace('Shopping & ', '')}
+                    </span>
+                  </div>
                 </button>
               );
             })}
@@ -1741,8 +2083,16 @@ export default function WebPortal({
     }
 
     if (section.sectionType === 'verified_business_grid') {
-      const verifiedItems = regularBusinesses.slice(0, sectionMaxItems);
-      if (verifiedItems.length === 0) return null;
+      const verifiedPool = getSectionBusinessPool(section).filter((business) => !business.featured);
+      const desktopCardCount = getDesktopCardCount(section, Math.min(5, sectionMaxItems));
+      const mobileCardCount = getMobileCardCount(section, 2);
+      const mobileDisplayMode = getMobileDisplayMode(section);
+      const mobileVerifiedItems = mobileDisplayMode === 'stack'
+        ? verifiedPool.slice(0, mobileCardCount)
+        : getRotatedItems(verifiedPool, Math.min(mobileCardCount, sectionMaxItems), section.autoRotate);
+      const desktopVerifiedItems = getDesktopSectionItems(verifiedPool, sectionMaxItems);
+      const desktopVerifiedGridCount = getDesktopGridCount(desktopCardCount, desktopVerifiedItems.length);
+      if (mobileVerifiedItems.length === 0 && desktopVerifiedItems.length === 0) return null;
       return (
         <section key={sectionKey} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -1772,21 +2122,28 @@ export default function WebPortal({
               </button>
             </div>
           </div>
-          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3 xl:grid-cols-5">
-            {verifiedItems.map((business) => (
-              <React.Fragment key={business.id}>
-                {renderCompactBusinessRow(business)}
-                {renderDesktopBusinessTile(business)}
-              </React.Fragment>
-            ))}
+          {mobileDisplayMode === 'stack' ? (
+            <div className="mt-4 space-y-3 md:hidden">
+              {mobileVerifiedItems.map((business) => renderCompactBusinessRow(business))}
+            </div>
+          ) : (
+            <div className="no-scrollbar mt-4 flex snap-x snap-mandatory gap-3 overflow-x-auto pb-1 md:hidden">
+              {mobileVerifiedItems.map((business) => renderMobileBusinessCard(business, undefined, mobileCardCount))}
+            </div>
+          )}
+          <div
+            className="mt-4 hidden gap-4 md:grid md:justify-start"
+            style={{ gridTemplateColumns: `repeat(${desktopVerifiedGridCount}, 200px)` }}
+          >
+            {desktopVerifiedItems.map((business) => renderDesktopBusinessTile(business))}
           </div>
-          {section.showViewAll && (
+          {section.showViewAll && verifiedPool.length > desktopVerifiedItems.length && (
             <button
               type="button"
               onClick={() => {
-                setSelectedCategory('all');
-                setSelectedSubcategory('all');
-                setSelectedBiz(null);
+                setSearchQuery('');
+                handleCategoryShortcut('all');
+                scrollToPublicSearch();
               }}
               className="mx-auto mt-4 block rounded-xl bg-indigo-50 px-8 py-3 text-sm font-bold text-indigo-700 transition hover:bg-indigo-100"
             >
@@ -2020,11 +2377,14 @@ export default function WebPortal({
       badge: 'Advertisement',
       ctaText: 'Advertise Now',
       backgroundColor: '#ede9fe',
+      imageUrl: 'https://images.unsplash.com/photo-1556740749-887f6717d7e4?auto=format&fit=crop&w=640&q=80',
       startDate: todayIso,
       endDate: todayIso,
       actionType: 'lead_form',
       localityIds: [currentLocality.id],
       placementKey: 'homepage_sidebar_top',
+      deviceTarget: 'all',
+      mobileRowPosition: 3,
       isActive: true
     },
     {
@@ -2034,12 +2394,15 @@ export default function WebPortal({
       badge: 'Advertisement',
       ctaText: 'Order Now',
       backgroundColor: '#064e3b',
+      imageUrl: 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?auto=format&fit=crop&w=640&q=80',
       startDate: todayIso,
       endDate: todayIso,
       actionType: 'landing_page',
       targetUrl: buildCategoryRoutePath('food-restaurants'),
       localityIds: [currentLocality.id],
       placementKey: 'homepage_sidebar_food',
+      deviceTarget: 'all',
+      mobileRowPosition: 3,
       isActive: true
     },
     {
@@ -2049,12 +2412,15 @@ export default function WebPortal({
       badge: 'Advertisement',
       ctaText: 'Book Now',
       backgroundColor: '#fce7f3',
+      imageUrl: 'https://images.unsplash.com/photo-1515377905703-c4788e51af15?auto=format&fit=crop&w=640&q=80',
       startDate: todayIso,
       endDate: todayIso,
       actionType: 'landing_page',
       targetUrl: buildCategoryRoutePath('beauty-wellness'),
       localityIds: [currentLocality.id],
       placementKey: 'homepage_sidebar_clinic',
+      deviceTarget: 'all',
+      mobileRowPosition: 3,
       isActive: true
     },
     {
@@ -2064,18 +2430,136 @@ export default function WebPortal({
       badge: 'Advertisement',
       ctaText: 'Get Free Audit',
       backgroundColor: '#eef2ff',
+      imageUrl: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=640&q=80',
       startDate: todayIso,
       endDate: todayIso,
       actionType: 'lead_form',
       localityIds: [currentLocality.id],
       placementKey: 'homepage_sidebar_marketing',
+      deviceTarget: 'all',
+      mobileRowPosition: 3,
       isActive: true
     }
   ];
-  const sidebarAds = [...activeListingAds, ...fallbackSidebarAds].slice(0, 4);
+  const desktopSidebarAds = [...activeListingAds, ...fallbackSidebarAds]
+    .filter((ad) => (ad.deviceTarget || 'all') !== 'mobile')
+    .slice(0, 4);
+  const mobileInlineAds = [...activeListingAds, ...fallbackSidebarAds]
+    .filter((ad) => (ad.deviceTarget || 'all') !== 'desktop')
+    .filter((ad) => (ad.mobileRowPosition || 0) > 0)
+    .sort((a, b) => (a.mobileRowPosition || 0) - (b.mobileRowPosition || 0));
   const scrollToPublicSearch = () => {
     const target = document.getElementById('public-listing-search');
     if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+  const scrollToHomepageResults = () => {
+    const target = document.getElementById('homepage-results-anchor');
+    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+  const renderHomepageSectionsContent = () => {
+    const renderedSections: React.ReactNode[] = [];
+    const groupedMobileAds = mobileInlineAds.reduce<Record<number, ListingAd[]>>((acc, ad) => {
+      const rowPosition = ad.mobileRowPosition || 0;
+      if (!rowPosition) return acc;
+      if (!acc[rowPosition]) acc[rowPosition] = [];
+      acc[rowPosition].push(ad);
+      return acc;
+    }, {});
+    let mobileRowCursor = 0;
+
+    for (let index = 0; index < homepageSectionsToRender.length; index += 1) {
+      const section = homepageSectionsToRender[index];
+      const nextSection = homepageSectionsToRender[index + 1];
+
+      if (section.sectionType === 'offers_list' && nextSection?.sectionType === 'updates_feed') {
+        const offersSection = renderHomepageSection(section);
+        const updatesSection = renderHomepageSection(nextSection);
+
+        if (offersSection && updatesSection) {
+          renderedSections.push(
+            <div key={`paired-${section.id}-${nextSection.id}`} className="grid gap-5 md:grid-cols-2">
+              {offersSection}
+              {updatesSection}
+            </div>
+          );
+          mobileRowCursor += 1;
+          if (groupedMobileAds[mobileRowCursor]?.length) {
+            renderedSections.push(
+              <React.Fragment key={`mobile-ads-row-${mobileRowCursor}`}>
+                <MobileAdCarousel
+                  ads={groupedMobileAds[mobileRowCursor]}
+                  onAdClick={handleListingAdAction}
+                />
+              </React.Fragment>
+            );
+          }
+        } else {
+          if (offersSection) {
+            renderedSections.push(offersSection);
+            mobileRowCursor += 1;
+            if (groupedMobileAds[mobileRowCursor]?.length) {
+              renderedSections.push(
+                <React.Fragment key={`mobile-ads-row-${mobileRowCursor}`}>
+                  <MobileAdCarousel
+                    ads={groupedMobileAds[mobileRowCursor]}
+                    onAdClick={handleListingAdAction}
+                  />
+                </React.Fragment>
+              );
+            }
+          }
+          if (updatesSection) {
+            renderedSections.push(updatesSection);
+            mobileRowCursor += 1;
+            if (groupedMobileAds[mobileRowCursor]?.length) {
+              renderedSections.push(
+                <React.Fragment key={`mobile-ads-row-${mobileRowCursor}`}>
+                  <MobileAdCarousel
+                    ads={groupedMobileAds[mobileRowCursor]}
+                    onAdClick={handleListingAdAction}
+                  />
+                </React.Fragment>
+              );
+            }
+          }
+        }
+
+        index += 1;
+        continue;
+      }
+
+      const renderedSection = renderHomepageSection(section);
+      if (renderedSection) {
+        renderedSections.push(renderedSection);
+        mobileRowCursor += 1;
+        if (groupedMobileAds[mobileRowCursor]?.length) {
+          renderedSections.push(
+            <React.Fragment key={`mobile-ads-row-${mobileRowCursor}`}>
+              <MobileAdCarousel
+                ads={groupedMobileAds[mobileRowCursor]}
+                onAdClick={handleListingAdAction}
+              />
+            </React.Fragment>
+          );
+        }
+      }
+    }
+
+    Object.entries(groupedMobileAds)
+      .filter(([row]) => Number(row) > mobileRowCursor)
+      .sort((a, b) => Number(a[0]) - Number(b[0]))
+      .forEach(([row, ads]) => {
+        renderedSections.push(
+          <React.Fragment key={`mobile-ads-row-${row}`}>
+            <MobileAdCarousel
+              ads={ads}
+              onAdClick={handleListingAdAction}
+            />
+          </React.Fragment>
+        );
+      });
+
+    return renderedSections;
   };
   const renderSidebarAdCard = (ad: ListingAd, index: number) => {
     const isDark = index === 1 || ad.backgroundColor === '#064e3b';
@@ -2099,7 +2583,13 @@ export default function WebPortal({
         }`}>
           {ad.ctaText}
         </span>
-        {index === 1 ? (
+        {ad.imageUrl ? (
+          <img
+            src={ad.imageUrl}
+            alt=""
+            className="absolute bottom-0 right-0 h-36 w-36 rounded-tl-[2rem] object-cover shadow-2xl"
+          />
+        ) : index === 1 ? (
           <img
             src="https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?auto=format&fit=crop&w=420&q=80"
             alt=""
@@ -2113,7 +2603,7 @@ export default function WebPortal({
   };
 
   return (
-    <div id="web-portal-root" className="space-y-6 pb-28 md:pb-10">
+    <div id="web-portal-root" className="w-full max-w-full space-y-6 overflow-x-hidden pb-28 md:pb-10">
       
       {/* Dynamic Subdomain Navigator Router Header */}
       {showSubdomainLocationMapping && <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl p-4 md:p-5 border border-indigo-500/10 shadow-md flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -2200,12 +2690,6 @@ export default function WebPortal({
           <p className="text-sm text-slate-300 leading-relaxed max-w-xl">
             {activeHeroSlide?.subtitle || `${currentLocality.description} verified reviews, location-grabbing utilities, and dynamic approval tracking.`}
           </p>
-          {selectedLocalityMappedPincodes.length > 0 && (
-            <div className="text-[10px] font-mono text-slate-300 bg-white/10 border border-white/20 px-2.5 py-1 rounded-full inline-flex">
-              Pincodes: {selectedLocalityMappedPincodes.join(', ')}
-            </div>
-          )}
-
           <div className="flex flex-wrap items-center gap-3 pt-2">
             {(userSession.role === 'admin' || userSession.role === 'moderator' || userSession.role === 'operator' || userSession.role === 'seller') ? (
               <button
@@ -2273,8 +2757,9 @@ export default function WebPortal({
       {/* RENDER TAB 1: YELLOW PAGES BUSINESS DIRECTORY FINDER */}
       {activePortalTab === 'listings' && (
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_280px]">
-          <div className="space-y-5">
-            {homepageSectionsToRender.map((section) => renderHomepageSection(section))}
+          <div className="min-w-0 space-y-5">
+            <div id="homepage-results-anchor" className="scroll-mt-24" />
+            {renderHomepageSectionsContent()}
 
             {userSession.role === 'seller' && userSession.sellerBusinessId && (
               <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -2312,7 +2797,7 @@ export default function WebPortal({
 
           <aside className="hidden space-y-5 xl:block">
             <div className="sticky top-6 space-y-5">
-              {sidebarAds.map((ad, index) => renderSidebarAdCard(ad, index))}
+              {desktopSidebarAds.map((ad, index) => renderSidebarAdCard(ad, index))}
             </div>
           </aside>
         </div>
@@ -2907,7 +3392,7 @@ export default function WebPortal({
                 <div className="text-center py-16 bg-white rounded-2xl border border-dashed border-slate-200 p-8">
                   <Compass className="w-12 h-12 text-slate-300 mx-auto mb-3 animate-spin" style={{ animationDuration: '6s' }} />
                   <p className="text-base font-bold text-slate-850">No verified businesses found matching criteria</p>
-                  <p className="text-xs text-slate-505 mt-1 max-w-sm mx-auto">
+                  <p className="mt-1 max-w-sm mx-auto text-xs text-slate-500">
                     Adjust search queries or refine your category keywords above to discover matching merchants.
                   </p>
                 </div>
@@ -2968,7 +3453,7 @@ export default function WebPortal({
                                     <span className="bg-amber-100 text-amber-800 text-[8px] font-mono font-bold px-1 rounded">CPC</span>
                                   )}
                                 </h4>
-                                <p className="text-xs text-slate-505 line-clamp-2 italic leading-relaxed">
+                                <p className="line-clamp-2 text-xs italic leading-relaxed text-slate-500">
                                   &quot;{biz.description}&quot;
                                 </p>
                               </div>
@@ -4286,6 +4771,52 @@ export default function WebPortal({
                 Send Verification Application Request
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {showAllCategoriesModal && (
+        <div className="fixed inset-0 z-50 flex items-end bg-slate-950/50 p-3 backdrop-blur-sm md:items-center md:justify-center md:p-6">
+          <div className="w-full max-w-3xl overflow-hidden rounded-[28px] bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-4 md:px-6">
+              <div>
+                <h3 className="text-lg font-extrabold text-slate-950">Explore Categories</h3>
+                <p className="mt-1 text-xs text-slate-500">Choose any category to open matching businesses.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAllCategoriesModal(false)}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition hover:border-slate-300 hover:text-slate-800"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="max-h-[70vh] overflow-y-auto px-4 py-4 md:px-6">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+                {BUSINESS_CATEGORIES.map((category) => {
+                  const tone = iconToneByCategory[category.id] || { Icon: Grid3X3, iconClassName: 'text-indigo-600', bgClassName: 'bg-indigo-50' };
+                  const Icon = tone.Icon;
+                  return (
+                    <button
+                      key={category.id}
+                      type="button"
+                      onClick={() => {
+                        setShowAllCategoriesModal(false);
+                        handleCategoryShortcut(category.id);
+                      }}
+                      className="min-w-0 rounded-2xl border border-slate-200 bg-white p-3 text-left shadow-sm transition hover:border-indigo-200 hover:bg-indigo-50/30"
+                    >
+                      <span className={`inline-flex h-10 w-10 items-center justify-center rounded-xl ${tone.bgClassName}`}>
+                        <Icon className={`h-4 w-4 ${tone.iconClassName}`} />
+                      </span>
+                      <span className="mt-3 block text-sm font-bold leading-tight text-slate-900">
+                        {category.name}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         </div>
       )}

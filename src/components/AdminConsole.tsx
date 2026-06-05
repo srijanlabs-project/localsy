@@ -3,7 +3,7 @@ import {
   CheckCircle, XCircle, Plus, Info, Globe, AlertCircle, 
   Trash2, PlusCircle, Check, Database, Eye, Server, RefreshCw, MapPin, Copy, ChevronUp, ChevronDown
 } from 'lucide-react';
-import { Locality, Business, SubdomainMapping, UserSession, AuditEvent, ListingAd, HeroBanner, AdLead, MarketingCoupon, HomepageLayout, HomepageSection, HomepageSectionType, ApiConfiguration } from '../types';
+import { Locality, Business, SubdomainMapping, UserSession, AuditEvent, ListingAd, HeroBanner, AdLead, MarketingCoupon, HomepageLayout, HomepageSection, HomepageSectionType, ApiConfiguration, CommunityItem } from '../types';
 import { MASTER_AREAS } from '../data';
 import { getBusinessImageUrl, getCategoryFallbackImage, hasUploadedBusinessImage } from '../utils/businessImage';
 import {
@@ -57,6 +57,10 @@ interface AdminConsoleProps {
   onDeleteHeroBanner?: (bannerId: string) => void;
   coupons?: MarketingCoupon[];
   onAddCoupon?: (coupon: Omit<MarketingCoupon, 'id' | 'usageCount'>) => void;
+  communityItems?: CommunityItem[];
+  onAddCommunityItem?: (item: Omit<CommunityItem, 'id' | 'createdAt' | 'likes'>) => void;
+  onUpdateCommunityItem?: (item: CommunityItem) => void;
+  onDeleteCommunityItem?: (itemId: string) => void;
   homepageLayouts?: HomepageLayout[];
   onCreateHomepageSection?: (localityId: string, section: Omit<HomepageSection, 'id' | 'sortOrder'>) => void;
   onUpdateHomepageSection?: (localityId: string, section: HomepageSection) => void;
@@ -118,6 +122,7 @@ type LocalityCategoryLink = {
 
 type AdminWorkspaceTab = 'moderation' | 'listing-status' | 'bulk-upload' | 'data-audit';
 type ListingStatusFilter = 'all' | 'approved' | 'rejected' | 'pending';
+type AdminOperationsSection = 'listings' | 'homepage' | 'campaigns' | 'geography' | 'content' | 'platform';
 
 export default function AdminConsole({
   localities,
@@ -147,6 +152,10 @@ export default function AdminConsole({
   onDeleteHeroBanner,
   coupons = [],
   onAddCoupon,
+  communityItems = [],
+  onAddCommunityItem,
+  onUpdateCommunityItem,
+  onDeleteCommunityItem,
   homepageLayouts = [],
   onCreateHomepageSection,
   onUpdateHomepageSection,
@@ -176,6 +185,7 @@ export default function AdminConsole({
   const [importPreview, setImportPreview] = useState<ImportPreviewRow[]>([]);
   const [adminWorkspaceTab, setAdminWorkspaceTab] = useState<AdminWorkspaceTab>('moderation');
   const [listingStatusFilter, setListingStatusFilter] = useState<ListingStatusFilter>('all');
+  const [operationsSection, setOperationsSection] = useState<AdminOperationsSection>('homepage');
   const [listingStatusPage, setListingStatusPage] = useState(1);
   const [auditPage, setAuditPage] = useState(1);
   const [importPreviewPage, setImportPreviewPage] = useState(1);
@@ -199,6 +209,9 @@ export default function AdminConsole({
   const [adLocalityId, setAdLocalityId] = useState(localities[0]?.id || 'roadpali');
   const [adPincodes, setAdPincodes] = useState('');
   const [adPlacementKey, setAdPlacementKey] = useState('homepage_inline_primary');
+  const [adImageUrl, setAdImageUrl] = useState('');
+  const [adDeviceTarget, setAdDeviceTarget] = useState<NonNullable<ListingAd['deviceTarget']>>('all');
+  const [adMobileRowPosition, setAdMobileRowPosition] = useState('3');
 
   const [heroLocalityId, setHeroLocalityId] = useState(localities[0]?.id || 'roadpali');
   const [heroTitle, setHeroTitle] = useState('');
@@ -237,6 +250,15 @@ export default function AdminConsole({
   const [newSectionEndDate, setNewSectionEndDate] = useState('');
   const [newSectionPincodes, setNewSectionPincodes] = useState('');
   const [newSectionShowViewAll, setNewSectionShowViewAll] = useState(true);
+  const [newSectionVisibleSlots, setNewSectionVisibleSlots] = useState('4');
+  const [newSectionDesktopCardCount, setNewSectionDesktopCardCount] = useState('4');
+  const [newSectionMobileCardCount, setNewSectionMobileCardCount] = useState('2');
+  const [newSectionMobileDisplayMode, setNewSectionMobileDisplayMode] = useState<NonNullable<HomepageSection['mobileDisplayMode']>>('carousel');
+  const [newSectionCategoryIds, setNewSectionCategoryIds] = useState<string[]>([]);
+  const [newSectionListingSourceMode, setNewSectionListingSourceMode] = useState<HomepageSection['listingSourceMode']>('auto');
+  const [newSectionPinnedBusinessIds, setNewSectionPinnedBusinessIds] = useState<string[]>([]);
+  const [newSectionAutoRotate, setNewSectionAutoRotate] = useState(true);
+  const [newSectionRotationIntervalSec, setNewSectionRotationIntervalSec] = useState('3');
   const [apiConfigDraft, setApiConfigDraft] = useState<ApiConfiguration>(() => apiConfiguration || {
     syncMode: 'api',
     homepageConfigEndpoint: '/api/homepage-config',
@@ -249,6 +271,18 @@ export default function AdminConsole({
   const [linkLocalityId, setLinkLocalityId] = useState(localities[0]?.id || 'roadpali');
   const [linkCategoryId, setLinkCategoryId] = useState(BUSINESS_CATEGORIES[0]?.id || 'food-restaurants');
   const [linkSubcategoryId, setLinkSubcategoryId] = useState('');
+  const [adminLocalityFilter, setAdminLocalityFilter] = useState('all');
+  const [adminCategoryFilter, setAdminCategoryFilter] = useState('all');
+  const [adminSubcategoryFilter, setAdminSubcategoryFilter] = useState('all');
+  const [adminSearchQuery, setAdminSearchQuery] = useState('');
+  const [adminPincodeFilter, setAdminPincodeFilter] = useState('');
+  const [adminStatusFilter, setAdminStatusFilter] = useState('all');
+  const [communityDraft, setCommunityDraft] = useState<Partial<CommunityItem>>({
+    type: 'post',
+    title: '',
+    content: '',
+    authorName: 'Localisy Team'
+  });
 
   useEffect(() => {
     if (localities.length === 0) return;
@@ -282,6 +316,16 @@ export default function AdminConsole({
       setNewSectionSubcategoryId('');
     }
   }, [newSectionCategoryId, newSectionSubcategoryId]);
+
+  useEffect(() => {
+    if (adminCategoryFilter === 'all') {
+      setAdminSubcategoryFilter('all');
+      return;
+    }
+    if (!getSubcategoriesForCategory(adminCategoryFilter).some((subcategory) => subcategory.id === adminSubcategoryFilter)) {
+      setAdminSubcategoryFilter('all');
+    }
+  }, [adminCategoryFilter, adminSubcategoryFilter]);
 
   useEffect(() => {
     if (!couponBusinessId) {
@@ -323,9 +367,126 @@ export default function AdminConsole({
     id: sectionType,
     label: homepageSectionLabels[sectionType]
   }));
+  const operationsSectionTabs: Array<{ id: AdminOperationsSection; label: string }> = [
+    { id: 'listings', label: 'Listings Ops' },
+    { id: 'homepage', label: 'Homepage CMS' },
+    { id: 'campaigns', label: 'Campaigns' },
+    { id: 'geography', label: 'Geography & Routing' },
+    { id: 'content', label: 'Content & Community' },
+    { id: 'platform', label: 'Platform Config' }
+  ];
 
   const selectedHomepageLayout = homepageLayouts.find((layout) => layout.localityId === homepageLocalityId);
   const homepageSections = [...(selectedHomepageLayout?.sections || [])].sort((a, b) => a.sortOrder - b.sortOrder);
+  const filteredBusinesses = businesses.filter((business) => {
+    if (adminLocalityFilter !== 'all' && business.localityId !== adminLocalityFilter) return false;
+    if (adminCategoryFilter !== 'all' && business.categoryId !== adminCategoryFilter) return false;
+    if (adminSubcategoryFilter !== 'all' && business.subcategoryId !== adminSubcategoryFilter) return false;
+    if (adminStatusFilter !== 'all' && business.status !== adminStatusFilter) return false;
+    if (adminPincodeFilter.trim()) {
+      const businessPincode = business.pincode || MASTER_AREAS.find((area) => area.id === business.areaId)?.pincode || '';
+      if (!businessPincode.includes(adminPincodeFilter.trim())) return false;
+    }
+    if (adminSearchQuery.trim()) {
+      const query = adminSearchQuery.trim().toLowerCase();
+      const searchable = `${business.name} ${business.phone} ${business.address} ${business.ownerName || ''}`.toLowerCase();
+      if (!searchable.includes(query)) return false;
+    }
+    return true;
+  });
+  const filteredCoupons = coupons.filter((coupon) => {
+    const business = businesses.find((entry) => entry.id === coupon.businessId);
+    if (adminLocalityFilter !== 'all' && !(coupon.localityIds || []).includes(adminLocalityFilter) && business?.localityId !== adminLocalityFilter) return false;
+    if (adminCategoryFilter !== 'all' && business?.categoryId !== adminCategoryFilter) return false;
+    if (adminSearchQuery.trim()) {
+      const query = adminSearchQuery.trim().toLowerCase();
+      const searchable = `${coupon.title || ''} ${coupon.code} ${coupon.description} ${business?.name || ''}`.toLowerCase();
+      if (!searchable.includes(query)) return false;
+    }
+    return true;
+  });
+  const filteredListingAds = listingAds.filter((ad) => {
+    if (adminLocalityFilter !== 'all' && !(ad.localityIds || []).includes(adminLocalityFilter)) return false;
+    if (adminStatusFilter === 'active' && !ad.isActive) return false;
+    if (adminStatusFilter === 'inactive' && ad.isActive) return false;
+    if (adminSearchQuery.trim()) {
+      const query = adminSearchQuery.trim().toLowerCase();
+      const searchable = `${ad.title} ${ad.description} ${ad.badge} ${ad.placementKey || ''}`.toLowerCase();
+      if (!searchable.includes(query)) return false;
+    }
+    return true;
+  });
+  const filteredHeroBanners = heroBanners.filter((hero) => {
+    if (adminLocalityFilter !== 'all' && hero.localityId !== adminLocalityFilter) return false;
+    if (adminStatusFilter === 'active' && !hero.isActive) return false;
+    if (adminStatusFilter === 'inactive' && hero.isActive) return false;
+    if (adminSearchQuery.trim()) {
+      const query = adminSearchQuery.trim().toLowerCase();
+      const searchable = `${hero.title} ${hero.subtitle}`.toLowerCase();
+      if (!searchable.includes(query)) return false;
+    }
+    return true;
+  });
+  const filteredCommunityItems = communityItems.filter((item) => {
+    if (adminLocalityFilter !== 'all' && item.localityId !== adminLocalityFilter) return false;
+    if (adminSearchQuery.trim()) {
+      const query = adminSearchQuery.trim().toLowerCase();
+      const searchable = `${item.title} ${item.content} ${item.authorName}`.toLowerCase();
+      if (!searchable.includes(query)) return false;
+    }
+    return true;
+  });
+  const filteredAdLeads = adLeads.filter((lead) => {
+    if (adminLocalityFilter !== 'all' && lead.localityId !== adminLocalityFilter) return false;
+    if (adminPincodeFilter.trim() && !lead.pincode.includes(adminPincodeFilter.trim())) return false;
+    if (adminSearchQuery.trim()) {
+      const query = adminSearchQuery.trim().toLowerCase();
+      const searchable = `${lead.name} ${lead.mobile} ${lead.adId}`.toLowerCase();
+      if (!searchable.includes(query)) return false;
+    }
+    return true;
+  });
+  const filteredHomepageSections = homepageSections.filter((section) => {
+    if (adminStatusFilter === 'active' && section.status !== 'active') return false;
+    if (adminStatusFilter === 'inactive' && section.status === 'active') return false;
+    if (adminSearchQuery.trim()) {
+      const query = adminSearchQuery.trim().toLowerCase();
+      const searchable = `${section.title} ${section.subtitle || ''} ${section.sectionType}`.toLowerCase();
+      if (!searchable.includes(query)) return false;
+    }
+    return true;
+  });
+  const filteredLocalities = localities.filter((locality) => {
+    if (adminLocalityFilter !== 'all' && locality.id !== adminLocalityFilter) return false;
+    if (adminSearchQuery.trim()) {
+      const query = adminSearchQuery.trim().toLowerCase();
+      const searchable = `${locality.name} ${locality.subdomain} ${locality.slug}`.toLowerCase();
+      if (!searchable.includes(query)) return false;
+    }
+    return true;
+  });
+  const filteredPincodeMappings = pincodeMappings.filter((mapping) => {
+    if (adminLocalityFilter !== 'all' && mapping.localityId !== adminLocalityFilter) return false;
+    if (adminPincodeFilter.trim() && !mapping.pincode.includes(adminPincodeFilter.trim())) return false;
+    if (adminSearchQuery.trim()) {
+      const localityName = localities.find((locality) => locality.id === mapping.localityId)?.name || mapping.localityId;
+      const query = adminSearchQuery.trim().toLowerCase();
+      if (!`${mapping.pincode} ${localityName}`.toLowerCase().includes(query)) return false;
+    }
+    return true;
+  });
+  const filteredLocalityCategoryLinks = localityCategoryLinks.filter((link) => {
+    if (adminLocalityFilter !== 'all' && link.localityId !== adminLocalityFilter) return false;
+    if (adminCategoryFilter !== 'all' && link.categoryId !== adminCategoryFilter) return false;
+    if (adminSubcategoryFilter !== 'all' && link.subcategoryId !== adminSubcategoryFilter) return false;
+    if (adminSearchQuery.trim()) {
+      const localityName = localities.find((locality) => locality.id === link.localityId)?.name || link.localityId;
+      const query = adminSearchQuery.trim().toLowerCase();
+      const searchable = `${localityName} ${link.slug} ${link.categoryId} ${link.subcategoryId || ''}`.toLowerCase();
+      if (!searchable.includes(query)) return false;
+    }
+    return true;
+  });
 
   const parseCsvLine = (line: string) => {
     return line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map((s) => s.trim().replace(/^"|"$/g, ''));
@@ -663,6 +824,7 @@ export default function AdminConsole({
       badge: adBadge.trim() || 'Sponsored',
       ctaText: adCtaText.trim(),
       backgroundColor: adBgColor || '#1d4ed8',
+      imageUrl: adImageUrl.trim() || undefined,
       startDate: adStartDate,
       endDate: adEndDate,
       actionType: adActionType,
@@ -672,7 +834,8 @@ export default function AdminConsole({
       localityIds: adLocalityId ? [adLocalityId] : [],
       pincodes: parsePincodeList(adPincodes),
       placementKey: adPlacementKey.trim() || 'homepage_inline_primary',
-      deviceTarget: 'all',
+      deviceTarget: adDeviceTarget,
+      mobileRowPosition: adDeviceTarget !== 'desktop' && Number(adMobileRowPosition) > 0 ? Number(adMobileRowPosition) : undefined,
       isActive: true
     });
 
@@ -685,6 +848,9 @@ export default function AdminConsole({
     setAdSellerBusinessId('');
     setAdPincodes('');
     setAdPlacementKey('homepage_inline_primary');
+    setAdImageUrl('');
+    setAdDeviceTarget('all');
+    setAdMobileRowPosition('3');
     triggerNotification('Listing ad created successfully.');
   };
 
@@ -767,14 +933,23 @@ export default function AdminConsole({
       localityIds: [homepageLocalityId],
       pincodes: parsePincodeList(newSectionPincodes),
       categoryId: ['business_shelf', 'text_business_strip'].includes(newSectionType) ? newSectionCategoryId : undefined,
+      categoryIds: ['category_grid', 'emergency_grid'].includes(newSectionType) ? newSectionCategoryIds : undefined,
       subcategoryId: ['business_shelf', 'text_business_strip'].includes(newSectionType) ? (newSectionSubcategoryId || undefined) : undefined,
       placementKey: newSectionType === 'promo_banner' ? newSectionPlacementKey.trim() || 'homepage_inline_primary' : undefined,
       maxItems: Number(newSectionMaxItems) > 0 ? Number(newSectionMaxItems) : undefined,
+      visibleSlots: Number(newSectionVisibleSlots) > 0 ? Number(newSectionVisibleSlots) : undefined,
+      desktopCardCount: Number(newSectionDesktopCardCount) > 0 ? Number(newSectionDesktopCardCount) : undefined,
+      mobileCardCount: Number(newSectionMobileCardCount) > 0 ? Number(newSectionMobileCardCount) : undefined,
+      mobileDisplayMode: ['business_shelf', 'text_business_strip', 'featured_businesses', 'verified_business_grid'].includes(newSectionType) ? newSectionMobileDisplayMode : undefined,
       ctaLabel: newSectionCtaLabel.trim() || undefined,
       ctaType: newSectionCtaType || 'none',
       ctaTarget: newSectionCtaTarget.trim() || undefined,
       backgroundColor: newSectionBackgroundColor || undefined,
-      showViewAll: newSectionShowViewAll
+      showViewAll: newSectionShowViewAll,
+      listingSourceMode: ['business_shelf', 'text_business_strip', 'featured_businesses', 'verified_business_grid'].includes(newSectionType) ? (newSectionListingSourceMode || 'auto') : undefined,
+      pinnedBusinessIds: newSectionListingSourceMode === 'manual' ? newSectionPinnedBusinessIds : undefined,
+      autoRotate: newSectionAutoRotate,
+      rotationIntervalSec: Number(newSectionRotationIntervalSec) > 0 ? Number(newSectionRotationIntervalSec) : 3
     });
 
     setNewSectionSubtitle('');
@@ -785,6 +960,15 @@ export default function AdminConsole({
     setNewSectionBackgroundColor('#ffffff');
     setNewSectionEndDate('');
     setNewSectionMaxItems('6');
+    setNewSectionVisibleSlots('4');
+    setNewSectionDesktopCardCount('4');
+    setNewSectionMobileCardCount('2');
+    setNewSectionMobileDisplayMode('carousel');
+    setNewSectionCategoryIds([]);
+    setNewSectionListingSourceMode('auto');
+    setNewSectionPinnedBusinessIds([]);
+    setNewSectionAutoRotate(true);
+    setNewSectionRotationIntervalSec('3');
     triggerNotification('Homepage section added.');
   };
 
@@ -792,6 +976,36 @@ export default function AdminConsole({
     e.preventDefault();
     onUpdateApiConfiguration?.(apiConfigDraft);
     triggerNotification('API configuration saved.');
+  };
+
+  const toggleSectionCategoryId = (categoryId: string) => {
+    setNewSectionCategoryIds((prev) => (
+      prev.includes(categoryId)
+        ? prev.filter((item) => item !== categoryId)
+        : [...prev, categoryId]
+    ));
+  };
+
+  const handleCreateCommunityItemSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!communityDraft.title?.trim() || !communityDraft.content?.trim() || !adminLocalityFilter || adminLocalityFilter === 'all') {
+      triggerNotification('Choose a locality and add title/content for the update.');
+      return;
+    }
+    onAddCommunityItem?.({
+      type: communityDraft.type || 'post',
+      title: communityDraft.title.trim(),
+      content: communityDraft.content.trim(),
+      authorName: communityDraft.authorName?.trim() || 'Localisy Team',
+      localityId: adminLocalityFilter
+    });
+    setCommunityDraft({
+      type: 'post',
+      title: '',
+      content: '',
+      authorName: 'Localisy Team'
+    });
+    triggerNotification('Locality update created.');
   };
 
   const updateHomepageSection = (section: HomepageSection, patch: Partial<HomepageSection>) => {
@@ -1485,6 +1699,89 @@ export default function AdminConsole({
 
       {/* Domain Mapping Panel and Locality Spinner */}
       <div className="space-y-6">
+        <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm space-y-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <h3 className="text-base font-extrabold text-slate-950">Operations Workspace</h3>
+              <p className="text-[11px] text-slate-500 mt-1">
+                Switch manager groups so each operational form set stays focused instead of piling everything into one long sidebar.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {operationsSectionTabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setOperationsSection(tab.id)}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-bold ${
+                    operationsSection === tab.id ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-700'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3 text-xs">
+            <select
+              value={adminLocalityFilter}
+              onChange={(e) => setAdminLocalityFilter(e.target.value)}
+              className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+            >
+              <option value="all">All localities</option>
+              {localities.map((locality) => (
+                <option key={locality.id} value={locality.id}>{locality.name}</option>
+              ))}
+            </select>
+            <select
+              value={adminCategoryFilter}
+              onChange={(e) => setAdminCategoryFilter(e.target.value)}
+              className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+            >
+              <option value="all">All categories</option>
+              {BUSINESS_CATEGORIES.map((category) => (
+                <option key={category.id} value={category.id}>{category.name}</option>
+              ))}
+            </select>
+            <select
+              value={adminSubcategoryFilter}
+              onChange={(e) => setAdminSubcategoryFilter(e.target.value)}
+              disabled={adminCategoryFilter === 'all'}
+              className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 disabled:text-slate-400"
+            >
+              <option value="all">All subcategories</option>
+              {adminCategoryFilter !== 'all' && getSubcategoriesForCategory(adminCategoryFilter).map((subcategory) => (
+                <option key={subcategory.id} value={subcategory.id}>{subcategory.name}</option>
+              ))}
+            </select>
+            <input
+              value={adminSearchQuery}
+              onChange={(e) => setAdminSearchQuery(e.target.value)}
+              placeholder="Search name, phone, title..."
+              className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+            />
+            <input
+              value={adminPincodeFilter}
+              onChange={(e) => setAdminPincodeFilter(e.target.value.replace(/\D/g, ''))}
+              placeholder="Pincode"
+              className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 font-mono"
+            />
+            <select
+              value={adminStatusFilter}
+              onChange={(e) => setAdminStatusFilter(e.target.value)}
+              className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+            >
+              <option value="all">All statuses</option>
+              <option value="approved">Approved</option>
+              <option value="pending">Pending</option>
+              <option value="rejected">Rejected</option>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </select>
+          </div>
+        </div>
+
         {/* Dynamic Mapping and DNS Status */}
         {showInternalTopology && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
           <div>
@@ -1536,7 +1833,7 @@ export default function AdminConsole({
         </div>}
 
         {/* Locality Spinner Form */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+        {operationsSection === 'geography' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
           <h3 className="text-lg font-bold text-slate-950 mb-1 flex items-center gap-2">
             <PlusCircle className="w-5 h-5 text-blue-600" />
             Create Hyper Local Business Page
@@ -1627,15 +1924,15 @@ export default function AdminConsole({
               <Plus className="w-4 h-4" /> Provision Network Domain
             </button>
           </form>
-        </div>
+        </div>}
 
         {/* Existing Localities Grid Panel */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+        {operationsSection === 'geography' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
           <h4 className="text-xs font-bold font-mono text-slate-400 uppercase tracking-wider mb-3">
-            Localities Databases ({localities.length})
+            Localities Databases ({filteredLocalities.length})
           </h4>
           <div className="space-y-2.5">
-            {localities.map(loc => {
+            {filteredLocalities.map(loc => {
               const locCount = businesses.filter(b => b.localityId === loc.id && b.status === "approved").length;
               return (
                 <div key={loc.id} className="flex items-center justify-between p-2.5 bg-slate-50 rounded-xl border border-slate-100">
@@ -1660,10 +1957,10 @@ export default function AdminConsole({
               );
             })}
           </div>
-        </div>
+        </div>}
 
         {/* Pincode Routing Master Config Panel */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+        {operationsSection === 'homepage' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
           <div>
             <h3 className="text-base font-extrabold text-slate-950 flex items-center gap-2">
               <MapPin className="w-4 h-4 text-indigo-500" />
@@ -1693,9 +1990,9 @@ export default function AdminConsole({
 
           {/* List of current mappings */}
           <div className="space-y-1.5">
-            <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest block font-mono">Active Mappings ({pincodeMappings.length})</span>
+            <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest block font-mono">Active Mappings ({filteredPincodeMappings.length})</span>
             <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1 text-xs">
-              {pincodeMappings.map(mapping => {
+              {filteredPincodeMappings.map(mapping => {
                 const matchedLoc = localities.find(l => l.id === mapping.localityId);
                 return (
                   <div key={mapping.pincode} className="flex justify-between items-center p-2 bg-slate-50 border border-slate-150 rounded-xl font-mono">
@@ -1713,7 +2010,7 @@ export default function AdminConsole({
                   </div>
                 );
               })}
-              {pincodeMappings.length === 0 && (
+              {filteredPincodeMappings.length === 0 && (
                 <div className="text-center py-4 text-slate-405 text-xs italic">No postal codes mapped yet.</div>
               )}
             </div>
@@ -1770,9 +2067,9 @@ export default function AdminConsole({
               <Plus className="w-3.5 h-3.5" /> Set Area Binding
             </button>
           </div>
-        </div>
+        </div>}
 
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+        {operationsSection === 'platform' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-base font-extrabold text-slate-950">Uploaded Listings</h3>
             <span className="text-[10px] font-mono text-slate-500">20 per page</span>
@@ -1857,9 +2154,9 @@ export default function AdminConsole({
               Next
             </button>
           </div>
-        </div>
+        </div>}
 
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+        {operationsSection === 'geography' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
           <div className="flex items-center justify-between gap-3">
             <div>
               <h3 className="text-base font-extrabold text-slate-950">Homepage Layout Manager</h3>
@@ -1868,7 +2165,7 @@ export default function AdminConsole({
               </p>
             </div>
             <span className="text-[10px] font-mono text-slate-500 bg-slate-100 border border-slate-200 rounded-lg px-2.5 py-1">
-              {homepageSections.length} sections
+              {filteredHomepageSections.length} sections
             </span>
           </div>
 
@@ -1891,6 +2188,9 @@ export default function AdminConsole({
                     const nextType = e.target.value as HomepageSectionType;
                     setNewSectionType(nextType);
                     setNewSectionTitle(homepageSectionLabels[nextType]);
+                    setNewSectionMobileDisplayMode(nextType === 'verified_business_grid' ? 'stack' : 'carousel');
+                    setNewSectionDesktopCardCount(nextType === 'featured_businesses' ? '3' : nextType === 'verified_business_grid' ? '5' : '4');
+                    setNewSectionMobileCardCount('2');
                   }}
                   className="border border-slate-200 rounded-lg px-3 py-2 bg-white"
                 >
@@ -1905,6 +2205,44 @@ export default function AdminConsole({
                   className="border border-slate-200 rounded-lg px-3 py-2 bg-white"
                 />
               </div>
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  value={newSectionVisibleSlots}
+                  onChange={(e) => setNewSectionVisibleSlots(e.target.value.replace(/\D/g, ''))}
+                  placeholder="Visible slots"
+                  className="border border-slate-200 rounded-lg px-3 py-2 bg-white"
+                />
+                <input
+                  value={newSectionRotationIntervalSec}
+                  onChange={(e) => setNewSectionRotationIntervalSec(e.target.value.replace(/\D/g, ''))}
+                  placeholder="Rotate seconds"
+                  className="border border-slate-200 rounded-lg px-3 py-2 bg-white"
+                />
+              </div>
+              {['business_shelf', 'text_business_strip', 'featured_businesses', 'verified_business_grid'].includes(newSectionType) && (
+                <div className="grid grid-cols-3 gap-2">
+                  <input
+                    value={newSectionDesktopCardCount}
+                    onChange={(e) => setNewSectionDesktopCardCount(e.target.value.replace(/\D/g, ''))}
+                    placeholder="Desktop cards"
+                    className="border border-slate-200 rounded-lg px-3 py-2 bg-white"
+                  />
+                  <input
+                    value={newSectionMobileCardCount}
+                    onChange={(e) => setNewSectionMobileCardCount(e.target.value.replace(/\D/g, ''))}
+                    placeholder="Mobile cards"
+                    className="border border-slate-200 rounded-lg px-3 py-2 bg-white"
+                  />
+                  <select
+                    value={newSectionMobileDisplayMode}
+                    onChange={(e) => setNewSectionMobileDisplayMode(e.target.value as NonNullable<HomepageSection['mobileDisplayMode']>)}
+                    className="border border-slate-200 rounded-lg px-3 py-2 bg-white"
+                  >
+                    <option value="carousel">Mobile Carousel</option>
+                    <option value="stack">Mobile Stack</option>
+                  </select>
+                </div>
+              )}
               <input
                 value={newSectionTitle}
                 onChange={(e) => setNewSectionTitle(e.target.value)}
@@ -1940,6 +2278,55 @@ export default function AdminConsole({
                     ))}
                   </select>
                 </div>
+              )}
+              {['category_grid', 'emergency_grid'].includes(newSectionType) && (
+                <div className="rounded-lg border border-slate-200 bg-white p-3">
+                  <div className="mb-2 text-[11px] font-semibold text-slate-700">Category selection and order</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {BUSINESS_CATEGORIES.map((category) => (
+                      <label key={category.id} className="inline-flex items-center gap-2 text-[11px] text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={newSectionCategoryIds.includes(category.id)}
+                          onChange={() => toggleSectionCategoryId(category.id)}
+                        />
+                        <span>{category.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {['business_shelf', 'text_business_strip', 'featured_businesses', 'verified_business_grid'].includes(newSectionType) && (
+                <div className="grid grid-cols-2 gap-2">
+                  <select
+                    value={newSectionListingSourceMode || 'auto'}
+                    onChange={(e) => setNewSectionListingSourceMode(e.target.value as HomepageSection['listingSourceMode'])}
+                    className="border border-slate-200 rounded-lg px-3 py-2 bg-white"
+                  >
+                    <option value="auto">Auto listings</option>
+                    <option value="manual">Manual pinned listings</option>
+                  </select>
+                  <label className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={newSectionAutoRotate}
+                      onChange={(e) => setNewSectionAutoRotate(e.target.checked)}
+                    />
+                    <span>Auto rotate overflow</span>
+                  </label>
+                </div>
+              )}
+              {newSectionListingSourceMode === 'manual' && ['business_shelf', 'text_business_strip', 'featured_businesses', 'verified_business_grid'].includes(newSectionType) && (
+                <select
+                  multiple
+                  value={newSectionPinnedBusinessIds}
+                  onChange={(e) => setNewSectionPinnedBusinessIds(Array.from(e.currentTarget.selectedOptions, (option: HTMLOptionElement) => option.value))}
+                  className="h-32 w-full rounded-lg border border-slate-200 bg-white px-3 py-2"
+                >
+                  {filteredBusinesses.filter((business) => business.status === 'approved').map((business) => (
+                    <option key={business.id} value={business.id}>{business.name}</option>
+                  ))}
+                </select>
               )}
               {newSectionType === 'promo_banner' && (
                 <input
@@ -2019,7 +2406,7 @@ export default function AdminConsole({
             </form>
 
             <div className="space-y-3 max-h-[36rem] overflow-y-auto pr-1">
-              {homepageSections.map((section, index) => (
+              {filteredHomepageSections.map((section, index) => (
                 <div key={section.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-3">
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex flex-wrap items-center gap-2">
@@ -2082,12 +2469,46 @@ export default function AdminConsole({
                       className="rounded-lg border border-slate-200 bg-white px-3 py-2"
                     />
                     <input
+                      value={String(section.visibleSlots || '')}
+                      onChange={(e) => updateHomepageSection(section, { visibleSlots: Number(e.target.value.replace(/\D/g, '')) || undefined })}
+                      placeholder="Visible slots"
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+                    />
+                    <input
+                      value={String(section.desktopCardCount || '')}
+                      onChange={(e) => updateHomepageSection(section, { desktopCardCount: Number(e.target.value.replace(/\D/g, '')) || undefined })}
+                      placeholder="Desktop cards"
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+                    />
+                    <input
+                      value={String(section.mobileCardCount || '')}
+                      onChange={(e) => updateHomepageSection(section, { mobileCardCount: Number(e.target.value.replace(/\D/g, '')) || undefined })}
+                      placeholder="Mobile cards"
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+                    />
+                    <input
                       value={section.pincodes?.join(', ') || ''}
                       onChange={(e) => updateHomepageSection(section, { pincodes: parsePincodeList(e.target.value) })}
                       placeholder="Pincodes"
                       className="rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono"
                     />
+                    <input
+                      value={String(section.rotationIntervalSec || 3)}
+                      onChange={(e) => updateHomepageSection(section, { rotationIntervalSec: Number(e.target.value.replace(/\D/g, '')) || 3 })}
+                      placeholder="Rotate seconds"
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+                    />
                   </div>
+                  {['business_shelf', 'text_business_strip', 'featured_businesses', 'verified_business_grid'].includes(section.sectionType) && (
+                    <select
+                      value={section.mobileDisplayMode || 'carousel'}
+                      onChange={(e) => updateHomepageSection(section, { mobileDisplayMode: e.target.value as NonNullable<HomepageSection['mobileDisplayMode']> })}
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2"
+                    >
+                      <option value="carousel">Mobile Carousel</option>
+                      <option value="stack">Mobile Stack</option>
+                    </select>
+                  )}
                   {['business_shelf', 'text_business_strip'].includes(section.sectionType) && (
                     <div className="grid grid-cols-2 gap-2">
                       <select
@@ -2111,6 +2532,28 @@ export default function AdminConsole({
                       </select>
                     </div>
                   )}
+                  {['category_grid', 'emergency_grid'].includes(section.sectionType) && (
+                    <div className="rounded-lg border border-slate-200 bg-white p-3">
+                      <div className="mb-2 text-[11px] font-semibold text-slate-700">Configured categories</div>
+                      <div className="grid grid-cols-2 gap-2">
+                        {BUSINESS_CATEGORIES.map((category) => (
+                          <label key={category.id} className="inline-flex items-center gap-2 text-[11px] text-slate-700">
+                            <input
+                              type="checkbox"
+                              checked={(section.categoryIds || []).includes(category.id)}
+                              onChange={() => {
+                                const nextCategoryIds = (section.categoryIds || []).includes(category.id)
+                                  ? (section.categoryIds || []).filter((item) => item !== category.id)
+                                  : [...(section.categoryIds || []), category.id];
+                                updateHomepageSection(section, { categoryIds: nextCategoryIds });
+                              }}
+                            />
+                            <span>{category.name}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   {section.sectionType === 'promo_banner' && (
                     <input
                       value={section.placementKey || ''}
@@ -2120,6 +2563,16 @@ export default function AdminConsole({
                     />
                   )}
                   <div className="grid grid-cols-2 gap-2">
+                    {['business_shelf', 'text_business_strip', 'featured_businesses', 'verified_business_grid'].includes(section.sectionType) && (
+                      <select
+                        value={section.listingSourceMode || 'auto'}
+                        onChange={(e) => updateHomepageSection(section, { listingSourceMode: e.target.value as HomepageSection['listingSourceMode'] })}
+                        className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+                      >
+                        <option value="auto">Auto listings</option>
+                        <option value="manual">Manual pinned listings</option>
+                      </select>
+                    )}
                     <select
                       value={section.ctaType || 'none'}
                       onChange={(e) => updateHomepageSection(section, { ctaType: e.target.value as HomepageSection['ctaType'] })}
@@ -2144,6 +2597,18 @@ export default function AdminConsole({
                       className="col-span-2 rounded-lg border border-slate-200 bg-white px-3 py-2"
                     />
                   </div>
+                  {section.listingSourceMode === 'manual' && ['business_shelf', 'text_business_strip', 'featured_businesses', 'verified_business_grid'].includes(section.sectionType) && (
+                    <select
+                      multiple
+                      value={section.pinnedBusinessIds || []}
+                      onChange={(e) => updateHomepageSection(section, { pinnedBusinessIds: Array.from(e.currentTarget.selectedOptions, (option: HTMLOptionElement) => option.value) })}
+                      className="h-32 w-full rounded-lg border border-slate-200 bg-white px-3 py-2"
+                    >
+                      {filteredBusinesses.filter((business) => business.status === 'approved').map((business) => (
+                        <option key={business.id} value={business.id}>{business.name}</option>
+                      ))}
+                    </select>
+                  )}
                   <div className="flex items-center justify-between gap-2">
                     <label className="inline-flex items-center gap-2 text-slate-700">
                       <input
@@ -2152,6 +2617,14 @@ export default function AdminConsole({
                         onChange={(e) => updateHomepageSection(section, { showViewAll: e.target.checked })}
                       />
                       <span>Show View All</span>
+                    </label>
+                    <label className="inline-flex items-center gap-2 text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={section.autoRotate ?? true}
+                        onChange={(e) => updateHomepageSection(section, { autoRotate: e.target.checked })}
+                      />
+                      <span>Auto rotate</span>
                     </label>
                     <div className="flex items-center gap-2">
                       <span className="text-slate-500">Background</span>
@@ -2165,14 +2638,14 @@ export default function AdminConsole({
                   </div>
                 </div>
               ))}
-              {homepageSections.length === 0 && (
+              {filteredHomepageSections.length === 0 && (
                 <div className="text-xs text-slate-400">No homepage sections configured yet for this locality.</div>
               )}
             </div>
           </div>
-        </div>
+        </div>}
 
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+        {operationsSection === 'listings' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
           <div className="flex items-center justify-between gap-3">
             <div>
               <h3 className="text-base font-extrabold text-slate-950">API Configuration</h3>
@@ -2271,9 +2744,9 @@ export default function AdminConsole({
               </button>
             </div>
           </form>
-        </div>
+        </div>}
 
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+        {operationsSection === 'campaigns' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
           <h3 className="text-base font-extrabold text-slate-950">Offers & Deals Manager</h3>
           <form onSubmit={handleCreateCouponSubmit} className="space-y-3 text-xs">
             <select
@@ -2282,7 +2755,7 @@ export default function AdminConsole({
               className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
             >
               <option value="">Select business</option>
-              {businesses.filter((business) => business.status === 'approved').map((business) => (
+              {filteredBusinesses.filter((business) => business.status === 'approved').map((business) => (
                 <option key={business.id} value={business.id}>{business.name}</option>
               ))}
             </select>
@@ -2349,7 +2822,7 @@ export default function AdminConsole({
             </button>
           </form>
           <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-            {coupons.map((coupon) => (
+            {filteredCoupons.map((coupon) => (
               <div key={coupon.id} className="bg-slate-50 border border-slate-150 rounded-lg p-2.5 text-xs">
                 <span className="block font-semibold text-slate-800 truncate">{coupon.title || coupon.code}</span>
                 <span className="block text-[10px] text-slate-500">
@@ -2362,9 +2835,85 @@ export default function AdminConsole({
             ))}
             {coupons.length === 0 && <div className="text-xs text-slate-400">No offers created yet.</div>}
           </div>
-        </div>
+        </div>}
 
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+        {operationsSection === 'content' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-base font-extrabold text-slate-950">Updates Feed Manager</h3>
+              <p className="text-[11px] text-slate-500 mt-1">
+                Create and manage locality-specific updates for the homepage updates feed. Choose a locality in the shared filter bar first.
+              </p>
+            </div>
+            <span className="text-[10px] font-mono text-slate-500 bg-slate-100 border border-slate-200 rounded-lg px-2.5 py-1">
+              {filteredCommunityItems.length} items
+            </span>
+          </div>
+          <form onSubmit={handleCreateCommunityItemSubmit} className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs">
+            <div className="grid grid-cols-2 gap-2">
+              <select
+                value={communityDraft.type || 'post'}
+                onChange={(e) => setCommunityDraft((prev) => ({ ...prev, type: e.target.value as CommunityItem['type'] }))}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+              >
+                <option value="post">Post</option>
+                <option value="event">Event</option>
+                <option value="deal">Deal</option>
+                <option value="recommendation">Recommendation</option>
+                <option value="qa">Q&A</option>
+              </select>
+              <input
+                value={communityDraft.authorName || ''}
+                onChange={(e) => setCommunityDraft((prev) => ({ ...prev, authorName: e.target.value }))}
+                placeholder="Author"
+                className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+              />
+            </div>
+            <input
+              value={communityDraft.title || ''}
+              onChange={(e) => setCommunityDraft((prev) => ({ ...prev, title: e.target.value }))}
+              placeholder="Update title"
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2"
+            />
+            <textarea
+              value={communityDraft.content || ''}
+              onChange={(e) => setCommunityDraft((prev) => ({ ...prev, content: e.target.value }))}
+              placeholder="Update content"
+              rows={3}
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2"
+            />
+            <button type="submit" className="w-full rounded-lg bg-indigo-600 py-2 font-bold text-white hover:bg-indigo-700">
+              Create Locality Update
+            </button>
+          </form>
+          <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+            {filteredCommunityItems.map((item) => (
+              <div key={item.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="font-bold text-slate-900 truncate">{item.title}</div>
+                    <div className="mt-1 text-[10px] text-slate-500">
+                      {localities.find((locality) => locality.id === item.localityId)?.name || item.localityId} • {item.type}
+                    </div>
+                    <div className="mt-1 text-[11px] text-slate-600 line-clamp-2">{item.content}</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onDeleteCommunityItem?.(item.id)}
+                    className="rounded bg-rose-100 px-2 py-1 text-[10px] font-bold text-rose-700"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+            {filteredCommunityItems.length === 0 && (
+              <div className="text-xs text-slate-400">No locality updates found for the current filters.</div>
+            )}
+          </div>
+        </div>}
+
+        {operationsSection === 'campaigns' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
           <h3 className="text-base font-extrabold text-slate-950">Ad Banner Manager</h3>
           <form onSubmit={handleCreateListingAdSubmit} className="space-y-3 text-xs">
             <input
@@ -2442,6 +2991,31 @@ export default function AdminConsole({
                 className="border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
               />
             </div>
+            <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+              <input
+                value={adImageUrl}
+                onChange={(e) => setAdImageUrl(e.target.value)}
+                placeholder="Image URL (optional)"
+                className="border border-slate-200 rounded-lg px-3 py-2 bg-slate-50 md:col-span-2"
+              />
+              <select
+                value={adDeviceTarget}
+                onChange={(e) => setAdDeviceTarget(e.target.value as NonNullable<ListingAd['deviceTarget']>)}
+                className="border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
+              >
+                <option value="all">Desktop + Mobile</option>
+                <option value="desktop">Desktop Only</option>
+                <option value="mobile">Mobile Only</option>
+              </select>
+            </div>
+            {adDeviceTarget !== 'desktop' && (
+              <input
+                value={adMobileRowPosition}
+                onChange={(e) => setAdMobileRowPosition(e.target.value.replace(/\D/g, ''))}
+                placeholder="Mobile row position (after section row)"
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
+              />
+            )}
             <input
               value={adPincodes}
               onChange={(e) => setAdPincodes(e.target.value)}
@@ -2464,7 +3038,7 @@ export default function AdminConsole({
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
               >
                 <option value="">Select target listing</option>
-                {businesses.filter((business) => business.status === 'approved').map((business) => (
+                {filteredBusinesses.filter((business) => business.status === 'approved').map((business) => (
                   <option key={business.id} value={business.id}>{business.name}</option>
                 ))}
               </select>
@@ -2475,7 +3049,7 @@ export default function AdminConsole({
               className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
             >
               <option value="">No seller mapping (platform only)</option>
-              {businesses.filter((business) => business.status === 'approved').map((business) => (
+              {filteredBusinesses.filter((business) => business.status === 'approved').map((business) => (
                 <option key={business.id} value={business.id}>{business.name}</option>
               ))}
             </select>
@@ -2484,7 +3058,7 @@ export default function AdminConsole({
             </button>
           </form>
           <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-            {listingAds.map((ad) => (
+            {filteredListingAds.map((ad) => (
               <div key={ad.id} className="bg-slate-50 border border-slate-150 rounded-lg p-2.5 text-xs">
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
@@ -2492,6 +3066,9 @@ export default function AdminConsole({
                     <span className="block text-[10px] text-slate-500 font-mono">{ad.startDate} → {ad.endDate}</span>
                     <span className="block text-[10px] text-slate-500">
                       {(ad.localityIds || []).join(', ') || 'All localities'} • {ad.placementKey || 'homepage_inline_primary'}
+                    </span>
+                    <span className="block text-[10px] text-slate-500">
+                      {ad.deviceTarget || 'all'}{ad.mobileRowPosition ? ` • mobile row ${ad.mobileRowPosition}` : ''}
                     </span>
                   </div>
                   <div className="flex items-center gap-1">
@@ -2511,13 +3088,39 @@ export default function AdminConsole({
                     </button>
                   </div>
                 </div>
+                <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+                  <select
+                    value={ad.deviceTarget || 'all'}
+                    onChange={(e) => {
+                      const nextTarget = e.target.value as NonNullable<ListingAd['deviceTarget']>;
+                      onUpdateListingAd?.({
+                        ...ad,
+                        deviceTarget: nextTarget,
+                        mobileRowPosition: nextTarget === 'desktop' ? undefined : (ad.mobileRowPosition || 3)
+                      });
+                    }}
+                    className="border border-slate-200 rounded px-2 py-1.5 bg-white text-[11px]"
+                  >
+                    <option value="all">Desktop + Mobile</option>
+                    <option value="desktop">Desktop Only</option>
+                    <option value="mobile">Mobile Only</option>
+                  </select>
+                  {(ad.deviceTarget || 'all') !== 'desktop' && (
+                    <input
+                      value={String(ad.mobileRowPosition || '')}
+                      onChange={(e) => onUpdateListingAd?.({ ...ad, mobileRowPosition: Number(e.target.value.replace(/\D/g, '')) || undefined })}
+                      placeholder="Mobile row"
+                      className="border border-slate-200 rounded px-2 py-1.5 bg-white text-[11px]"
+                    />
+                  )}
+                </div>
               </div>
             ))}
             {listingAds.length === 0 && <div className="text-xs text-slate-400">No ads created yet.</div>}
           </div>
-        </div>
+        </div>}
 
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+        {operationsSection === 'homepage' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
           <h3 className="text-base font-extrabold text-slate-950">Hero Banner Manager</h3>
           <form onSubmit={handleCreateHeroBannerSubmit} className="space-y-3 text-xs">
             <select
@@ -2598,7 +3201,7 @@ export default function AdminConsole({
             </button>
           </form>
           <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-            {heroBanners.map((hero) => (
+            {filteredHeroBanners.map((hero) => (
               <div key={hero.id} className="bg-slate-50 border border-slate-150 rounded-lg p-2.5 text-xs">
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
@@ -2629,15 +3232,15 @@ export default function AdminConsole({
             ))}
             {heroBanners.length === 0 && <div className="text-xs text-slate-400">No hero banners configured.</div>}
           </div>
-        </div>
+        </div>}
 
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-3">
+        {operationsSection === 'campaigns' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-3">
           <h3 className="text-base font-extrabold text-slate-950">Ad Lead Inbox</h3>
           <div className="max-h-56 overflow-y-auto space-y-2 pr-1">
             {adLeads.length === 0 ? (
               <div className="text-xs text-slate-400">No ad leads submitted yet.</div>
             ) : (
-              adLeads.slice(0, 50).map((lead) => (
+              filteredAdLeads.slice(0, 50).map((lead) => (
                 <div key={lead.id} className="bg-slate-50 border border-slate-150 rounded-lg p-2.5 text-xs">
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-semibold text-slate-800">{lead.name}</span>
@@ -2651,9 +3254,9 @@ export default function AdminConsole({
               ))
             )}
           </div>
-        </div>
+        </div>}
 
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+        {operationsSection === 'geography' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
           <h3 className="text-base font-extrabold text-slate-950">Locality + Category URL Mapper</h3>
           <form onSubmit={handleCreateLocalityCategoryLinkSubmit} className="space-y-3 text-xs">
             <select
@@ -2689,7 +3292,7 @@ export default function AdminConsole({
             </button>
           </form>
           <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-            {localityCategoryLinks.map((link) => {
+            {filteredLocalityCategoryLinks.map((link) => {
               const fullUrl = `${window.location.origin}/${link.slug}`;
               return (
                 <div key={link.id} className="bg-slate-50 border border-slate-150 rounded-lg p-2.5 text-xs">
@@ -2709,9 +3312,9 @@ export default function AdminConsole({
                 </div>
               );
             })}
-            {localityCategoryLinks.length === 0 && <div className="text-xs text-slate-400">No locality-category URLs created yet.</div>}
+            {filteredLocalityCategoryLinks.length === 0 && <div className="text-xs text-slate-400">No locality-category URLs created yet.</div>}
           </div>
-        </div>
+        </div>}
       </div>
       {selectedBackendBiz && backendDraft && (
         <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4">

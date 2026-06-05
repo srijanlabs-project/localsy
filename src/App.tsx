@@ -15,7 +15,7 @@ import happyBusinessLogo from './assets/happy-business-logo.png';
 import { 
   Layout, Smartphone, Shield, BookOpen, Layers, RefreshCw, 
   User, CheckCircle, ShieldAlert, KeyRound, Wrench, Briefcase, HelpCircle,
-  Sliders, Settings, X, Database, MapPin, Search, LogOut, ChevronDown, Bell
+  Sliders, Settings, X, Database, MapPin, Search, LogOut, ChevronDown
 } from 'lucide-react';
 import {
   BUSINESS_CATEGORIES,
@@ -159,7 +159,9 @@ const normalizeStoredListingAd = (ad: ListingAd): ListingAd => ({
   localityIds: normalizeStringList(ad.localityIds),
   pincodes: normalizeStringList(ad.pincodes),
   placementKey: ad.placementKey || 'homepage_inline_primary',
-  deviceTarget: ad.deviceTarget || 'all'
+  deviceTarget: ad.deviceTarget || 'all',
+  imageUrl: ad.imageUrl?.trim() || undefined,
+  mobileRowPosition: ad.mobileRowPosition && ad.mobileRowPosition > 0 ? ad.mobileRowPosition : undefined
 });
 
 const normalizeStoredHeroBanner = (banner: HeroBanner): HeroBanner => ({
@@ -216,9 +218,18 @@ const normalizeHomepageSection = (
     ? normalizeStringList(section.localityIds)
     : [localityId],
   pincodes: normalizeStringList(section.pincodes),
+  categoryIds: normalizeStringList(section.categoryIds),
   ctaType: section.ctaType || 'none',
   showViewAll: section.showViewAll ?? true,
-  maxItems: section.maxItems ?? (section.sectionType === 'verified_business_grid' ? 9 : 6)
+  maxItems: section.maxItems ?? (section.sectionType === 'verified_business_grid' ? 9 : 6),
+  visibleSlots: section.visibleSlots ?? section.maxItems ?? (section.sectionType === 'verified_business_grid' ? 6 : 4),
+  desktopCardCount: section.desktopCardCount ?? section.visibleSlots ?? (section.sectionType === 'verified_business_grid' ? 5 : section.sectionType === 'featured_businesses' ? 3 : 4),
+  mobileCardCount: section.mobileCardCount ?? 2,
+  mobileDisplayMode: section.mobileDisplayMode || (section.sectionType === 'verified_business_grid' ? 'stack' : 'carousel'),
+  listingSourceMode: section.listingSourceMode || 'auto',
+  pinnedBusinessIds: normalizeStringList(section.pinnedBusinessIds),
+  autoRotate: section.autoRotate ?? true,
+  rotationIntervalSec: section.rotationIntervalSec ?? 3
 });
 
 const reindexHomepageSections = (sections: HomepageSection[]) => (
@@ -268,7 +279,9 @@ const buildDefaultHomepageLayout = (locality: Locality): HomepageLayout => {
       visible: true,
       sortOrder: 30,
       localityIds: [locality.id],
+      categoryIds: ['health-medical', 'home-services', 'automotive'],
       maxItems: 8,
+      visibleSlots: 8,
       showViewAll: true
     },
     {
@@ -293,6 +306,11 @@ const buildDefaultHomepageLayout = (locality: Locality): HomepageLayout => {
       sortOrder: 50,
       localityIds: [locality.id],
       maxItems: 6,
+      visibleSlots: 3,
+      desktopCardCount: 3,
+      mobileCardCount: 2,
+      mobileDisplayMode: 'carousel',
+      autoRotate: true,
       showViewAll: true
     },
     {
@@ -305,8 +323,84 @@ const buildDefaultHomepageLayout = (locality: Locality): HomepageLayout => {
       sortOrder: 60,
       localityIds: [locality.id],
       categoryId: 'food-restaurants',
-      subcategoryId: 'tiffin-services',
-      maxItems: 4,
+      maxItems: 6,
+      visibleSlots: 4,
+      desktopCardCount: 4,
+      mobileCardCount: 2,
+      mobileDisplayMode: 'carousel',
+      autoRotate: true,
+      showViewAll: true
+    },
+    {
+      id: `home_${locality.id}_health_shelf`,
+      sectionType: 'business_shelf',
+      title: 'Doctors & Clinics',
+      subtitle: 'Verified health and care businesses in this locality',
+      status: 'active',
+      visible: true,
+      sortOrder: 62,
+      localityIds: [locality.id],
+      categoryId: 'health-medical',
+      maxItems: 6,
+      visibleSlots: 4,
+      desktopCardCount: 4,
+      mobileCardCount: 2,
+      mobileDisplayMode: 'stack',
+      autoRotate: true,
+      showViewAll: true
+    },
+    {
+      id: `home_${locality.id}_services_shelf`,
+      sectionType: 'business_shelf',
+      title: 'Home Services Near You',
+      subtitle: 'Quick access to trusted electricians, plumbers, and repair pros',
+      status: 'active',
+      visible: true,
+      sortOrder: 64,
+      localityIds: [locality.id],
+      categoryId: 'home-services',
+      maxItems: 6,
+      visibleSlots: 4,
+      desktopCardCount: 4,
+      mobileCardCount: 2,
+      mobileDisplayMode: 'carousel',
+      autoRotate: true,
+      showViewAll: true
+    },
+    {
+      id: `home_${locality.id}_beauty_shelf`,
+      sectionType: 'business_shelf',
+      title: 'Beauty & Wellness Picks',
+      subtitle: 'Salons, skin care, and grooming experts around you',
+      status: 'active',
+      visible: true,
+      sortOrder: 66,
+      localityIds: [locality.id],
+      categoryId: 'beauty-wellness',
+      maxItems: 6,
+      visibleSlots: 4,
+      desktopCardCount: 4,
+      mobileCardCount: 2,
+      mobileDisplayMode: 'carousel',
+      autoRotate: true,
+      showViewAll: true
+    },
+    {
+      id: `home_${locality.id}_daily_needs_shelf`,
+      sectionType: 'business_shelf',
+      title: 'Groceries & Daily Needs',
+      subtitle: 'Everyday essentials from trusted nearby stores',
+      status: 'active',
+      visible: true,
+      sortOrder: 67,
+      localityIds: [locality.id],
+      categoryId: 'shopping-retail',
+      maxItems: 6,
+      visibleSlots: 4,
+      desktopCardCount: 4,
+      mobileCardCount: 2,
+      mobileDisplayMode: 'carousel',
+      autoRotate: true,
       showViewAll: true
     },
     {
@@ -320,6 +414,10 @@ const buildDefaultHomepageLayout = (locality: Locality): HomepageLayout => {
       localityIds: [locality.id],
       categoryId: 'home-services',
       maxItems: 4,
+      visibleSlots: 4,
+      desktopCardCount: 4,
+      mobileCardCount: 2,
+      mobileDisplayMode: 'stack',
       showViewAll: true
     },
     {
@@ -333,6 +431,27 @@ const buildDefaultHomepageLayout = (locality: Locality): HomepageLayout => {
       localityIds: [locality.id],
       categoryId: 'health-medical',
       maxItems: 4,
+      visibleSlots: 4,
+      desktopCardCount: 4,
+      mobileCardCount: 2,
+      mobileDisplayMode: 'stack',
+      showViewAll: true
+    },
+    {
+      id: `home_${locality.id}_education_strip`,
+      sectionType: 'text_business_strip',
+      title: 'Tutors & Training Experts',
+      subtitle: 'Quick-compare local education and coaching listings',
+      status: 'active',
+      visible: true,
+      sortOrder: 69,
+      localityIds: [locality.id],
+      categoryId: 'education-training',
+      maxItems: 4,
+      visibleSlots: 4,
+      desktopCardCount: 4,
+      mobileCardCount: 2,
+      mobileDisplayMode: 'stack',
       showViewAll: true
     },
     {
@@ -344,7 +463,9 @@ const buildDefaultHomepageLayout = (locality: Locality): HomepageLayout => {
       visible: true,
       sortOrder: 70,
       localityIds: [locality.id],
+      categoryIds: ['food-restaurants', 'health-medical', 'beauty-wellness', 'home-services', 'shopping-retail', 'education-training', 'professional-services', 'automotive'],
       maxItems: 12,
+      visibleSlots: 12,
       showViewAll: true
     },
     {
@@ -381,6 +502,11 @@ const buildDefaultHomepageLayout = (locality: Locality): HomepageLayout => {
       sortOrder: 100,
       localityIds: [locality.id],
       maxItems: 9,
+      visibleSlots: 5,
+      desktopCardCount: 5,
+      mobileCardCount: 2,
+      mobileDisplayMode: 'stack',
+      autoRotate: true,
       showViewAll: true
     },
     {
@@ -605,6 +731,7 @@ export default function App() {
         badge: 'Local ISP Sponsor',
         ctaText: 'View Offer',
         backgroundColor: '#1d4ed8',
+        imageUrl: 'https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=640&q=80',
         startDate,
         endDate,
         actionType: 'landing_page',
@@ -612,6 +739,7 @@ export default function App() {
         localityIds: ['roadpali'],
         placementKey: 'homepage_inline_primary',
         deviceTarget: 'all',
+        mobileRowPosition: 3,
         isActive: true
       }
     ];
@@ -1173,6 +1301,16 @@ export default function App() {
     };
     setCommunityItems(prev => [fresh, ...prev]);
     logAuditEvent('data_entry', `Created community board discussion: "${item.title}"`, `Category type: ${item.type} | Region shard: ${item.localityId}`);
+  };
+
+  const handleUpdateCommunityItem = (item: CommunityItem) => {
+    setCommunityItems((prev) => prev.map((existing) => (existing.id === item.id ? item : existing)));
+    logAuditEvent('data_entry', `Updated locality update`, `Update ID: ${item.id} | Locality: ${item.localityId}`);
+  };
+
+  const handleDeleteCommunityItem = (itemId: string) => {
+    setCommunityItems((prev) => prev.filter((item) => item.id !== itemId));
+    logAuditEvent('data_entry', `Deleted locality update`, `Update ID: ${itemId}`);
   };
 
   const handleAddCRMContact = (contact: Omit<CRMContact, 'id' | 'lastInteraction'>) => {
@@ -2224,7 +2362,7 @@ export default function App() {
   }, [activeLocality?.id, activeLocalityName, seoCategoryName, urlCategoryFilter, urlSearchFilter, seoFooterLinks]);
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans selection:bg-indigo-600/15 relative">
+    <div className="relative flex min-h-screen flex-col overflow-x-hidden bg-slate-50 font-sans text-slate-800 selection:bg-indigo-600/15">
       
       {/* Top Navigation Frame - Pristine, Live, Human-labeled web directory */}
       <nav id="platform-navbar" className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 px-4 py-2.5 shadow-sm backdrop-blur md:top-auto md:px-8 md:py-0">
@@ -2260,14 +2398,63 @@ export default function App() {
             <span className="hidden md:inline text-[10px] text-indigo-600 underline ml-auto font-bold">Change</span>
           </button>
 
-          <button
-            type="button"
-            onClick={() => userSession.isAuthenticated ? setShowUserMenu((open) => !open) : setShowAuthModal(true)}
-            className="h-10 md:h-12 w-10 md:w-16 inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-800 shadow-sm transition hover:border-indigo-200 hover:text-indigo-600 cursor-pointer shrink-0"
-            title="Notifications and profile"
-          >
-            <Bell className="w-5 h-5" />
-          </button>
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              onClick={() => userSession.isAuthenticated ? setShowUserMenu((open) => !open) : setShowAuthModal(true)}
+              className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-800 shadow-sm transition hover:border-indigo-200 hover:text-indigo-600 cursor-pointer"
+              title={userSession.isAuthenticated ? 'Open profile menu' : 'Sign in to your account'}
+            >
+              <User className="h-4 w-4" />
+              <span className="max-w-[72px] truncate">
+                {userSession.isAuthenticated && userSession.userPhone ? userSession.userName.split(' ')[0] : 'Sign In'}
+              </span>
+              {userSession.isAuthenticated && userSession.userPhone && <ChevronDown className="h-3.5 w-3.5" />}
+            </button>
+
+            {showUserMenu && userSession.isAuthenticated && userSession.userPhone && (
+              <div className="absolute right-0 top-full mt-2 w-56 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl z-50">
+                <div className="mb-1 border-b border-slate-100 px-3 py-2">
+                  <span className="block truncate text-xs font-bold text-slate-900">{userSession.userName}</span>
+                  <span className="block truncate text-[10px] text-slate-500">{userSession.userPhone}</span>
+                </div>
+                {canAccessAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowUserMenu(false);
+                      setActiveViewWithAudit('admin');
+                    }}
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-emerald-50 hover:text-emerald-700"
+                  >
+                    <Shield className="w-4 h-4" />
+                    Admin Console
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowUserMenu(false);
+                    window.dispatchEvent(new CustomEvent('localsy:open-business-application'));
+                    const seekWebPortal = document.getElementById('web-portal-root');
+                    if (seekWebPortal) seekWebPortal.scrollIntoView({ behavior: 'smooth' });
+                  }}
+                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700"
+                >
+                  <Briefcase className="w-4 h-4" />
+                  Advertise Business
+                </button>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50"
+                >
+                  <LogOut className="w-4 h-4" />
+                  Log Out
+                </button>
+              </div>
+            )}
+          </div>
           
           <button
             onClick={() => {
@@ -2481,7 +2668,7 @@ export default function App() {
       </nav>
 
       {/* Main Workspace Frame */}
-      <main className="flex-1 w-full max-w-[1440px] mx-auto px-4 md:px-8 py-5 md:py-8 space-y-8">
+      <main className="mx-auto flex w-full max-w-[1440px] flex-1 space-y-8 overflow-x-hidden px-4 py-5 md:px-8 md:py-8">
         
         {/* Workspace Active Presentation Render */}
         {!PRODUCTION_MODE && activeView === 'proposal' && (
@@ -2606,6 +2793,10 @@ export default function App() {
               onDeleteHeroBanner={handleDeleteHeroBanner}
               coupons={coupons}
               onAddCoupon={handleAddCoupon}
+              communityItems={communityItems}
+              onAddCommunityItem={handleAddCommunityItem}
+              onUpdateCommunityItem={handleUpdateCommunityItem}
+              onDeleteCommunityItem={handleDeleteCommunityItem}
               homepageLayouts={homepageLayouts}
               onCreateHomepageSection={handleCreateHomepageSection}
               onUpdateHomepageSection={handleUpdateHomepageSection}

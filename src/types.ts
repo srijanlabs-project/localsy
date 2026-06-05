@@ -149,6 +149,7 @@ export interface ListingAd {
   badge: string;
   ctaText: string;
   backgroundColor: string;
+  imageUrl?: string;
   startDate: string;
   endDate: string;
   actionType: 'landing_page' | 'landing_listing' | 'lead_form';
@@ -159,6 +160,7 @@ export interface ListingAd {
   pincodes?: string[];
   placementKey?: string;
   deviceTarget?: 'all' | 'desktop' | 'mobile';
+  mobileRowPosition?: number;
   isActive: boolean;
 }
 
@@ -222,14 +224,23 @@ export interface HomepageSection {
   localityIds?: string[];
   pincodes?: string[];
   categoryId?: string;
+  categoryIds?: string[];
   subcategoryId?: string;
   placementKey?: string;
   maxItems?: number;
+  visibleSlots?: number;
+  desktopCardCount?: number;
+  mobileCardCount?: number;
+  mobileDisplayMode?: 'carousel' | 'stack';
   ctaLabel?: string;
   ctaType?: HomepageSectionCtaType;
   ctaTarget?: string;
   backgroundColor?: string;
   showViewAll?: boolean;
+  listingSourceMode?: 'auto' | 'manual';
+  pinnedBusinessIds?: string[];
+  autoRotate?: boolean;
+  rotationIntervalSec?: number;
 }
 
 export interface HomepageLayout {
