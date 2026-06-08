@@ -6,6 +6,7 @@ import {
 import { Locality, Business, SubdomainMapping, UserSession, AuditEvent, ListingAd, HeroBanner, AdLead, MarketingCoupon, HomepageLayout, HomepageSection, HomepageSectionType, ApiConfiguration, CommunityItem } from '../types';
 import { MASTER_AREAS } from '../data';
 import { getBusinessImageUrl, getCategoryFallbackImage, hasUploadedBusinessImage } from '../utils/businessImage';
+import { getMediaProxyUrl } from '../utils/mediaUrl';
 import {
   BUSINESS_CATEGORIES,
   BUSINESS_SUBCATEGORIES,
@@ -1128,7 +1129,7 @@ export default function AdminConsole({
       const nextPlacementKey = adPlacementKey.trim() || 'homepage_inline_primary';
       const uploadedImageUrl = adImageFile
         ? await uploadBannerImage(adImageFile, getListingAdFolder())
-        : adImageUrl.trim();
+        : getMediaProxyUrl(adImageUrl.trim());
 
       if (!uploadedImageUrl) {
         const message = 'Please upload an ad image or provide a banner image URL.';
@@ -1189,7 +1190,7 @@ export default function AdminConsole({
     try {
       const uploadedImageUrl = heroImageFile
         ? await uploadBannerImage(heroImageFile, getHeroBannerFolder())
-        : heroImageUrl.trim();
+        : getMediaProxyUrl(heroImageUrl.trim());
 
       if (!uploadedImageUrl) {
         const message = 'Please upload a hero image or provide a hero image URL.';
@@ -1338,7 +1339,7 @@ export default function AdminConsole({
       const type = communityDraft.type || 'post';
       const uploadedImageUrl = communityImageFile
         ? await uploadBannerImage(communityImageFile, getCommunityItemFolder(adminLocalityFilter, type))
-        : communityImageUrl.trim();
+        : getMediaProxyUrl(communityImageUrl.trim());
       const nextStatus = communityDraft.status || 'published';
       onAddCommunityItem?.({
         type,
@@ -1410,7 +1411,7 @@ export default function AdminConsole({
     try {
       const uploadedImageUrl = communityEditImageFile
         ? await uploadBannerImage(communityEditImageFile, getCommunityItemFolder(communityEditDraft.localityId, communityEditDraft.type))
-        : communityEditImageUrl.trim();
+        : getMediaProxyUrl(communityEditImageUrl.trim());
       onUpdateCommunityItem?.({
         ...communityEditDraft,
         title: communityEditDraft.title.trim(),
@@ -1419,7 +1420,7 @@ export default function AdminConsole({
         status: communityEditDraft.status || 'published',
         publishAt: communityEditDraft.publishAt || new Date().toISOString(),
         expireAt: communityEditDraft.expireAt || undefined,
-        image: uploadedImageUrl || communityEditDraft.image?.trim() || undefined
+        image: uploadedImageUrl || getMediaProxyUrl(communityEditDraft.image?.trim() || '') || undefined
       });
       triggerNotification('Locality update saved.');
       cancelEditCommunityItem();

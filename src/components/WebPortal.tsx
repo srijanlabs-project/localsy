@@ -18,6 +18,7 @@ import { MASTER_STATES, MASTER_CITIES, MASTER_AREAS } from '../data';
 import OtpVerificationModal from './OtpVerificationModal';
 import GoogleLocationPicker from './GoogleLocationPicker';
 import { getBusinessImageUrl, getCategoryFallbackImage, hasUploadedBusinessImage } from '../utils/businessImage';
+import { getMediaProxyUrl } from '../utils/mediaUrl';
 import {
   BUSINESS_CATEGORIES,
   getCategoryById,
@@ -144,7 +145,7 @@ function MobileAdCarousel({ ads, onAdClick }: MobileAdCarouselProps) {
               </span>
               {ad.imageUrl ? (
                 <img
-                  src={ad.imageUrl}
+                  src={getMediaProxyUrl(ad.imageUrl)}
                   alt=""
                   className="absolute bottom-0 right-0 h-24 w-24 rounded-tl-3xl object-cover"
                 />
@@ -522,8 +523,8 @@ export default function WebPortal({
     return true;
   });
   const carouselImages = activeHeroBanners.length > 0
-    ? activeHeroBanners.map((banner) => banner.imageUrl)
-    : (currentLocality.carouselImages || [currentLocality.coverImage]);
+    ? activeHeroBanners.map((banner) => getMediaProxyUrl(banner.imageUrl))
+    : (currentLocality.carouselImages || [currentLocality.coverImage]).map((image) => getMediaProxyUrl(image));
   const activeHeroSlide = activeHeroBanners.length > 0
     ? activeHeroBanners[carouselIndex % activeHeroBanners.length]
     : null;
@@ -2127,7 +2128,7 @@ export default function WebPortal({
               <div key={item.id} className="border-b border-slate-100 pb-3 last:border-0 last:pb-0">
                 <div className="flex items-center gap-3">
                   <img
-                    src={item.image || carouselImages[index % carouselImages.length]}
+                    src={getMediaProxyUrl(item.image) || carouselImages[index % carouselImages.length]}
                     alt={item.title}
                     className="h-14 w-16 flex-shrink-0 rounded-lg object-cover"
                   />
@@ -2686,7 +2687,7 @@ export default function WebPortal({
         </span>
         {ad.imageUrl ? (
           <img
-            src={ad.imageUrl}
+            src={getMediaProxyUrl(ad.imageUrl)}
             alt=""
             className="absolute bottom-0 right-0 h-36 w-36 rounded-tl-[2rem] object-cover shadow-2xl"
           />

@@ -919,8 +919,11 @@ function getStoragePublicUrl(key) {
   if (STORAGE_PUBLIC_BASE_URL) {
     return `${STORAGE_PUBLIC_BASE_URL.replace(/\/+$/, '')}/${encodeStoragePath(key)}`;
   }
-  const requestUrl = getStorageRequestUrl(key);
-  return requestUrl || '';
+  return `/api/media/proxy?key=${encodeURIComponent(String(key || ''))}`;
+}
+
+function getStorageMediaProxyUrl(key) {
+  return `/api/media/proxy?key=${encodeURIComponent(String(key || ''))}`;
 }
 
 function getSigningKey(secretKey, dateStamp, region, service = 's3') {
@@ -1009,7 +1012,62 @@ async function uploadObjectToStorage({ key, body, contentType }) {
   return {
     requestUrl,
     publicUrl: getStoragePublicUrl(key),
+    proxyUrl: getStorageMediaProxyUrl(key),
   };
+}
+
+async function fetchObjectFromStorage({ key }) {
+  if (!STORAGE_ENDPOINT_URL || !STORAGE_BUCKET_NAME || !STORAGE_ACCESS_KEY_ID || !STORAGE_SECRET_ACCESS_KEY) {
+    throw new Error('Storage credentials are not configured');
+  }
+
+  const requestUrl = getStorageRequestUrl(key);
+  if (!requestUrl) {
+    throw new Error('Storage endpoint is not configured');
+  }
+
+  const { dateStamp, amzDate } = getAwsTimestamp();
+  const parsed = new URL(requestUrl);
+  const payloadHash = crypto.createHash('sha256').update('').digest('hex');
+  const canonicalHeaders = [
+    `host:${parsed.host}`,
+    `x-amz-content-sha256:${payloadHash}`,
+    `x-amz-date:${amzDate}`,
+  ];
+  const signedHeaders = ['host', 'x-amz-content-sha256', 'x-amz-date'];
+
+  const canonicalRequest = [
+    'GET',
+    parsed.pathname,
+    '',
+    `${canonicalHeaders.join('\n')}\n`,
+    signedHeaders.join(';'),
+    payloadHash,
+  ].join('\n');
+
+  const credentialScope = `${dateStamp}/${STORAGE_REGION}/s3/aws4_request`;
+  const stringToSign = [
+    'AWS4-HMAC-SHA256',
+    amzDate,
+    credentialScope,
+    crypto.createHash('sha256').update(canonicalRequest).digest('hex'),
+  ].join('\n');
+
+  const signingKey = getSigningKey(STORAGE_SECRET_ACCESS_KEY, dateStamp, STORAGE_REGION);
+  const signature = crypto.createHmac('sha256', signingKey).update(stringToSign).digest('hex');
+  const authorizationHeader = `AWS4-HMAC-SHA256 Credential=${STORAGE_ACCESS_KEY_ID}/${credentialScope}, SignedHeaders=${signedHeaders.join(';')}, Signature=${signature}`;
+
+  const headers = {
+    Authorization: authorizationHeader,
+    Host: parsed.host,
+    'x-amz-content-sha256': payloadHash,
+    'x-amz-date': amzDate,
+  };
+
+  return fetch(requestUrl, {
+    method: 'GET',
+    headers,
+  });
 }
 
 async function getPgClient() {
@@ -1127,11 +1185,58 @@ app.post('/api/media/upload', async (req, res) => {
       ok: true,
       folder,
       key,
-      url: uploaded.publicUrl || uploaded.requestUrl,
+      url: uploaded.proxyUrl || uploaded.publicUrl || uploaded.requestUrl,
     });
   } catch (err) {
     console.error('Failed to upload media:', err);
     res.status(500).json({ ok: false, error: err?.message || 'Failed to upload media' });
+  }
+});
+
+app.get('/api/media/proxy', async (req, res) => {
+  const source = String(req.query?.source || '').trim();
+  const keyFromQuery = String(req.query?.key || '').trim();
+  let key = keyFromQuery;
+
+  if (!key && source) {
+    try {
+      const sourceUrl = new URL(source);
+      const storageEndpointUrl = new URL(STORAGE_ENDPOINT_URL);
+      const sourcePath = decodeURIComponent(sourceUrl.pathname.replace(/^\/+/, ''));
+      if (!sourceUrl.hostname.endsWith(storageEndpointUrl.hostname)) {
+        return res.status(400).json({ ok: false, error: 'Unsupported media source' });
+      }
+      key = sourcePath;
+      if (sourceUrl.hostname === storageEndpointUrl.hostname && key.startsWith(`${STORAGE_BUCKET_NAME}/`)) {
+        key = key.slice(STORAGE_BUCKET_NAME.length + 1);
+      }
+    } catch (err) {
+      return res.status(400).json({ ok: false, error: 'Invalid media source' });
+    }
+  }
+
+  if (!key) {
+    return res.status(400).json({ ok: false, error: 'key or source is required' });
+  }
+
+  try {
+    const response = await fetchObjectFromStorage({ key });
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => '');
+      return res.status(response.status).json({
+        ok: false,
+        error: errorText || response.statusText || 'Failed to fetch media',
+      });
+    }
+
+    const contentType = response.headers.get('content-type') || 'application/octet-stream';
+    const buffer = Buffer.from(await response.arrayBuffer());
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.send(buffer);
+  } catch (err) {
+    console.error('Failed to proxy media:', err);
+    res.status(500).json({ ok: false, error: err?.message || 'Failed to proxy media' });
   }
 });
 
