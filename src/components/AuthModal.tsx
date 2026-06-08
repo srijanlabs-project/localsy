@@ -42,8 +42,6 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
   const [password, setPassword] = useState('');
   const [userType, setUserType] = useState<UserType>('buyer');
 
-  if (!isOpen) return null;
-
   const resetFlow = (nextTab: AuthTab = tab) => {
     setTab(nextTab);
     setStep('details');
@@ -115,7 +113,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
   };
 
   const requestRegisterOtp = async () => {
-    const requestRes = await fetch('/api/auth/register', {
+    const requestRes = await fetch('/api/auth/register/request-otp', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -129,34 +127,8 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
     if (!requestRes.ok) {
       throw new Error(requestData?.error || 'Registration failed');
     }
-
-    const otpRes = await fetch('/api/auth/request-otp', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phone: normalizePhoneInput(phone) }),
-    });
-    const otpData = await otpRes.json().catch(() => null);
-    if (!otpRes.ok) {
-      throw new Error(otpData?.error || 'Registration succeeded, but OTP could not be sent');
-    }
-    setChallengeToken(otpData.challengeToken || '');
+    setChallengeToken(requestData.challengeToken || '');
     setStep('otp');
-  };
-
-  const verifyOtp = async () => {
-    const verifyRes = await fetch('/api/auth/verify-otp', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        challengeToken,
-        otp: otp.trim(),
-      }),
-    });
-    const verifyData = await verifyRes.json().catch(() => null);
-    if (!verifyRes.ok) {
-      throw new Error(verifyData?.error || 'OTP verification failed');
-    }
-    finalizeAuth(verifyData);
   };
 
   const submit = async (e: React.FormEvent) => {
@@ -171,7 +143,18 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
       } else if (tab === 'register' && step === 'details') {
         await requestRegisterOtp();
       } else {
-        await verifyOtp();
+        const verifyEndpoint = tab === 'register' ? '/api/auth/register/verify-otp' : '/api/auth/verify-otp';
+        const verifyRes = await fetch(verifyEndpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            challengeToken,
+            otp: otp.trim(),
+          }),
+        });
+        const verifyData = await verifyRes.json().catch(() => null);
+        if (!verifyRes.ok) throw new Error(verifyData?.error || 'OTP verification failed');
+        finalizeAuth(verifyData);
       }
     } catch (err: any) {
       setError(err?.message || 'Authentication failed');
@@ -193,6 +176,8 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
   );
 
   const showOtpStep = step === 'otp';
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 p-4 backdrop-blur-sm">

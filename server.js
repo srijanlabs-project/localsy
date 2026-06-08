@@ -653,7 +653,7 @@ function buildAuthUserResponse(user) {
   };
 }
 
-function buildOtpChallengeToken({ challengeId, userId, userType, mobile, purpose }) {
+function buildOtpChallengeToken({ challengeId, userId, userType, mobile, purpose, context = {} }) {
   const exp = Math.floor(Date.now() / 1000) + 10 * 60;
   return signToken({
     sub: userId,
@@ -662,6 +662,7 @@ function buildOtpChallengeToken({ challengeId, userId, userType, mobile, purpose
     mobile,
     purpose,
     otpChallenge: true,
+    ...context,
     exp,
   });
 }
@@ -1531,17 +1532,17 @@ app.post('/api/auth/register', async (req, res) => {
   if (!ALL_USER_TYPES.includes(userType)) {
     return res.status(400).json({ ok: false, error: 'Invalid userType' });
   }
-  if (PUBLIC_USER_TYPES.includes(userType) && !String(phone || '').trim()) {
-    return res.status(400).json({ ok: false, error: 'phone is required for OTP login users' });
-  }
-  if (!PUBLIC_USER_TYPES.includes(userType) && !String(password || '').trim()) {
-    return res.status(400).json({ ok: false, error: 'password is required for platform users' });
-  }
 
   const requester = authFromHeader(req);
   const canCreatePrivileged = requester && ['platform_admin', 'developer'].includes(requester.userType);
-  if (!PUBLIC_USER_TYPES.includes(userType) && !canCreatePrivileged) {
+  if (!canCreatePrivileged) {
     return res.status(403).json({ ok: false, error: 'Only platform_admin/developer can create this user type' });
+  }
+  if (PUBLIC_USER_TYPES.includes(userType)) {
+    return res.status(410).json({ ok: false, error: 'Use /api/auth/register/request-otp for public OTP registration' });
+  }
+  if (!String(password || '').trim()) {
+    return res.status(400).json({ ok: false, error: 'password is required for platform users' });
   }
 
   const users = await readUsers();
@@ -1566,16 +1567,121 @@ app.post('/api/auth/register', async (req, res) => {
 
   res.status(201).json({
     ok: true,
-    user: {
-      id: created.id,
-      name: created.name,
-      email: created.email,
-      phone: created.phone,
-      userType: created.userType,
-      role: created.role,
-      status: created.status,
-    },
+    user: buildAuthUserResponse(created),
   });
+});
+
+app.post('/api/auth/register/request-otp', async (req, res) => {
+  const { name, email, phone, userType } = req.body || {};
+  if (!name || !email || !phone || !userType) {
+    return res.status(400).json({ ok: false, error: 'name, email, phone and userType are required' });
+  }
+  if (!PUBLIC_USER_TYPES.includes(userType)) {
+    return res.status(400).json({ ok: false, error: 'Public registration is only for buyer, seller, and resource users' });
+  }
+
+  const users = await readUsers();
+  const normalizedEmail = String(email).toLowerCase().trim();
+  const normalizedPhone = normalizePhoneDigits(phone);
+  if (users.some((u) => u.email === normalizedEmail)) {
+    return res.status(409).json({ ok: false, error: 'Email already registered' });
+  }
+  if (!normalizedPhone) {
+    return res.status(400).json({ ok: false, error: 'Invalid mobile number' });
+  }
+  if (users.some((u) => normalizePhoneDigits(u.phone) === normalizedPhone)) {
+    return res.status(409).json({ ok: false, error: 'Mobile number already registered' });
+  }
+
+  try {
+    await sendMsg91Otp(normalizedPhone);
+    const challenge = await createOtpChallenge({
+      userId: `pending:${randomId('usr')}`,
+      userType,
+      mobile: normalizedPhone,
+      purpose: 'register',
+    });
+    const challengeToken = buildOtpChallengeToken({
+      challengeId: challenge.id,
+      userId: challenge.userId,
+      userType,
+      mobile: normalizedPhone,
+      purpose: 'register',
+      context: {
+        pendingName: String(name).trim(),
+        pendingEmail: normalizedEmail,
+        pendingPhone: normalizedPhone,
+        pendingUserType: userType,
+      },
+    });
+    res.json({ ok: true, challengeToken, mobile: normalizedPhone });
+  } catch (err) {
+    console.error('Failed to send registration OTP:', err);
+    res.status(500).json({ ok: false, error: err?.message || 'Failed to send OTP' });
+  }
+});
+
+app.post('/api/auth/register/verify-otp', async (req, res) => {
+  const { challengeToken, otp } = req.body || {};
+  if (!challengeToken || !otp) {
+    return res.status(400).json({ ok: false, error: 'challengeToken and otp are required' });
+  }
+
+  const challenge = verifyOtpChallengeToken(String(challengeToken), 'register');
+  if (!challenge) {
+    return res.status(401).json({ ok: false, error: 'Invalid or expired OTP challenge' });
+  }
+  const persistedChallenge = await readOtpChallenge(challenge.challengeId);
+  if (!persistedChallenge) {
+    return res.status(401).json({ ok: false, error: 'Invalid or expired OTP challenge' });
+  }
+
+  try {
+    await verifyMsg91Otp(challenge.mobile, String(otp).trim());
+    await markOtpChallengeUsed(challenge.challengeId);
+
+    const users = await readUsers();
+    const normalizedEmail = String(challenge.pendingEmail || '').toLowerCase().trim();
+    const normalizedPhone = normalizePhoneDigits(challenge.pendingPhone || challenge.mobile);
+    if (!normalizedEmail || !normalizedPhone) {
+      return res.status(400).json({ ok: false, error: 'Invalid registration payload' });
+    }
+    if (users.some((u) => u.email === normalizedEmail)) {
+      return res.status(409).json({ ok: false, error: 'Email already registered' });
+    }
+
+    const created = {
+      id: randomId('usr'),
+      name: String(challenge.pendingName || '').trim(),
+      email: normalizedEmail,
+      phone: normalizedPhone,
+      userType: challenge.pendingUserType || 'buyer',
+      role: normalizeRoleForType(challenge.pendingUserType || 'buyer'),
+      passwordHash: await hashPassword(crypto.randomBytes(12).toString('hex')),
+      createdAt: nowIso(),
+      status: 'active',
+    };
+    users.push(created);
+    await writeUsers(users);
+
+    const exp = Math.floor(Date.now() / 1000) + TOKEN_TTL_SEC;
+    const token = signToken({
+      sub: created.id,
+      email: created.email,
+      role: created.role,
+      userType: created.userType,
+      exp,
+    });
+
+    res.json({
+      ok: true,
+      token,
+      user: buildAuthUserResponse(created),
+    });
+  } catch (err) {
+    console.error('Failed to verify registration OTP:', err);
+    res.status(401).json({ ok: false, error: err?.message || 'Invalid OTP' });
+  }
 });
 
 app.post('/api/auth/request-otp', async (req, res) => {
@@ -1617,6 +1723,60 @@ app.post('/api/auth/request-otp', async (req, res) => {
   } catch (err) {
     console.error('Failed to send public OTP:', err);
     res.status(500).json({ ok: false, error: err?.message || 'Failed to send OTP' });
+  }
+});
+
+app.post('/api/contact-unlock/request-otp', async (req, res) => {
+  const { phone } = req.body || {};
+  const normalizedPhone = normalizePhoneDigits(phone);
+  if (!normalizedPhone) {
+    return res.status(400).json({ ok: false, error: 'phone is required' });
+  }
+
+  try {
+    await sendMsg91Otp(normalizedPhone);
+    const challenge = await createOtpChallenge({
+      userId: `contact:${normalizedPhone}`,
+      userType: 'buyer',
+      mobile: normalizedPhone,
+      purpose: 'contact-unlock',
+    });
+    const challengeToken = buildOtpChallengeToken({
+      challengeId: challenge.id,
+      userId: challenge.userId,
+      userType: 'buyer',
+      mobile: normalizedPhone,
+      purpose: 'contact-unlock',
+    });
+    res.json({ ok: true, challengeToken, mobile: normalizedPhone });
+  } catch (err) {
+    console.error('Failed to send contact unlock OTP:', err);
+    res.status(500).json({ ok: false, error: err?.message || 'Failed to send OTP' });
+  }
+});
+
+app.post('/api/contact-unlock/verify-otp', async (req, res) => {
+  const { challengeToken, otp } = req.body || {};
+  if (!challengeToken || !otp) {
+    return res.status(400).json({ ok: false, error: 'challengeToken and otp are required' });
+  }
+
+  const challenge = verifyOtpChallengeToken(String(challengeToken), 'contact-unlock');
+  if (!challenge) {
+    return res.status(401).json({ ok: false, error: 'Invalid or expired OTP challenge' });
+  }
+  const persistedChallenge = await readOtpChallenge(challenge.challengeId);
+  if (!persistedChallenge) {
+    return res.status(401).json({ ok: false, error: 'Invalid or expired OTP challenge' });
+  }
+
+  try {
+    await verifyMsg91Otp(challenge.mobile, String(otp).trim());
+    await markOtpChallengeUsed(challenge.challengeId);
+    res.json({ ok: true, mobile: challenge.mobile });
+  } catch (err) {
+    console.error('Failed to verify contact unlock OTP:', err);
+    res.status(401).json({ ok: false, error: err?.message || 'Invalid OTP' });
   }
 });
 
