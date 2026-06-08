@@ -36,6 +36,28 @@ const DEFAULT_PINCODE_MAPPINGS: Array<{ pincode: string; localityId: string }> =
   { pincode: '410208', localityId: 'taloja' },
 ];
 
+const PUBLIC_SITE_ORIGIN = 'https://www.localisy.in';
+const LOCALITY_GEO_CENTERS: Record<string, { lat: number; lng: number }> = {
+  roadpali: { lat: 19.0314, lng: 73.1028 },
+  kalamboli: { lat: 19.0412, lng: 73.1025 },
+  kharghar: { lat: 19.0436, lng: 73.0667 },
+  kamothe: { lat: 19.0167, lng: 73.0967 },
+  panvel: { lat: 18.9894, lng: 73.1175 },
+  taloja: { lat: 19.0769, lng: 73.1181 },
+};
+
+const toRadians = (value: number) => (value * Math.PI) / 180;
+const getDistanceInKm = (from: { lat: number; lng: number }, to: { lat: number; lng: number }) => {
+  const earthRadiusKm = 6371;
+  const deltaLat = toRadians(to.lat - from.lat);
+  const deltaLng = toRadians(to.lng - from.lng);
+  const a = (
+    Math.sin(deltaLat / 2) ** 2 +
+    Math.cos(toRadians(from.lat)) * Math.cos(toRadians(to.lat)) * Math.sin(deltaLng / 2) ** 2
+  );
+  return earthRadiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+};
+
 const resolveBusinessPincode = (business: Business): string => {
   if (business.pincode && /^\d{6}$/.test(business.pincode)) return business.pincode;
   return MASTER_AREAS.find((area) => area.id === business.areaId)?.pincode || '';
@@ -1103,6 +1125,7 @@ export default function App() {
   const lastHomepageSyncSignatureRef = useRef('');
   const auditEventDedupRef = useRef<Map<string, number>>(new Map());
   const lastAutomatedAuditPostAtRef = useRef(0);
+  const autoLocationAttemptedRef = useRef(false);
 
   const buildHomepageConfigPayload = (): HomepageConfigState => ({
     heroBanners,
@@ -1415,6 +1438,66 @@ export default function App() {
     window.addEventListener('popstate', applySeoUrlState);
     return () => window.removeEventListener('popstate', applySeoUrlState);
   }, [localities, businesses, seoIntentBySlug, categorySlugLookup]);
+
+  useEffect(() => {
+    if (autoLocationAttemptedRef.current) return;
+    if (typeof window === 'undefined' || typeof navigator === 'undefined') return;
+    if (!showPincodeModal) return;
+    if (savedPincode) return;
+    if (localStorage.getItem('yp_pincode_prompted')) return;
+    if (window.location.pathname && window.location.pathname !== '/') return;
+
+    autoLocationAttemptedRef.current = true;
+
+    const fallbackToDefault = () => {
+      handleSavePincode(null, defaultLocalityId || 'roadpali');
+      setShowPincodeModal(false);
+    };
+
+    if (!navigator.geolocation) {
+      fallbackToDefault();
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const currentPoint = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        };
+
+        const nearestLocalityId = localities.reduce<{ id: string; distance: number } | null>((best, locality) => {
+          const center = LOCALITY_GEO_CENTERS[locality.id];
+          if (!center) return best;
+          const distance = getDistanceInKm(currentPoint, center);
+          if (!best || distance < best.distance) {
+            return { id: locality.id, distance };
+          }
+          return best;
+        }, null);
+
+        const resolvedLocalityId = nearestLocalityId && nearestLocalityId.distance <= 25
+          ? nearestLocalityId.id
+          : (defaultLocalityId || 'roadpali');
+
+        handleSavePincode(null, resolvedLocalityId);
+        setShowPincodeModal(false);
+        logAuditEvent(
+          'data_entry',
+          'Mobile location auto-routing applied',
+          `GPS locality routed to: "${resolvedLocalityId}" | Accuracy: ${Math.round(position.coords.accuracy || 0)}m`
+        );
+      },
+      () => {
+        fallbackToDefault();
+      },
+      {
+        enableHighAccuracy: false,
+        timeout: 6000,
+        maximumAge: 300000,
+      }
+    );
+  }, [defaultLocalityId, localities, savedPincode, showPincodeModal]);
 
   // Unified logger for complete client-side security compliance auditing
   const logAuditEvent = (actionType: 'search' | 'contact_view' | 'data_entry', description: string, details: string) => {
@@ -2006,14 +2089,11 @@ export default function App() {
   // Pincode Routing Engine operations
   const handleSavePincode = (pincode: string | null, matchedLocalityId: string) => {
     setSavedPincode(pincode);
+    localStorage.setItem('yp_saved_locality_id', matchedLocalityId);
     if (pincode) {
       localStorage.setItem('yp_saved_pincode', pincode);
-      localStorage.setItem('yp_saved_locality_id', matchedLocalityId);
-      window.history.pushState({}, '', `${window.location.origin}/pin/${pincode}`);
     } else {
       localStorage.removeItem('yp_saved_pincode');
-      localStorage.removeItem('yp_saved_locality_id');
-      window.history.pushState({}, '', `${window.location.origin}/`);
     }
     localStorage.setItem('yp_pincode_prompted', 'true');
     setActiveLocalityId(matchedLocalityId);

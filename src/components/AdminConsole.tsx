@@ -202,6 +202,11 @@ const getBusinessTaxonomyLabel = (business: Pick<Business, 'categoryId' | 'subca
   };
 };
 
+const getPublicLocalityUrl = (locality?: Locality | null) => {
+  const localitySlug = locality?.slug || locality?.id || 'roadpali';
+  return `https://www.localisy.in/${localitySlug}`;
+};
+
 type AdminWorkspaceTab = 'moderation' | 'listing-status' | 'bulk-upload' | 'taxonomy-mapping' | 'data-audit';
 type ListingStatusFilter = 'all' | 'approved' | 'rejected' | 'pending';
 type AdminOperationsSection = 'listings' | 'homepage' | 'campaigns' | 'geography' | 'content' | 'platform';
@@ -1851,7 +1856,7 @@ export default function AdminConsole({
                 <tr className="border-b border-slate-100 text-[10px] uppercase font-mono tracking-wider font-semibold text-slate-400">
                   <th className="py-2">Business</th>
                   <th className="py-2">Category / Subcategory</th>
-                  <th className="py-2">Subdomain/Region</th>
+                  <th className="py-2">Public Route</th>
                   <th className="py-2">Proprietor</th>
                   <th className="py-2">Decision Status</th>
                 </tr>
@@ -1906,7 +1911,7 @@ export default function AdminConsole({
                         )}
                       </td>
                       <td className={`py-2.5 font-mono ${isRejected ? 'text-slate-400' : 'text-slate-600'}`}>
-                        {locality?.subdomain || 'Unknown'}
+                        {locality ? getPublicLocalityUrl(locality) : 'https://www.localisy.in/roadpali'}
                       </td>
                       <td className="py-2.5">{business.ownerName || 'Self-Registered'}</td>
                       <td className="py-2.5">
@@ -2461,7 +2466,7 @@ export default function AdminConsole({
             Create Hyper Local Business Page
           </h3>
           <p className="text-xs text-slate-500 mb-4">
-            Provision a page, subdomain route, and optional pincode group for a municipality or neighbourhood cluster.
+            Provision a page, public route, and optional pincode group for a municipality or neighbourhood cluster.
           </p>
 
           {adminNotification && (
@@ -2489,17 +2494,17 @@ export default function AdminConsole({
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Subdomain Route mapping</label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Public Route / legacy domain mapping</label>
               <input
                 type="text"
                 required
                 value={newLocSubdomain}
                 onChange={(e) => setNewLocSubdomain(e.target.value)}
-                placeholder="e.g. sf.yellowpages.io"
+                placeholder="e.g. roadpali.localisy.in or legacy route"
                 className="w-full text-xs px-3.5 py-2.5 font-mono bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-700"
               />
               <span className="text-[10px] text-slate-400 mt-1 block">
-                The subdomain opens this page; mapped pincodes below decide which visitors are routed here after pincode selection.
+                This legacy route record maps to the public page; mapped pincodes below decide which visitors are routed here after location detection or pincode selection.
               </span>
             </div>
 
@@ -2560,7 +2565,7 @@ export default function AdminConsole({
                 <div key={loc.id} className="flex items-center justify-between p-2.5 bg-slate-50 rounded-xl border border-slate-100">
                   <div className="truncate pr-2">
                     <span className="block text-xs font-bold text-slate-800 truncate">{loc.name}</span>
-                    <span className="block text-[10px] text-slate-400 font-mono truncate">{loc.subdomain}</span>
+                    <span className="block text-[10px] text-slate-400 font-mono truncate">{getPublicLocalityUrl(loc)}</span>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <span className="bg-slate-200 text-slate-700 text-[10px] px-2 py-0.5 rounded-full font-mono font-medium">
@@ -2589,7 +2594,7 @@ export default function AdminConsole({
               Pincode Routing Engine
             </h3>
             <p className="text-[11px] text-slate-500 mt-0.5">
-              Configure 1:1 or many:1 static bindings mapping postal codes to active Hyper Local pages and their subdomain routes.
+              Configure 1:1 or many:1 static bindings mapping postal codes to active Hyper Local pages and their public locality routes.
             </p>
           </div>
 

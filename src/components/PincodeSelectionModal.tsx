@@ -179,7 +179,7 @@ export default function PincodeSelectionModal({
                     {matchedLocality.description}
                   </p>
                   <span className="inline-block mt-2 font-mono font-bold bg-white text-emerald-700 px-2.5 py-1 rounded-lg border border-emerald-100">
-                    Host: {matchedLocality.subdomain}
+                    Route: www.localisy.in/{matchedLocality.slug || matchedLocality.id}
                   </span>
                 </div>
               </div>
