@@ -125,7 +125,7 @@ export default function PincodeSelectionModal({
         {/* Modal content body */}
         <div className="p-6 md:p-8 space-y-6 flex-1 overflow-y-auto max-h-[75vh]">
           <p className="text-sm text-slate-500 leading-relaxed">
-            Welcome to <strong className="text-slate-900 font-semibold">Happy Gifting Yellow Pages Nodes</strong>. Please share your 6-digit residential area pincode to automatically connect with localized shopkeepers, clinics, restaurants, and salons operating in your municipal sector.
+            Welcome to <strong className="text-slate-900 font-semibold">Localisy</strong> - A Hyper Local Business Directory. Please share your 6-digit residential area pincode to automatically connect with localized shopkeepers, clinics, restaurants, and salons operating in your municipal sector.
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-4">

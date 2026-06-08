@@ -31,6 +31,7 @@ let pgInitAttempted = false;
 let memoryUsers = null;
 let memoryBusinesses = null;
 let memoryHomepageConfig = null;
+let memoryOtpChallenges = null;
 
 const STORAGE_ENDPOINT_URL = process.env.S3_ENDPOINT_URL || process.env.STORAGE_ENDPOINT_URL || '';
 const STORAGE_BUCKET_NAME = process.env.S3_BUCKET_NAME || process.env.STORAGE_BUCKET_NAME || '';
@@ -50,18 +51,57 @@ const STORAGE_REGION = process.env.S3_REGION || process.env.STORAGE_REGION || 'a
 const STORAGE_PUBLIC_BASE_URL = process.env.S3_PUBLIC_BASE_URL || '';
 const STORAGE_FORCE_PATH_STYLE = String(process.env.S3_FORCE_PATH_STYLE || '').toLowerCase() === 'true';
 const STORAGE_OBJECT_ACL = process.env.S3_OBJECT_ACL || '';
+const MSG91_AUTHKEY = process.env.MSG91_AUTHKEY || '';
+const MSG91_OTP_TEMPLATE_ID = process.env.MSG91_OTP_TEMPLATE_ID || '';
+const MSG91_OTP_BASE_URL = process.env.MSG91_OTP_BASE_URL || 'https://control.msg91.com';
 
 const PUBLIC_USER_TYPES = ['buyer', 'seller', 'resource'];
 const ALL_USER_TYPES = ['platform_admin', 'developer', 'buyer', 'seller', 'resource'];
+const SEO_SITE_NAME = 'Localisy';
+const SEO_SITE_TAGLINE = 'A Hyper Local Business Directory';
+const SEO_SITE_PROMISE = 'Discover Local. Support Local. Grow Local.';
 const SEO_LOCALITY_IDS = ['roadpali', 'kalamboli', 'kharghar', 'kamothe', 'panvel', 'taloja'];
-const SEO_CATEGORY_IDS = ['salon', 'food', 'retail', 'health', 'home', 'services'];
+const SEO_CATEGORY_IDS = [
+  'food-restaurants',
+  'health-medical',
+  'beauty-wellness',
+  'home-services',
+  'automotive',
+  'real-estate',
+  'education-training',
+  'shopping-retail',
+  'professional-services',
+  'travel-hospitality',
+  'event-services',
+  'repair-maintenance',
+  'financial-services',
+  'pets-animals',
+  'industrial-b2b',
+  'agriculture',
+  'entertainment-leisure',
+  'digital-technology',
+  'government-public-services',
+];
 const SEO_CATEGORY_LABELS = {
-  salon: 'Salons & Wellness',
-  food: 'Food & Dining',
-  retail: 'Shops & Retail',
-  health: 'Health & Medical',
-  home: 'Home Services',
-  services: 'Professional Services',
+  'food-restaurants': 'Food & Restaurants',
+  'health-medical': 'Health & Medical',
+  'beauty-wellness': 'Beauty & Wellness',
+  'home-services': 'Home Services',
+  automotive: 'Automotive',
+  'real-estate': 'Real Estate',
+  'education-training': 'Education & Training',
+  'shopping-retail': 'Shopping & Retail',
+  'professional-services': 'Professional Services',
+  'travel-hospitality': 'Travel & Hospitality',
+  'event-services': 'Event Services',
+  'repair-maintenance': 'Repair & Maintenance',
+  'financial-services': 'Financial Services',
+  'pets-animals': 'Pets & Animals',
+  'industrial-b2b': 'Industrial & B2B',
+  agriculture: 'Agriculture',
+  'entertainment-leisure': 'Entertainment & Leisure',
+  'digital-technology': 'Digital & Technology',
+  'government-public-services': 'Government & Public Services',
 };
 const SEO_LOCALITY_META = {
   roadpali: {
@@ -196,6 +236,16 @@ function buildSeoPath(localityId, categoryId, q) {
   const defaultIntent = seoDefaultIntentByCategory.get(categoryId);
   if (defaultIntent) return `${localityPath}/${defaultIntent.slug}`;
   return `${localityPath}/${slugifyForUrl(categoryId)}`;
+}
+
+function buildSeoImageUrl(origin, title, subtitle) {
+  const params = new URLSearchParams({
+    title: String(title || '').slice(0, 120),
+    subtitle: String(subtitle || '').slice(0, 160),
+    brand: SEO_SITE_NAME,
+    tagline: SEO_SITE_PROMISE,
+  });
+  return `${origin}/seo-image.svg?${params.toString()}`;
 }
 
 function queryValueAsString(value) {
@@ -340,15 +390,28 @@ function buildSeoRouteModel(origin, route) {
   const listingLabel = route.listingSlug ? humanizeSlug(route.listingSlug.replace(/-\w+$/, '')) : null;
   const routeHeading = route.intent?.q || categoryLabel || `${localityMeta.name} Businesses`;
   const pageTitle = listingLabel
-    ? `${listingLabel} in ${localityMeta.name} | Happy Gifting Businesses`
+    ? `${listingLabel} in ${localityMeta.name} | ${SEO_SITE_NAME}`
     : route.categoryId
-    ? `${routeHeading} in ${localityMeta.name} | Happy Gifting Businesses`
-    : `${localityMeta.name} Local Business Directory | Happy Gifting Businesses`;
+    ? `${routeHeading} in ${localityMeta.name} | ${SEO_SITE_NAME}`
+    : `${localityMeta.name} Local Business Directory | ${SEO_SITE_NAME}`;
   const pageDescription = listingLabel
-    ? `View business details, service profile, and verified local context for ${listingLabel} in ${localityMeta.name}, ${localityMeta.city}.`
+    ? `View address, phone, ratings, hours, and service details for ${listingLabel} in ${localityMeta.name}, ${localityMeta.city}.`
     : route.categoryId
-    ? `Explore verified ${routeHeading.toLowerCase()} in ${localityMeta.name}, ${localityMeta.city}. Check ratings, service areas, contact options, and trusted local providers.`
-    : `Discover verified businesses in ${localityMeta.name}, ${localityMeta.city}. Compare local services, clinics, restaurants, and neighborhood stores in one place.`;
+    ? `Browse verified ${routeHeading.toLowerCase()} in ${localityMeta.name}, ${localityMeta.city}. Compare address, phone, ratings, hours, and trusted local providers.`
+    : `Discover verified local businesses in ${localityMeta.name}, ${localityMeta.city}. Compare salons, restaurants, clinics, home services, and shops nearby.`;
+  const metaKeywords = [
+    `${localityMeta.name} businesses`,
+    `${localityMeta.name} local directory`,
+    categoryLabel ? `${categoryLabel} in ${localityMeta.name}` : '',
+    `${localityMeta.city} local business directory`,
+    'verified local businesses',
+    SEO_SITE_NAME,
+  ].filter(Boolean).join(', ');
+  const socialImageUrl = buildSeoImageUrl(
+    origin,
+    pageTitle,
+    route.categoryId ? `${localityMeta.name} • ${routeHeading}` : `${localityMeta.intro} • ${SEO_SITE_PROMISE}`
+  );
 
   const listingNames = getListingNamesForRoute(route.localityId, route.categoryId || 'salon');
   const listingLinks = listingNames.map((name, index) => ({
@@ -366,6 +429,8 @@ function buildSeoRouteModel(origin, route) {
     canonicalUrl,
     pageTitle,
     pageDescription,
+    metaKeywords,
+    socialImageUrl,
     heading: routeHeading,
     localityMeta,
     categoryLabel,
@@ -467,34 +532,34 @@ function applySeoHeadTags(html, model, jsonLd) {
   updatedHtml = updatedHtml.replace(/<meta\s+property=["']og:description["'][^>]*>\s*/ig, '');
   updatedHtml = updatedHtml.replace(/<meta\s+property=["']og:url["'][^>]*>\s*/ig, '');
   updatedHtml = updatedHtml.replace(/<meta\s+property=["']og:site_name["'][^>]*>\s*/ig, '');
+  updatedHtml = updatedHtml.replace(/<meta\s+property=["']og:image["'][^>]*>\s*/ig, '');
   updatedHtml = updatedHtml.replace(/<meta\s+name=["']twitter:card["'][^>]*>\s*/ig, '');
   updatedHtml = updatedHtml.replace(/<meta\s+name=["']twitter:title["'][^>]*>\s*/ig, '');
   updatedHtml = updatedHtml.replace(/<meta\s+name=["']twitter:description["'][^>]*>\s*/ig, '');
+  updatedHtml = updatedHtml.replace(/<meta\s+name=["']twitter:image["'][^>]*>\s*/ig, '');
+  updatedHtml = updatedHtml.replace(/<meta\s+name=["']twitter:image:alt["'][^>]*>\s*/ig, '');
   updatedHtml = updatedHtml.replace(/<link\s+rel=["']canonical["'][^>]*>\s*/ig, '');
   updatedHtml = updatedHtml.replace(/<script[^>]*id=["']server-seo-jsonld["'][^>]*>[\s\S]*?<\/script>\s*/ig, '');
 
   const escapedDescription = htmlEscape(model.pageDescription);
   const escapedCanonical = htmlEscape(model.canonicalUrl);
-  const keywordContent = [
-    `${model.localityMeta.name} businesses`,
-    model.categoryLabel ? `${model.categoryLabel} in ${model.localityMeta.name}` : '',
-    ...model.internalLinks.slice(0, 4).map((item) => item.label),
-  ]
-    .filter(Boolean)
-    .join(', ');
-  const escapedKeywords = htmlEscape(keywordContent);
+  const escapedKeywords = htmlEscape(model.metaKeywords);
+  const escapedSocialImage = htmlEscape(model.socialImageUrl);
   const seoHeadTags = [
     `<meta name="description" content="${escapedDescription}">`,
     `<meta name="keywords" content="${escapedKeywords}">`,
     `<meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">`,
     `<meta property="og:type" content="website">`,
-    `<meta property="og:site_name" content="Happy Gifting Businesses">`,
+    `<meta property="og:site_name" content="${SEO_SITE_NAME}">`,
     `<meta property="og:title" content="${escapedTitle}">`,
     `<meta property="og:description" content="${escapedDescription}">`,
     `<meta property="og:url" content="${escapedCanonical}">`,
+    `<meta property="og:image" content="${escapedSocialImage}">`,
     `<meta name="twitter:card" content="summary_large_image">`,
     `<meta name="twitter:title" content="${escapedTitle}">`,
     `<meta name="twitter:description" content="${escapedDescription}">`,
+    `<meta name="twitter:image" content="${escapedSocialImage}">`,
+    `<meta name="twitter:image:alt" content="${escapedTitle}">`,
     `<link rel="canonical" href="${escapedCanonical}">`,
     `<script type="application/ld+json" id="server-seo-jsonld">${JSON.stringify(jsonLd)}</script>`,
   ].join('');
@@ -566,6 +631,184 @@ function normalizeRoleForType(userType) {
   if (userType === 'seller') return 'seller';
   if (userType === 'buyer') return 'buyer';
   return 'resource';
+}
+
+function normalizePhoneDigits(phone) {
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.length === 10) return `91${digits}`;
+  if (digits.length === 11 && digits.startsWith('0')) return `91${digits.slice(1)}`;
+  return digits;
+}
+
+function buildAuthUserResponse(user) {
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    phone: user.phone,
+    userType: user.userType,
+    role: user.role,
+    status: user.status,
+  };
+}
+
+function buildOtpChallengeToken({ challengeId, userId, userType, mobile, purpose }) {
+  const exp = Math.floor(Date.now() / 1000) + 10 * 60;
+  return signToken({
+    sub: userId,
+    challengeId,
+    userType,
+    mobile,
+    purpose,
+    otpChallenge: true,
+    exp,
+  });
+}
+
+function verifyOtpChallengeToken(token, expectedPurpose) {
+  const payload = verifyToken(token);
+  if (!payload || !payload.otpChallenge) return null;
+  if (expectedPurpose && payload.purpose !== expectedPurpose) return null;
+  if (!payload.mobile || !payload.sub || !payload.challengeId) return null;
+  return payload;
+}
+
+async function createOtpChallenge({ userId, userType, mobile, purpose }) {
+  const challengeId = randomId('otp');
+  const createdAt = nowIso();
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+  const challenge = {
+    id: challengeId,
+    userId,
+    userType,
+    mobile,
+    purpose,
+    createdAt,
+    expiresAt,
+    usedAt: null,
+  };
+
+  const client = await getPgClient();
+  if (client) {
+    await client.query(
+      `INSERT INTO auth_otp_challenges (id, user_id, user_type, mobile, purpose, created_at, expires_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [challenge.id, challenge.userId, challenge.userType, challenge.mobile, challenge.purpose, challenge.createdAt, challenge.expiresAt],
+    );
+  } else {
+    if (!Array.isArray(memoryOtpChallenges)) memoryOtpChallenges = [];
+    memoryOtpChallenges = memoryOtpChallenges.filter((entry) => entry.expiresAt > createdAt && !entry.usedAt);
+    memoryOtpChallenges.push(challenge);
+  }
+
+  return challenge;
+}
+
+async function readOtpChallenge(challengeId) {
+  const client = await getPgClient();
+  if (client) {
+    const result = await client.query(
+      `SELECT id, user_id, user_type, mobile, purpose, created_at, expires_at, used_at
+       FROM auth_otp_challenges
+      WHERE id = $1
+      LIMIT 1`,
+      [challengeId],
+    );
+    const row = result.rows[0];
+    if (!row) return null;
+    if (row.used_at) return null;
+    if (new Date(row.expires_at).getTime() < Date.now()) return null;
+    return {
+      id: row.id,
+      userId: row.user_id,
+      userType: row.user_type,
+      mobile: row.mobile,
+      purpose: row.purpose,
+      createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
+      expiresAt: row.expires_at instanceof Date ? row.expires_at.toISOString() : String(row.expires_at),
+      usedAt: row.used_at,
+    };
+  }
+
+  if (!Array.isArray(memoryOtpChallenges)) return null;
+  const index = memoryOtpChallenges.findIndex((entry) => entry.id === challengeId);
+  if (index === -1) return null;
+  const entry = memoryOtpChallenges[index];
+  if (entry.usedAt || new Date(entry.expiresAt).getTime() < Date.now()) return null;
+  return entry;
+}
+
+async function markOtpChallengeUsed(challengeId) {
+  const client = await getPgClient();
+  if (client) {
+    await client.query(`UPDATE auth_otp_challenges SET used_at = NOW() WHERE id = $1`, [challengeId]);
+    return;
+  }
+  if (!Array.isArray(memoryOtpChallenges)) return;
+  const index = memoryOtpChallenges.findIndex((entry) => entry.id === challengeId);
+  if (index === -1) return;
+  memoryOtpChallenges[index] = { ...memoryOtpChallenges[index], usedAt: nowIso() };
+}
+
+async function sendMsg91Otp(mobile) {
+  if (!MSG91_AUTHKEY || !MSG91_OTP_TEMPLATE_ID) {
+    throw new Error('MSG91 OTP is not configured');
+  }
+  const url = new URL('/api/v5/otp', MSG91_OTP_BASE_URL);
+  url.searchParams.set('template_id', MSG91_OTP_TEMPLATE_ID);
+  url.searchParams.set('mobile', mobile);
+  url.searchParams.set('authkey', MSG91_AUTHKEY);
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({}),
+  });
+  const text = await response.text().catch(() => '');
+  if (!response.ok) {
+    throw new Error(`MSG91 OTP send failed (${response.status}): ${text || response.statusText}`);
+  }
+  return text;
+}
+
+async function verifyMsg91Otp(mobile, otp) {
+  if (!MSG91_AUTHKEY) {
+    throw new Error('MSG91 OTP is not configured');
+  }
+  const url = new URL('/api/v5/otp/verify', MSG91_OTP_BASE_URL);
+  url.searchParams.set('otp', otp);
+  url.searchParams.set('mobile', mobile);
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: {
+      authkey: MSG91_AUTHKEY,
+    },
+  });
+  const text = await response.text().catch(() => '');
+  if (!response.ok) {
+    throw new Error(`MSG91 OTP verify failed (${response.status}): ${text || response.statusText}`);
+  }
+  const normalized = text.trim().toLowerCase();
+  if (normalized.includes('invalid otp') || normalized.includes('otp expired')) {
+    throw new Error('Invalid or expired OTP');
+  }
+  return text;
+}
+
+function findUserByLoginIdentifier(users, identifier) {
+  const normalized = String(identifier || '').toLowerCase().trim();
+  if (!normalized) return null;
+  return users.find((user) => user.email === normalized);
+}
+
+function findUserByMobile(users, mobile) {
+  const target = normalizePhoneDigits(mobile);
+  if (!target) return null;
+  return users.find((user) => normalizePhoneDigits(user.phone) === target);
 }
 
 async function readUsers() {
@@ -1109,6 +1352,18 @@ async function getPgClient() {
       )
     `);
     await pgClient.query(`
+      CREATE TABLE IF NOT EXISTS auth_otp_challenges (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        user_type TEXT NOT NULL,
+        mobile TEXT NOT NULL,
+        purpose TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL,
+        expires_at TIMESTAMPTZ NOT NULL,
+        used_at TIMESTAMPTZ
+      )
+    `);
+    await pgClient.query(`
       CREATE TABLE IF NOT EXISTS app_state (
         key TEXT PRIMARY KEY,
         value JSONB NOT NULL,
@@ -1270,11 +1525,17 @@ app.put('/api/homepage-config', async (req, res) => {
 
 app.post('/api/auth/register', async (req, res) => {
   const { name, email, phone, password, userType } = req.body || {};
-  if (!name || !email || !password || !userType) {
-    return res.status(400).json({ ok: false, error: 'name, email, password and userType are required' });
+  if (!name || !email || !userType) {
+    return res.status(400).json({ ok: false, error: 'name, email and userType are required' });
   }
   if (!ALL_USER_TYPES.includes(userType)) {
     return res.status(400).json({ ok: false, error: 'Invalid userType' });
+  }
+  if (PUBLIC_USER_TYPES.includes(userType) && !String(phone || '').trim()) {
+    return res.status(400).json({ ok: false, error: 'phone is required for OTP login users' });
+  }
+  if (!PUBLIC_USER_TYPES.includes(userType) && !String(password || '').trim()) {
+    return res.status(400).json({ ok: false, error: 'password is required for platform users' });
   }
 
   const requester = authFromHeader(req);
@@ -1296,7 +1557,7 @@ app.post('/api/auth/register', async (req, res) => {
     phone: String(phone || '').trim(),
     userType,
     role: normalizeRoleForType(userType),
-    passwordHash: await hashPassword(String(password)),
+    passwordHash: await hashPassword(String(password || crypto.randomBytes(12).toString('hex'))),
     createdAt: nowIso(),
     status: 'active',
   };
@@ -1317,39 +1578,151 @@ app.post('/api/auth/register', async (req, res) => {
   });
 });
 
-app.post('/api/auth/login', async (req, res) => {
-  const { email, password } = req.body || {};
-  if (!email || !password) {
-    return res.status(400).json({ ok: false, error: 'email and password are required' });
-  }
+app.post('/api/auth/request-otp', async (req, res) => {
+  const { phone } = req.body || {};
   const users = await readUsers();
-  const user = users.find((u) => u.email === String(email).toLowerCase().trim());
+  const user = findUserByMobile(users, phone);
+  if (!user) {
+    return res.status(404).json({ ok: false, error: 'No account found for that mobile number' });
+  }
+  if (!PUBLIC_USER_TYPES.includes(user.userType)) {
+    return res.status(403).json({ ok: false, error: 'Use platform login for admin accounts' });
+  }
+  if (user.status !== 'active') {
+    return res.status(403).json({ ok: false, error: 'User is not active' });
+  }
+
+  const mobile = normalizePhoneDigits(user.phone);
+  try {
+    await sendMsg91Otp(mobile);
+    const challenge = await createOtpChallenge({
+      userId: user.id,
+      userType: user.userType,
+      mobile,
+      purpose: 'public-login',
+    });
+    const challengeToken = buildOtpChallengeToken({
+      challengeId: challenge.id,
+      userId: user.id,
+      userType: user.userType,
+      mobile,
+      purpose: 'public-login',
+    });
+    res.json({
+      ok: true,
+      challengeToken,
+      mobile,
+      user: buildAuthUserResponse(user),
+    });
+  } catch (err) {
+    console.error('Failed to send public OTP:', err);
+    res.status(500).json({ ok: false, error: err?.message || 'Failed to send OTP' });
+  }
+});
+
+app.post('/api/auth/platform/request-otp', async (req, res) => {
+  const { identifier, password } = req.body || {};
+  if (!identifier || !password) {
+    return res.status(400).json({ ok: false, error: 'identifier and password are required' });
+  }
+
+  const users = await readUsers();
+  const user = findUserByLoginIdentifier(users, identifier);
   if (!user) return res.status(401).json({ ok: false, error: 'Invalid credentials' });
+  if (!['platform_admin', 'developer'].includes(user.userType)) {
+    return res.status(403).json({ ok: false, error: 'Use OTP login for non-platform accounts' });
+  }
   const valid = await verifyPassword(String(password), user.passwordHash);
   if (!valid) return res.status(401).json({ ok: false, error: 'Invalid credentials' });
   if (user.status !== 'active') return res.status(403).json({ ok: false, error: 'User is not active' });
 
-  const exp = Math.floor(Date.now() / 1000) + TOKEN_TTL_SEC;
-  const token = signToken({
-    sub: user.id,
-    email: user.email,
-    role: user.role,
-    userType: user.userType,
-    exp,
-  });
+  const mobile = normalizePhoneDigits(user.phone);
+  if (!mobile) {
+    return res.status(400).json({ ok: false, error: 'Platform account does not have a mobile number for OTP' });
+  }
 
-  res.json({
-    ok: true,
-    token,
-    user: {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      phone: user.phone,
+  try {
+    await sendMsg91Otp(mobile);
+    const challenge = await createOtpChallenge({
+      userId: user.id,
       userType: user.userType,
+      mobile,
+      purpose: 'platform-login',
+    });
+    const challengeToken = buildOtpChallengeToken({
+      challengeId: challenge.id,
+      userId: user.id,
+      userType: user.userType,
+      mobile,
+      purpose: 'platform-login',
+    });
+    res.json({
+      ok: true,
+      challengeToken,
+      mobile,
+      user: buildAuthUserResponse(user),
+    });
+  } catch (err) {
+    console.error('Failed to send platform OTP:', err);
+    res.status(500).json({ ok: false, error: err?.message || 'Failed to send OTP' });
+  }
+});
+
+app.post('/api/auth/verify-otp', async (req, res) => {
+  const { challengeToken, otp } = req.body || {};
+  if (!challengeToken || !otp) {
+    return res.status(400).json({ ok: false, error: 'challengeToken and otp are required' });
+  }
+
+  const challenge = verifyOtpChallengeToken(String(challengeToken), undefined);
+  if (!challenge) {
+    return res.status(401).json({ ok: false, error: 'Invalid or expired OTP challenge' });
+  }
+  const persistedChallenge = await readOtpChallenge(challenge.challengeId);
+  if (!persistedChallenge) {
+    return res.status(401).json({ ok: false, error: 'Invalid or expired OTP challenge' });
+  }
+  if (persistedChallenge.purpose !== challenge.purpose || persistedChallenge.userId !== challenge.sub || persistedChallenge.mobile !== challenge.mobile) {
+    return res.status(401).json({ ok: false, error: 'Invalid OTP challenge' });
+  }
+
+  const users = await readUsers();
+  const user = users.find((entry) => entry.id === challenge.sub);
+  if (!user) return res.status(401).json({ ok: false, error: 'Unauthorized' });
+  if (user.status !== 'active') return res.status(403).json({ ok: false, error: 'User is not active' });
+
+  const mobile = normalizePhoneDigits(user.phone);
+  if (mobile !== challenge.mobile) {
+    return res.status(401).json({ ok: false, error: 'Invalid OTP challenge' });
+  }
+
+  try {
+    await verifyMsg91Otp(mobile, String(otp).trim());
+    await markOtpChallengeUsed(challenge.challengeId);
+    const exp = Math.floor(Date.now() / 1000) + TOKEN_TTL_SEC;
+    const token = signToken({
+      sub: user.id,
+      email: user.email,
       role: user.role,
-      status: user.status,
-    },
+      userType: user.userType,
+      exp,
+    });
+
+    res.json({
+      ok: true,
+      token,
+      user: buildAuthUserResponse(user),
+    });
+  } catch (err) {
+    console.error('Failed to verify OTP:', err);
+    res.status(401).json({ ok: false, error: err?.message || 'Invalid OTP' });
+  }
+});
+
+app.post('/api/auth/login', async (req, res) => {
+  res.status(410).json({
+    ok: false,
+    error: 'Use /api/auth/request-otp for public logins and /api/auth/platform/request-otp for platform logins.',
   });
 });
 
@@ -1505,6 +1878,48 @@ app.get('/robots.txt', (req, res) => {
   }
   lines.push('', `Sitemap: ${origin}/sitemap.xml`);
   res.type('text/plain').send(lines.join('\n'));
+});
+
+app.get('/seo-image.svg', (req, res) => {
+  const rawTitle = String(req.query.title || SEO_SITE_NAME).slice(0, 120);
+  const rawSubtitle = String(req.query.subtitle || 'Verified local businesses across Navi Mumbai').slice(0, 160);
+  const rawBrand = String(req.query.brand || SEO_SITE_NAME).slice(0, 80);
+  const rawTagline = String(req.query.tagline || SEO_SITE_PROMISE).slice(0, 120);
+
+  const title = htmlEscape(rawTitle);
+  const subtitle = htmlEscape(rawSubtitle);
+  const brand = htmlEscape(rawBrand);
+  const tagline = htmlEscape(rawTagline);
+
+  const svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">${title}</title>
+  <desc id="desc">${subtitle}</desc>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="55%" stop-color="#1d4ed8" />
+      <stop offset="100%" stop-color="#0f766e" />
+    </linearGradient>
+    <radialGradient id="glow" cx="18%" cy="22%" r="65%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.18" />
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)" />
+  <rect width="1200" height="630" fill="url(#glow)" />
+  <circle cx="1020" cy="132" r="120" fill="#f59e0b" fill-opacity="0.14" />
+  <circle cx="1088" cy="508" r="150" fill="#22c55e" fill-opacity="0.12" />
+  <text x="84" y="112" fill="#dbeafe" font-family="Inter,Arial,sans-serif" font-size="30" font-weight="700" letter-spacing="2">${brand}</text>
+  <text x="84" y="180" fill="#bfdbfe" font-family="Inter,Arial,sans-serif" font-size="24" font-weight="600">${tagline}</text>
+  <text x="84" y="252" fill="#ffffff" font-family="Inter,Arial,sans-serif" font-size="58" font-weight="800">${title}</text>
+  <text x="84" y="336" fill="#e2e8f0" font-family="Inter,Arial,sans-serif" font-size="30" font-weight="500">${subtitle}</text>
+  <text x="84" y="510" fill="#bfdbfe" font-family="Inter,Arial,sans-serif" font-size="26" font-weight="600">Roadpali, Kalamboli, Kharghar, Kamothe, Panvel and Taloja</text>
+</svg>`;
+
+  res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, max-age=3600, stale-while-revalidate=86400');
+  res.send(svg);
 });
 
 app.get('/sitemap.xml', (req, res) => {

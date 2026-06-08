@@ -2302,7 +2302,7 @@ export default function App() {
   };
 
   useEffect(() => {
-    const siteName = 'Happy Gifting Businesses';
+    const siteName = 'Localisy';
     const seoTitle = (urlSearchFilter && urlSearchFilter.trim())
       ? `${urlSearchFilter.trim()} in ${activeLocalityName} | ${siteName}`
       : (urlCategoryFilter && urlCategoryFilter !== 'all')
@@ -2310,19 +2310,26 @@ export default function App() {
         : `${activeLocalityName} Local Business Directory | ${siteName}`;
 
     const seoDescription = (urlCategoryFilter && urlCategoryFilter !== 'all')
-      ? `Find verified ${seoCategoryName.toLowerCase()} in ${activeLocalityName} with phone, address, ratings, and service details.`
-      : `Explore verified local businesses in ${activeLocalityName}, including shops, clinics, salons, restaurants, and home services.`;
+      ? `Browse verified ${seoCategoryName.toLowerCase()} in ${activeLocalityName}. Compare phone, address, ratings, hours, and trusted local providers.`
+      : `Discover verified local businesses in ${activeLocalityName}. Explore salons, restaurants, clinics, home services, and shops nearby.`;
 
     const origin = window.location.origin;
     const activeLocalityPath = buildLocalityPath(activeLocality?.id || 'roadpali');
     const canonicalPath = buildSeoPath(activeLocality?.id || 'roadpali', urlCategoryFilter, urlSearchFilter);
     const canonicalUrl = `${origin}${canonicalPath}`;
-    const categoryOrSearchText = [seoCategoryName, urlSearchFilter].filter(Boolean).join(', ');
+    const seoImageUrl = `${origin}/seo-image.svg?title=${encodeURIComponent(seoTitle)}&subtitle=${encodeURIComponent(
+      urlSearchFilter?.trim()
+        ? `${activeLocalityName} • ${urlSearchFilter.trim()}`
+        : `${activeLocalityName} • ${seoCategoryName || 'Local Directory'}`
+    )}&brand=${encodeURIComponent(siteName)}`;
     const keywordSet = [
       `${activeLocalityName} businesses`,
-      `${activeLocalityName} local services`,
-      categoryOrSearchText,
-      ...seoFooterLinks.map((link) => link.label),
+      `${activeLocalityName} local business directory`,
+      seoCategoryName,
+      urlSearchFilter,
+      `verified businesses in ${activeLocalityName}`,
+      'Navi Mumbai businesses',
+      'local services near me',
     ]
       .filter(Boolean)
       .join(', ');
@@ -2354,11 +2361,14 @@ export default function App() {
     setMeta('twitter:card', 'summary_large_image');
     setMeta('twitter:title', seoTitle);
     setMeta('twitter:description', seoDescription);
+    setMeta('twitter:image', seoImageUrl);
+    setMeta('twitter:image:alt', seoTitle);
     setPropertyMeta('og:type', 'website');
     setPropertyMeta('og:site_name', siteName);
     setPropertyMeta('og:title', seoTitle);
     setPropertyMeta('og:description', seoDescription);
     setPropertyMeta('og:url', canonicalUrl);
+    setPropertyMeta('og:image', seoImageUrl);
 
     let canonical = document.querySelector('link[rel="canonical"]') as HTMLLinkElement | null;
     if (!canonical) {
@@ -2441,7 +2451,7 @@ export default function App() {
             type="button"
             onClick={handleMainLogoHome}
             className="shrink-0 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            title="Happy Business home"
+            title="Localisy home"
           >
           <img
             src={happyBusinessLogo}
@@ -2987,7 +2997,7 @@ export default function App() {
               🔐 Moderator Login Gate
             </button>
             <span className="text-slate-600" style={{ display: PRODUCTION_MODE ? 'none' : 'inline' }}>|</span>
-            <span className="text-xs text-slate-500">(c) 2026 Happy Gifting Businesses.</span>
+            <span className="text-xs text-slate-500">(c) 2026 Localisy. A Hyper Local Business Directory. Discover Local. Support Local. Grow Local.</span>
           </div>
         </div>
       </footer>
