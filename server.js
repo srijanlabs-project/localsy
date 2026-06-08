@@ -15,7 +15,7 @@ const homepageConfigPath = path.join(__dirname, 'homepage-config.json');
 const TOKEN_SECRET = process.env.AUTH_SECRET || 'replace-this-in-production';
 const TOKEN_TTL_SEC = 60 * 60 * 12; // 12 hours
 
-app.use(express.json({ limit: '5mb' }));
+app.use(express.json({ limit: '20mb' }));
 app.disable('x-powered-by');
 app.use((_req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -30,6 +30,15 @@ let pgInitAttempted = false;
 let memoryUsers = null;
 let memoryBusinesses = null;
 let memoryHomepageConfig = null;
+
+const STORAGE_ENDPOINT_URL = process.env.S3_ENDPOINT_URL || process.env.STORAGE_ENDPOINT_URL || '';
+const STORAGE_BUCKET_NAME = process.env.S3_BUCKET_NAME || process.env.STORAGE_BUCKET_NAME || '';
+const STORAGE_ACCESS_KEY_ID = process.env.S3_ACCESS_KEY_ID || process.env.STORAGE_ACCESS_KEY_ID || '';
+const STORAGE_SECRET_ACCESS_KEY = process.env.S3_SECRET_ACCESS_KEY || process.env.STORAGE_SECRET_ACCESS_KEY || '';
+const STORAGE_REGION = process.env.S3_REGION || process.env.STORAGE_REGION || 'auto';
+const STORAGE_PUBLIC_BASE_URL = process.env.S3_PUBLIC_BASE_URL || '';
+const STORAGE_FORCE_PATH_STYLE = String(process.env.S3_FORCE_PATH_STYLE || '').toLowerCase() === 'true';
+const STORAGE_OBJECT_ACL = process.env.S3_OBJECT_ACL || '';
 
 const PUBLIC_USER_TYPES = ['buyer', 'seller', 'resource'];
 const ALL_USER_TYPES = ['platform_admin', 'developer', 'buyer', 'seller', 'resource'];
@@ -836,6 +845,162 @@ function authFromHeader(req) {
   return verifyToken(token);
 }
 
+function requirePrivilegedWriteAccess(req, res) {
+  const payload = authFromHeader(req);
+  if (!payload) {
+    res.status(401).json({ ok: false, error: 'Unauthorized' });
+    return null;
+  }
+  if (!['platform_admin', 'developer'].includes(payload.userType)) {
+    res.status(403).json({ ok: false, error: 'Insufficient privileges' });
+    return null;
+  }
+  return payload;
+}
+
+function normalizeStorageFolder(value) {
+  const parts = String(value || '')
+    .split('/')
+    .map((part) => slugifyForUrl(part))
+    .filter(Boolean);
+  return parts.length > 0 ? parts.join('/') : 'homepage-banners';
+}
+
+function sanitizeStorageFileName(fileName, fallbackExtension = '') {
+  const parsed = path.parse(String(fileName || 'banner'));
+  const base = parsed.name.replace(/[^a-z0-9_-]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'banner';
+  const extension = (parsed.ext || fallbackExtension || '').toLowerCase();
+  return `${base}${extension}`;
+}
+
+function buildStorageObjectKey(folder, fileName) {
+  const normalizedFolder = normalizeStorageFolder(folder);
+  const safeFileName = sanitizeStorageFileName(fileName, '.png');
+  const dateToken = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const nonce = crypto.randomUUID().slice(0, 8);
+  return `${normalizedFolder}/${dateToken}/${nonce}-${safeFileName}`;
+}
+
+function encodeStoragePath(key) {
+  return String(key)
+    .split('/')
+    .map((segment) => encodeURIComponent(segment))
+    .join('/');
+}
+
+function getStorageHost() {
+  if (!STORAGE_ENDPOINT_URL || !STORAGE_BUCKET_NAME) return null;
+  const parsed = new URL(STORAGE_ENDPOINT_URL);
+  return STORAGE_FORCE_PATH_STYLE ? parsed.host : `${STORAGE_BUCKET_NAME}.${parsed.host}`;
+}
+
+function getStorageRequestUrl(key) {
+  if (!STORAGE_ENDPOINT_URL || !STORAGE_BUCKET_NAME) return null;
+  const parsed = new URL(STORAGE_ENDPOINT_URL);
+  const encodedPath = encodeStoragePath(key);
+  if (STORAGE_FORCE_PATH_STYLE) {
+    return `${parsed.origin}/${encodeURIComponent(STORAGE_BUCKET_NAME)}/${encodedPath}`;
+  }
+  return `${parsed.protocol}//${getStorageHost()}/${encodedPath}`;
+}
+
+function getStoragePublicUrl(key) {
+  if (STORAGE_PUBLIC_BASE_URL) {
+    return `${STORAGE_PUBLIC_BASE_URL.replace(/\/+$/, '')}/${encodeStoragePath(key)}`;
+  }
+  const requestUrl = getStorageRequestUrl(key);
+  return requestUrl || '';
+}
+
+function getSigningKey(secretKey, dateStamp, region, service = 's3') {
+  const kDate = crypto.createHmac('sha256', `AWS4${secretKey}`).update(dateStamp).digest();
+  const kRegion = crypto.createHmac('sha256', kDate).update(region).digest();
+  const kService = crypto.createHmac('sha256', kRegion).update(service).digest();
+  return crypto.createHmac('sha256', kService).update('aws4_request').digest();
+}
+
+function getAwsTimestamp() {
+  const now = new Date();
+  const dateStamp = now.toISOString().slice(0, 10).replace(/-/g, '');
+  const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '');
+  return { dateStamp, amzDate };
+}
+
+async function uploadObjectToStorage({ key, body, contentType }) {
+  if (!STORAGE_ENDPOINT_URL || !STORAGE_BUCKET_NAME || !STORAGE_ACCESS_KEY_ID || !STORAGE_SECRET_ACCESS_KEY) {
+    throw new Error('Storage credentials are not configured');
+  }
+
+  const requestUrl = getStorageRequestUrl(key);
+  if (!requestUrl) {
+    throw new Error('Storage endpoint is not configured');
+  }
+
+  const { dateStamp, amzDate } = getAwsTimestamp();
+  const parsed = new URL(requestUrl);
+  const payloadHash = crypto.createHash('sha256').update(body).digest('hex');
+  const canonicalHeaders = [
+    `host:${parsed.host}`,
+    `x-amz-content-sha256:${payloadHash}`,
+    `x-amz-date:${amzDate}`,
+  ];
+  const signedHeaders = ['host', 'x-amz-content-sha256', 'x-amz-date'];
+
+  if (STORAGE_OBJECT_ACL) {
+    canonicalHeaders.push(`x-amz-acl:${STORAGE_OBJECT_ACL}`);
+    signedHeaders.push('x-amz-acl');
+  }
+
+  const canonicalRequest = [
+    'PUT',
+    parsed.pathname,
+    '',
+    `${canonicalHeaders.join('\n')}\n`,
+    signedHeaders.join(';'),
+    payloadHash,
+  ].join('\n');
+
+  const credentialScope = `${dateStamp}/${STORAGE_REGION}/s3/aws4_request`;
+  const stringToSign = [
+    'AWS4-HMAC-SHA256',
+    amzDate,
+    credentialScope,
+    crypto.createHash('sha256').update(canonicalRequest).digest('hex'),
+  ].join('\n');
+
+  const signingKey = getSigningKey(STORAGE_SECRET_ACCESS_KEY, dateStamp, STORAGE_REGION);
+  const signature = crypto.createHmac('sha256', signingKey).update(stringToSign).digest('hex');
+  const authorizationHeader = `AWS4-HMAC-SHA256 Credential=${STORAGE_ACCESS_KEY_ID}/${credentialScope}, SignedHeaders=${signedHeaders.join(';')}, Signature=${signature}`;
+
+  const headers = {
+    Authorization: authorizationHeader,
+    Host: parsed.host,
+    'Content-Type': contentType,
+    'x-amz-content-sha256': payloadHash,
+    'x-amz-date': amzDate,
+  };
+
+  if (STORAGE_OBJECT_ACL) {
+    headers['x-amz-acl'] = STORAGE_OBJECT_ACL;
+  }
+
+  const response = await fetch(requestUrl, {
+    method: 'PUT',
+    headers,
+    body,
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => '');
+    throw new Error(`Storage upload failed (${response.status}): ${errorText || response.statusText}`);
+  }
+
+  return {
+    requestUrl,
+    publicUrl: getStoragePublicUrl(key),
+  };
+}
+
 async function getPgClient() {
   if (pgInitAttempted) return pgClient;
   pgInitAttempted = true;
@@ -920,6 +1085,45 @@ app.put('/api/businesses', async (req, res) => {
   }
 });
 
+app.post('/api/media/upload', async (req, res) => {
+  const access = requirePrivilegedWriteAccess(req, res);
+  if (!access) return;
+
+  const folder = normalizeStorageFolder(req.body?.folder);
+  const fileName = String(req.body?.fileName || 'banner.png');
+  const mimeType = String(req.body?.mimeType || 'application/octet-stream');
+  const dataUrl = String(req.body?.dataUrl || '');
+  const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/i);
+  const base64Payload = match ? match[2] : dataUrl.replace(/^base64:/i, '');
+
+  if (!base64Payload) {
+    return res.status(400).json({ ok: false, error: 'Image data is required' });
+  }
+
+  const buffer = Buffer.from(base64Payload, 'base64');
+  if (buffer.length === 0) {
+    return res.status(400).json({ ok: false, error: 'Invalid image data' });
+  }
+
+  try {
+    const key = buildStorageObjectKey(folder, fileName);
+    const uploaded = await uploadObjectToStorage({
+      key,
+      body: buffer,
+      contentType: mimeType,
+    });
+    res.json({
+      ok: true,
+      folder,
+      key,
+      url: uploaded.publicUrl || uploaded.requestUrl,
+    });
+  } catch (err) {
+    console.error('Failed to upload media:', err);
+    res.status(500).json({ ok: false, error: err?.message || 'Failed to upload media' });
+  }
+});
+
 app.get('/api/homepage-config', async (_req, res) => {
   try {
     const config = await readHomepageConfig();
@@ -931,6 +1135,9 @@ app.get('/api/homepage-config', async (_req, res) => {
 });
 
 app.put('/api/homepage-config', async (req, res) => {
+  const access = requirePrivilegedWriteAccess(req, res);
+  if (!access) return;
+
   const config = sanitizeHomepageConfig(req.body?.config);
   if (!config) {
     return res.status(400).json({ ok: false, error: 'config object is required' });

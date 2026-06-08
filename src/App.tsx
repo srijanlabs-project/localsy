@@ -172,6 +172,26 @@ const normalizeStoredHeroBanner = (banner: HeroBanner): HeroBanner => ({
   pincodes: normalizeStringList(banner.pincodes)
 });
 
+const normalizeStoredCommunityItem = (item: CommunityItem): CommunityItem => {
+  const nowIso = new Date().toISOString();
+  const publishAt = item.publishAt || item.createdAt || nowIso;
+  const status = item.status || (
+    item.expireAt && Date.parse(item.expireAt) < Date.now()
+      ? 'archived'
+      : item.publishAt && Date.parse(item.publishAt) > Date.now()
+        ? 'scheduled'
+        : 'published'
+  );
+
+  return {
+    ...item,
+    image: item.image?.trim() || undefined,
+    status,
+    publishAt,
+    expireAt: item.expireAt || undefined
+  };
+};
+
 const getSectionLabel = (sectionType: HomepageSectionType) => {
   switch (sectionType) {
     case 'hero_banner':
@@ -908,7 +928,9 @@ export default function App() {
         setCoupons((prev) => normalizedConfig.coupons.length > 0 ? normalizedConfig.coupons : prev);
         setHomepageLayouts(normalizedConfig.homepageLayouts);
         setLocalityCategoryLinks(normalizedConfig.localityCategoryLinks);
-        setCommunityItems((prev) => normalizedConfig.communityItems.length > 0 ? normalizedConfig.communityItems : prev);
+        setCommunityItems((prev) => normalizedConfig.communityItems.length > 0
+          ? normalizedConfig.communityItems.map(normalizeStoredCommunityItem)
+          : prev);
         setApiConfiguration((prev) => normalizeApiConfiguration({
           ...prev,
           ...normalizedConfig.apiConfiguration,
@@ -937,7 +959,9 @@ export default function App() {
 
   const [communityItems, setCommunityItems] = useState<CommunityItem[]>(() => {
     const saved = localStorage.getItem('yp_community');
-    return saved ? JSON.parse(saved) : INITIAL_COMMUNITY_ITEMS;
+    return saved
+      ? JSON.parse(saved).map(normalizeStoredCommunityItem)
+      : INITIAL_COMMUNITY_ITEMS.map(normalizeStoredCommunityItem);
   });
 
   const [crmContacts, setCrmContacts] = useState<CRMContact[]>(() => {
@@ -991,11 +1015,19 @@ export default function App() {
     apiConfiguration: getPersistableApiConfiguration(apiConfiguration)
   });
 
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('yp_auth_token');
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
   const persistHomepageConfigToServer = (nextPayload?: HomepageConfigState) => {
     const payload = nextPayload || buildHomepageConfigPayload();
     return fetch(apiConfiguration.homepageConfigEndpoint, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders()
+      },
       body: JSON.stringify({ config: payload })
     });
   };
@@ -1084,41 +1116,51 @@ export default function App() {
     localStorage.setItem('yp_viewed_bizs', JSON.stringify(viewedBusinessIds));
   }, [viewedBusinessIds]);
 
+  const mirrorHomepageStateLocally = apiConfiguration.syncMode !== 'api';
+
   useEffect(() => {
+    if (!mirrorHomepageStateLocally) return;
     localStorage.setItem('yp_community', JSON.stringify(communityItems));
-  }, [communityItems]);
+  }, [communityItems, mirrorHomepageStateLocally]);
 
   useEffect(() => {
     localStorage.setItem('yp_crm', JSON.stringify(crmContacts));
   }, [crmContacts]);
 
   useEffect(() => {
+    if (!mirrorHomepageStateLocally) return;
     localStorage.setItem('yp_coupons', JSON.stringify(coupons));
-  }, [coupons]);
+  }, [coupons, mirrorHomepageStateLocally]);
 
   useEffect(() => {
+    if (!mirrorHomepageStateLocally) return;
     localStorage.setItem('yp_listing_ads', JSON.stringify(listingAds));
-  }, [listingAds]);
+  }, [listingAds, mirrorHomepageStateLocally]);
 
   useEffect(() => {
+    if (!mirrorHomepageStateLocally) return;
     localStorage.setItem('yp_ad_leads', JSON.stringify(adLeads));
-  }, [adLeads]);
+  }, [adLeads, mirrorHomepageStateLocally]);
 
   useEffect(() => {
+    if (!mirrorHomepageStateLocally) return;
     localStorage.setItem('yp_hero_banners', JSON.stringify(heroBanners));
-  }, [heroBanners]);
+  }, [heroBanners, mirrorHomepageStateLocally]);
 
   useEffect(() => {
+    if (!mirrorHomepageStateLocally) return;
     localStorage.setItem('yp_locality_category_links', JSON.stringify(localityCategoryLinks));
-  }, [localityCategoryLinks]);
+  }, [localityCategoryLinks, mirrorHomepageStateLocally]);
 
   useEffect(() => {
+    if (!mirrorHomepageStateLocally) return;
     localStorage.setItem('yp_homepage_layouts', JSON.stringify(homepageLayouts));
-  }, [homepageLayouts]);
+  }, [homepageLayouts, mirrorHomepageStateLocally]);
 
   useEffect(() => {
+    if (!mirrorHomepageStateLocally) return;
     localStorage.setItem('yp_api_configuration', JSON.stringify(apiConfiguration));
-  }, [apiConfiguration]);
+  }, [apiConfiguration, mirrorHomepageStateLocally]);
 
   useEffect(() => {
     localStorage.setItem('yp_audit_logs', JSON.stringify(auditLogs));
@@ -1297,14 +1339,22 @@ export default function App() {
       ...item,
       id: `comm_${Date.now()}`,
       createdAt: new Date().toISOString(),
-      likes: 0
+      likes: 0,
+      image: item.image?.trim() || undefined,
+      status: item.status || (
+        item.publishAt && Date.parse(item.publishAt) > Date.now()
+          ? 'scheduled'
+          : 'published'
+      ),
+      publishAt: item.publishAt || new Date().toISOString(),
+      expireAt: item.expireAt || undefined
     };
     setCommunityItems(prev => [fresh, ...prev]);
     logAuditEvent('data_entry', `Created community board discussion: "${item.title}"`, `Category type: ${item.type} | Region shard: ${item.localityId}`);
   };
 
   const handleUpdateCommunityItem = (item: CommunityItem) => {
-    setCommunityItems((prev) => prev.map((existing) => (existing.id === item.id ? item : existing)));
+    setCommunityItems((prev) => prev.map((existing) => (existing.id === item.id ? normalizeStoredCommunityItem(item) : existing)));
     logAuditEvent('data_entry', `Updated locality update`, `Update ID: ${item.id} | Locality: ${item.localityId}`);
   };
 
@@ -2453,6 +2503,64 @@ export default function App() {
                   Log Out
                 </button>
               </div>
+            )}
+          </div>
+
+          <div className={`grid w-full gap-2 md:hidden ${userSession.isAuthenticated && userSession.userPhone ? 'grid-cols-2' : 'grid-cols-2'}`}>
+            {userSession.isAuthenticated && userSession.userPhone ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (canAccessAdmin) {
+                      setActiveViewWithAudit('admin');
+                    } else {
+                      window.dispatchEvent(new CustomEvent('localsy:open-business-application'));
+                      const seekWebPortal = document.getElementById('web-portal-root');
+                      if (seekWebPortal) seekWebPortal.scrollIntoView({ behavior: 'smooth' });
+                    }
+                  }}
+                  className={`inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-[11px] font-bold shadow-sm transition ${
+                    canAccessAdmin
+                      ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                      : 'border border-indigo-200 bg-white text-indigo-700 hover:bg-indigo-50'
+                  }`}
+                >
+                  {canAccessAdmin ? <Shield className="h-4 w-4" /> : <Briefcase className="h-4 w-4" />}
+                  <span>{canAccessAdmin ? 'Admin Console' : 'Advertise Business'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-rose-200 bg-white px-3 py-2 text-[11px] font-bold text-rose-600 shadow-sm transition hover:bg-rose-50"
+                >
+                  <LogOut className="h-4 w-4" />
+                  <span>Log Out</span>
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setShowAuthModal(true)}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-2 text-[11px] font-bold text-white shadow-sm transition hover:bg-indigo-700"
+                >
+                  <User className="h-4 w-4" />
+                  <span>Sign In</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.dispatchEvent(new CustomEvent('localsy:open-business-application'));
+                    const seekWebPortal = document.getElementById('web-portal-root');
+                    if (seekWebPortal) seekWebPortal.scrollIntoView({ behavior: 'smooth' });
+                  }}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-bold text-slate-700 shadow-sm transition hover:bg-slate-50"
+                >
+                  <Briefcase className="h-4 w-4" />
+                  <span>Advertise</span>
+                </button>
+              </>
             )}
           </div>
           

@@ -95,6 +95,10 @@ export interface CommunityItem {
   businessId?: string; // Optionally tagged business
   localityId: string;
   likes: number;
+  image?: string;
+  status?: 'draft' | 'scheduled' | 'published' | 'archived';
+  publishAt?: string;
+  expireAt?: string;
   answersCount?: number;
   answers?: Array<{
     id: string;
@@ -105,7 +109,6 @@ export interface CommunityItem {
   eventDate?: string;
   dealPromoCode?: string;
   priceTag?: string;
-  image?: string;
   isSponsored?: boolean; // Monetization: Sponsored Posts
 }
 

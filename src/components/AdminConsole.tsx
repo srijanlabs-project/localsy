@@ -120,9 +120,155 @@ type LocalityCategoryLink = {
   slug: string;
 };
 
+const slugifyForPath = (value: string) => value
+  .toLowerCase()
+  .trim()
+  .replace(/&/g, ' and ')
+  .replace(/[^a-z0-9]+/g, '-')
+  .replace(/^-+|-+$/g, '');
+
+const readFileAsDataUrl = (file: File) => new Promise<string>((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(String(reader.result || ''));
+  reader.onerror = () => reject(new Error('Failed to read image file'));
+  reader.readAsDataURL(file);
+});
+
 type AdminWorkspaceTab = 'moderation' | 'listing-status' | 'bulk-upload' | 'data-audit';
 type ListingStatusFilter = 'all' | 'approved' | 'rejected' | 'pending';
 type AdminOperationsSection = 'listings' | 'homepage' | 'campaigns' | 'geography' | 'content' | 'platform';
+
+type OrderedCategoryPickerProps = {
+  label: string;
+  selectedIds: string[];
+  onChange: (nextIds: string[]) => void;
+  helperText?: string;
+};
+
+function OrderedCategoryPicker({
+  label,
+  selectedIds,
+  onChange,
+  helperText = 'Use the order below to control how this section appears on the page.'
+}: OrderedCategoryPickerProps) {
+  const [newCategoryId, setNewCategoryId] = useState(() => (
+    BUSINESS_CATEGORIES.find((category) => !selectedIds.includes(category.id))?.id
+    || BUSINESS_CATEGORIES[0]?.id
+    || ''
+  ));
+
+  const selectedCategories = selectedIds
+    .map((categoryId) => getCategoryById(categoryId))
+    .filter(Boolean) as (typeof BUSINESS_CATEGORIES)[number][];
+
+  const availableCategories = BUSINESS_CATEGORIES.filter((category) => !selectedIds.includes(category.id));
+
+  useEffect(() => {
+    if (availableCategories.some((category) => category.id === newCategoryId)) return;
+    const nextAvailable = availableCategories[0]?.id || BUSINESS_CATEGORIES[0]?.id || '';
+    setNewCategoryId(nextAvailable);
+  }, [availableCategories, newCategoryId]);
+
+  const addCategory = () => {
+    if (!newCategoryId || selectedIds.includes(newCategoryId)) return;
+    onChange([...selectedIds, newCategoryId]);
+  };
+
+  const moveCategory = (categoryId: string, direction: 'up' | 'down') => {
+    const currentIndex = selectedIds.indexOf(categoryId);
+    if (currentIndex < 0) return;
+    const nextIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+    if (nextIndex < 0 || nextIndex >= selectedIds.length) return;
+    const nextIds = [...selectedIds];
+    [nextIds[currentIndex], nextIds[nextIndex]] = [nextIds[nextIndex], nextIds[currentIndex]];
+    onChange(nextIds);
+  };
+
+  const removeCategory = (categoryId: string) => {
+    onChange(selectedIds.filter((id) => id !== categoryId));
+  };
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-3">
+      <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="text-[11px] font-semibold text-slate-700">{label}</div>
+          <div className="text-[10px] text-slate-500">{helperText}</div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={newCategoryId}
+            onChange={(e) => setNewCategoryId(e.target.value)}
+            className="min-w-[160px] rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px]"
+          >
+            {(availableCategories.length > 0 ? availableCategories : BUSINESS_CATEGORIES).map((category) => (
+              <option key={category.id} value={category.id} disabled={selectedIds.includes(category.id)}>
+                {category.name}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={addCategory}
+            disabled={!newCategoryId || selectedIds.includes(newCategoryId)}
+            className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-[11px] font-bold text-indigo-700 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <PlusCircle className="h-3.5 w-3.5" />
+            Add
+          </button>
+        </div>
+      </div>
+
+      {selectedCategories.length > 0 ? (
+        <div className="space-y-2">
+          {selectedCategories.map((category, index) => (
+            <div
+              key={category.id}
+              className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+            >
+              <div className="min-w-0">
+                <div className="truncate text-[11px] font-semibold text-slate-800">{index + 1}. {category.name}</div>
+                <div className="truncate text-[10px] text-slate-500">{category.id}</div>
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => moveCategory(category.id, 'up')}
+                  disabled={index === 0}
+                  className="rounded border border-slate-200 bg-white p-1.5 text-slate-600 disabled:cursor-not-allowed disabled:opacity-40"
+                  title="Move category up"
+                >
+                  <ChevronUp className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => moveCategory(category.id, 'down')}
+                  disabled={index === selectedCategories.length - 1}
+                  className="rounded border border-slate-200 bg-white p-1.5 text-slate-600 disabled:cursor-not-allowed disabled:opacity-40"
+                  title="Move category down"
+                >
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => removeCategory(category.id)}
+                  className="rounded border border-rose-200 bg-rose-50 p-1.5 text-rose-700"
+                  title="Remove category"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-[11px] text-slate-500">
+          No categories selected yet. Add one to define how this section should render.
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function AdminConsole({
   localities,
@@ -210,6 +356,8 @@ export default function AdminConsole({
   const [adPincodes, setAdPincodes] = useState('');
   const [adPlacementKey, setAdPlacementKey] = useState('homepage_inline_primary');
   const [adImageUrl, setAdImageUrl] = useState('');
+  const [adImageFile, setAdImageFile] = useState<File | null>(null);
+  const [adImageUploading, setAdImageUploading] = useState(false);
   const [adDeviceTarget, setAdDeviceTarget] = useState<NonNullable<ListingAd['deviceTarget']>>('all');
   const [adMobileRowPosition, setAdMobileRowPosition] = useState('3');
 
@@ -217,6 +365,8 @@ export default function AdminConsole({
   const [heroTitle, setHeroTitle] = useState('');
   const [heroSubtitle, setHeroSubtitle] = useState('');
   const [heroImageUrl, setHeroImageUrl] = useState('');
+  const [heroImageFile, setHeroImageFile] = useState<File | null>(null);
+  const [heroImageUploading, setHeroImageUploading] = useState(false);
   const [heroStartDate, setHeroStartDate] = useState(new Date().toISOString().slice(0, 10));
   const [heroEndDate, setHeroEndDate] = useState(new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().slice(0, 10));
   const [heroCtaLabel, setHeroCtaLabel] = useState('Explore Businesses');
@@ -235,6 +385,7 @@ export default function AdminConsole({
   const [couponPincodes, setCouponPincodes] = useState('');
 
   const [homepageLocalityId, setHomepageLocalityId] = useState(localities[0]?.id || 'roadpali');
+  const [newSectionLocalityIds, setNewSectionLocalityIds] = useState<string[]>([localities[0]?.id || 'roadpali']);
   const [newSectionType, setNewSectionType] = useState<HomepageSectionType>('hero_banner');
   const [newSectionTitle, setNewSectionTitle] = useState('Hero Banner');
   const [newSectionSubtitle, setNewSectionSubtitle] = useState('');
@@ -277,6 +428,17 @@ export default function AdminConsole({
   const [adminSearchQuery, setAdminSearchQuery] = useState('');
   const [adminPincodeFilter, setAdminPincodeFilter] = useState('');
   const [adminStatusFilter, setAdminStatusFilter] = useState('all');
+  const [communityTypeFilter, setCommunityTypeFilter] = useState<'all' | CommunityItem['type']>('all');
+  const [communityStatusFilter, setCommunityStatusFilter] = useState<'all' | NonNullable<CommunityItem['status']>>('all');
+  const [communityDateFilter, setCommunityDateFilter] = useState('');
+  const [communityEditId, setCommunityEditId] = useState<string | null>(null);
+  const [communityEditDraft, setCommunityEditDraft] = useState<CommunityItem | null>(null);
+  const [communityImageUrl, setCommunityImageUrl] = useState('');
+  const [communityImageFile, setCommunityImageFile] = useState<File | null>(null);
+  const [communityImageUploading, setCommunityImageUploading] = useState(false);
+  const [communityEditImageUrl, setCommunityEditImageUrl] = useState('');
+  const [communityEditImageFile, setCommunityEditImageFile] = useState<File | null>(null);
+  const [communityEditImageUploading, setCommunityEditImageUploading] = useState(false);
   const [communityDraft, setCommunityDraft] = useState<Partial<CommunityItem>>({
     type: 'post',
     title: '',
@@ -298,10 +460,20 @@ export default function AdminConsole({
     if (!localities.some((locality) => locality.id === homepageLocalityId)) {
       setHomepageLocalityId(localities[0].id);
     }
+    if (!newSectionLocalityIds.length) {
+      setNewSectionLocalityIds([localities[0].id]);
+    }
     if (!localities.some((locality) => locality.id === linkLocalityId)) {
       setLinkLocalityId(localities[0].id);
     }
-  }, [localities, heroLocalityId, adLocalityId, couponLocalityId, homepageLocalityId, linkLocalityId]);
+  }, [localities, heroLocalityId, adLocalityId, couponLocalityId, homepageLocalityId, linkLocalityId, newSectionLocalityIds.length]);
+
+  useEffect(() => {
+    if (!homepageLocalityId) return;
+    setNewSectionLocalityIds((prev) => (
+      prev.includes(homepageLocalityId) ? prev : [homepageLocalityId, ...prev]
+    ));
+  }, [homepageLocalityId]);
 
   useEffect(() => {
     if (!linkSubcategoryId) return;
@@ -316,6 +488,39 @@ export default function AdminConsole({
       setNewSectionSubcategoryId('');
     }
   }, [newSectionCategoryId, newSectionSubcategoryId]);
+
+  const uploadBannerImage = async (file: File, folder: string) => {
+    const token = localStorage.getItem('yp_auth_token');
+    if (!token) {
+      throw new Error('Please sign in before uploading banner images.');
+    }
+
+    const dataUrl = await readFileAsDataUrl(file);
+    const response = await fetch('/api/media/upload', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        folder,
+        fileName: file.name,
+        mimeType: file.type || 'application/octet-stream',
+        dataUrl
+      })
+    });
+
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || !payload?.ok || !payload?.url) {
+      throw new Error(payload?.error || 'Failed to upload banner image');
+    }
+
+    return String(payload.url);
+  };
+
+  const getHeroBannerFolder = () => `homepage-banners/hero/${slugifyForPath(heroLocalityId || 'global')}`;
+  const getListingAdFolder = () => `homepage-banners/listing-ads/${slugifyForPath(adPlacementKey || 'homepage_inline_primary')}`;
+  const getCommunityItemFolder = (localityId: string, type: CommunityItem['type']) => `homepage-content/community/${slugifyForPath(localityId || 'global')}/${slugifyForPath(type || 'post')}`;
 
   useEffect(() => {
     if (adminCategoryFilter === 'all') {
@@ -429,9 +634,18 @@ export default function AdminConsole({
   });
   const filteredCommunityItems = communityItems.filter((item) => {
     if (adminLocalityFilter !== 'all' && item.localityId !== adminLocalityFilter) return false;
+    if (communityTypeFilter !== 'all' && item.type !== communityTypeFilter) return false;
+    if (communityStatusFilter !== 'all' && (item.status || 'published') !== communityStatusFilter) return false;
+    if (communityDateFilter) {
+      const selectedDate = communityDateFilter;
+      const publishAt = item.publishAt || item.createdAt;
+      const expireAt = item.expireAt || '';
+      if (publishAt && publishAt > `${selectedDate}T23:59:59.999Z`) return false;
+      if (expireAt && expireAt < `${selectedDate}T00:00:00.000Z`) return false;
+    }
     if (adminSearchQuery.trim()) {
       const query = adminSearchQuery.trim().toLowerCase();
-      const searchable = `${item.title} ${item.content} ${item.authorName}`.toLowerCase();
+      const searchable = `${item.title} ${item.content} ${item.authorName} ${item.type} ${(item.status || 'published')}`.toLowerCase();
       if (!searchable.includes(query)) return false;
     }
     return true;
@@ -803,7 +1017,7 @@ export default function AdminConsole({
   const safeUploadedPage = Math.min(uploadedPage, uploadedTotalPages);
   const uploadedPageItems = uploadedStatusFiltered.slice((safeUploadedPage - 1) * UPLOADED_PAGE_SIZE, safeUploadedPage * UPLOADED_PAGE_SIZE);
 
-  const handleCreateListingAdSubmit = (e: React.FormEvent) => {
+  const handleCreateListingAdSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!adTitle.trim() || !adDescription.trim() || !adCtaText.trim()) {
       triggerNotification('Please fill Ad title, description, and CTA text.');
@@ -818,69 +1032,106 @@ export default function AdminConsole({
       return;
     }
 
-    onCreateListingAd?.({
-      title: adTitle.trim(),
-      description: adDescription.trim(),
-      badge: adBadge.trim() || 'Sponsored',
-      ctaText: adCtaText.trim(),
-      backgroundColor: adBgColor || '#1d4ed8',
-      imageUrl: adImageUrl.trim() || undefined,
-      startDate: adStartDate,
-      endDate: adEndDate,
-      actionType: adActionType,
-      targetUrl: adActionType === 'landing_page' ? adTargetUrl.trim() : undefined,
-      targetBusinessId: adActionType === 'landing_listing' ? adTargetBusinessId : undefined,
-      sellerBusinessId: adSellerBusinessId || undefined,
-      localityIds: adLocalityId ? [adLocalityId] : [],
-      pincodes: parsePincodeList(adPincodes),
-      placementKey: adPlacementKey.trim() || 'homepage_inline_primary',
-      deviceTarget: adDeviceTarget,
-      mobileRowPosition: adDeviceTarget !== 'desktop' && Number(adMobileRowPosition) > 0 ? Number(adMobileRowPosition) : undefined,
-      isActive: true
-    });
+    setAdImageUploading(true);
+    try {
+      const nextPlacementKey = adPlacementKey.trim() || 'homepage_inline_primary';
+      const uploadedImageUrl = adImageFile
+        ? await uploadBannerImage(adImageFile, getListingAdFolder())
+        : adImageUrl.trim();
 
-    setAdTitle('');
-    setAdDescription('');
-    setAdBadge('Sponsored');
-    setAdCtaText('Know More');
-    setAdTargetUrl('');
-    setAdTargetBusinessId('');
-    setAdSellerBusinessId('');
-    setAdPincodes('');
-    setAdPlacementKey('homepage_inline_primary');
-    setAdImageUrl('');
-    setAdDeviceTarget('all');
-    setAdMobileRowPosition('3');
-    triggerNotification('Listing ad created successfully.');
+      if (!uploadedImageUrl) {
+        triggerNotification('Please upload an ad image or provide a banner image URL.');
+        return;
+      }
+
+      onCreateListingAd?.({
+        title: adTitle.trim(),
+        description: adDescription.trim(),
+        badge: adBadge.trim() || 'Sponsored',
+        ctaText: adCtaText.trim(),
+        backgroundColor: adBgColor || '#1d4ed8',
+        imageUrl: uploadedImageUrl || undefined,
+        startDate: adStartDate,
+        endDate: adEndDate,
+        actionType: adActionType,
+        targetUrl: adActionType === 'landing_page' ? adTargetUrl.trim() : undefined,
+        targetBusinessId: adActionType === 'landing_listing' ? adTargetBusinessId : undefined,
+        sellerBusinessId: adSellerBusinessId || undefined,
+        localityIds: adLocalityId ? [adLocalityId] : [],
+        pincodes: parsePincodeList(adPincodes),
+        placementKey: nextPlacementKey,
+        deviceTarget: adDeviceTarget,
+        mobileRowPosition: adDeviceTarget !== 'desktop' && Number(adMobileRowPosition) > 0 ? Number(adMobileRowPosition) : undefined,
+        isActive: true
+      });
+
+      setAdTitle('');
+      setAdDescription('');
+      setAdBadge('Sponsored');
+      setAdCtaText('Know More');
+      setAdTargetUrl('');
+      setAdTargetBusinessId('');
+      setAdSellerBusinessId('');
+      setAdPincodes('');
+      setAdPlacementKey('homepage_inline_primary');
+      setAdImageUrl('');
+      setAdImageFile(null);
+      setAdDeviceTarget('all');
+      setAdMobileRowPosition('3');
+      triggerNotification('Listing ad created successfully.');
+    } catch (error) {
+      triggerNotification(error instanceof Error ? error.message : 'Ad image upload failed.');
+    } finally {
+      setAdImageUploading(false);
+    }
   };
 
-  const handleCreateHeroBannerSubmit = (e: React.FormEvent) => {
+  const handleCreateHeroBannerSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!heroTitle.trim() || !heroSubtitle.trim() || !heroImageUrl.trim()) {
-      triggerNotification('Please fill hero title, subtitle, and image URL.');
+    if (!heroTitle.trim() || !heroSubtitle.trim()) {
+      triggerNotification('Please fill hero title and subtitle.');
       return;
     }
-    onCreateHeroBanner?.({
-      localityId: heroLocalityId,
-      title: heroTitle.trim(),
-      subtitle: heroSubtitle.trim(),
-      imageUrl: heroImageUrl.trim(),
-      startDate: heroStartDate,
-      endDate: heroEndDate,
-      ctaLabel: heroCtaLabel.trim() || 'Explore Businesses',
-      ctaType: heroCtaType,
-      ctaTarget: heroCtaTarget.trim() || 'all',
-      pincodes: parsePincodeList(heroPincodes),
-      isActive: true
-    });
-    setHeroTitle('');
-    setHeroSubtitle('');
-    setHeroImageUrl('');
-    setHeroCtaLabel('Explore Businesses');
-    setHeroCtaType('search_category');
-    setHeroCtaTarget('all');
-    setHeroPincodes('');
-    triggerNotification('Hero banner created.');
+
+    setHeroImageUploading(true);
+    try {
+      const uploadedImageUrl = heroImageFile
+        ? await uploadBannerImage(heroImageFile, getHeroBannerFolder())
+        : heroImageUrl.trim();
+
+      if (!uploadedImageUrl) {
+        triggerNotification('Please upload a hero image or provide a hero image URL.');
+        return;
+      }
+
+      onCreateHeroBanner?.({
+        localityId: heroLocalityId,
+        title: heroTitle.trim(),
+        subtitle: heroSubtitle.trim(),
+        imageUrl: uploadedImageUrl,
+        startDate: heroStartDate,
+        endDate: heroEndDate,
+        ctaLabel: heroCtaLabel.trim() || 'Explore Businesses',
+        ctaType: heroCtaType,
+        ctaTarget: heroCtaTarget.trim() || 'all',
+        pincodes: parsePincodeList(heroPincodes),
+        isActive: true
+      });
+      setHeroTitle('');
+      setHeroSubtitle('');
+      setHeroImageUrl('');
+      setHeroImageFile(null);
+      setHeroCtaLabel('Explore Businesses');
+      setHeroCtaType('search_category');
+      setHeroCtaTarget('all');
+      setHeroPincodes('');
+      triggerNotification('Hero banner created.');
+    } catch (error) {
+      triggerNotification(error instanceof Error ? error.message : 'Hero image upload failed.');
+    } finally {
+      setHeroImageUploading(false);
+      return;
+    }
   };
 
   const handleCreateCouponSubmit = (e: React.FormEvent) => {
@@ -930,7 +1181,7 @@ export default function AdminConsole({
       visible: true,
       startDate: newSectionStartDate || undefined,
       endDate: newSectionEndDate || undefined,
-      localityIds: [homepageLocalityId],
+      localityIds: newSectionLocalityIds.length > 0 ? newSectionLocalityIds : [homepageLocalityId],
       pincodes: parsePincodeList(newSectionPincodes),
       categoryId: ['business_shelf', 'text_business_strip'].includes(newSectionType) ? newSectionCategoryId : undefined,
       categoryIds: ['category_grid', 'emergency_grid'].includes(newSectionType) ? newSectionCategoryIds : undefined,
@@ -953,6 +1204,7 @@ export default function AdminConsole({
     });
 
     setNewSectionSubtitle('');
+    setNewSectionLocalityIds([homepageLocalityId]);
     setNewSectionPincodes('');
     setNewSectionCtaLabel('');
     setNewSectionCtaType('none');
@@ -978,34 +1230,99 @@ export default function AdminConsole({
     triggerNotification('API configuration saved.');
   };
 
-  const toggleSectionCategoryId = (categoryId: string) => {
-    setNewSectionCategoryIds((prev) => (
-      prev.includes(categoryId)
-        ? prev.filter((item) => item !== categoryId)
-        : [...prev, categoryId]
-    ));
-  };
-
-  const handleCreateCommunityItemSubmit = (e: React.FormEvent) => {
+  const handleCreateCommunityItemSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!communityDraft.title?.trim() || !communityDraft.content?.trim() || !adminLocalityFilter || adminLocalityFilter === 'all') {
       triggerNotification('Choose a locality and add title/content for the update.');
       return;
     }
-    onAddCommunityItem?.({
-      type: communityDraft.type || 'post',
-      title: communityDraft.title.trim(),
-      content: communityDraft.content.trim(),
-      authorName: communityDraft.authorName?.trim() || 'Localisy Team',
-      localityId: adminLocalityFilter
+    setCommunityImageUploading(true);
+    try {
+      const type = communityDraft.type || 'post';
+      const uploadedImageUrl = communityImageFile
+        ? await uploadBannerImage(communityImageFile, getCommunityItemFolder(adminLocalityFilter, type))
+        : communityImageUrl.trim();
+      const nextStatus = communityDraft.status || 'published';
+      onAddCommunityItem?.({
+        type,
+        title: communityDraft.title.trim(),
+        content: communityDraft.content.trim(),
+        authorName: communityDraft.authorName?.trim() || 'Localisy Team',
+        localityId: adminLocalityFilter,
+        status: nextStatus,
+        publishAt: communityDraft.publishAt || new Date().toISOString(),
+        expireAt: communityDraft.expireAt || undefined,
+        businessId: communityDraft.businessId || undefined,
+        image: uploadedImageUrl || undefined
+      });
+      setCommunityDraft({
+        type: 'post',
+        title: '',
+        content: '',
+        authorName: 'Localisy Team',
+        status: 'published',
+        publishAt: new Date().toISOString(),
+        expireAt: '',
+        image: ''
+      });
+      setCommunityImageUrl('');
+      setCommunityImageFile(null);
+      triggerNotification('Locality update created.');
+    } catch (error) {
+      triggerNotification(error instanceof Error ? error.message : 'Community image upload failed.');
+    } finally {
+      setCommunityImageUploading(false);
+    }
+  };
+
+  const beginEditCommunityItem = (item: CommunityItem) => {
+    setCommunityEditId(item.id);
+    setCommunityEditDraft({
+      ...item,
+      status: item.status || 'published',
+      publishAt: item.publishAt || item.createdAt,
+      expireAt: item.expireAt || ''
     });
-    setCommunityDraft({
-      type: 'post',
-      title: '',
-      content: '',
-      authorName: 'Localisy Team'
-    });
-    triggerNotification('Locality update created.');
+    setCommunityEditImageUrl(item.image || '');
+    setCommunityEditImageFile(null);
+  };
+
+  const cancelEditCommunityItem = () => {
+    setCommunityEditId(null);
+    setCommunityEditDraft(null);
+    setCommunityEditImageUrl('');
+    setCommunityEditImageFile(null);
+    setCommunityEditImageUploading(false);
+  };
+
+  const saveEditCommunityItem = async () => {
+    if (!communityEditDraft) return;
+    if (!communityEditDraft.title?.trim() || !communityEditDraft.content?.trim()) {
+      triggerNotification('Title and content are required.');
+      return;
+    }
+    setCommunityEditImageUploading(true);
+    try {
+      const uploadedImageUrl = communityEditImageFile
+        ? await uploadBannerImage(communityEditImageFile, getCommunityItemFolder(communityEditDraft.localityId, communityEditDraft.type))
+        : communityEditImageUrl.trim();
+      onUpdateCommunityItem?.({
+        ...communityEditDraft,
+        title: communityEditDraft.title.trim(),
+        content: communityEditDraft.content.trim(),
+        authorName: communityEditDraft.authorName?.trim() || 'Localisy Team',
+        status: communityEditDraft.status || 'published',
+        publishAt: communityEditDraft.publishAt || new Date().toISOString(),
+        expireAt: communityEditDraft.expireAt || undefined,
+        image: uploadedImageUrl || communityEditDraft.image?.trim() || undefined
+      });
+      triggerNotification('Locality update saved.');
+      cancelEditCommunityItem();
+    } catch (error) {
+      triggerNotification(error instanceof Error ? error.message : 'Community image upload failed.');
+    } finally {
+      setCommunityEditImageUploading(false);
+    }
   };
 
   const updateHomepageSection = (section: HomepageSection, patch: Partial<HomepageSection>) => {
@@ -2205,6 +2522,20 @@ export default function AdminConsole({
                   className="border border-slate-200 rounded-lg px-3 py-2 bg-white"
                 />
               </div>
+              <div className="rounded-lg border border-slate-200 bg-white p-3">
+                <div className="mb-2 text-[11px] font-semibold text-slate-700">Target localities</div>
+                <div className="text-[10px] text-slate-500">Leave multiple selections enabled to reuse the same section across localities.</div>
+                <select
+                  multiple
+                  value={newSectionLocalityIds}
+                  onChange={(e) => setNewSectionLocalityIds(Array.from(e.currentTarget.selectedOptions, (option: HTMLOptionElement) => option.value))}
+                  className="mt-2 h-28 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+                >
+                  {localities.map((locality) => (
+                    <option key={locality.id} value={locality.id}>{locality.name}</option>
+                  ))}
+                </select>
+              </div>
               <div className="grid grid-cols-2 gap-2">
                 <input
                   value={newSectionVisibleSlots}
@@ -2280,21 +2611,12 @@ export default function AdminConsole({
                 </div>
               )}
               {['category_grid', 'emergency_grid'].includes(newSectionType) && (
-                <div className="rounded-lg border border-slate-200 bg-white p-3">
-                  <div className="mb-2 text-[11px] font-semibold text-slate-700">Category selection and order</div>
-                  <div className="grid grid-cols-2 gap-2">
-                    {BUSINESS_CATEGORIES.map((category) => (
-                      <label key={category.id} className="inline-flex items-center gap-2 text-[11px] text-slate-700">
-                        <input
-                          type="checkbox"
-                          checked={newSectionCategoryIds.includes(category.id)}
-                          onChange={() => toggleSectionCategoryId(category.id)}
-                        />
-                        <span>{category.name}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
+                <OrderedCategoryPicker
+                  label="Category selection and order"
+                  selectedIds={newSectionCategoryIds}
+                  onChange={setNewSectionCategoryIds}
+                  helperText="The backend stores the selected category order and uses it when rendering the section."
+                />
               )}
               {['business_shelf', 'text_business_strip', 'featured_businesses', 'verified_business_grid'].includes(newSectionType) && (
                 <div className="grid grid-cols-2 gap-2">
@@ -2533,26 +2855,12 @@ export default function AdminConsole({
                     </div>
                   )}
                   {['category_grid', 'emergency_grid'].includes(section.sectionType) && (
-                    <div className="rounded-lg border border-slate-200 bg-white p-3">
-                      <div className="mb-2 text-[11px] font-semibold text-slate-700">Configured categories</div>
-                      <div className="grid grid-cols-2 gap-2">
-                        {BUSINESS_CATEGORIES.map((category) => (
-                          <label key={category.id} className="inline-flex items-center gap-2 text-[11px] text-slate-700">
-                            <input
-                              type="checkbox"
-                              checked={(section.categoryIds || []).includes(category.id)}
-                              onChange={() => {
-                                const nextCategoryIds = (section.categoryIds || []).includes(category.id)
-                                  ? (section.categoryIds || []).filter((item) => item !== category.id)
-                                  : [...(section.categoryIds || []), category.id];
-                                updateHomepageSection(section, { categoryIds: nextCategoryIds });
-                              }}
-                            />
-                            <span>{category.name}</span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
+                    <OrderedCategoryPicker
+                      label="Configured categories"
+                      selectedIds={section.categoryIds || []}
+                      onChange={(nextIds) => updateHomepageSection(section, { categoryIds: nextIds })}
+                      helperText="Reorder the selected categories here to control the exact row order on the homepage."
+                    />
                   )}
                   {section.sectionType === 'promo_banner' && (
                     <input
@@ -2563,6 +2871,24 @@ export default function AdminConsole({
                     />
                   )}
                   <div className="grid grid-cols-2 gap-2">
+                    <div className="col-span-2 rounded-lg border border-slate-200 bg-white p-3">
+                      <div className="mb-2 text-[11px] font-semibold text-slate-700">Target localities</div>
+                      <select
+                        multiple
+                        value={section.localityIds || []}
+                        onChange={(e) => updateHomepageSection(section, {
+                          localityIds: Array.from(e.currentTarget.selectedOptions, (option: HTMLOptionElement) => option.value)
+                        })}
+                        className="h-28 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+                      >
+                        {localities.map((locality) => (
+                          <option key={locality.id} value={locality.id}>{locality.name}</option>
+                        ))}
+                      </select>
+                      <div className="mt-1 text-[10px] text-slate-500">
+                        Empty selection means this section can show for any locality context that loads this layout.
+                      </div>
+                    </div>
                     {['business_shelf', 'text_business_strip', 'featured_businesses', 'verified_business_grid'].includes(section.sectionType) && (
                       <select
                         value={section.listingSourceMode || 'auto'}
@@ -2849,6 +3175,48 @@ export default function AdminConsole({
               {filteredCommunityItems.length} items
             </span>
           </div>
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <select
+              value={communityTypeFilter}
+              onChange={(e) => setCommunityTypeFilter(e.target.value as typeof communityTypeFilter)}
+              className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+            >
+              <option value="all">All types</option>
+              <option value="post">Post</option>
+              <option value="event">Event</option>
+              <option value="deal">Deal</option>
+              <option value="recommendation">Recommendation</option>
+              <option value="qa">Q&amp;A</option>
+            </select>
+            <select
+              value={communityStatusFilter}
+              onChange={(e) => setCommunityStatusFilter(e.target.value as typeof communityStatusFilter)}
+              className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+            >
+              <option value="all">All statuses</option>
+              <option value="published">Published</option>
+              <option value="scheduled">Scheduled</option>
+              <option value="draft">Draft</option>
+              <option value="archived">Archived</option>
+            </select>
+            <input
+              type="date"
+              value={communityDateFilter}
+              onChange={(e) => setCommunityDateFilter(e.target.value)}
+              className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                setCommunityTypeFilter('all');
+                setCommunityStatusFilter('all');
+                setCommunityDateFilter('');
+              }}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2 font-semibold text-slate-700"
+            >
+              Clear Filters
+            </button>
+          </div>
           <form onSubmit={handleCreateCommunityItemSubmit} className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs">
             <div className="grid grid-cols-2 gap-2">
               <select
@@ -2869,6 +3237,63 @@ export default function AdminConsole({
                 className="rounded-lg border border-slate-200 bg-white px-3 py-2"
               />
             </div>
+            <div className="grid grid-cols-2 gap-2">
+              <select
+                value={communityDraft.status || 'published'}
+                onChange={(e) => setCommunityDraft((prev) => ({ ...prev, status: e.target.value as NonNullable<CommunityItem['status']> }))}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+              >
+                <option value="published">Published</option>
+                <option value="scheduled">Scheduled</option>
+                <option value="draft">Draft</option>
+                <option value="archived">Archived</option>
+              </select>
+              <input
+                type="date"
+                value={(communityDraft.publishAt || '').slice(0, 10)}
+                onChange={(e) => setCommunityDraft((prev) => ({ ...prev, publishAt: e.target.value ? `${e.target.value}T00:00:00.000Z` : undefined }))}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+              />
+            </div>
+            <input
+              type="date"
+              value={(communityDraft.expireAt || '').slice(0, 10)}
+              onChange={(e) => setCommunityDraft((prev) => ({ ...prev, expireAt: e.target.value ? `${e.target.value}T23:59:59.999Z` : undefined }))}
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2"
+            />
+            <div className="space-y-2 rounded-lg border border-dashed border-slate-200 bg-white px-3 py-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Image</span>
+                {communityImageUploading && <span className="text-[10px] font-semibold text-indigo-600">Uploading...</span>}
+              </div>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => setCommunityImageFile(e.target.files?.[0] || null)}
+                className="w-full text-[11px] text-slate-500 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-3 file:py-1.5 file:text-xs file:font-bold file:text-indigo-700"
+              />
+              <input
+                value={communityImageUrl}
+                onChange={(e) => setCommunityImageUrl(e.target.value)}
+                placeholder="Or paste an image URL"
+                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+              />
+              {(communityImageFile || communityImageUrl) && (
+                <div className="overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+                  <img
+                    src={communityImageFile ? URL.createObjectURL(communityImageFile) : communityImageUrl}
+                    alt="Community update preview"
+                    className="h-28 w-full object-cover"
+                  />
+                </div>
+              )}
+            </div>
+            <input
+              value={communityDraft.businessId || ''}
+              onChange={(e) => setCommunityDraft((prev) => ({ ...prev, businessId: e.target.value }))}
+              placeholder="Optional business ID"
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2"
+            />
             <input
               value={communityDraft.title || ''}
               onChange={(e) => setCommunityDraft((prev) => ({ ...prev, title: e.target.value }))}
@@ -2886,24 +3311,189 @@ export default function AdminConsole({
               Create Locality Update
             </button>
           </form>
+          {communityEditDraft && (
+            <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-3 text-xs space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <div className="font-bold text-slate-900">Edit locality update</div>
+                  <div className="text-[10px] text-slate-500">Update the content, status, and schedule for the selected item.</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={cancelEditCommunityItem}
+                  className="rounded bg-white px-2 py-1 text-[10px] font-bold text-slate-700 border border-slate-200"
+                >
+                  Close
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <select
+                  value={communityEditDraft.type}
+                  onChange={(e) => setCommunityEditDraft((prev) => prev ? ({ ...prev, type: e.target.value as CommunityItem['type'] }) : prev)}
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+                >
+                  <option value="post">Post</option>
+                  <option value="event">Event</option>
+                  <option value="deal">Deal</option>
+                  <option value="recommendation">Recommendation</option>
+                  <option value="qa">Q&amp;A</option>
+                </select>
+                <select
+                  value={communityEditDraft.status || 'published'}
+                  onChange={(e) => setCommunityEditDraft((prev) => prev ? ({ ...prev, status: e.target.value as NonNullable<CommunityItem['status']> }) : prev)}
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+                >
+                  <option value="published">Published</option>
+                  <option value="scheduled">Scheduled</option>
+                  <option value="draft">Draft</option>
+                  <option value="archived">Archived</option>
+                </select>
+              </div>
+              <input
+                value={communityEditDraft.title}
+                onChange={(e) => setCommunityEditDraft((prev) => prev ? ({ ...prev, title: e.target.value }) : prev)}
+                placeholder="Update title"
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2"
+              />
+              <textarea
+                value={communityEditDraft.content}
+                onChange={(e) => setCommunityEditDraft((prev) => prev ? ({ ...prev, content: e.target.value }) : prev)}
+                placeholder="Update content"
+                rows={3}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2"
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  type="date"
+                  value={(communityEditDraft.publishAt || '').slice(0, 10)}
+                  onChange={(e) => setCommunityEditDraft((prev) => prev ? ({ ...prev, publishAt: e.target.value ? `${e.target.value}T00:00:00.000Z` : undefined }) : prev)}
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+                />
+                <input
+                  type="date"
+                  value={(communityEditDraft.expireAt || '').slice(0, 10)}
+                  onChange={(e) => setCommunityEditDraft((prev) => prev ? ({ ...prev, expireAt: e.target.value ? `${e.target.value}T23:59:59.999Z` : undefined }) : prev)}
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+                />
+              </div>
+              <div className="space-y-2 rounded-lg border border-dashed border-indigo-200 bg-white px-3 py-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Image</span>
+                  {communityEditImageUploading && <span className="text-[10px] font-semibold text-indigo-600">Uploading...</span>}
+                </div>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => setCommunityEditImageFile(e.target.files?.[0] || null)}
+                  className="w-full text-[11px] text-slate-500 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-3 file:py-1.5 file:text-xs file:font-bold file:text-indigo-700"
+                />
+                <input
+                  value={communityEditImageUrl}
+                  onChange={(e) => setCommunityEditImageUrl(e.target.value)}
+                  placeholder="Or paste an image URL"
+                  className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+                />
+                {(communityEditImageFile || communityEditImageUrl) && (
+                  <div className="overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+                    <img
+                      src={communityEditImageFile ? URL.createObjectURL(communityEditImageFile) : communityEditImageUrl}
+                      alt="Community update preview"
+                      className="h-28 w-full object-cover"
+                    />
+                  </div>
+                )}
+              </div>
+              <input
+                value={communityEditDraft.authorName || ''}
+                onChange={(e) => setCommunityEditDraft((prev) => prev ? ({ ...prev, authorName: e.target.value }) : prev)}
+                placeholder="Author"
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2"
+              />
+              <div className="space-y-2 rounded-lg border border-dashed border-indigo-200 bg-white px-3 py-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Image</span>
+                  {communityEditImageUploading && <span className="text-[10px] font-semibold text-indigo-600">Uploading...</span>}
+                </div>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => setCommunityEditImageFile(e.target.files?.[0] || null)}
+                  className="w-full text-[11px] text-slate-500 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-3 file:py-1.5 file:text-xs file:font-bold file:text-indigo-700"
+                />
+                <input
+                  value={communityEditImageUrl}
+                  onChange={(e) => setCommunityEditImageUrl(e.target.value)}
+                  placeholder="Or paste an image URL"
+                  className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+                />
+                {(communityEditImageFile || communityEditImageUrl) && (
+                  <div className="overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+                    <img
+                      src={communityEditImageFile ? URL.createObjectURL(communityEditImageFile) : communityEditImageUrl}
+                      alt="Community update preview"
+                      className="h-28 w-full object-cover"
+                    />
+                  </div>
+                )}
+              </div>
+              <input
+                value={communityEditDraft.businessId || ''}
+                onChange={(e) => setCommunityEditDraft((prev) => prev ? ({ ...prev, businessId: e.target.value }) : prev)}
+                placeholder="Optional business ID"
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2"
+              />
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-[10px] text-slate-500">
+                  {localities.find((locality) => locality.id === communityEditDraft.localityId)?.name || communityEditDraft.localityId}
+                </div>
+                <button
+                  type="button"
+                  onClick={saveEditCommunityItem}
+                  className="rounded bg-indigo-600 px-3 py-1.5 text-[10px] font-bold text-white"
+                >
+                  Save Changes
+                </button>
+              </div>
+            </div>
+          )}
           <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
             {filteredCommunityItems.map((item) => (
               <div key={item.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
+                    {item.image ? (
+                      <img
+                        src={item.image}
+                        alt={item.title}
+                        className="mb-2 h-24 w-full rounded-lg object-cover"
+                      />
+                    ) : null}
                     <div className="font-bold text-slate-900 truncate">{item.title}</div>
                     <div className="mt-1 text-[10px] text-slate-500">
                       {localities.find((locality) => locality.id === item.localityId)?.name || item.localityId} • {item.type}
                     </div>
+                    <div className="mt-1 text-[10px] text-slate-500">
+                      {(item.status || 'published').toUpperCase()} • {(item.publishAt || item.createdAt).slice(0, 10)}
+                      {item.expireAt ? ` • Ends ${item.expireAt.slice(0, 10)}` : ''}
+                    </div>
                     <div className="mt-1 text-[11px] text-slate-600 line-clamp-2">{item.content}</div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => onDeleteCommunityItem?.(item.id)}
-                    className="rounded bg-rose-100 px-2 py-1 text-[10px] font-bold text-rose-700"
-                  >
-                    Delete
-                  </button>
+                  <div className="flex flex-col gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => beginEditCommunityItem(item)}
+                      className="rounded bg-white px-2 py-1 text-[10px] font-bold text-indigo-700 border border-indigo-200"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onDeleteCommunityItem?.(item.id)}
+                      className="rounded bg-rose-100 px-2 py-1 text-[10px] font-bold text-rose-700"
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -2995,7 +3585,7 @@ export default function AdminConsole({
               <input
                 value={adImageUrl}
                 onChange={(e) => setAdImageUrl(e.target.value)}
-                placeholder="Image URL (optional)"
+                placeholder="Banner image URL (optional if uploading)"
                 className="border border-slate-200 rounded-lg px-3 py-2 bg-slate-50 md:col-span-2"
               />
               <select
@@ -3007,6 +3597,18 @@ export default function AdminConsole({
                 <option value="desktop">Desktop Only</option>
                 <option value="mobile">Mobile Only</option>
               </select>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-600">
+              <div className="font-semibold text-slate-700">Upload ad image</div>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => setAdImageFile(e.target.files?.[0] || null)}
+                className="mt-2 block w-full text-[11px] text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-3 file:py-2 file:text-[11px] file:font-bold file:text-indigo-700"
+              />
+              <div className="mt-1 text-[10px] text-slate-500">
+                Uploads to <span className="font-mono">{getListingAdFolder()}</span>
+              </div>
             </div>
             {adDeviceTarget !== 'desktop' && (
               <input
@@ -3053,8 +3655,12 @@ export default function AdminConsole({
                 <option key={business.id} value={business.id}>{business.name}</option>
               ))}
             </select>
-            <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-lg">
-              Create Ad Banner
+            <button
+              type="submit"
+              disabled={adImageUploading}
+              className="w-full rounded-lg bg-indigo-600 py-2 font-bold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {adImageUploading ? 'Uploading...' : 'Create Ad Banner'}
             </button>
           </form>
           <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
@@ -3149,9 +3755,21 @@ export default function AdminConsole({
               type="url"
               value={heroImageUrl}
               onChange={(e) => setHeroImageUrl(e.target.value)}
-              placeholder="Hero image URL"
+              placeholder="Hero image URL (optional if uploading)"
               className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
             />
+            <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-600">
+              <div className="font-semibold text-slate-700">Upload hero image</div>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => setHeroImageFile(e.target.files?.[0] || null)}
+                className="mt-2 block w-full text-[11px] text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-3 file:py-2 file:text-[11px] file:font-bold file:text-indigo-700"
+              />
+              <div className="mt-1 text-[10px] text-slate-500">
+                Uploads to <span className="font-mono">{getHeroBannerFolder()}</span>
+              </div>
+            </div>
             <div className="grid grid-cols-2 gap-2">
               <input
                 type="date"
@@ -3196,8 +3814,12 @@ export default function AdminConsole({
               placeholder="Target pincodes"
               className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-slate-50 font-mono"
             />
-            <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-lg">
-              Create Hero Banner
+            <button
+              type="submit"
+              disabled={heroImageUploading}
+              className="w-full rounded-lg bg-indigo-600 py-2 font-bold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {heroImageUploading ? 'Uploading...' : 'Create Hero Banner'}
             </button>
           </form>
           <div className="space-y-2 max-h-48 overflow-y-auto pr-1">

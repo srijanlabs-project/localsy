@@ -893,7 +893,16 @@ export default function WebPortal({
     (safeRegularPage - 1) * REGULAR_PAGE_SIZE,
     safeRegularPage * REGULAR_PAGE_SIZE
   );
-  const localityCommunityItems = communityItems.filter((item) => item.localityId === activeLocalityId);
+  const localityCommunityItems = communityItems
+    .filter((item) => item.localityId === activeLocalityId)
+    .filter((item) => {
+      if (item.status === 'draft' || item.status === 'archived') return false;
+      const publishAt = item.publishAt || item.createdAt;
+      if (publishAt && Date.parse(publishAt) > Date.now()) return false;
+      if (item.expireAt && Date.parse(item.expireAt) < Date.now()) return false;
+      return true;
+    })
+    .sort((a, b) => Date.parse(b.publishAt || b.createdAt) - Date.parse(a.publishAt || a.createdAt));
   const communityTotalPages = Math.max(1, Math.ceil(localityCommunityItems.length / COMMUNITY_PAGE_SIZE));
   const safeCommunityPage = Math.min(communityPage, communityTotalPages);
   const pagedCommunityItems = localityCommunityItems.slice(
@@ -2077,7 +2086,7 @@ export default function WebPortal({
               <div key={item.id} className="border-b border-slate-100 pb-3 last:border-0 last:pb-0">
                 <div className="flex items-center gap-3">
                   <img
-                    src={carouselImages[index % carouselImages.length]}
+                    src={item.image || carouselImages[index % carouselImages.length]}
                     alt={item.title}
                     className="h-14 w-16 flex-shrink-0 rounded-lg object-cover"
                   />
@@ -3624,6 +3633,14 @@ export default function WebPortal({
                         {post.type}
                       </span>
                     </div>
+
+                    {post.image ? (
+                      <img
+                        src={post.image}
+                        alt={post.title}
+                        className="h-36 w-full rounded-xl object-cover"
+                      />
+                    ) : null}
 
                     <h4 className="font-extrabold text-slate-900 text-sm">{post.title}</h4>
                     <p className="text-xs text-slate-650 leading-relaxed font-sans">{post.content}</p>
