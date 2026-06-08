@@ -496,9 +496,9 @@ export default function AdminConsole({
   }, [newSectionCategoryId, newSectionSubcategoryId]);
 
   const uploadBannerImage = async (file: File, folder: string) => {
-    const token = localStorage.getItem('yp_auth_token');
+    const token = userSession?.authToken || localStorage.getItem('yp_auth_token');
     if (!token) {
-      throw new Error('Please sign in before uploading banner images.');
+      throw new Error('Please sign in with a platform admin or developer account before uploading images.');
     }
 
     const dataUrl = await readFileAsDataUrl(file);
@@ -518,7 +518,11 @@ export default function AdminConsole({
 
     const payload = await response.json().catch(() => null);
     if (!response.ok || !payload?.ok || !payload?.url) {
-      throw new Error(payload?.error || 'Failed to upload banner image');
+      const serverMessage = payload?.error || 'Failed to upload banner image';
+      if (response.status === 401 || response.status === 403) {
+        throw new Error(`${serverMessage}. Uploads require a platform admin or developer login.`);
+      }
+      throw new Error(serverMessage);
     }
 
     return String(payload.url);

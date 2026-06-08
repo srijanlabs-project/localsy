@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -33,8 +34,18 @@ let memoryHomepageConfig = null;
 
 const STORAGE_ENDPOINT_URL = process.env.S3_ENDPOINT_URL || process.env.STORAGE_ENDPOINT_URL || '';
 const STORAGE_BUCKET_NAME = process.env.S3_BUCKET_NAME || process.env.STORAGE_BUCKET_NAME || '';
-const STORAGE_ACCESS_KEY_ID = process.env.S3_ACCESS_KEY_ID || process.env.STORAGE_ACCESS_KEY_ID || '';
-const STORAGE_SECRET_ACCESS_KEY = process.env.S3_SECRET_ACCESS_KEY || process.env.STORAGE_SECRET_ACCESS_KEY || '';
+const STORAGE_ACCESS_KEY_ID =
+  process.env.S3_ACCESS_KEY_ID ||
+  process.env.ACCESS_KEY_ID ||
+  process.env.Access_Key_ID ||
+  process.env.STORAGE_ACCESS_KEY_ID ||
+  '';
+const STORAGE_SECRET_ACCESS_KEY =
+  process.env.S3_SECRET_ACCESS_KEY ||
+  process.env.SECRET_ACCESS_KEY ||
+  process.env.Secret_Access_Key ||
+  process.env.STORAGE_SECRET_ACCESS_KEY ||
+  '';
 const STORAGE_REGION = process.env.S3_REGION || process.env.STORAGE_REGION || 'auto';
 const STORAGE_PUBLIC_BASE_URL = process.env.S3_PUBLIC_BASE_URL || '';
 const STORAGE_FORCE_PATH_STYLE = String(process.env.S3_FORCE_PATH_STYLE || '').toLowerCase() === 'true';
