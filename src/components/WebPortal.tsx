@@ -528,7 +528,6 @@ export default function WebPortal({
   const activeHeroSlide = activeHeroBanners.length > 0
     ? activeHeroBanners[carouselIndex % activeHeroBanners.length]
     : null;
-
   const currentLocalitySlug = currentLocality.slug || currentLocality.id;
   const buildCategoryRoutePath = (categoryId: string) => {
     if (categoryId === 'all') return `/${currentLocalitySlug}`;
@@ -880,6 +879,31 @@ export default function WebPortal({
     }
     return 0;
   });
+  const defaultHeroStatCards = [
+    { label: 'Happy Users', value: '15K+', Icon: Users, className: 'text-indigo-600 bg-indigo-50' },
+    { label: 'Verified Businesses', value: `${sortedBusinesses.length}+`, Icon: CheckCircle, className: 'text-emerald-600 bg-emerald-50' },
+    {
+      label: 'Average Rating',
+      value: sortedBusinesses.length > 0 ? (sortedBusinesses.reduce((sum, business) => sum + business.rating, 0) / sortedBusinesses.length).toFixed(1) : '0.0',
+      Icon: Star,
+      className: 'text-amber-500 bg-amber-50'
+    }
+  ];
+  const heroStatCards = activeHeroSlide?.heroStats === undefined
+    ? defaultHeroStatCards
+    : activeHeroSlide.heroStats
+        .filter((stat) => stat.enabled)
+        .filter((stat) => {
+          const localityMatch = !stat.localityIds || stat.localityIds.length === 0 || stat.localityIds.includes(currentLocality.id);
+          const pincodeMatch = !stat.pincodes || stat.pincodes.length === 0 || stat.pincodes.some((pincode) => pincode === savedPincode || selectedLocalityMappedPincodes.includes(pincode));
+          return localityMatch && pincodeMatch;
+        })
+        .slice(0, 3)
+        .map((stat, index) => {
+          const Icon = [Users, CheckCircle, Star][index] || Users;
+          const className = ['text-indigo-600 bg-indigo-50', 'text-emerald-600 bg-emerald-50', 'text-amber-500 bg-amber-50'][index] || 'text-indigo-600 bg-indigo-50';
+          return { label: stat.label, value: stat.value, Icon, className };
+        });
 
   // Separate sorted lists
   const featuredBusinesses = sortedBusinesses.filter(b => b.featured);
@@ -1739,17 +1763,9 @@ export default function WebPortal({
 
             </div>
 
+            {heroStatCards.length > 0 && (
             <div className="absolute right-8 top-8 hidden w-[210px] space-y-3 lg:block">
-              {[
-                { label: 'Happy Users', value: '15K+', Icon: Users, className: 'text-indigo-600 bg-indigo-50' },
-                { label: 'Verified Businesses', value: `${sortedBusinesses.length}+`, Icon: CheckCircle, className: 'text-emerald-600 bg-emerald-50' },
-                {
-                  label: 'Average Rating',
-                  value: sortedBusinesses.length > 0 ? (sortedBusinesses.reduce((sum, business) => sum + business.rating, 0) / sortedBusinesses.length).toFixed(1) : '0.0',
-                  Icon: Star,
-                  className: 'text-amber-500 bg-amber-50'
-                }
-              ].map((stat) => {
+              {heroStatCards.map((stat) => {
                 const Icon = stat.Icon;
                 return (
                   <div key={stat.label} className="flex items-center gap-3 rounded-2xl border border-white/80 bg-white/90 p-4 shadow-lg backdrop-blur">
@@ -1764,6 +1780,7 @@ export default function WebPortal({
                 );
               })}
             </div>
+            )}
           </div>
         </section>
       );

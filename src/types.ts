@@ -190,7 +190,16 @@ export interface HeroBanner {
   ctaType?: 'landing_page' | 'landing_listing' | 'lead_form' | 'search_category';
   ctaTarget?: string;
   pincodes?: string[];
+  heroStats?: HeroBannerStat[];
   isActive: boolean;
+}
+
+export interface HeroBannerStat {
+  enabled: boolean;
+  label: string;
+  value: string;
+  localityIds?: string[];
+  pincodes?: string[];
 }
 
 export type HomepageSectionType =

@@ -5,7 +5,7 @@ import {
 } from './data';
 import { 
   Locality, Business, SubdomainMapping, Review, UserSession, UserRole,
-  CommunityItem, CRMContact, MarketingCoupon, AuditEvent, ListingAd, AdLead, HeroBanner,
+  CommunityItem, CRMContact, MarketingCoupon, AuditEvent, ListingAd, AdLead, HeroBanner, HeroBannerStat,
   HomepageLayout, HomepageSection, HomepageSectionType, ApiConfiguration, HomepageConfigState
 } from './types';
 import WebPortal from './components/WebPortal';
@@ -164,12 +164,32 @@ const normalizeStoredListingAd = (ad: ListingAd): ListingAd => ({
   mobileRowPosition: ad.mobileRowPosition && ad.mobileRowPosition > 0 ? ad.mobileRowPosition : undefined
 });
 
+const DEFAULT_HERO_STATS: HeroBannerStat[] = [
+  { enabled: true, label: 'Happy Users', value: '15K+' },
+  { enabled: true, label: 'Verified Businesses', value: '3K+' },
+  { enabled: true, label: 'Average Rating', value: '4.8' }
+];
+
+const normalizeStoredHeroStat = (stat: HeroBannerStat | null | undefined, index: number): HeroBannerStat => {
+  const fallback = DEFAULT_HERO_STATS[index] || DEFAULT_HERO_STATS[0];
+  return {
+    enabled: stat?.enabled ?? true,
+    label: String(stat?.label || fallback.label),
+    value: String(stat?.value || fallback.value),
+    localityIds: normalizeStringList(stat?.localityIds),
+    pincodes: normalizeStringList(stat?.pincodes)
+  };
+};
+
 const normalizeStoredHeroBanner = (banner: HeroBanner): HeroBanner => ({
   ...banner,
   ctaLabel: banner.ctaLabel || 'Explore Businesses',
   ctaType: banner.ctaType || 'search_category',
   ctaTarget: banner.ctaTarget || 'all',
-  pincodes: normalizeStringList(banner.pincodes)
+  pincodes: normalizeStringList(banner.pincodes),
+  heroStats: Array.isArray(banner.heroStats)
+    ? banner.heroStats.slice(0, 3).map((stat, index) => normalizeStoredHeroStat(stat, index))
+    : undefined
 });
 
 const normalizeStoredCommunityItem = (item: CommunityItem): CommunityItem => {
