@@ -181,6 +181,13 @@ type SwipeDotsProps = {
   className?: string;
 };
 
+type ViewAllModalState =
+  | { kind: 'offers'; title: string; items: Array<{ id: string; title: string; description?: string; discount?: string; businessName?: string; businessId?: string; image?: string }> }
+  | { kind: 'updates'; title: string; items: Array<CommunityItem> }
+  | { kind: 'businesses'; title: string; items: Array<Business> }
+  | { kind: 'categories'; title: string; items: Array<{ id: string; name: string }> }
+  | { kind: 'emergency'; title: string; items: Array<{ id: string; name: string }> };
+
 function SwipeDots({ totalDots, activeIndex = 0, className = '' }: SwipeDotsProps) {
   if (totalDots <= 1) return null;
 
@@ -408,6 +415,7 @@ export default function WebPortal({
   const [reviewsPage, setReviewsPage] = useState(1);
   const [homepageRotationTick, setHomepageRotationTick] = useState(0);
   const [showAllCategoriesModal, setShowAllCategoriesModal] = useState(false);
+  const [viewAllModal, setViewAllModal] = useState<ViewAllModalState | null>(null);
 
   useEffect(() => {
     if (SIMPLE_SEARCH_FORM) {
@@ -1839,7 +1847,13 @@ export default function WebPortal({
       const emergencyDotCount = getSwipeDotCount(emergencyCategories.length, 3);
       return (
         <section key={sectionKey} className="rounded-2xl border border-rose-100 bg-rose-50/45 p-4 shadow-sm md:p-5">
-          {renderSectionHeader(section.title, section.subtitle, section.showViewAll, () => setSearchQuery('Emergency'))}
+          {renderSectionHeader(section.title, section.subtitle, section.showViewAll, () => {
+            setViewAllModal({
+              kind: 'emergency',
+              title: section.title,
+              items: getConfiguredCategories(section)
+            });
+          })}
           <div className="no-scrollbar mt-4 flex gap-3 overflow-x-auto pb-1">
             {emergencyCategories.map((category) => {
               const tone = iconToneByCategory[category.id] || { Icon: Siren, iconClassName: 'text-rose-600', bgClassName: 'bg-rose-50' };
@@ -1915,8 +1929,11 @@ export default function WebPortal({
       return (
         <section key={sectionKey} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
           {renderSectionHeader(section.title, section.subtitle, section.showViewAll, () => {
-            setSelectedCategory('all');
-            setSelectedBiz(null);
+            setViewAllModal({
+              kind: 'businesses',
+              title: section.title,
+              items: featuredPool
+            });
           })}
           {mobileDisplayMode === 'stack' ? (
             <div className="mt-4 space-y-3 md:hidden">
@@ -1958,11 +1975,11 @@ export default function WebPortal({
       return (
         <section key={sectionKey} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
           {renderSectionHeader(section.title, section.subtitle, section.showViewAll, () => {
-            if (section.categoryId) {
-              setSelectedCategory(section.categoryId);
-              setSelectedSubcategory(section.subcategoryId || 'all');
-              scrollToPublicSearch();
-            }
+            setViewAllModal({
+              kind: 'businesses',
+              title: section.title,
+              items: shelfBusinessMatches
+            });
           })}
           {mobileDisplayMode === 'stack' ? (
             <div className="mt-4 space-y-3 md:hidden">
@@ -2004,10 +2021,11 @@ export default function WebPortal({
       return (
         <section key={sectionKey} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
           {renderSectionHeader(section.title, section.subtitle, section.showViewAll, () => {
-            if (section.categoryId) {
-              setSelectedCategory(section.categoryId);
-              setSelectedSubcategory(section.subcategoryId || 'all');
-            }
+            setViewAllModal({
+              kind: 'businesses',
+              title: section.title,
+              items: stripPool
+            });
           })}
           {mobileDisplayMode === 'stack' ? (
             <div className="mt-4 space-y-3 md:hidden">
@@ -2036,7 +2054,24 @@ export default function WebPortal({
       if (offerItems.length === 0) return null;
       return (
         <section key={sectionKey} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
-          {renderSectionHeader(section.title, undefined, section.showViewAll, () => setFilterHasOffers(true))}
+          {renderSectionHeader(section.title, undefined, section.showViewAll, () => {
+            setViewAllModal({
+              kind: 'offers',
+              title: section.title,
+              items: activeCoupons.map((coupon) => {
+                const couponBusiness = businesses.find((business) => business.id === coupon.businessId);
+                return {
+                  id: coupon.id,
+                  title: coupon.title || coupon.code,
+                  description: coupon.description,
+                  discount: coupon.discount,
+                  businessName: couponBusiness?.name || 'Local offer',
+                  businessId: coupon.businessId,
+                  image: couponBusiness ? getBusinessImageUrl(couponBusiness) : undefined
+                };
+              })
+            });
+          })}
           <div className="mt-4 space-y-3">
             {offerItems.map((coupon, index) => {
               const couponBusiness = businesses.find((business) => business.id === coupon.businessId);
@@ -2080,7 +2115,13 @@ export default function WebPortal({
       if (updateItems.length === 0) return null;
       return (
         <section key={sectionKey} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
-          {renderSectionHeader(section.title, undefined, section.showViewAll, () => setActivePortalTab('community'))}
+          {renderSectionHeader(section.title, undefined, section.showViewAll, () => {
+            setViewAllModal({
+              kind: 'updates',
+              title: section.title,
+              items: localityCommunityItems
+            });
+          })}
           <div className="mt-4 space-y-3">
             {updateItems.map((item, index) => (
               <div key={item.id} className="border-b border-slate-100 pb-3 last:border-0 last:pb-0">
@@ -2109,7 +2150,7 @@ export default function WebPortal({
       const categoryItems = getConfiguredCategories(section).slice(0, sectionMaxItems);
       return (
         <section key={sectionKey} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
-          {renderSectionHeader(section.title, undefined, section.showViewAll, () => handleCategoryShortcut('all'))}
+          {renderSectionHeader(section.title, undefined, section.showViewAll, () => setShowAllCategoriesModal(true))}
           <div className="mt-4 grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-6">
             {categoryItems.map((category) => {
               const tone = iconToneByCategory[category.id] || { Icon: Grid3X3, iconClassName: 'text-indigo-600', bgClassName: 'bg-indigo-50' };
@@ -4574,6 +4615,138 @@ export default function WebPortal({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {viewAllModal && (
+        <div className="fixed inset-0 z-50 flex items-end bg-slate-950/50 p-3 backdrop-blur-sm md:items-center md:justify-center md:p-6">
+          <div className="w-full max-w-5xl overflow-hidden rounded-[28px] bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-4 md:px-6">
+              <div>
+                <h3 className="text-lg font-extrabold text-slate-950">{viewAllModal.title}</h3>
+                <p className="mt-1 text-xs text-slate-500">Complete list for this section.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewAllModal(null)}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition hover:border-slate-300 hover:text-slate-800"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="max-h-[72vh] overflow-y-auto px-4 py-4 md:px-6">
+              {viewAllModal.kind === 'offers' && (
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {viewAllModal.items.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => {
+                        if (item.businessId) {
+                          const biz = businesses.find((business) => business.id === item.businessId);
+                          if (biz) openBusinessDetails(biz);
+                        }
+                        setViewAllModal(null);
+                      }}
+                      className="rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-indigo-200 hover:bg-indigo-50/30"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="inline-flex h-12 w-12 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl bg-slate-100">
+                          {item.image ? <img src={item.image} alt="" className="h-full w-full object-cover" /> : <Ticket className="h-6 w-6 text-indigo-600" />}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-bold text-slate-900">{item.title}</div>
+                          <div className="mt-1 text-xs text-slate-500">{item.businessName}</div>
+                          <div className="mt-1 text-xs font-semibold text-emerald-700">{item.discount}</div>
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {viewAllModal.kind === 'updates' && (
+                <div className="space-y-3">
+                  {viewAllModal.items.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => setViewAllModal(null)}
+                      className="w-full rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-indigo-200 hover:bg-indigo-50/30"
+                    >
+                      <div className="flex items-center gap-3">
+                        <img
+                          src={item.image || carouselImages[0]}
+                          alt={item.title}
+                          className="h-16 w-20 flex-shrink-0 rounded-xl object-cover"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xs font-bold uppercase tracking-wide text-slate-500">{item.type}</div>
+                          <div className="truncate text-sm font-bold text-slate-900">{item.title}</div>
+                          <div className="mt-1 line-clamp-2 text-xs text-slate-500">{item.content}</div>
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {viewAllModal.kind === 'businesses' && (
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {viewAllModal.items.map((biz) => (
+                    <button
+                      key={biz.id}
+                      type="button"
+                      onClick={() => {
+                        openBusinessDetails(biz);
+                        setViewAllModal(null);
+                      }}
+                      className="overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-sm transition hover:border-indigo-200 hover:bg-indigo-50/30"
+                    >
+                      <img src={getBusinessImageUrl(biz)} alt={biz.name} className="h-32 w-full object-cover" />
+                      <div className="space-y-1 p-4">
+                        <div className="truncate text-sm font-bold text-slate-900">{biz.name}</div>
+                        <div className="text-xs text-slate-500">{getCategoryById(biz.categoryId)?.name || biz.categoryId}</div>
+                        <div className="text-xs font-semibold text-amber-600">★ {biz.rating} ({biz.reviewCount})</div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {viewAllModal.kind === 'categories' && (
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+                  {viewAllModal.items.map((category) => (
+                    <button
+                      key={category.id}
+                      type="button"
+                      onClick={() => {
+                        handleCategoryShortcut(category.id);
+                        setViewAllModal(null);
+                      }}
+                      className="rounded-2xl border border-slate-200 bg-white p-3 text-left shadow-sm transition hover:border-indigo-200 hover:bg-indigo-50/30"
+                    >
+                      <div className="text-sm font-bold text-slate-900">{category.name}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {viewAllModal.kind === 'emergency' && (
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+                  {viewAllModal.items.map((category) => (
+                    <button
+                      key={category.id}
+                      type="button"
+                      onClick={() => {
+                        handleCategoryShortcut(category.id);
+                        setViewAllModal(null);
+                      }}
+                      className="rounded-2xl border border-rose-100 bg-white p-3 text-left shadow-sm transition hover:border-rose-200 hover:bg-rose-50"
+                    >
+                      <div className="text-sm font-bold text-slate-900">{category.name}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

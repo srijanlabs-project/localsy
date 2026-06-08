@@ -360,6 +360,8 @@ export default function AdminConsole({
   const [adImageUploading, setAdImageUploading] = useState(false);
   const [adDeviceTarget, setAdDeviceTarget] = useState<NonNullable<ListingAd['deviceTarget']>>('all');
   const [adMobileRowPosition, setAdMobileRowPosition] = useState('3');
+  const [adEditId, setAdEditId] = useState<string | null>(null);
+  const [adFormError, setAdFormError] = useState('');
 
   const [heroLocalityId, setHeroLocalityId] = useState(localities[0]?.id || 'roadpali');
   const [heroTitle, setHeroTitle] = useState('');
@@ -367,6 +369,8 @@ export default function AdminConsole({
   const [heroImageUrl, setHeroImageUrl] = useState('');
   const [heroImageFile, setHeroImageFile] = useState<File | null>(null);
   const [heroImageUploading, setHeroImageUploading] = useState(false);
+  const [heroEditId, setHeroEditId] = useState<string | null>(null);
+  const [heroFormError, setHeroFormError] = useState('');
   const [heroStartDate, setHeroStartDate] = useState(new Date().toISOString().slice(0, 10));
   const [heroEndDate, setHeroEndDate] = useState(new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().slice(0, 10));
   const [heroCtaLabel, setHeroCtaLabel] = useState('Explore Businesses');
@@ -436,9 +440,11 @@ export default function AdminConsole({
   const [communityImageUrl, setCommunityImageUrl] = useState('');
   const [communityImageFile, setCommunityImageFile] = useState<File | null>(null);
   const [communityImageUploading, setCommunityImageUploading] = useState(false);
+  const [communityFormError, setCommunityFormError] = useState('');
   const [communityEditImageUrl, setCommunityEditImageUrl] = useState('');
   const [communityEditImageFile, setCommunityEditImageFile] = useState<File | null>(null);
   const [communityEditImageUploading, setCommunityEditImageUploading] = useState(false);
+  const [communityEditError, setCommunityEditError] = useState('');
   const [communityDraft, setCommunityDraft] = useState<Partial<CommunityItem>>({
     type: 'post',
     title: '',
@@ -521,6 +527,80 @@ export default function AdminConsole({
   const getHeroBannerFolder = () => `homepage-banners/hero/${slugifyForPath(heroLocalityId || 'global')}`;
   const getListingAdFolder = () => `homepage-banners/listing-ads/${slugifyForPath(adPlacementKey || 'homepage_inline_primary')}`;
   const getCommunityItemFolder = (localityId: string, type: CommunityItem['type']) => `homepage-content/community/${slugifyForPath(localityId || 'global')}/${slugifyForPath(type || 'post')}`;
+
+  const resetListingAdForm = () => {
+    setAdTitle('');
+    setAdDescription('');
+    setAdBadge('Sponsored');
+    setAdCtaText('Know More');
+    setAdTargetUrl('');
+    setAdTargetBusinessId('');
+    setAdSellerBusinessId('');
+    setAdPincodes('');
+    setAdPlacementKey('homepage_inline_primary');
+    setAdImageUrl('');
+    setAdImageFile(null);
+    setAdDeviceTarget('all');
+    setAdMobileRowPosition('3');
+    setAdEditId(null);
+    setAdFormError('');
+  };
+
+  const beginEditListingAd = (ad: ListingAd) => {
+    setAdEditId(ad.id);
+    setAdTitle(ad.title);
+    setAdDescription(ad.description);
+    setAdBadge(ad.badge || 'Sponsored');
+    setAdCtaText(ad.ctaText || 'Know More');
+    setAdBgColor(ad.backgroundColor || '#1d4ed8');
+    setAdStartDate(ad.startDate);
+    setAdEndDate(ad.endDate);
+    setAdActionType(ad.actionType);
+    setAdTargetUrl(ad.targetUrl || '');
+    setAdTargetBusinessId(ad.targetBusinessId || '');
+    setAdSellerBusinessId(ad.sellerBusinessId || '');
+    setAdLocalityId(ad.localityIds?.[0] || localities[0]?.id || 'roadpali');
+    setAdPincodes((ad.pincodes || []).join(', '));
+    setAdPlacementKey(ad.placementKey || 'homepage_inline_primary');
+    setAdImageUrl(ad.imageUrl || '');
+    setAdImageFile(null);
+    setAdDeviceTarget(ad.deviceTarget || 'all');
+    setAdMobileRowPosition(String(ad.mobileRowPosition || '3'));
+    setAdFormError('');
+  };
+
+  const resetHeroBannerForm = () => {
+    setHeroLocalityId(localities[0]?.id || 'roadpali');
+    setHeroTitle('');
+    setHeroSubtitle('');
+    setHeroImageUrl('');
+    setHeroImageFile(null);
+    setHeroImageUploading(false);
+    setHeroEditId(null);
+    setHeroFormError('');
+    setHeroStartDate(new Date().toISOString().slice(0, 10));
+    setHeroEndDate(new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().slice(0, 10));
+    setHeroCtaLabel('Explore Businesses');
+    setHeroCtaType('search_category');
+    setHeroCtaTarget('all');
+    setHeroPincodes('');
+  };
+
+  const beginEditHeroBanner = (hero: HeroBanner) => {
+    setHeroEditId(hero.id);
+    setHeroLocalityId(hero.localityId);
+    setHeroTitle(hero.title);
+    setHeroSubtitle(hero.subtitle);
+    setHeroImageUrl(hero.imageUrl || '');
+    setHeroImageFile(null);
+    setHeroStartDate(hero.startDate);
+    setHeroEndDate(hero.endDate);
+    setHeroCtaLabel(hero.ctaLabel || 'Explore Businesses');
+    setHeroCtaType(hero.ctaType || 'search_category');
+    setHeroCtaTarget(hero.ctaTarget || 'all');
+    setHeroPincodes((hero.pincodes || []).join(', '));
+    setHeroFormError('');
+  };
 
   useEffect(() => {
     if (adminCategoryFilter === 'all') {
@@ -1019,16 +1099,23 @@ export default function AdminConsole({
 
   const handleCreateListingAdSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setAdFormError('');
     if (!adTitle.trim() || !adDescription.trim() || !adCtaText.trim()) {
-      triggerNotification('Please fill Ad title, description, and CTA text.');
+      const message = 'Please fill Ad title, description, and CTA text.';
+      setAdFormError(message);
+      triggerNotification(message);
       return;
     }
     if (adActionType === 'landing_page' && !adTargetUrl.trim()) {
-      triggerNotification('Please provide a landing page URL.');
+      const message = 'Please provide a landing page URL.';
+      setAdFormError(message);
+      triggerNotification(message);
       return;
     }
     if (adActionType === 'landing_listing' && !adTargetBusinessId) {
-      triggerNotification('Please choose a landing listing.');
+      const message = 'Please choose a landing listing.';
+      setAdFormError(message);
+      triggerNotification(message);
       return;
     }
 
@@ -1040,11 +1127,13 @@ export default function AdminConsole({
         : adImageUrl.trim();
 
       if (!uploadedImageUrl) {
-        triggerNotification('Please upload an ad image or provide a banner image URL.');
+        const message = 'Please upload an ad image or provide a banner image URL.';
+        setAdFormError(message);
+        triggerNotification(message);
         return;
       }
 
-      onCreateListingAd?.({
+      const payload: Omit<ListingAd, 'id'> = {
         title: adTitle.trim(),
         description: adDescription.trim(),
         badge: adBadge.trim() || 'Sponsored',
@@ -1063,24 +1152,20 @@ export default function AdminConsole({
         deviceTarget: adDeviceTarget,
         mobileRowPosition: adDeviceTarget !== 'desktop' && Number(adMobileRowPosition) > 0 ? Number(adMobileRowPosition) : undefined,
         isActive: true
-      });
+      };
 
-      setAdTitle('');
-      setAdDescription('');
-      setAdBadge('Sponsored');
-      setAdCtaText('Know More');
-      setAdTargetUrl('');
-      setAdTargetBusinessId('');
-      setAdSellerBusinessId('');
-      setAdPincodes('');
-      setAdPlacementKey('homepage_inline_primary');
-      setAdImageUrl('');
-      setAdImageFile(null);
-      setAdDeviceTarget('all');
-      setAdMobileRowPosition('3');
-      triggerNotification('Listing ad created successfully.');
+      if (adEditId) {
+        onUpdateListingAd?.({ ...payload, id: adEditId });
+        triggerNotification('Listing ad updated successfully.');
+      } else {
+        onCreateListingAd?.(payload);
+        triggerNotification('Listing ad created successfully.');
+      }
+      resetListingAdForm();
     } catch (error) {
-      triggerNotification(error instanceof Error ? error.message : 'Ad image upload failed.');
+      const message = error instanceof Error ? error.message : 'Ad image upload failed.';
+      setAdFormError(message);
+      triggerNotification(message);
     } finally {
       setAdImageUploading(false);
     }
@@ -1088,8 +1173,11 @@ export default function AdminConsole({
 
   const handleCreateHeroBannerSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setHeroFormError('');
     if (!heroTitle.trim() || !heroSubtitle.trim()) {
-      triggerNotification('Please fill hero title and subtitle.');
+      const message = 'Please fill hero title and subtitle.';
+      setHeroFormError(message);
+      triggerNotification(message);
       return;
     }
 
@@ -1100,11 +1188,13 @@ export default function AdminConsole({
         : heroImageUrl.trim();
 
       if (!uploadedImageUrl) {
-        triggerNotification('Please upload a hero image or provide a hero image URL.');
+        const message = 'Please upload a hero image or provide a hero image URL.';
+        setHeroFormError(message);
+        triggerNotification(message);
         return;
       }
 
-      onCreateHeroBanner?.({
+      const payload: Omit<HeroBanner, 'id'> = {
         localityId: heroLocalityId,
         title: heroTitle.trim(),
         subtitle: heroSubtitle.trim(),
@@ -1116,21 +1206,21 @@ export default function AdminConsole({
         ctaTarget: heroCtaTarget.trim() || 'all',
         pincodes: parsePincodeList(heroPincodes),
         isActive: true
-      });
-      setHeroTitle('');
-      setHeroSubtitle('');
-      setHeroImageUrl('');
-      setHeroImageFile(null);
-      setHeroCtaLabel('Explore Businesses');
-      setHeroCtaType('search_category');
-      setHeroCtaTarget('all');
-      setHeroPincodes('');
-      triggerNotification('Hero banner created.');
+      };
+      if (heroEditId) {
+        onUpdateHeroBanner?.({ ...payload, id: heroEditId });
+        triggerNotification('Hero banner updated.');
+      } else {
+        onCreateHeroBanner?.(payload);
+        triggerNotification('Hero banner created.');
+      }
+      resetHeroBannerForm();
     } catch (error) {
-      triggerNotification(error instanceof Error ? error.message : 'Hero image upload failed.');
+      const message = error instanceof Error ? error.message : 'Hero image upload failed.';
+      setHeroFormError(message);
+      triggerNotification(message);
     } finally {
       setHeroImageUploading(false);
-      return;
     }
   };
 
@@ -1232,8 +1322,11 @@ export default function AdminConsole({
 
   const handleCreateCommunityItemSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setCommunityFormError('');
     if (!communityDraft.title?.trim() || !communityDraft.content?.trim() || !adminLocalityFilter || adminLocalityFilter === 'all') {
-      triggerNotification('Choose a locality and add title/content for the update.');
+      const message = 'Choose a locality and add title/content for the update.';
+      setCommunityFormError(message);
+      triggerNotification(message);
       return;
     }
     setCommunityImageUploading(true);
@@ -1267,9 +1360,12 @@ export default function AdminConsole({
       });
       setCommunityImageUrl('');
       setCommunityImageFile(null);
+      setCommunityFormError('');
       triggerNotification('Locality update created.');
     } catch (error) {
-      triggerNotification(error instanceof Error ? error.message : 'Community image upload failed.');
+      const message = error instanceof Error ? error.message : 'Community image upload failed.';
+      setCommunityFormError(message);
+      triggerNotification(message);
     } finally {
       setCommunityImageUploading(false);
     }
@@ -1285,6 +1381,7 @@ export default function AdminConsole({
     });
     setCommunityEditImageUrl(item.image || '');
     setCommunityEditImageFile(null);
+    setCommunityEditError('');
   };
 
   const cancelEditCommunityItem = () => {
@@ -1293,15 +1390,19 @@ export default function AdminConsole({
     setCommunityEditImageUrl('');
     setCommunityEditImageFile(null);
     setCommunityEditImageUploading(false);
+    setCommunityEditError('');
   };
 
   const saveEditCommunityItem = async () => {
     if (!communityEditDraft) return;
     if (!communityEditDraft.title?.trim() || !communityEditDraft.content?.trim()) {
-      triggerNotification('Title and content are required.');
+      const message = 'Title and content are required.';
+      setCommunityEditError(message);
+      triggerNotification(message);
       return;
     }
     setCommunityEditImageUploading(true);
+    setCommunityEditError('');
     try {
       const uploadedImageUrl = communityEditImageFile
         ? await uploadBannerImage(communityEditImageFile, getCommunityItemFolder(communityEditDraft.localityId, communityEditDraft.type))
@@ -1319,7 +1420,9 @@ export default function AdminConsole({
       triggerNotification('Locality update saved.');
       cancelEditCommunityItem();
     } catch (error) {
-      triggerNotification(error instanceof Error ? error.message : 'Community image upload failed.');
+      const message = error instanceof Error ? error.message : 'Community image upload failed.';
+      setCommunityEditError(message);
+      triggerNotification(message);
     } finally {
       setCommunityEditImageUploading(false);
     }
@@ -3310,6 +3413,7 @@ export default function AdminConsole({
             <button type="submit" className="w-full rounded-lg bg-indigo-600 py-2 font-bold text-white hover:bg-indigo-700">
               Create Locality Update
             </button>
+            {communityFormError && <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] font-semibold text-rose-700">{communityFormError}</div>}
           </form>
           {communityEditDraft && (
             <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-3 text-xs space-y-2">
@@ -3454,6 +3558,7 @@ export default function AdminConsole({
                   Save Changes
                 </button>
               </div>
+              {communityEditError && <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] font-semibold text-rose-700">{communityEditError}</div>}
             </div>
           )}
           <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
@@ -3660,8 +3765,18 @@ export default function AdminConsole({
               disabled={adImageUploading}
               className="w-full rounded-lg bg-indigo-600 py-2 font-bold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {adImageUploading ? 'Uploading...' : 'Create Ad Banner'}
+              {adImageUploading ? 'Uploading...' : (adEditId ? 'Update Ad Banner' : 'Create Ad Banner')}
             </button>
+            {adFormError && <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] font-semibold text-rose-700">{adFormError}</div>}
+            {adEditId && (
+              <button
+                type="button"
+                onClick={resetListingAdForm}
+                className="w-full rounded-lg border border-slate-200 bg-white py-2 text-xs font-bold text-slate-700"
+              >
+                Cancel Edit
+              </button>
+            )}
           </form>
           <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
             {filteredListingAds.map((ad) => (
@@ -3678,6 +3793,13 @@ export default function AdminConsole({
                     </span>
                   </div>
                   <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => beginEditListingAd(ad)}
+                      className="text-[10px] px-2 py-1 rounded bg-white border border-indigo-200 text-indigo-700"
+                    >
+                      Edit
+                    </button>
                     <button
                       type="button"
                       onClick={() => onUpdateListingAd?.({ ...ad, isActive: !ad.isActive })}
@@ -3819,8 +3941,18 @@ export default function AdminConsole({
               disabled={heroImageUploading}
               className="w-full rounded-lg bg-indigo-600 py-2 font-bold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {heroImageUploading ? 'Uploading...' : 'Create Hero Banner'}
+              {heroImageUploading ? 'Uploading...' : (heroEditId ? 'Update Hero Banner' : 'Create Hero Banner')}
             </button>
+            {heroFormError && <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] font-semibold text-rose-700">{heroFormError}</div>}
+            {heroEditId && (
+              <button
+                type="button"
+                onClick={resetHeroBannerForm}
+                className="w-full rounded-lg border border-slate-200 bg-white py-2 text-xs font-bold text-slate-700"
+              >
+                Cancel Edit
+              </button>
+            )}
           </form>
           <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
             {filteredHeroBanners.map((hero) => (
@@ -3834,6 +3966,13 @@ export default function AdminConsole({
                     </span>
                   </div>
                   <div className="flex gap-1">
+                    <button
+                      type="button"
+                      onClick={() => beginEditHeroBanner(hero)}
+                      className="text-[10px] px-2 py-1 rounded bg-white border border-indigo-200 text-indigo-700"
+                    >
+                      Edit
+                    </button>
                     <button
                       type="button"
                       onClick={() => onUpdateHeroBanner?.({ ...hero, isActive: !hero.isActive })}
