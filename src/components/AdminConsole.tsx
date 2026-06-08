@@ -45,8 +45,16 @@ interface AdminConsoleProps {
     rating: string;
     reviews: string;
     services: string;
+    category?: string;
+    subcategory?: string;
     latitude: string;
     longitude: string;
+    sourceCategoryLabel?: string;
+    sourceSubcategoryLabel?: string;
+    categoryId?: string;
+    subcategoryId?: string;
+    taxonomyMapped?: boolean;
+    tags?: string[];
   }>) => { imported: number; skipped: number };
   listingAds?: ListingAd[];
   onCreateListingAd?: (ad: Omit<ListingAd, 'id'>) => void;
@@ -98,6 +106,10 @@ type BulkImportRow = {
   areaId?: string;
   categoryId?: string;
   subcategoryId?: string;
+  sourceCategoryLabel?: string;
+  sourceSubcategoryLabel?: string;
+  taxonomyMapped?: boolean;
+  tags?: string[];
 };
 
 type ImportPreviewRow = BulkImportRow & {
@@ -107,10 +119,8 @@ type ImportPreviewRow = BulkImportRow & {
   normalizedPhone: string;
   resolvedPincode: string;
   resolvedLocalityId: string;
-  categorySuggestionNeeded: boolean;
-  subcategorySuggestionNeeded: boolean;
-  suggestedCategoryName?: string;
-  suggestedSubcategoryName?: string;
+  requiresTaxonomyMapping: boolean;
+  taxonomyStatusLabel: string;
 };
 
 type LocalityCategoryLink = {
@@ -149,7 +159,50 @@ const readFileAsDataUrl = (file: File) => new Promise<string>((resolve, reject) 
   reader.readAsDataURL(file);
 });
 
-type AdminWorkspaceTab = 'moderation' | 'listing-status' | 'bulk-upload' | 'data-audit';
+const splitTagSource = (value: string) => (
+  String(value || '')
+    .split(/[|,/]+/)
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+);
+
+const buildListingTags = (...sources: Array<string | string[] | undefined>) => {
+  const seen = new Set<string>();
+  const tags: string[] = [];
+  sources.forEach((source) => {
+    const values = Array.isArray(source)
+      ? source
+      : splitTagSource(String(source || ''));
+    values.forEach((value) => {
+      const trimmed = String(value || '').trim();
+      if (!trimmed) return;
+      const key = trimmed.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      tags.push(trimmed);
+    });
+  });
+  return tags.slice(0, 25);
+};
+
+const isBusinessTaxonomyMapped = (business: Pick<Business, 'categoryId' | 'subcategoryId'> | { categoryId?: string; subcategoryId?: string }) => (
+  BUSINESS_CATEGORIES.some((category) => category.id === String(business.categoryId || '')) &&
+  BUSINESS_SUBCATEGORIES.some((subcategory) => (
+    subcategory.categoryId === String(business.categoryId || '') &&
+    subcategory.id === String(business.subcategoryId || '')
+  ))
+);
+
+const getBusinessTaxonomyLabel = (business: Pick<Business, 'categoryId' | 'subcategoryId'> & { sourceCategoryLabel?: string; sourceSubcategoryLabel?: string }) => {
+  const mappedCategory = getCategoryById(business.categoryId || '')?.name;
+  const mappedSubcategory = getSubcategoryById(business.subcategoryId || '')?.name;
+  return {
+    category: mappedCategory || business.sourceCategoryLabel || business.categoryId || 'Unmapped',
+    subcategory: mappedSubcategory || business.sourceSubcategoryLabel || business.subcategoryId || 'Unmapped',
+  };
+};
+
+type AdminWorkspaceTab = 'moderation' | 'listing-status' | 'bulk-upload' | 'taxonomy-mapping' | 'data-audit';
 type ListingStatusFilter = 'all' | 'approved' | 'rejected' | 'pending';
 type AdminOperationsSection = 'listings' | 'homepage' | 'campaigns' | 'geography' | 'content' | 'platform';
 
@@ -350,6 +403,7 @@ export default function AdminConsole({
   const [listingStatusPage, setListingStatusPage] = useState(1);
   const [auditPage, setAuditPage] = useState(1);
   const [importPreviewPage, setImportPreviewPage] = useState(1);
+  const [taxonomyDrafts, setTaxonomyDrafts] = useState<Record<string, { categoryId: string; subcategoryId: string }>>({});
   const [selectedBackendBiz, setSelectedBackendBiz] = useState<Business | null>(null);
   const [backendDraft, setBackendDraft] = useState<Business | null>(null);
   const [backendEditMode, setBackendEditMode] = useState(false);
@@ -819,39 +873,23 @@ export default function AdminConsole({
 
   const normalizePhone = (phone: string) => phone.replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '');
 
-  const inferCategory = (services: string) => {
-    const s = services.toLowerCase();
-    if (s.includes('salon') || s.includes('spa') || s.includes('beauty')) return 'beauty-wellness';
-    if (s.includes('hospital') || s.includes('medical') || s.includes('pharmacy') || s.includes('clinic')) return 'health-medical';
-    if (s.includes('school') || s.includes('preschool') || s.includes('education')) return 'education-training';
-    if (s.includes('hardware') || s.includes('electrical') || s.includes('plumbing')) return 'home-services';
-    if (s.includes('restaurant') || s.includes('sweets') || s.includes('food')) return 'food-restaurants';
-    if (s.includes('fashion') || s.includes('clothing') || s.includes('store') || s.includes('retail')) return 'shopping-retail';
-    if (s.includes('software') || s.includes('digital') || s.includes('it service')) return 'digital-technology';
-    return 'professional-services';
+  const resolveCategoryFromImport = (categoryName: string | undefined) => {
+    const normalized = String(categoryName || '').trim().toLowerCase();
+    if (!normalized) return '';
+    const direct = BUSINESS_CATEGORIES.find((category) => (
+      [category.id, category.slug, category.name.toLowerCase()].includes(normalized)
+    ));
+    return direct?.id || '';
   };
 
-  const resolveCategoryFromImport = (categoryName: string | undefined, services: string) => {
-    const direct = BUSINESS_CATEGORIES.find((category) => category.name.toLowerCase() === String(categoryName || '').trim().toLowerCase());
-    return direct?.id || inferCategory(services);
-  };
-
-  const inferSubcategory = (services: string, categoryId: string) => {
-    const s = services.toLowerCase();
-    if (categoryId === 'beauty-wellness' && s.includes('spa')) return 'spas';
-    if (categoryId === 'beauty-wellness') return 'salons';
-    if (categoryId === 'health-medical' && s.includes('pharmacy')) return 'medical-stores';
-    if (categoryId === 'health-medical' && s.includes('dental')) return 'dental-clinics';
-    if (categoryId === 'health-medical') return 'clinics';
-    if (categoryId === 'food-restaurants' && s.includes('cafe')) return 'cafes';
-    if (categoryId === 'food-restaurants' && s.includes('sweet')) return 'sweet-shops';
-    if (categoryId === 'food-restaurants') return 'restaurants';
-    if (categoryId === 'home-services' && s.includes('plumb')) return 'plumbers';
-    if (categoryId === 'home-services' && s.includes('ac')) return 'ac-repair';
-    if (categoryId === 'home-services') return 'electricians';
-    if (categoryId === 'shopping-retail' && s.includes('cloth')) return 'clothing-stores';
-    if (categoryId === 'shopping-retail') return 'grocery-stores';
-    return resolveDefaultSubcategoryId(categoryId);
+  const resolveSubcategoryFromImport = (subcategoryName: string | undefined, categoryId: string) => {
+    const normalized = String(subcategoryName || '').trim().toLowerCase();
+    if (!normalized || !categoryId) return '';
+    const direct = BUSINESS_SUBCATEGORIES.find((subcategory) => (
+      subcategory.categoryId === categoryId &&
+      [subcategory.id, subcategory.slug, subcategory.name.toLowerCase()].includes(normalized)
+    ));
+    return direct?.id || '';
   };
 
   const inferLocality = (area: string) => {
@@ -864,23 +902,6 @@ export default function AdminConsole({
     return 'roadpali';
   };
 
-  const applyImportSuggestion = (rowNumber: number) => {
-    setImportPreview((prev) => prev.map((row) => {
-      if (row.rowNumber !== rowNumber) return row;
-      const categoryName = getCategoryById(row.categoryId || '')?.name || row.category || '';
-      const subcategoryName = getSubcategoryById(row.subcategoryId || '')?.name || row.subcategory || '';
-      return {
-        ...row,
-        category: categoryName,
-        subcategory: subcategoryName,
-        categorySuggestionNeeded: false,
-        subcategorySuggestionNeeded: false,
-        suggestedCategoryName: categoryName,
-        suggestedSubcategoryName: subcategoryName
-      };
-    }));
-  };
-
   const buildImportPreview = (rows: BulkImportRow[]) => rows.map((row, idx): ImportPreviewRow => {
     const errors: string[] = [];
     const normalizedPhone = normalizePhone(row.mobile);
@@ -890,26 +911,32 @@ export default function AdminConsole({
     const resolvedPincode = row.pin.replace(/\D/g, '') || areaMatch?.pincode || '';
     const mappedLocality = pincodeMappings.find(m => m.pincode === resolvedPincode)?.localityId;
     const resolvedLocalityId = mappedLocality || inferLocality(`${row.area} ${row.city}`);
-    const directCategory = BUSINESS_CATEGORIES.find((category) => (
-      category.name.toLowerCase() === String(row.category || '').trim().toLowerCase()
-    ));
-    const categoryId = directCategory?.id || resolveCategoryFromImport(row.category, row.services || '');
-    const directSubcategory = BUSINESS_SUBCATEGORIES.find((subcategory) => (
-      subcategory.categoryId === categoryId &&
-      subcategory.name.toLowerCase() === String(row.subcategory || '').trim().toLowerCase()
-    ));
-    const subcategoryId = directSubcategory?.id || inferSubcategory(row.services || '', categoryId);
-    const categorySuggestionNeeded = Boolean(String(row.category || '').trim()) && !directCategory;
-    const subcategorySuggestionNeeded = Boolean(String(row.subcategory || '').trim()) && !directSubcategory;
-    const suggestedCategoryName = getCategoryById(categoryId)?.name || categoryId;
-    const suggestedSubcategoryName = getSubcategoryById(subcategoryId)?.name || subcategoryId;
+    const categoryId = resolveCategoryFromImport(row.category);
+    const subcategoryId = resolveSubcategoryFromImport(row.subcategory, categoryId);
+    const requiresTaxonomyMapping = !isBusinessTaxonomyMapped({ categoryId, subcategoryId });
+    const taxonomyStatusLabel = !String(row.category || '').trim()
+      ? 'Category missing - send to mapping queue'
+      : !categoryId
+        ? `Category "${row.category}" not found in master data`
+        : !String(row.subcategory || '').trim()
+          ? 'Subcategory missing - send to mapping queue'
+          : !subcategoryId
+            ? `Subcategory "${row.subcategory}" not found under selected category`
+            : 'Mapped to master taxonomy';
+    const tagPayload = buildListingTags(
+      row.services || '',
+      row.category || '',
+      row.subcategory || '',
+      getCategoryById(categoryId)?.name || '',
+      getSubcategoryById(subcategoryId)?.name || '',
+      normalizedPhone,
+      row.businessName
+    );
 
     if (!row.businessName.trim()) errors.push('Business Name is required.');
     if (normalizedPhone.length > 0 && normalizedPhone.length !== 10) errors.push('Mobile must be blank or a valid 10-digit number.');
     if (resolvedPincode.length !== 6) errors.push('Valid 6-digit PIN is required or must match a known area.');
     if (!localities.some(l => l.id === resolvedLocalityId)) errors.push(`Mapped locality "${resolvedLocalityId}" does not exist.`);
-    if (!BUSINESS_CATEGORIES.some(c => c.id === categoryId)) errors.push('Could not resolve a valid category.');
-    if (!getSubcategoriesForCategory(categoryId).some(s => s.id === subcategoryId)) errors.push('Could not resolve a valid subcategory.');
 
     const duplicate = businesses.find((biz) => {
       const bizPincode = biz.pincode || MASTER_AREAS.find(a => a.id === biz.areaId)?.pincode || '';
@@ -931,16 +958,18 @@ export default function AdminConsole({
       normalizedPhone,
       resolvedPincode,
       resolvedLocalityId,
-      categorySuggestionNeeded,
-      subcategorySuggestionNeeded,
-      suggestedCategoryName,
-      suggestedSubcategoryName,
+      requiresTaxonomyMapping,
+      taxonomyStatusLabel,
       importAction: duplicate ? 'update' : 'create',
       existingBusinessId: duplicate?.id,
       localityId: resolvedLocalityId,
       areaId: areaMatch?.id || 'roadpali-sec17',
       categoryId,
-      subcategoryId
+      subcategoryId,
+      sourceCategoryLabel: row.category?.trim() || undefined,
+      sourceSubcategoryLabel: row.subcategory?.trim() || undefined,
+      taxonomyMapped: !requiresTaxonomyMapping,
+      tags: tagPayload
     };
   });
 
@@ -983,7 +1012,8 @@ export default function AdminConsole({
     const ready = preview.filter(r => r.previewStatus === 'ready').length;
     const updates = preview.filter(r => r.previewStatus === 'update').length;
     const failed = preview.filter(r => r.previewStatus === 'fail').length;
-    setImportResult(`Preview generated: ${ready} ready, ${updates} existing matches need update confirmation, ${failed} failed.`);
+    const queuedForMapping = preview.filter((row) => row.requiresTaxonomyMapping && row.previewStatus !== 'fail').length;
+    setImportResult(`Preview generated: ${ready} ready, ${updates} existing matches need update confirmation, ${queuedForMapping} queued for taxonomy mapping, ${failed} failed.`);
   };
 
   const handleApplyImportPreview = () => {
@@ -1023,6 +1053,9 @@ export default function AdminConsole({
   const listingStatusItems = [...businesses]
     .filter((business) => listingStatusFilter === 'all' ? true : business.status === listingStatusFilter)
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const unmappedTaxonomyBusinesses = businesses
+    .filter((business) => !isBusinessTaxonomyMapped(business))
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   const LISTING_STATUS_PAGE_SIZE = 20;
   const listingStatusTotalPages = Math.max(1, Math.ceil(listingStatusItems.length / LISTING_STATUS_PAGE_SIZE));
   const safeListingStatusPage = Math.min(listingStatusPage, listingStatusTotalPages);
@@ -1034,6 +1067,7 @@ export default function AdminConsole({
     { id: 'moderation', label: 'Moderation', count: pendingBusinesses.length },
     { id: 'listing-status', label: 'Listing Status', count: businesses.length },
     { id: 'bulk-upload', label: 'Bulk Upload' },
+    { id: 'taxonomy-mapping', label: 'Taxonomy Mapping', count: unmappedTaxonomyBusinesses.length },
     { id: 'data-audit', label: 'Data Audit', count: auditLogs.length }
   ];
   const AUDIT_PAGE_SIZE = 20;
@@ -1051,6 +1085,51 @@ export default function AdminConsole({
   const triggerNotification = (msg: string) => {
     setAdminNotification(msg);
     setTimeout(() => setAdminNotification(null), 3000);
+  };
+
+  const getTaxonomyDraft = (biz: Business) => (
+    taxonomyDrafts[biz.id] || {
+      categoryId: biz.categoryId || '',
+      subcategoryId: biz.subcategoryId || '',
+    }
+  );
+
+  const updateTaxonomyDraft = (businessId: string, patch: Partial<{ categoryId: string; subcategoryId: string }>) => {
+    setTaxonomyDrafts((prev) => ({
+      ...prev,
+      [businessId]: {
+        categoryId: patch.categoryId ?? prev[businessId]?.categoryId ?? '',
+        subcategoryId: patch.subcategoryId ?? prev[businessId]?.subcategoryId ?? '',
+      }
+    }));
+  };
+
+  const saveTaxonomyMapping = (biz: Business) => {
+    if (!onUpdateBusiness) return;
+    const draft = getTaxonomyDraft(biz);
+    if (!draft.categoryId || !draft.subcategoryId) {
+      triggerNotification(`Select both category and subcategory for ${biz.name}.`);
+      return;
+    }
+    onUpdateBusiness({
+      ...biz,
+      categoryId: draft.categoryId,
+      subcategoryId: draft.subcategoryId,
+      taxonomyMapped: true,
+      tags: buildListingTags(
+        biz.tags || [],
+        biz.sourceCategoryLabel || '',
+        biz.sourceSubcategoryLabel || '',
+        getCategoryById(draft.categoryId)?.name || '',
+        getSubcategoryById(draft.subcategoryId)?.name || '',
+      ),
+    });
+    setTaxonomyDrafts((prev) => {
+      const next = { ...prev };
+      delete next[biz.id];
+      return next;
+    });
+    triggerNotification(`Mapped taxonomy for ${biz.name}.`);
   };
 
   const openBackendListing = (biz: Business) => {
@@ -1998,7 +2077,7 @@ export default function AdminConsole({
         <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-3">
           <h3 className="text-md font-bold text-slate-950">Bulk Import Businesses (CSV)</h3>
           <p className="text-xs text-slate-500">
-            Upload CSV with columns: Business Name, Address, Area, City, State, PIN, Mobile, Rating, Reviews, Services, Category, Subcategory, Latitude, Longitude.
+            Upload CSV with columns: Business Name, Address, Area, City, State, PIN, Mobile, Rating, Reviews, Services, Category, Subcategory, Latitude, Longitude. Invalid category/subcategory values will not be auto-guessed anymore; those listings go to the taxonomy mapping queue.
           </p>
           <input
             type="file"
@@ -2073,14 +2152,14 @@ export default function AdminConsole({
                         <td className="p-2">{localities.find(l => l.id === row.resolvedLocalityId)?.name.split(',')[0] || row.resolvedLocalityId}</td>
                         <td className="p-2 align-top">
                           <span className="block text-slate-800">{row.category?.trim() || 'Not supplied'}</span>
-                          <span className={`block text-[9px] ${row.categorySuggestionNeeded ? 'text-amber-700 font-semibold' : 'text-slate-400'}`}>
-                            {row.categorySuggestionNeeded ? `Suggested: ${row.suggestedCategoryName}` : `Mapped: ${getCategoryById(row.categoryId || '')?.name || row.categoryId}`}
+                          <span className={`block text-[9px] ${row.categoryId ? 'text-emerald-700' : 'text-amber-700 font-semibold'}`}>
+                            {row.categoryId ? `Mapped: ${getCategoryById(row.categoryId || '')?.name || row.categoryId}` : 'Unmapped - saved to tags'}
                           </span>
                         </td>
                         <td className="p-2 align-top">
                           <span className="block text-slate-800">{row.subcategory?.trim() || 'Not supplied'}</span>
-                          <span className={`block text-[9px] ${row.subcategorySuggestionNeeded ? 'text-amber-700 font-semibold' : 'text-slate-400'}`}>
-                            {row.subcategorySuggestionNeeded ? `Suggested: ${row.suggestedSubcategoryName}` : `Mapped: ${getSubcategoryById(row.subcategoryId || '')?.name || row.subcategoryId}`}
+                          <span className={`block text-[9px] ${row.subcategoryId ? 'text-emerald-700' : 'text-amber-700 font-semibold'}`}>
+                            {row.subcategoryId ? `Mapped: ${getSubcategoryById(row.subcategoryId || '')?.name || row.subcategoryId}` : 'Unmapped - send to queue'}
                           </span>
                         </td>
                         <td className="p-2">
@@ -2103,22 +2182,9 @@ export default function AdminConsole({
                             ) : (
                               <div className="text-slate-400">-</div>
                             )}
-                            {(row.categorySuggestionNeeded || row.subcategorySuggestionNeeded) && (
-                              <div className="rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5">
-                                <div className="text-[9px] font-semibold text-amber-800">
-                                  Suggested mapping: {row.suggestedCategoryName || 'Unknown'} / {row.suggestedSubcategoryName || 'Unknown'}
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    if (confirm(`Use suggested category "${row.suggestedCategoryName}" and subcategory "${row.suggestedSubcategoryName}" for ${row.businessName}?`)) {
-                                      applyImportSuggestion(row.rowNumber);
-                                    }
-                                  }}
-                                  className="mt-1 rounded bg-amber-500 px-2 py-1 text-[9px] font-bold text-white hover:bg-amber-600"
-                                >
-                                  OK, use suggestion
-                                </button>
+                            {row.requiresTaxonomyMapping && (
+                              <div className="rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-[9px] font-semibold text-amber-800">
+                                {row.taxonomyStatusLabel}
                               </div>
                             )}
                           </div>
@@ -2149,6 +2215,104 @@ export default function AdminConsole({
                   Next
                 </button>
               </div>
+            </div>
+          )}
+        </div>
+        )}
+
+        {adminWorkspaceTab === 'taxonomy-mapping' && (
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-md font-bold text-slate-950">Unmapped Category / Subcategory Queue</h3>
+              <p className="text-xs text-slate-500">
+                Listings are saved even when upload taxonomy does not match master data. Use this queue to map them later. Raw upload values are preserved and also added to tags.
+              </p>
+            </div>
+            <span className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-[11px] font-bold text-amber-700">
+              {unmappedTaxonomyBusinesses.length} pending mapping
+            </span>
+          </div>
+
+          {unmappedTaxonomyBusinesses.length === 0 ? (
+            <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-xs text-emerald-800">
+              Nice and clean. No listings are waiting for taxonomy mapping right now.
+            </div>
+          ) : (
+            <div className="space-y-3 max-h-[36rem] overflow-y-auto pr-1">
+              {unmappedTaxonomyBusinesses.map((biz) => {
+                const draft = getTaxonomyDraft(biz);
+                const taxonomyLabel = getBusinessTaxonomyLabel(biz);
+                return (
+                  <div key={biz.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-3">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                      <div className="min-w-0">
+                        <div className="text-sm font-bold text-slate-900 truncate">{biz.name}</div>
+                        <div className="text-[11px] text-slate-500">
+                          {localities.find((locality) => locality.id === biz.localityId)?.name || biz.localityId}
+                          {' • '}
+                          {biz.phone || 'Phone not provided'}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => openBackendListing(biz)}
+                        className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-700"
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                        Open details
+                      </button>
+                    </div>
+
+                    <div className="grid gap-3 md:grid-cols-3 text-[11px]">
+                      <div className="rounded-lg border border-slate-200 bg-white p-2.5">
+                        <div className="font-bold text-slate-500 mb-1">Uploaded Category</div>
+                        <div className="text-slate-900">{biz.sourceCategoryLabel || taxonomyLabel.category}</div>
+                      </div>
+                      <div className="rounded-lg border border-slate-200 bg-white p-2.5">
+                        <div className="font-bold text-slate-500 mb-1">Uploaded Subcategory</div>
+                        <div className="text-slate-900">{biz.sourceSubcategoryLabel || taxonomyLabel.subcategory}</div>
+                      </div>
+                      <div className="rounded-lg border border-slate-200 bg-white p-2.5">
+                        <div className="font-bold text-slate-500 mb-1">Current Tags</div>
+                        <div className="text-slate-900 line-clamp-2">{(biz.tags || []).join(', ') || 'No tags yet'}</div>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+                      <select
+                        value={draft.categoryId}
+                        onChange={(e) => updateTaxonomyDraft(biz.id, { categoryId: e.target.value, subcategoryId: '' })}
+                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs"
+                      >
+                        <option value="">Select master category</option>
+                        {BUSINESS_CATEGORIES.map((category) => (
+                          <option key={category.id} value={category.id}>{category.name}</option>
+                        ))}
+                      </select>
+                      <select
+                        value={draft.subcategoryId}
+                        onChange={(e) => updateTaxonomyDraft(biz.id, { subcategoryId: e.target.value })}
+                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs"
+                        disabled={!draft.categoryId}
+                      >
+                        <option value="">{draft.categoryId ? 'Select master subcategory' : 'Choose category first'}</option>
+                        {getSubcategoriesForCategory(draft.categoryId).map((subcategory) => (
+                          <option key={subcategory.id} value={subcategory.id}>{subcategory.name}</option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => saveTaxonomyMapping(biz)}
+                        disabled={!draft.categoryId || !draft.subcategoryId}
+                        className="inline-flex items-center justify-center rounded-lg bg-indigo-600 px-4 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+                      >
+                        Save mapping
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
@@ -4211,10 +4375,11 @@ export default function AdminConsole({
                     disabled={!backendEditMode}
                     onChange={(e) => {
                       const nextCategory = e.target.value;
-                      setBackendDraft({ ...backendDraft, categoryId: nextCategory, subcategoryId: resolveDefaultSubcategoryId(nextCategory) });
+                      setBackendDraft({ ...backendDraft, categoryId: nextCategory, subcategoryId: nextCategory ? resolveDefaultSubcategoryId(nextCategory) : '' });
                     }}
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 disabled:bg-slate-50"
                   >
+                    <option value="">Unmapped / not set</option>
                     {BUSINESS_CATEGORIES.map(c => (
                       <option key={c.id} value={c.id}>{c.name}</option>
                     ))}
@@ -4228,10 +4393,29 @@ export default function AdminConsole({
                     onChange={(e) => setBackendDraft({ ...backendDraft, subcategoryId: e.target.value })}
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 disabled:bg-slate-50"
                   >
+                    <option value="">{backendDraft.categoryId ? 'Unmapped / not set' : 'Select category first'}</option>
                     {getSubcategoriesForCategory(backendDraft.categoryId).map(s => (
                       <option key={s.id} value={s.id}>{s.name}</option>
                     ))}
                   </select>
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-500 mb-1">Uploaded Category Label</label>
+                  <input
+                    value={backendDraft.sourceCategoryLabel || ''}
+                    disabled={!backendEditMode}
+                    onChange={(e) => setBackendDraft({ ...backendDraft, sourceCategoryLabel: e.target.value })}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 disabled:bg-slate-50"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-500 mb-1">Uploaded Subcategory Label</label>
+                  <input
+                    value={backendDraft.sourceSubcategoryLabel || ''}
+                    disabled={!backendEditMode}
+                    onChange={(e) => setBackendDraft({ ...backendDraft, sourceSubcategoryLabel: e.target.value })}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 disabled:bg-slate-50"
+                  />
                 </div>
                 <div>
                   <label className="block font-bold text-slate-500 mb-1">Phone</label>
@@ -4307,6 +4491,19 @@ export default function AdminConsole({
                     value={backendDraft.description}
                     disabled={!backendEditMode}
                     onChange={(e) => setBackendDraft({ ...backendDraft, description: e.target.value })}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 disabled:bg-slate-50"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block font-bold text-slate-500 mb-1">Tags (comma separated)</label>
+                  <textarea
+                    rows={3}
+                    value={(backendDraft.tags || []).join(', ')}
+                    disabled={!backendEditMode}
+                    onChange={(e) => setBackendDraft({
+                      ...backendDraft,
+                      tags: e.target.value.split(',').map((tag) => tag.trim()).filter(Boolean)
+                    })}
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 disabled:bg-slate-50"
                   />
                 </div>

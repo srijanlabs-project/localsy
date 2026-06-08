@@ -222,7 +222,7 @@ interface WebPortalProps {
   userSession: UserSession;
   onUserSessionChange: (sess: UserSession) => void;
   viewedBusinessIds: string[];
-  onUnlockBusinessContact: (bizId: string) => void;
+  onUnlockBusinessContact: (payload: { businessId: string; viewerName?: string; viewerPhone?: string }) => Promise<boolean> | boolean;
   onSubmitApplication: (bizData: Omit<Business, 'id' | 'status' | 'createdAt' | 'rating' | 'reviewCount'>) => void;
   onUpdateBusiness: (b: Business) => void;
   onAddReview: (bizId: string, userName: string, userPhone: string, rating: number, comment: string) => void;
@@ -1118,6 +1118,14 @@ export default function WebPortal({
     return localities.find((locality) => locality.id === biz.localityId)?.name.split(',')[0] || 'Area not set';
   };
 
+  const getBusinessCategoryLabel = (biz: Business) => (
+    getCategoryById(biz.categoryId)?.name || biz.sourceCategoryLabel || biz.categoryId || 'Local Service'
+  );
+
+  const getBusinessSubcategoryLabel = (biz: Business) => (
+    getSubcategoryById(biz.subcategoryId)?.name || biz.sourceSubcategoryLabel || getBusinessCategoryLabel(biz)
+  );
+
   const openBusinessDirections = (biz: Business, e: React.MouseEvent) => {
     e.stopPropagation();
     const destination = biz.gpsCoordinates
@@ -1157,7 +1165,7 @@ export default function WebPortal({
       badgeClassName?: string;
     }
   ) => {
-    const categoryLabel = getCategoryById(biz.categoryId)?.name || biz.categoryId;
+    const categoryLabel = getBusinessCategoryLabel(biz);
     const areaLabel = getBusinessAreaName(biz);
     const hasPhone = Boolean((biz.phone || '').replace(/\D/g, '').slice(-10));
     return (
@@ -1291,7 +1299,7 @@ export default function WebPortal({
         <div className="space-y-1.5 p-3">
           <h4 className="truncate text-sm font-bold text-slate-950">{biz.name}</h4>
           <div className="truncate text-xs font-medium text-slate-500">
-            {getCategoryById(biz.categoryId)?.name || biz.categoryId}
+            {getBusinessCategoryLabel(biz)}
           </div>
           <div className="flex items-center gap-2 text-xs">
             <span className="inline-flex items-center gap-1 font-semibold text-amber-600">
@@ -1403,7 +1411,7 @@ export default function WebPortal({
         <div className="flex min-h-0 flex-1 flex-col space-y-2 p-3">
           <div className="flex items-center justify-between gap-2">
             <span className="min-w-0 flex-1 truncate text-xs font-semibold text-slate-500">
-              {getCategoryById(biz.categoryId)?.name || biz.categoryId}
+              {getBusinessCategoryLabel(biz)}
             </span>
             {biz.verifiedBadge && (
               <CheckCircle className="h-4 w-4 flex-shrink-0 text-emerald-500" />
@@ -1449,7 +1457,7 @@ export default function WebPortal({
 
   const renderTextBusinessStripCard = (biz: Business, options?: { stack?: boolean; cardsPerView?: number }) => {
     const hasPhone = Boolean((biz.phone || '').replace(/\D/g, '').slice(-10));
-    const subcategoryLabel = getSubcategoryById(biz.subcategoryId)?.name || getCategoryById(biz.categoryId)?.name || 'Local Service';
+    const subcategoryLabel = getBusinessSubcategoryLabel(biz);
     const experienceLabel = biz.experienceYears ? `${biz.experienceYears} Years Exp` : 'Trusted Local Pro';
     const localityLabel = getBusinessAreaName(biz);
     const cardsPerView = options?.cardsPerView || 2;
@@ -2364,7 +2372,7 @@ export default function WebPortal({
   };
 
   // Triggered on OTP Verification success
-  const handleOtpSuccess = (verifiedName: string, verifiedPhone: string) => {
+  const handleOtpSuccess = async (verifiedName: string, verifiedPhone: string) => {
     // Authenticate the user session globally
     onUserSessionChange({
       role: userSession.role === 'buyer' ? 'buyer' : userSession.role,
@@ -2375,7 +2383,14 @@ export default function WebPortal({
 
     // Unlock the specific contact requested
     if (otpTargetBiz) {
-      onUnlockBusinessContact(otpTargetBiz.id);
+      const allowed = await Promise.resolve(onUnlockBusinessContact({
+        businessId: otpTargetBiz.id,
+        viewerName: verifiedName,
+        viewerPhone: verifiedPhone,
+      }));
+      if (!allowed) {
+        return false;
+      }
       alert(`OTP Verification successful! Contact details unlocked for "${otpTargetBiz.name}".`);
       
       // Update selected business ref if open
@@ -2385,6 +2400,7 @@ export default function WebPortal({
     }
     
     setOtpTargetBiz(null);
+    return true;
   };
 
   const initContactUnlockFlow = (biz: Business, e: React.MouseEvent) => {
@@ -2397,7 +2413,18 @@ export default function WebPortal({
     
     // If already session-authenticated, immediately unlock and skip modal!
     if (userSession.isAuthenticated && userSession.userPhone) {
-      onUnlockBusinessContact(biz.id);
+      void Promise.resolve(onUnlockBusinessContact({
+        businessId: biz.id,
+        viewerName: userSession.userName,
+        viewerPhone: userSession.userPhone,
+      })).then((allowed) => {
+        if (allowed === false) {
+          return;
+        }
+        alert(`Contact details unlocked for "${biz.name}".`);
+      }).catch(() => {
+        alert('Unable to verify contact unlock right now.');
+      });
       return;
     }
     
@@ -3432,8 +3459,8 @@ export default function WebPortal({
                                 )}
                               </h4>
                               <span className="text-[10px] bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded font-mono font-bold">
-                                {getCategoryById(biz.categoryId)?.name || biz.categoryId}
-                                {biz.subcategoryId && ` / ${getSubcategoryById(biz.subcategoryId)?.name || biz.subcategoryId}`}
+                                {getBusinessCategoryLabel(biz)}
+                                {(biz.subcategoryId || biz.sourceSubcategoryLabel) && ` / ${getBusinessSubcategoryLabel(biz)}`}
                               </span>
                             </div>
 
@@ -3559,8 +3586,8 @@ export default function WebPortal({
                               <div className="space-y-1">
                                 <div className="flex items-center justify-between">
                                   <span className="text-[10px] uppercase font-mono tracking-wider font-semibold text-slate-400">
-                                    {getCategoryById(biz.categoryId)?.name || biz.categoryId}
-                                    {biz.subcategoryId && ` / ${getSubcategoryById(biz.subcategoryId)?.name || biz.subcategoryId}`}
+                                    {getBusinessCategoryLabel(biz)}
+                                    {(biz.subcategoryId || biz.sourceSubcategoryLabel) && ` / ${getBusinessSubcategoryLabel(biz)}`}
                                   </span>
                                   <div className="flex items-center gap-0.5 bg-amber-50 text-amber-600 text-xs px-1.5 rounded font-bold" title="Google Ratings">
                                     ★ {biz.rating}
@@ -4277,8 +4304,8 @@ export default function WebPortal({
                 </div>
                 <div className="flex flex-wrap gap-1.5 pt-1">
                   <span className="text-xs bg-slate-100 text-slate-800 px-2.5 py-0.5 rounded-full font-mono font-medium">
-                    {getCategoryById(selectedBiz.categoryId)?.name || selectedBiz.categoryId}
-                    {selectedBiz.subcategoryId && ` / ${getSubcategoryById(selectedBiz.subcategoryId)?.name || selectedBiz.subcategoryId}`}
+                    {getBusinessCategoryLabel(selectedBiz)}
+                    {(selectedBiz.subcategoryId || selectedBiz.sourceSubcategoryLabel) && ` / ${getBusinessSubcategoryLabel(selectedBiz)}`}
                   </span>
                   {selectedBiz.tags.map(t => (
                     <span key={t} className="text-xs bg-slate-50 text-slate-500 px-2 py-0.5 rounded-full">
@@ -4723,7 +4750,7 @@ export default function WebPortal({
                       <img src={getBusinessImageUrl(biz)} alt={biz.name} className="h-32 w-full object-cover" />
                       <div className="space-y-1 p-4">
                         <div className="truncate text-sm font-bold text-slate-900">{biz.name}</div>
-                        <div className="text-xs text-slate-500">{getCategoryById(biz.categoryId)?.name || biz.categoryId}</div>
+                        <div className="text-xs text-slate-500">{getBusinessCategoryLabel(biz)}</div>
                         <div className="text-xs font-semibold text-amber-600">★ {biz.rating} ({biz.reviewCount})</div>
                       </div>
                     </button>

@@ -18,6 +18,9 @@ export interface Business {
   name: string;
   categoryId: string;
   subcategoryId: string;
+  sourceCategoryLabel?: string;
+  sourceSubcategoryLabel?: string;
+  taxonomyMapped?: boolean;
   localityId: string; // The primary domain locality
   stateId: string;    // Master State
   cityId: string;     // Master City

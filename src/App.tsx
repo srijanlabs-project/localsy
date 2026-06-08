@@ -20,6 +20,8 @@ import {
 import {
   BUSINESS_CATEGORIES,
   BUSINESS_SUBCATEGORIES,
+  getCategoryById,
+  getSubcategoryById,
   resolveDefaultSubcategoryId,
   resolveMasterCategoryId
 } from './categoryMaster';
@@ -39,13 +41,78 @@ const resolveBusinessPincode = (business: Business): string => {
   return MASTER_AREAS.find((area) => area.id === business.areaId)?.pincode || '';
 };
 
+const splitTagSource = (value: string) => (
+  String(value || '')
+    .split(/[|,/]+/)
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+);
+
+const uniqueTags = (...groups: Array<Array<string | undefined>>) => {
+  const seen = new Set<string>();
+  const tags: string[] = [];
+  groups.flat().forEach((entry) => {
+    const trimmed = String(entry || '').trim();
+    if (!trimmed) return;
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    tags.push(trimmed);
+  });
+  return tags.slice(0, 25);
+};
+
+const isValidCategoryId = (categoryId: string) => BUSINESS_CATEGORIES.some((category) => category.id === categoryId);
+const isValidSubcategoryId = (categoryId: string, subcategoryId: string) => BUSINESS_SUBCATEGORIES.some((subcategory) => (
+  subcategory.categoryId === categoryId && subcategory.id === subcategoryId
+));
+
+const buildBusinessTags = (business: Partial<Business>) => {
+  const mappedCategoryName = getCategoryById(business.categoryId || '')?.name || '';
+  const mappedSubcategoryName = getSubcategoryById(business.subcategoryId || '')?.name || '';
+  return uniqueTags(
+    Array.isArray(business.tags) ? business.tags : [],
+    splitTagSource(business.sourceCategoryLabel || ''),
+    splitTagSource(business.sourceSubcategoryLabel || ''),
+    splitTagSource(business.description || ''),
+    [
+      business.categoryId,
+      business.subcategoryId,
+      mappedCategoryName,
+      mappedSubcategoryName,
+    ],
+  );
+};
+
+const isBusinessTaxonomyMapped = (business: Partial<Business>) => (
+  isValidCategoryId(business.categoryId || '') &&
+  isValidSubcategoryId(business.categoryId || '', business.subcategoryId || '')
+);
+
 const normalizeBusinessTaxonomy = (business: Business): Business => {
-  const categoryId = resolveMasterCategoryId(business.categoryId);
+  const categoryId = resolveMasterCategoryId(business.categoryId || '');
+  const validCategory = isValidCategoryId(categoryId);
+  const validSubcategory = isValidSubcategoryId(categoryId, business.subcategoryId || '');
+  const shouldDefaultSubcategory = validCategory && !validSubcategory && !String(business.sourceSubcategoryLabel || '').trim();
+  const normalizedCategoryId = validCategory ? categoryId : '';
+  const normalizedSubcategoryId = validCategory
+    ? (
+        validSubcategory
+          ? (business.subcategoryId || '')
+          : (shouldDefaultSubcategory ? resolveDefaultSubcategoryId(categoryId) : '')
+      )
+    : '';
   return {
     ...business,
-    categoryId,
-    subcategoryId: business.subcategoryId || resolveDefaultSubcategoryId(business.categoryId),
-    pincode: resolveBusinessPincode({ ...business, categoryId })
+    categoryId: normalizedCategoryId,
+    subcategoryId: normalizedSubcategoryId,
+    taxonomyMapped: normalizedCategoryId !== '' && normalizedSubcategoryId !== '',
+    pincode: resolveBusinessPincode({ ...business, categoryId: normalizedCategoryId }),
+    tags: buildBusinessTags({
+      ...business,
+      categoryId: normalizedCategoryId,
+      subcategoryId: normalizedSubcategoryId,
+    })
   };
 };
 
@@ -118,6 +185,16 @@ const normalizeStringList = (value: unknown): string[] => (
 );
 
 const getTodayIso = () => new Date().toISOString().slice(0, 10);
+const AUDIT_EVENT_DEDUPE_MS = 15_000;
+const AUDIT_EVENT_SEARCH_DEDUPE_MS = 20_000;
+const AUDIT_EVENT_AUTOMATION_DEDUPE_MS = 180_000;
+const AUDIT_EVENT_AUTOMATION_SERVER_COOLDOWN_MS = 60_000;
+
+const isLikelyAutomatedClient = () => {
+  if (typeof navigator === 'undefined') return false;
+  const userAgent = navigator.userAgent || '';
+  return Boolean((navigator as Navigator & { webdriver?: boolean }).webdriver) || /(bot|crawler|spider|zap|headless|lighthouse|playwright|puppeteer|phantom|selenium)/i.test(userAgent);
+};
 
 const normalizeApiConfiguration = (value?: Partial<ApiConfiguration> | null): ApiConfiguration => ({
   syncMode: value?.syncMode === 'local' ? 'local' : 'api',
@@ -1024,6 +1101,8 @@ export default function App() {
 
   const homepageConfigLoadedRef = useRef(false);
   const lastHomepageSyncSignatureRef = useRef('');
+  const auditEventDedupRef = useRef<Map<string, number>>(new Map());
+  const lastAutomatedAuditPostAtRef = useRef(0);
 
   const buildHomepageConfigPayload = (): HomepageConfigState => ({
     heroBanners,
@@ -1038,6 +1117,17 @@ export default function App() {
   const getAuthHeaders = () => {
     const token = localStorage.getItem('yp_auth_token');
     return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
+  const getOrCreateDeviceId = () => {
+    const storageKey = 'yp_device_id';
+    const existing = localStorage.getItem(storageKey);
+    if (existing) return existing;
+    const next = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? `dev_${crypto.randomUUID()}`
+      : `dev_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    localStorage.setItem(storageKey, next);
+    return next;
   };
 
   const persistHomepageConfigToServer = (nextPayload?: HomepageConfigState) => {
@@ -1058,7 +1148,10 @@ export default function App() {
     }
     fetch(apiConfiguration.businessesEndpoint, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders()
+      },
       body: JSON.stringify({ businesses: nextBusinesses })
     })
       .then((response) => {
@@ -1325,16 +1418,38 @@ export default function App() {
 
   // Unified logger for complete client-side security compliance auditing
   const logAuditEvent = (actionType: 'search' | 'contact_view' | 'data_entry', description: string, details: string) => {
-    const ipAddress = `103.${45 + Math.floor(Math.random() * 40)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`;
+    const now = Date.now();
+    const likelyAutomated = isLikelyAutomatedClient();
+    const normalizedDescription = description.trim();
+    const normalizedDetails = details.trim();
+    const dedupeKey = [actionType, normalizedDescription, normalizedDetails, userSession.userName || 'anonymous'].join('|');
+    const lastSeenAt = auditEventDedupRef.current.get(dedupeKey) || 0;
+    const dedupeWindowMs = likelyAutomated
+      ? AUDIT_EVENT_AUTOMATION_DEDUPE_MS
+      : actionType === 'search'
+        ? AUDIT_EVENT_SEARCH_DEDUPE_MS
+        : AUDIT_EVENT_DEDUPE_MS;
+    if (now - lastSeenAt < dedupeWindowMs) return;
+
+    auditEventDedupRef.current.set(dedupeKey, now);
+    if (auditEventDedupRef.current.size > 250) {
+      for (const [key, timestamp] of auditEventDedupRef.current.entries()) {
+        if (now - timestamp > AUDIT_EVENT_AUTOMATION_DEDUPE_MS * 2) {
+          auditEventDedupRef.current.delete(key);
+        }
+      }
+    }
+
+    const ipAddress = 'client-side';
     const userAgent = navigator.userAgent || 'Mozilla/5.0';
     const deviceCode = `${userAgent.split(' ')[0]} (H:${window.screen.height}, W:${window.screen.width}, DPR:${window.devicePixelRatio})`;
     
     const freshLog: AuditEvent = {
-      id: `audit_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      id: `audit_${now}_${Math.floor(Math.random() * 1000)}`,
       timestamp: new Date().toISOString(),
       actionType,
-      description,
-      details,
+      description: normalizedDescription,
+      details: normalizedDetails,
       ipAddress,
       deviceCode,
       userName: userSession.userName || 'Anonymous Explorer'
@@ -1342,11 +1457,27 @@ export default function App() {
     
     setAuditLogs(prev => [freshLog, ...prev]);
 
+    const shouldPostToServer = (() => {
+      if (actionType === 'contact_view') return true;
+      if (!likelyAutomated) return true;
+      if (userSession.isAuthenticated) return true;
+      if (typeof document !== 'undefined' && document.hidden) return false;
+      if (now - lastAutomatedAuditPostAtRef.current < AUDIT_EVENT_AUTOMATION_SERVER_COOLDOWN_MS) {
+        return false;
+      }
+      lastAutomatedAuditPostAtRef.current = now;
+      return true;
+    })();
+    if (!shouldPostToServer) return;
+
     // Persist audit events server-side for public deployment traceability.
     // This is best-effort and should never block UX interactions.
     fetch(apiConfiguration.auditEventsEndpoint, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(userSession.authToken ? { Authorization: `Bearer ${userSession.authToken}` } : {})
+      },
       body: JSON.stringify(freshLog),
     }).catch(() => {
       // Keep silent fallback to local state/localStorage if server logging fails.
@@ -1713,10 +1844,10 @@ export default function App() {
   const handleUpdateBusiness = (updatedBiz: Business) => {
     logAuditEvent('data_entry', `Business listing updated: "${updatedBiz.name}"`, `Updated listing ID: ${updatedBiz.id} | Locality: ${updatedBiz.localityId}`);
     setBusinesses(prev => {
-      const normalized = {
+      const normalized = normalizeStoredBusiness({
         ...updatedBiz,
         pincode: updatedBiz.pincode || MASTER_AREAS.find((area) => area.id === updatedBiz.areaId)?.pincode || ''
-      };
+      });
       const next = prev.map(b => b.id === normalized.id ? normalized : b);
       persistBusinessesToServer(next);
       return next;
@@ -1761,10 +1892,39 @@ export default function App() {
   };
 
   // Register that a user safely unlocked a verified listing via sliding Captcha and OTP validated
-  const handleRegisterContactView = (businessId: string) => {
-    setViewedBusinessIds(prev => prev.includes(businessId) ? prev : [...prev, businessId]);
-    const b = businesses.find(x => x.id === businessId);
-    logAuditEvent('contact_view', `Unlocked business contact coordinates (OTP Verified)`, `Revealed contact for "${b?.name || businessId}" | Listing ID: ${businessId}`);
+  const handleRegisterContactView = async (payload: { businessId: string; viewerName?: string; viewerPhone?: string }) => {
+    try {
+      const businessId = payload.businessId;
+      const deviceId = getOrCreateDeviceId();
+      const response = await fetch('/api/contact-unlock/record-view', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(),
+        },
+        body: JSON.stringify({
+          businessId,
+          viewerName: payload.viewerName || userSession.userName || 'Anonymous Explorer',
+          viewerPhone: payload.viewerPhone || userSession.userPhone || '',
+          deviceId,
+        }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        const message = data?.error || 'Daily contact view limit reached.';
+        alert(message);
+        return false;
+      }
+
+      setViewedBusinessIds((prev) => (prev.includes(businessId) ? prev : [...prev, businessId]));
+      const b = businesses.find((x) => x.id === businessId);
+      logAuditEvent('contact_view', `Unlocked business contact coordinates (OTP Verified)`, `Revealed contact for "${b?.name || businessId}" | Listing ID: ${businessId}`);
+      return true;
+    } catch (err) {
+      console.error('Failed to record contact unlock:', err);
+      alert('Unable to verify contact unlock right now. Please try again.');
+      return false;
+    }
   };
 
   const handleResetData = () => {
@@ -2041,19 +2201,11 @@ export default function App() {
     areaId?: string;
     categoryId?: string;
     subcategoryId?: string;
+    sourceCategoryLabel?: string;
+    sourceSubcategoryLabel?: string;
+    taxonomyMapped?: boolean;
+    tags?: string[];
   }>) => {
-    const inferCategory = (services: string) => {
-      const s = services.toLowerCase();
-      if (s.includes('salon') || s.includes('spa') || s.includes('beauty')) return 'beauty-wellness';
-      if (s.includes('hospital') || s.includes('medical') || s.includes('pharmacy') || s.includes('clinic')) return 'health-medical';
-      if (s.includes('school') || s.includes('preschool') || s.includes('education')) return 'education-training';
-      if (s.includes('hardware') || s.includes('electrical') || s.includes('plumbing')) return 'home-services';
-      if (s.includes('restaurant') || s.includes('sweets') || s.includes('food')) return 'food-restaurants';
-      if (s.includes('fashion') || s.includes('clothing') || s.includes('store') || s.includes('retail')) return 'shopping-retail';
-      if (s.includes('software') || s.includes('digital') || s.includes('it service')) return 'digital-technology';
-      return 'professional-services';
-    };
-
     const inferLocality = (area: string) => {
       const a = area.toLowerCase();
       if (a.includes('kharghar')) return 'kharghar';
@@ -2102,11 +2254,14 @@ export default function App() {
         ));
 
         if (row.importAction === 'update' && existingIndex >= 0) {
-          next[existingIndex] = {
+          next[existingIndex] = normalizeStoredBusiness({
             ...next[existingIndex],
             name,
-            categoryId: row.categoryId || inferCategory(row.services || ''),
-            subcategoryId: row.subcategoryId || resolveDefaultSubcategoryId(row.categoryId || inferCategory(row.services || '')),
+            categoryId: row.categoryId || '',
+            subcategoryId: row.subcategoryId || '',
+            sourceCategoryLabel: row.sourceCategoryLabel || row.category || next[existingIndex].sourceCategoryLabel,
+            sourceSubcategoryLabel: row.sourceSubcategoryLabel || row.subcategory || next[existingIndex].sourceSubcategoryLabel,
+            taxonomyMapped: row.taxonomyMapped ?? isBusinessTaxonomyMapped({ categoryId: row.categoryId || '', subcategoryId: row.subcategoryId || '' }),
             localityId,
             areaId,
             pincode: resolvedPincode,
@@ -2117,9 +2272,15 @@ export default function App() {
             rating: Number.isFinite(rating) ? rating : next[existingIndex].rating,
             reviewCount: Number.isFinite(reviewCount) ? reviewCount : next[existingIndex].reviewCount,
             status: 'approved',
-            tags: (row.services || next[existingIndex].tags.join(',')).split(',').map(t => t.trim()).filter(Boolean).slice(0, 5),
+            tags: uniqueTags(
+              row.tags || [],
+              next[existingIndex].tags || [],
+              splitTagSource(row.services || ''),
+              splitTagSource(row.category || ''),
+              splitTagSource(row.subcategory || '')
+            ),
             gpsCoordinates: lat !== undefined && lng !== undefined ? { lat, lng } : next[existingIndex].gpsCoordinates,
-          };
+          });
           skipped++;
           continue;
         }
@@ -2129,11 +2290,14 @@ export default function App() {
           continue;
         }
 
-        next.unshift({
+        next.unshift(normalizeStoredBusiness({
           id: `csv_${Date.now()}_${Math.floor(Math.random() * 100000)}`,
           name,
-          categoryId: row.categoryId || inferCategory(row.services || ''),
-          subcategoryId: row.subcategoryId || resolveDefaultSubcategoryId(row.categoryId || inferCategory(row.services || '')),
+          categoryId: row.categoryId || '',
+          subcategoryId: row.subcategoryId || '',
+          sourceCategoryLabel: row.sourceCategoryLabel || row.category || undefined,
+          sourceSubcategoryLabel: row.sourceSubcategoryLabel || row.subcategory || undefined,
+          taxonomyMapped: row.taxonomyMapped ?? isBusinessTaxonomyMapped({ categoryId: row.categoryId || '', subcategoryId: row.subcategoryId || '' }),
           localityId,
           stateId: 'mh',
           cityId: 'navimumbai',
@@ -2150,10 +2314,16 @@ export default function App() {
           featured: false,
           status: 'approved',
           createdAt: new Date().toISOString(),
-          tags: (row.services || 'Imported').split(',').map(t => t.trim()).filter(Boolean).slice(0, 5),
+          tags: uniqueTags(
+            row.tags || [],
+            splitTagSource(row.services || ''),
+            splitTagSource(row.category || ''),
+            splitTagSource(row.subcategory || ''),
+            ['Imported via CSV']
+          ),
           ownerName: 'Imported via CSV',
           gpsCoordinates: lat !== undefined && lng !== undefined ? { lat, lng } : undefined,
-        });
+        }));
         imported++;
       }
       persistBusinessesToServer(next);

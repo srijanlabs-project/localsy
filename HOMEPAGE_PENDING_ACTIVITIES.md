@@ -36,12 +36,29 @@ This file tracks the remaining homepage and admin work after the current round o
    - route-level admin gating for remaining write endpoints
    - abuse/rate-limit protections where required
    - monitoring and alerting
-6. Finish launch QA.
+   - add missing security headers: `Strict-Transport-Security` and `Content-Security-Policy`
+6. Add Seller Dashboard.
+   - listings owned by seller
+   - listing views and phone views
+   - leads, clicks, and performance summary
+7. Add Buyer Dashboard.
+   - saved listings
+   - contacted businesses
+   - OTP history / verified actions
+8. Run VAPT testing of the application.
+   - auth and session review
+   - role-based access review
+   - data exposure and upload review
+9. Run load testing.
+   - high-locality browse traffic
+   - homepage and search throughput
+   - OTP and upload path stability
+10. Finish launch QA.
    - desktop/mobile layout pass
    - large-locality dataset pass
    - empty-state pass
    - homepage section overflow/carousel behavior
-7. Resolve remaining public UI polish items.
+11. Resolve remaining public UI polish items.
    - section spacing and card alignment edge cases
    - category label overflow in compact layouts
 
@@ -49,4 +66,6 @@ This file tracks the remaining homepage and admin work after the current round o
 
 1. Finish backend persistence and remaining protected write routes.
 2. Tighten admin filters, bulk actions, and preview controls.
-3. Run final responsive QA across the homepage and mobile nav.
+3. Add seller and buyer dashboards, then validate analytics surfaces.
+4. Run VAPT and load testing before release.
+5. Run final responsive QA across the homepage and mobile nav.

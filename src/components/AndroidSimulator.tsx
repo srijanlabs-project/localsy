@@ -20,7 +20,7 @@ interface AndroidSimulatorProps {
   userSession: UserSession;
   onUserSessionChange: (sess: UserSession) => void;
   viewedBusinessIds: string[];
-  onUnlockBusinessContact: (bizId: string) => void;
+  onUnlockBusinessContact: (payload: { businessId: string; viewerName?: string; viewerPhone?: string }) => Promise<boolean> | boolean;
   onSubmitApplication: (bizData: Omit<Business, 'id' | 'status' | 'createdAt' | 'rating' | 'reviewCount'>) => void;
   onUpdateBusiness: (b: Business) => void;
   onAddReview: (bizId: string, userName: string, userPhone: string, rating: number, comment: string) => void;
@@ -235,7 +235,7 @@ export default function AndroidSimulator({
     alert("Mobile review entry authorized and rating metrics generated!");
   };
 
-  const handleOtpSuccess = (verifiedName: string, verifiedPhone: string) => {
+  const handleOtpSuccess = async (verifiedName: string, verifiedPhone: string) => {
     onUserSessionChange({
       role: userSession.role === 'buyer' ? 'buyer' : userSession.role,
       userName: `${verifiedName} (Verified Mobile)`,
@@ -244,17 +244,35 @@ export default function AndroidSimulator({
     });
 
     if (activeVerifyBizId) {
-      onUnlockBusinessContact(activeVerifyBizId);
+      const allowed = await Promise.resolve(onUnlockBusinessContact({
+        businessId: activeVerifyBizId,
+        viewerName: verifiedName,
+        viewerPhone: verifiedPhone,
+      }));
+      if (allowed === false) {
+        return false;
+      }
       addLog(`[Bridge] Decrypted verified numbers for ID: ${activeVerifyBizId}`);
     }
     setActiveVerifyBizId(null);
+    return true;
   };
 
   const initMobileUnlock = (bizId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (userSession.isAuthenticated && userSession.userPhone) {
-      onUnlockBusinessContact(bizId);
-      addLog(`[Bridge] Unlocked contacts instantly using existing authenticated user token.`);
+      void Promise.resolve(onUnlockBusinessContact({
+        businessId: bizId,
+        viewerName: userSession.userName,
+        viewerPhone: userSession.userPhone,
+      })).then((allowed) => {
+        if (allowed === false) {
+          return;
+        }
+        addLog(`[Bridge] Unlocked contacts instantly using existing authenticated user token.`);
+      }).catch(() => {
+        addLog(`[Bridge] Contact unlock failed due to a security check or network issue.`);
+      });
       return;
     }
     setActiveVerifyBizId(bizId);

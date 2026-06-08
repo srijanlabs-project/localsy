@@ -32,6 +32,9 @@ let memoryUsers = null;
 let memoryBusinesses = null;
 let memoryHomepageConfig = null;
 let memoryOtpChallenges = null;
+let memoryContactViewEvents = null;
+const auditEventThrottleBuckets = new Map();
+const auditEventRecentWrites = new Map();
 
 const STORAGE_ENDPOINT_URL = process.env.S3_ENDPOINT_URL || process.env.STORAGE_ENDPOINT_URL || '';
 const STORAGE_BUCKET_NAME = process.env.S3_BUCKET_NAME || process.env.STORAGE_BUCKET_NAME || '';
@@ -54,6 +57,19 @@ const STORAGE_OBJECT_ACL = process.env.S3_OBJECT_ACL || '';
 const MSG91_AUTHKEY = process.env.MSG91_AUTHKEY || '';
 const MSG91_OTP_TEMPLATE_ID = process.env.MSG91_OTP_TEMPLATE_ID || '';
 const MSG91_OTP_BASE_URL = process.env.MSG91_OTP_BASE_URL || 'https://control.msg91.com';
+const CONTACT_VIEW_DAILY_LIMIT = Math.max(1, parseInt(process.env.CONTACT_VIEW_DAILY_LIMIT || '10', 10) || 10);
+const AUDIT_EVENT_WINDOW_MS = Math.max(10_000, parseInt(process.env.AUDIT_EVENT_WINDOW_MS || '60000', 10) || 60_000);
+const AUDIT_EVENT_MAX_PER_WINDOW = Math.max(10, parseInt(process.env.AUDIT_EVENT_MAX_PER_WINDOW || '40', 10) || 40);
+const AUDIT_EVENT_AUTH_MAX_PER_WINDOW = Math.max(
+  AUDIT_EVENT_MAX_PER_WINDOW,
+  parseInt(process.env.AUDIT_EVENT_AUTH_MAX_PER_WINDOW || '120', 10) || 120,
+);
+const AUDIT_EVENT_BOT_MAX_PER_WINDOW = Math.max(2, parseInt(process.env.AUDIT_EVENT_BOT_MAX_PER_WINDOW || '6', 10) || 6);
+const AUDIT_EVENT_DEDUPE_MS = Math.max(1_000, parseInt(process.env.AUDIT_EVENT_DEDUPE_MS || '15000', 10) || 15_000);
+const AUDIT_EVENT_BOT_DEDUPE_MS = Math.max(
+  AUDIT_EVENT_DEDUPE_MS,
+  parseInt(process.env.AUDIT_EVENT_BOT_DEDUPE_MS || '180000', 10) || 180_000,
+);
 
 const PUBLIC_USER_TYPES = ['buyer', 'seller', 'resource'];
 const ALL_USER_TYPES = ['platform_admin', 'developer', 'buyer', 'seller', 'resource'];
@@ -641,6 +657,104 @@ function normalizePhoneDigits(phone) {
   return digits;
 }
 
+function normalizeRequestIp(req) {
+  const forwardedFor = req.headers['x-forwarded-for'];
+  const forwarded = Array.isArray(forwardedFor) ? forwardedFor[0] : String(forwardedFor || '');
+  const rawIp = forwarded.split(',')[0].trim() || req.socket?.remoteAddress || req.ip || 'unknown';
+  return String(rawIp).replace(/^::ffff:/, '');
+}
+
+function normalizeDeviceId(value) {
+  const cleaned = String(value || '').trim();
+  return cleaned.slice(0, 128);
+}
+
+function normalizeAuditText(value, maxLength = 512) {
+  return String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxLength);
+}
+
+function isLikelyAutomatedAgent(userAgent) {
+  return /(bot|crawler|spider|zap|headless|lighthouse|playwright|puppeteer|phantom|selenium|python-requests|axios|node-fetch|curl)/i.test(
+    String(userAgent || ''),
+  );
+}
+
+function pruneAuditThrottleCaches(now = Date.now()) {
+  for (const [key, bucket] of auditEventThrottleBuckets.entries()) {
+    if (!bucket || now - bucket.windowStartedAt > AUDIT_EVENT_WINDOW_MS * 2) {
+      auditEventThrottleBuckets.delete(key);
+    }
+  }
+  for (const [key, lastSeenAt] of auditEventRecentWrites.entries()) {
+    if (now - lastSeenAt > AUDIT_EVENT_BOT_DEDUPE_MS * 2) {
+      auditEventRecentWrites.delete(key);
+    }
+  }
+}
+
+function evaluateAuditEventThrottle({ ipAddress, userAgent, actionType, description, details, userName, isAuthenticated }) {
+  const now = Date.now();
+  pruneAuditThrottleCaches(now);
+
+  const automated = isLikelyAutomatedAgent(userAgent);
+  const dedupeWindowMs = automated ? AUDIT_EVENT_BOT_DEDUPE_MS : AUDIT_EVENT_DEDUPE_MS;
+  const fingerprint = [
+    ipAddress || 'unknown',
+    actionType || 'unknown',
+    normalizeAuditText(description, 160),
+    normalizeAuditText(details, 240),
+    normalizeAuditText(userName, 80) || 'anonymous',
+  ].join('|');
+
+  const lastSeenAt = auditEventRecentWrites.get(fingerprint) || 0;
+  if (now - lastSeenAt < dedupeWindowMs) {
+    return {
+      accept: false,
+      status: 'deduped',
+      automated,
+      retryAfterMs: Math.max(0, dedupeWindowMs - (now - lastSeenAt)),
+    };
+  }
+  auditEventRecentWrites.set(fingerprint, now);
+
+  const bucketKey = `${ipAddress || 'unknown'}|${automated ? 'bot' : 'human'}|${isAuthenticated ? 'auth' : 'anon'}|${actionType || 'unknown'}`;
+  const allowedPerWindow = automated
+    ? AUDIT_EVENT_BOT_MAX_PER_WINDOW
+    : isAuthenticated
+      ? AUDIT_EVENT_AUTH_MAX_PER_WINDOW
+      : AUDIT_EVENT_MAX_PER_WINDOW;
+
+  const existingBucket = auditEventThrottleBuckets.get(bucketKey);
+  if (!existingBucket || now - existingBucket.windowStartedAt >= AUDIT_EVENT_WINDOW_MS) {
+    auditEventThrottleBuckets.set(bucketKey, { windowStartedAt: now, count: 1 });
+    return { accept: true, automated, status: 'accepted' };
+  }
+
+  if (existingBucket.count >= allowedPerWindow) {
+    return {
+      accept: false,
+      status: 'throttled',
+      automated,
+      retryAfterMs: Math.max(0, AUDIT_EVENT_WINDOW_MS - (now - existingBucket.windowStartedAt)),
+    };
+  }
+
+  existingBucket.count += 1;
+  auditEventThrottleBuckets.set(bucketKey, existingBucket);
+  return { accept: true, automated, status: 'accepted' };
+}
+
+function getDayWindowIso(date = new Date()) {
+  const start = new Date(date);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+  return { startIso: start.toISOString(), endIso: end.toISOString() };
+}
+
 function buildAuthUserResponse(user) {
   return {
     id: user.id,
@@ -750,6 +864,85 @@ async function markOtpChallengeUsed(challengeId) {
   const index = memoryOtpChallenges.findIndex((entry) => entry.id === challengeId);
   if (index === -1) return;
   memoryOtpChallenges[index] = { ...memoryOtpChallenges[index], usedAt: nowIso() };
+}
+
+async function getContactViewCountsToday({ loginKey, ipAddress, deviceId }) {
+  const { startIso, endIso } = getDayWindowIso();
+  const client = await getPgClient();
+  if (client) {
+    const result = await client.query(
+      `SELECT
+         COUNT(*) FILTER (WHERE login_key = $2) AS login_count,
+         COUNT(*) FILTER (WHERE ip_address = $3) AS ip_count,
+         COUNT(*) FILTER (WHERE device_id = $4) AS device_count
+       FROM contact_view_events
+      WHERE created_at >= $1 AND created_at < $5`,
+      [startIso, loginKey, ipAddress, deviceId, endIso],
+    );
+    const row = result.rows[0] || {};
+    return {
+      loginCount: Number(row.login_count || 0),
+      ipCount: Number(row.ip_count || 0),
+      deviceCount: Number(row.device_count || 0),
+    };
+  }
+
+  if (!Array.isArray(memoryContactViewEvents)) {
+    return { loginCount: 0, ipCount: 0, deviceCount: 0 };
+  }
+
+  const startMs = new Date(startIso).getTime();
+  const endMs = new Date(endIso).getTime();
+  const todaysEvents = memoryContactViewEvents.filter((event) => {
+    const createdMs = new Date(event.createdAt).getTime();
+    return createdMs >= startMs && createdMs < endMs;
+  });
+  return {
+    loginCount: todaysEvents.filter((event) => event.loginKey === loginKey).length,
+    ipCount: todaysEvents.filter((event) => event.ipAddress === ipAddress).length,
+    deviceCount: todaysEvents.filter((event) => event.deviceId === deviceId).length,
+  };
+}
+
+async function recordContactViewEvent({ businessId, loginKey, viewerName, viewerPhone, ipAddress, deviceId }) {
+  const client = await getPgClient();
+  const event = {
+    id: randomId('cview'),
+    businessId,
+    loginKey,
+    viewerName: viewerName || '',
+    viewerPhone: viewerPhone || '',
+    ipAddress,
+    deviceId,
+    createdAt: nowIso(),
+  };
+
+  if (client) {
+    await client.query(
+      `INSERT INTO contact_view_events (id, business_id, login_key, viewer_name, viewer_phone, ip_address, device_id, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [
+        event.id,
+        event.businessId,
+        event.loginKey,
+        event.viewerName,
+        event.viewerPhone,
+        event.ipAddress,
+        event.deviceId,
+        event.createdAt,
+      ],
+    );
+  } else {
+    if (!Array.isArray(memoryContactViewEvents)) memoryContactViewEvents = [];
+    memoryContactViewEvents = memoryContactViewEvents.filter((entry) => {
+      const createdMs = new Date(entry.createdAt).getTime();
+      const { startIso, endIso } = getDayWindowIso();
+      return createdMs >= new Date(startIso).getTime() && createdMs < new Date(endIso).getTime();
+    });
+    memoryContactViewEvents.push(event);
+  }
+
+  return event;
 }
 
 async function sendMsg91Otp(mobile) {
@@ -1365,6 +1558,18 @@ async function getPgClient() {
       )
     `);
     await pgClient.query(`
+      CREATE TABLE IF NOT EXISTS contact_view_events (
+        id TEXT PRIMARY KEY,
+        business_id TEXT NOT NULL,
+        login_key TEXT NOT NULL,
+        viewer_name TEXT,
+        viewer_phone TEXT,
+        ip_address TEXT NOT NULL,
+        device_id TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await pgClient.query(`
       CREATE TABLE IF NOT EXISTS app_state (
         key TEXT PRIMARY KEY,
         value JSONB NOT NULL,
@@ -1394,6 +1599,9 @@ app.get('/api/businesses', async (_req, res) => {
 });
 
 app.put('/api/businesses', async (req, res) => {
+  const access = requirePrivilegedWriteAccess(req, res);
+  if (!access) return;
+
   const incoming = sanitizeBusinessListings(req.body?.businesses);
   if (!incoming) {
     return res.status(400).json({ ok: false, error: 'businesses array is required' });
@@ -1780,6 +1988,79 @@ app.post('/api/contact-unlock/verify-otp', async (req, res) => {
   }
 });
 
+app.post('/api/contact-unlock/record-view', async (req, res) => {
+  const { businessId, viewerPhone, viewerName, deviceId } = req.body || {};
+  const normalizedBusinessId = String(businessId || '').trim();
+  const normalizedDeviceId = normalizeDeviceId(deviceId || req.headers['x-device-id']);
+  const normalizedPhone = normalizePhoneDigits(viewerPhone);
+  const payload = authFromHeader(req);
+  const loginKey = payload?.sub ? `user:${payload.sub}` : normalizedPhone ? `phone:${normalizedPhone}` : '';
+  const ipAddress = normalizeRequestIp(req);
+
+  if (!normalizedBusinessId) {
+    return res.status(400).json({ ok: false, error: 'businessId is required' });
+  }
+  if (!loginKey) {
+    return res.status(400).json({ ok: false, error: 'viewerPhone or authenticated session is required' });
+  }
+  if (!normalizedDeviceId) {
+    return res.status(400).json({ ok: false, error: 'deviceId is required' });
+  }
+
+  const businesses = await readBusinessListings();
+  const business = businesses.find((entry) => entry.id === normalizedBusinessId);
+  if (!business) {
+    return res.status(404).json({ ok: false, error: 'Business not found' });
+  }
+  const users = await readUsers();
+  const authenticatedUser = payload?.sub ? users.find((entry) => entry.id === payload.sub) : null;
+
+  try {
+    const counts = await getContactViewCountsToday({
+      loginKey,
+      ipAddress,
+      deviceId: normalizedDeviceId,
+    });
+
+    const exceeded = [];
+    if (counts.loginCount >= CONTACT_VIEW_DAILY_LIMIT) exceeded.push('same login');
+    if (counts.ipCount >= CONTACT_VIEW_DAILY_LIMIT) exceeded.push('same IP');
+    if (counts.deviceCount >= CONTACT_VIEW_DAILY_LIMIT) exceeded.push('same device');
+
+    if (exceeded.length > 0) {
+      return res.status(429).json({
+        ok: false,
+        error: `Daily contact view limit reached for ${exceeded.join(', ')}.`,
+        limit: CONTACT_VIEW_DAILY_LIMIT,
+        counts,
+      });
+    }
+
+    await recordContactViewEvent({
+      businessId: normalizedBusinessId,
+      loginKey,
+      viewerName: String(viewerName || authenticatedUser?.name || authenticatedUser?.email || payload?.sub || 'Anonymous').trim(),
+      viewerPhone: normalizedPhone,
+      ipAddress,
+      deviceId: normalizedDeviceId,
+    });
+
+    res.json({
+      ok: true,
+      businessId: normalizedBusinessId,
+      limit: CONTACT_VIEW_DAILY_LIMIT,
+      counts: {
+        login: counts.loginCount + 1,
+        ip: counts.ipCount + 1,
+        device: counts.deviceCount + 1,
+      },
+    });
+  } catch (err) {
+    console.error('Failed to record contact view:', err);
+    res.status(500).json({ ok: false, error: err?.message || 'Failed to record contact view' });
+  }
+});
+
 app.post('/api/auth/platform/request-otp', async (req, res) => {
   const { identifier, password } = req.body || {};
   if (!identifier || !password) {
@@ -1908,21 +2189,52 @@ app.get('/api/auth/me', async (req, res) => {
 
 app.post('/api/audit-events', async (req, res) => {
   const payload = req.body || {};
-  const required = ['id', 'timestamp', 'actionType', 'description', 'details', 'ipAddress', 'deviceCode', 'userName'];
+  const required = ['timestamp', 'actionType', 'description', 'details'];
   const missing = required.filter((k) => payload[k] === undefined || payload[k] === null);
   if (missing.length > 0) {
     return res.status(400).json({ ok: false, error: `Missing fields: ${missing.join(', ')}` });
   }
 
+  const authenticated = authFromHeader(req);
+  let resolvedUserName = normalizeAuditText(payload.userName || 'Anonymous Explorer', 120) || 'Anonymous Explorer';
+  if (authenticated?.sub) {
+    const users = await readUsers();
+    const user = users.find((entry) => entry.id === authenticated.sub);
+    if (user) {
+      resolvedUserName = normalizeAuditText(user.name || user.email || resolvedUserName, 120) || resolvedUserName;
+    }
+  }
+
+  const ipAddress = normalizeRequestIp(req);
+  const userAgent = String(req.headers['user-agent'] || payload.deviceCode || 'unknown');
+  const auditDecision = evaluateAuditEventThrottle({
+    ipAddress,
+    userAgent,
+    actionType: payload.actionType,
+    description: payload.description,
+    details: payload.details,
+    userName: resolvedUserName,
+    isAuthenticated: Boolean(authenticated?.sub),
+  });
+  if (!auditDecision.accept) {
+    return res.status(202).json({
+      ok: true,
+      skipped: true,
+      reason: auditDecision.status,
+      automated: auditDecision.automated,
+      retryAfterMs: auditDecision.retryAfterMs,
+    });
+  }
+
   const event = {
-    id: String(payload.id),
+    id: normalizeAuditText(payload.id || `audit_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`, 96),
     timestamp: String(payload.timestamp),
     actionType: String(payload.actionType),
-    description: String(payload.description),
-    details: String(payload.details),
-    ipAddress: String(payload.ipAddress),
-    deviceCode: String(payload.deviceCode),
-    userName: String(payload.userName),
+    description: normalizeAuditText(payload.description, 240),
+    details: normalizeAuditText(payload.details, 1000),
+    ipAddress,
+    deviceCode: normalizeAuditText(userAgent, 240) || 'unknown',
+    userName: resolvedUserName,
   };
 
   try {

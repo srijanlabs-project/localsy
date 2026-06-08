@@ -39,7 +39,12 @@ This checklist is based on the current implementation in `src/App.tsx`, `src/com
 | Data layer | Homepage configuration still relies heavily on `localStorage` | Pending | Layouts, hero banners, ads, coupons, community, audit logs, and session data are still client-persisted. |
 | Data layer | Homepage-related content should move fully to API/database | Pending | Only some business syncing is wired to server today; homepage data sources are not fully server-backed. |
 | Security | Public homepage flows need stronger production protection | Pending | Launch notes still call for server-side validation, rate limits, CSRF protection, and secure session handling. |
+| Security | Missing response headers should be added | Pending | `Strict-Transport-Security` and `Content-Security-Policy` are missing from the current production scan and should be added before release hardening is considered complete. |
 | Access control | Sandbox/admin-only controls need full production hardening | Pending | Repo notes still call out route-level admin gating and hiding internal tools from public users. |
+| Seller ops | Seller dashboard needs to be built | Pending | Seller-owned listings, views, phone views, and lead metrics still need a real dashboard and backend data model. |
+| Buyer ops | Buyer dashboard needs to be built | Pending | Saved listings, contacted businesses, and verified user activity still need a dedicated dashboard experience. |
+| Security | VAPT test needs to be executed | Pending | Application auth, role isolation, upload surfaces, and data exposure need an external-style verification pass. |
+| Performance | Load test needs to be executed | Pending | High-locality traffic, homepage throughput, OTP, and media upload paths still need stress validation. |
 | Compliance | Legal/privacy pages and data-use disclosure are still needed | Pending | Especially relevant because homepage can trigger OTP, audit logging, and lead capture. |
 | Observability | Homepage production monitoring still needs completion | Pending | Health endpoint exists, but launch notes still require alerts, error monitoring, and operational readiness. |
 | QA | End-to-end homepage QA checklist still needs execution | Pending | Needs pass across desktop/mobile, section combinations, pincode routing, SEO routes, and empty-content scenarios. |
@@ -51,3 +56,5 @@ This checklist is based on the current implementation in `src/App.tsx`, `src/com
 3. Curate real homepage content for each locality: hero banners, featured businesses, offers, and updates.
 4. Decide whether advanced search, portal tabs, and refined filters should launch now or remain disabled.
 5. Complete production readiness items: security, monitoring, and legal/privacy pages.
+6. Build seller and buyer dashboards, then validate analytics and access flows.
+7. Run VAPT and load testing before release.
