@@ -164,6 +164,8 @@ export interface ListingAd {
   sellerBusinessId?: string;
   localityIds?: string[];
   pincodes?: string[];
+  categoryIds?: string[];
+  tags?: string[];
   placementKey?: string;
   deviceTarget?: 'all' | 'desktop' | 'mobile';
   mobileRowPosition?: number;

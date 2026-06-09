@@ -343,6 +343,109 @@ function OrderedCategoryPicker({
   );
 }
 
+type OrderedSelectionOption = {
+  id: string;
+  label: string;
+  meta?: string;
+};
+
+type OrderedSelectionPickerProps = {
+  label: string;
+  selectedIds: string[];
+  options: OrderedSelectionOption[];
+  onChange: (nextIds: string[]) => void;
+  helperText?: string;
+  emptyText?: string;
+};
+
+function OrderedSelectionPicker({
+  label,
+  selectedIds,
+  options,
+  onChange,
+  helperText = 'Select a value, click Add, and remove it from the selected list when it is no longer needed.',
+  emptyText = 'No values selected yet.'
+}: OrderedSelectionPickerProps) {
+  const availableOptions = options.filter((option) => !selectedIds.includes(option.id));
+  const [draftId, setDraftId] = useState(availableOptions[0]?.id || options[0]?.id || '');
+
+  useEffect(() => {
+    if (availableOptions.some((option) => option.id === draftId)) return;
+    setDraftId(availableOptions[0]?.id || options[0]?.id || '');
+  }, [availableOptions, draftId, options]);
+
+  const selectedOptions = selectedIds
+    .map((id) => options.find((option) => option.id === id) || { id, label: id })
+    .filter(Boolean);
+
+  const addSelection = () => {
+    if (!draftId || selectedIds.includes(draftId)) return;
+    onChange([...selectedIds, draftId]);
+  };
+
+  const removeSelection = (id: string) => {
+    onChange(selectedIds.filter((selectedId) => selectedId !== id));
+  };
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-3">
+      <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="text-[11px] font-semibold text-slate-700">{label}</div>
+          <div className="text-[10px] text-slate-500">{helperText}</div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={draftId}
+            onChange={(e) => setDraftId(e.target.value)}
+            className="min-w-[190px] rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px]"
+          >
+            {(availableOptions.length > 0 ? availableOptions : options).map((option) => (
+              <option key={option.id} value={option.id} disabled={selectedIds.includes(option.id)}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={addSelection}
+            disabled={!draftId || selectedIds.includes(draftId)}
+            className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-[11px] font-bold text-indigo-700 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <PlusCircle className="h-3.5 w-3.5" />
+            Add
+          </button>
+        </div>
+      </div>
+
+      {selectedOptions.length > 0 ? (
+        <div className="space-y-2">
+          {selectedOptions.map((option, index) => (
+            <div key={`${option.id}-${index}`} className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+              <div className="min-w-0">
+                <div className="truncate text-[11px] font-semibold text-slate-800">{index + 1}. {option.label}</div>
+                {option.meta && <div className="truncate text-[10px] text-slate-500">{option.meta}</div>}
+              </div>
+              <button
+                type="button"
+                onClick={() => removeSelection(option.id)}
+                className="rounded border border-rose-200 bg-rose-50 p-1.5 text-rose-700"
+                title="Remove"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-[11px] text-slate-500">
+          {emptyText}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AdminConsole({
   localities,
   businesses,
@@ -428,6 +531,8 @@ export default function AdminConsole({
   const [adSellerBusinessId, setAdSellerBusinessId] = useState('');
   const [adLocalityId, setAdLocalityId] = useState(localities[0]?.id || 'roadpali');
   const [adPincodes, setAdPincodes] = useState('');
+  const [adCategoryIds, setAdCategoryIds] = useState<string[]>([]);
+  const [adTags, setAdTags] = useState('');
   const [adPlacementKey, setAdPlacementKey] = useState('homepage_inline_primary');
   const [adImageUrl, setAdImageUrl] = useState('');
   const [adImageFile, setAdImageFile] = useState<File | null>(null);
@@ -616,6 +721,8 @@ export default function AdminConsole({
     setAdTargetBusinessId('');
     setAdSellerBusinessId('');
     setAdPincodes('');
+    setAdCategoryIds([]);
+    setAdTags('');
     setAdPlacementKey('homepage_inline_primary');
     setAdImageUrl('');
     setAdImageFile(null);
@@ -640,6 +747,8 @@ export default function AdminConsole({
     setAdSellerBusinessId(ad.sellerBusinessId || '');
     setAdLocalityId(ad.localityIds?.[0] || localities[0]?.id || 'roadpali');
     setAdPincodes((ad.pincodes || []).join(', '));
+    setAdCategoryIds(ad.categoryIds || []);
+    setAdTags((ad.tags || []).join(', '));
     setAdPlacementKey(ad.placementKey || 'homepage_inline_primary');
     setAdImageUrl(ad.imageUrl || '');
     setAdImageFile(null);
@@ -1263,6 +1372,8 @@ export default function AdminConsole({
         sellerBusinessId: adSellerBusinessId || undefined,
         localityIds: adLocalityId ? [adLocalityId] : [],
         pincodes: parsePincodeList(adPincodes),
+        categoryIds: adCategoryIds,
+        tags: buildListingTags(adTags),
         placementKey: nextPlacementKey,
         deviceTarget: adDeviceTarget,
         mobileRowPosition: adDeviceTarget !== 'desktop' && Number(adMobileRowPosition) > 0 ? Number(adMobileRowPosition) : undefined,
@@ -2832,20 +2943,18 @@ export default function AdminConsole({
                   className="border border-slate-200 rounded-lg px-3 py-2 bg-white"
                 />
               </div>
-              <div className="rounded-lg border border-slate-200 bg-white p-3">
-                <div className="mb-2 text-[11px] font-semibold text-slate-700">Target localities</div>
-                <div className="text-[10px] text-slate-500">Leave multiple selections enabled to reuse the same section across localities.</div>
-                <select
-                  multiple
-                  value={newSectionLocalityIds}
-                  onChange={(e) => setNewSectionLocalityIds(Array.from(e.currentTarget.selectedOptions, (option: HTMLOptionElement) => option.value))}
-                  className="mt-2 h-28 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
-                >
-                  {localities.map((locality) => (
-                    <option key={locality.id} value={locality.id}>{locality.name}</option>
-                  ))}
-                </select>
-              </div>
+              <OrderedSelectionPicker
+                label="Target localities"
+                selectedIds={newSectionLocalityIds}
+                options={localities.map((locality) => ({
+                  id: locality.id,
+                  label: locality.name,
+                  meta: locality.slug || locality.id
+                }))}
+                onChange={setNewSectionLocalityIds}
+                helperText="Select one locality at a time and click Add. Empty is avoided for new sections so targeting stays explicit."
+                emptyText="No localities selected yet."
+              />
               <div className="grid grid-cols-2 gap-2">
                 <input
                   value={newSectionVisibleSlots}
@@ -2949,16 +3058,18 @@ export default function AdminConsole({
                 </div>
               )}
               {newSectionListingSourceMode === 'manual' && ['business_shelf', 'text_business_strip', 'featured_businesses', 'verified_business_grid'].includes(newSectionType) && (
-                <select
-                  multiple
-                  value={newSectionPinnedBusinessIds}
-                  onChange={(e) => setNewSectionPinnedBusinessIds(Array.from(e.currentTarget.selectedOptions, (option: HTMLOptionElement) => option.value))}
-                  className="h-32 w-full rounded-lg border border-slate-200 bg-white px-3 py-2"
-                >
-                  {filteredBusinesses.filter((business) => business.status === 'approved').map((business) => (
-                    <option key={business.id} value={business.id}>{business.name}</option>
-                  ))}
-                </select>
+                <OrderedSelectionPicker
+                  label="Pinned listings"
+                  selectedIds={newSectionPinnedBusinessIds}
+                  options={filteredBusinesses.filter((business) => business.status === 'approved').map((business) => ({
+                    id: business.id,
+                    label: business.name,
+                    meta: `${getCategoryById(business.categoryId)?.name || business.categoryId} | ${business.pincode || 'No PIN'}`
+                  }))}
+                  onChange={setNewSectionPinnedBusinessIds}
+                  helperText="Select a listing and click Add. The selected order is used for manual homepage sections."
+                  emptyText="No listings pinned yet."
+                />
               )}
               {newSectionType === 'promo_banner' && (
                 <input
@@ -3181,23 +3292,19 @@ export default function AdminConsole({
                     />
                   )}
                   <div className="grid grid-cols-2 gap-2">
-                    <div className="col-span-2 rounded-lg border border-slate-200 bg-white p-3">
-                      <div className="mb-2 text-[11px] font-semibold text-slate-700">Target localities</div>
-                      <select
-                        multiple
-                        value={section.localityIds || []}
-                        onChange={(e) => updateHomepageSection(section, {
-                          localityIds: Array.from(e.currentTarget.selectedOptions, (option: HTMLOptionElement) => option.value)
-                        })}
-                        className="h-28 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
-                      >
-                        {localities.map((locality) => (
-                          <option key={locality.id} value={locality.id}>{locality.name}</option>
-                        ))}
-                      </select>
-                      <div className="mt-1 text-[10px] text-slate-500">
-                        Empty selection means this section can show for any locality context that loads this layout.
-                      </div>
+                    <div className="col-span-2">
+                      <OrderedSelectionPicker
+                        label="Target localities"
+                        selectedIds={section.localityIds || []}
+                        options={localities.map((locality) => ({
+                          id: locality.id,
+                          label: locality.name,
+                          meta: locality.slug || locality.id
+                        }))}
+                        onChange={(nextIds) => updateHomepageSection(section, { localityIds: nextIds })}
+                        helperText="Select a locality and click Add. Remove all selected localities to make this section unrestricted."
+                        emptyText="No locality targeting selected. This section can show for any locality context that loads this layout."
+                      />
                     </div>
                     {['business_shelf', 'text_business_strip', 'featured_businesses', 'verified_business_grid'].includes(section.sectionType) && (
                       <select
@@ -3234,16 +3341,18 @@ export default function AdminConsole({
                     />
                   </div>
                   {section.listingSourceMode === 'manual' && ['business_shelf', 'text_business_strip', 'featured_businesses', 'verified_business_grid'].includes(section.sectionType) && (
-                    <select
-                      multiple
-                      value={section.pinnedBusinessIds || []}
-                      onChange={(e) => updateHomepageSection(section, { pinnedBusinessIds: Array.from(e.currentTarget.selectedOptions, (option: HTMLOptionElement) => option.value) })}
-                      className="h-32 w-full rounded-lg border border-slate-200 bg-white px-3 py-2"
-                    >
-                      {filteredBusinesses.filter((business) => business.status === 'approved').map((business) => (
-                        <option key={business.id} value={business.id}>{business.name}</option>
-                      ))}
-                    </select>
+                    <OrderedSelectionPicker
+                      label="Pinned listings"
+                      selectedIds={section.pinnedBusinessIds || []}
+                      options={filteredBusinesses.filter((business) => business.status === 'approved').map((business) => ({
+                        id: business.id,
+                        label: business.name,
+                        meta: `${getCategoryById(business.categoryId)?.name || business.categoryId} | ${business.pincode || 'No PIN'}`
+                      }))}
+                      onChange={(nextIds) => updateHomepageSection(section, { pinnedBusinessIds: nextIds })}
+                      helperText="Select a listing and click Add. The selected order is used for manual homepage sections."
+                      emptyText="No listings pinned yet."
+                    />
                   )}
                   <div className="flex items-center justify-between gap-2">
                     <label className="inline-flex items-center gap-2 text-slate-700">
@@ -3893,6 +4002,18 @@ export default function AdminConsole({
                 className="border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
               />
             </div>
+            <OrderedCategoryPicker
+              label="Ad category targeting"
+              selectedIds={adCategoryIds}
+              onChange={setAdCategoryIds}
+              helperText="Add categories this ad should match on search results. Leave empty to allow all categories."
+            />
+            <input
+              value={adTags}
+              onChange={(e) => setAdTags(e.target.value)}
+              placeholder="Target tags, comma separated (pickle, food, salon)"
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
+            />
             <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
               <input
                 value={adImageUrl}
@@ -3997,6 +4118,9 @@ export default function AdminConsole({
                     </span>
                     <span className="block text-[10px] text-slate-500">
                       {ad.deviceTarget || 'all'}{ad.mobileRowPosition ? ` • mobile row ${ad.mobileRowPosition}` : ''}
+                    </span>
+                    <span className="block text-[10px] text-slate-500">
+                      Categories: {(ad.categoryIds || []).map((categoryId) => getCategoryById(categoryId)?.name || categoryId).join(', ') || 'All'} | Tags: {(ad.tags || []).join(', ') || 'Any'}
                     </span>
                   </div>
                   <div className="flex items-center gap-1">

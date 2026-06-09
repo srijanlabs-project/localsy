@@ -112,9 +112,11 @@ export default function AndroidSimulator({
   );
 
   const filteredBusinesses = approvedInLocality.filter(biz => {
-    const matchesSearch = biz.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          biz.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          biz.tags.some(t => t.toLowerCase().includes(searchQuery.toLowerCase()));
+    const normalizedSearch = searchQuery.trim().toLowerCase();
+    const matchesSearch = !normalizedSearch ||
+                          String(biz.name || '').toLowerCase().includes(normalizedSearch) ||
+                          String(biz.description || '').toLowerCase().includes(normalizedSearch) ||
+                          (Array.isArray(biz.tags) ? biz.tags : []).some((tag) => String(tag || '').toLowerCase().includes(normalizedSearch));
     const matchesCategory = selectedCategory === 'all' || biz.categoryId === selectedCategory;
     return matchesSearch && matchesCategory;
   });

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useDeferredValue } from 'react';
 import { 
   Search, MapPin, Phone, Mail, ExternalLink, Star, 
   BookOpen, Plus, Compass, ChevronRight, ChevronLeft, ChevronDown, Share2, Globe, Heart, 
@@ -21,6 +21,7 @@ import { getBusinessImageUrl, getCategoryFallbackImage, hasUploadedBusinessImage
 import { getMediaProxyUrl } from '../utils/mediaUrl';
 import {
   BUSINESS_CATEGORIES,
+  BUSINESS_SUBCATEGORIES,
   getCategoryById,
   getSubcategoriesForCategory,
   getSubcategoryById,
@@ -121,16 +122,25 @@ function MobileAdCarousel({ ads, onAdClick }: MobileAdCarouselProps) {
       >
         {ads.map((ad, index) => {
           const isDark = index % 4 === 1 || ad.backgroundColor === '#064e3b';
+          const adImage = getMediaProxyUrl(ad.imageUrl);
           return (
             <button
               key={`${ad.id}-mobile-${index}`}
               type="button"
               onClick={() => onAdClick(ad)}
-              className={`relative min-h-[220px] w-[200px] min-w-[200px] snap-start overflow-hidden rounded-2xl p-5 text-left shadow-sm ${
+              className={`relative min-h-[220px] w-[200px] min-w-[200px] snap-start overflow-hidden rounded-2xl text-left shadow-sm ${
                 isDark ? 'text-white' : 'text-indigo-950'
               }`}
               style={{ backgroundColor: ad.backgroundColor || (isDark ? '#064e3b' : '#ede9fe') }}
             >
+              {adImage ? (
+                <img
+                  src={adImage}
+                  alt={ad.title}
+                  className="h-full min-h-[220px] w-full rounded-2xl object-cover"
+                />
+              ) : (
+              <div className="relative min-h-[220px] p-5">
               <span className={`text-[10px] font-bold uppercase tracking-wide ${isDark ? 'text-white/70' : 'text-indigo-500'}`}>
                 {ad.badge || 'Advertisement'}
               </span>
@@ -143,14 +153,8 @@ function MobileAdCarousel({ ads, onAdClick }: MobileAdCarouselProps) {
               }`}>
                 {ad.ctaText}
               </span>
-              {ad.imageUrl ? (
-                <img
-                  src={getMediaProxyUrl(ad.imageUrl)}
-                  alt=""
-                  className="absolute bottom-0 right-0 h-24 w-24 rounded-tl-3xl object-cover"
-                />
-              ) : (
-                <Megaphone className={`absolute bottom-4 right-4 h-16 w-16 rotate-[-12deg] ${isDark ? 'text-white/15' : 'text-indigo-400/25'}`} />
+              <Megaphone className={`absolute bottom-4 right-4 h-16 w-16 rotate-[-12deg] ${isDark ? 'text-white/15' : 'text-indigo-400/25'}`} />
+              </div>
               )}
             </button>
           );
@@ -189,6 +193,16 @@ type ViewAllModalState =
   | { kind: 'categories'; title: string; items: Array<{ id: string; name: string }> }
   | { kind: 'emergency'; title: string; items: Array<{ id: string; name: string }> };
 
+type SearchSuggestion = {
+  id: string;
+  type: 'category' | 'subcategory' | 'business';
+  displayValue: string;
+  queryValue: string;
+  categoryId?: string;
+  subcategoryId?: string;
+  businessId?: string;
+};
+
 function SwipeDots({ totalDots, activeIndex = 0, className = '' }: SwipeDotsProps) {
   if (totalDots <= 1) return null;
 
@@ -215,6 +229,7 @@ interface WebPortalProps {
   savedPincode?: string | null;
   initialCategoryFilter?: string | null;
   initialSearchFilter?: string | null;
+  initialResultsPage?: boolean;
   filterNonce?: number;
   initialSelectedBusinessId?: string | null;
   selectionNonce?: number;
@@ -257,6 +272,7 @@ export default function WebPortal({
   savedPincode,
   initialCategoryFilter = null,
   initialSearchFilter = null,
+  initialResultsPage = false,
   filterNonce = 0,
   initialSelectedBusinessId = null,
   selectionNonce = 0,
@@ -417,6 +433,9 @@ export default function WebPortal({
   const [homepageRotationTick, setHomepageRotationTick] = useState(0);
   const [showAllCategoriesModal, setShowAllCategoriesModal] = useState(false);
   const [viewAllModal, setViewAllModal] = useState<ViewAllModalState | null>(null);
+  const [isResultsPage, setIsResultsPage] = useState(false);
+  const [isSearchInputFocused, setIsSearchInputFocused] = useState(false);
+  const deferredSearchQuery = useDeferredValue(searchQuery);
 
   useEffect(() => {
     if (SIMPLE_SEARCH_FORM) {
@@ -480,10 +499,11 @@ export default function WebPortal({
   useEffect(() => {
     if (filterNonce === 0) return;
     setActivePortalTab('listings');
+    setIsResultsPage(initialResultsPage);
     setSelectedCategory(initialCategoryFilter ?? 'all');
     setSelectedSubcategory('all');
     setSearchQuery(initialSearchFilter ?? '');
-  }, [filterNonce, initialCategoryFilter, initialSearchFilter]);
+  }, [filterNonce, initialCategoryFilter, initialSearchFilter, initialResultsPage]);
 
   // Auto-rotating slider effect
   const selectedLocalityIds = activeLocalityId
@@ -534,6 +554,24 @@ export default function WebPortal({
     const seoSlug = SEO_INTENT_SLUG_BY_CATEGORY[categoryId] || slugifyForUrl(categoryId);
     return `/${currentLocalitySlug}/${seoSlug}`;
   };
+  const getSearchResultsKeyword = (categoryId = selectedCategory, query = searchQuery) => {
+    const trimmedQuery = query.trim();
+    if (trimmedQuery) return trimmedQuery;
+    if (categoryId && categoryId !== 'all') return getCategoryById(categoryId)?.name || categoryId;
+    return 'All';
+  };
+  const buildSearchResultsRoutePath = (
+    categoryId = selectedCategory,
+    subcategoryId = selectedSubcategory,
+    query = searchQuery
+  ) => {
+    const params = new URLSearchParams();
+    const keyword = getSearchResultsKeyword(categoryId, query);
+    params.set('srp', keyword);
+    if (categoryId && categoryId !== 'all') params.set('category', categoryId);
+    if (subcategoryId && subcategoryId !== 'all') params.set('subcategory', subcategoryId);
+    return `/${currentLocalitySlug}?${params.toString()}`;
+  };
   const buildListingRoutePath = (biz: Business) => {
     const locality = localities.find((entry) => entry.id === biz.localityId);
     const localitySlug = locality?.slug || biz.localityId;
@@ -541,14 +579,45 @@ export default function WebPortal({
     return `/${localitySlug}/${seoSlug}/${slugifyForUrl(biz.name)}-${biz.id}`;
   };
   const pushHistoryIfNeeded = (nextPath: string) => {
-    if (window.location.pathname === nextPath) return;
+    if (`${window.location.pathname}${window.location.search}` === nextPath) return;
     window.history.pushState({}, '', nextPath);
   };
-  const handleCategoryShortcut = (categoryId: string, subcategoryId = 'all') => {
+  const openResultsPage = () => {
+    setActivePortalTab('listings');
+    setSelectedBiz(null);
+    setIsResultsPage(true);
+    pushHistoryIfNeeded(buildSearchResultsRoutePath(selectedCategory, selectedSubcategory, searchQuery));
+    window.requestAnimationFrame(() => {
+      document.getElementById('results-page-top')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  };
+  const openHomePage = () => {
+    setIsResultsPage(false);
+    setSelectedBiz(null);
+    setSearchQuery('');
+    setSelectedCategory('all');
+    setSelectedSubcategory('all');
+    pushHistoryIfNeeded(`/${currentLocalitySlug}`);
+    window.requestAnimationFrame(() => {
+      document.getElementById('web-portal-root')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  };
+  const openResultsForCategory = (categoryId: string, subcategoryId = 'all') => {
+    const categoryKeyword = subcategoryId !== 'all'
+      ? getSubcategoryById(subcategoryId)?.name || getCategoryById(categoryId)?.name || categoryId
+      : getCategoryById(categoryId)?.name || (categoryId === 'all' ? '' : categoryId);
     setSelectedCategory(categoryId);
     setSelectedSubcategory(categoryId === 'all' ? 'all' : subcategoryId);
+    setSearchQuery(categoryKeyword);
     setSelectedBiz(null);
-    pushHistoryIfNeeded(buildCategoryRoutePath(categoryId));
+    setIsResultsPage(true);
+    pushHistoryIfNeeded(buildSearchResultsRoutePath(categoryId, categoryId === 'all' ? 'all' : subcategoryId, categoryKeyword));
+    window.requestAnimationFrame(() => {
+      document.getElementById('results-page-top')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  };
+  const handleCategoryShortcut = (categoryId: string, subcategoryId = 'all') => {
+    openResultsForCategory(categoryId, subcategoryId);
   };
   const openBusinessDetails = (biz: Business) => {
     setSelectedBiz(biz);
@@ -632,11 +701,27 @@ export default function WebPortal({
     return () => window.clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    if (isResultsPage) return;
+    const interval = window.setInterval(() => {
+      document.querySelectorAll<HTMLElement>('[data-mobile-auto-scroll="true"]').forEach((rail) => {
+        if (rail.scrollWidth <= rail.clientWidth) return;
+        const maxLeft = rail.scrollWidth - rail.clientWidth;
+        const nextLeft = rail.scrollLeft + rail.clientWidth;
+        rail.scrollTo({
+          left: nextLeft >= maxLeft - 8 ? 0 : nextLeft,
+          behavior: 'smooth'
+        });
+      });
+    }, 3200);
+    return () => window.clearInterval(interval);
+  }, [isResultsPage]);
+
   // Audit log tracker for user search operations (debounced/distinct values)
   useEffect(() => {
     if (!onLogAuditEvent) return;
 
-    if (searchMode === 'keyword' && searchQuery.trim()) {
+    if (isResultsPage && searchMode === 'keyword' && searchQuery.trim()) {
       const timer = setTimeout(() => {
         onLogAuditEvent(
           'search',
@@ -646,31 +731,31 @@ export default function WebPortal({
       }, 1500); // 1.5-second debounce to prevent heavy typewriter audit logs while typing
       return () => clearTimeout(timer);
     }
-  }, [searchQuery, searchMode, selectedCategory, activeLocalityId, onLogAuditEvent]);
+  }, [searchQuery, searchMode, selectedCategory, activeLocalityId, onLogAuditEvent, isResultsPage]);
 
   useEffect(() => {
     if (!onLogAuditEvent) return;
 
-    if (searchMode === 'voice' && voiceTranscript.trim()) {
+    if (isResultsPage && searchMode === 'voice' && voiceTranscript.trim()) {
       onLogAuditEvent(
         'search',
         `Searched directory (Simulated Voice Recognition)`,
         `Zone: "${activeLocalityId}" | Transcribed audio output: "${voiceTranscript}"`
       );
     }
-  }, [voiceTranscript, searchMode, onLogAuditEvent, activeLocalityId]);
+  }, [voiceTranscript, searchMode, onLogAuditEvent, activeLocalityId, isResultsPage]);
 
   useEffect(() => {
     if (!onLogAuditEvent) return;
 
-    if (searchMode === 'image' && uploadedImageTag) {
+    if (isResultsPage && searchMode === 'image' && uploadedImageTag) {
       onLogAuditEvent(
         'search',
         `Searched directory (Scan Visual Photo Upload)`,
         `Zone: "${activeLocalityId}" | Extracted Tag: "${uploadedImageTag}" | Directed query: "${searchQuery}"`
       );
     }
-  }, [uploadedImageTag, searchMode, onLogAuditEvent, activeLocalityId]);
+  }, [uploadedImageTag, searchMode, onLogAuditEvent, activeLocalityId, isResultsPage]);
 
   const handleNextSlide = () => {
     setCarouselIndex(prev => (prev + 1) % carouselImages.length);
@@ -812,11 +897,17 @@ export default function WebPortal({
 
   const filteredBusinesses = approvedInLocality.filter(b => {
     // Determine query to match
-    const activeText = (searchMode === 'voice' && voiceTranscript) ? voiceTranscript : searchQuery;
-    const matchesSearch = !activeText.trim() || 
-                          b.name.toLowerCase().includes(activeText.toLowerCase()) || 
-                          b.description.toLowerCase().includes(activeText.toLowerCase()) ||
-                          b.tags.some(t => t.toLowerCase().includes(activeText.toLowerCase()));
+    const activeText = (searchMode === 'voice' && voiceTranscript) ? voiceTranscript : (isResultsPage ? deferredSearchQuery : '');
+    const normalizedSearch = activeText.trim().toLowerCase();
+    const normalizedName = String(b.name || '').toLowerCase();
+    const normalizedDescription = String(b.description || '').toLowerCase();
+    const normalizedTags = Array.isArray(b.tags) ? b.tags : [];
+    const matchesSearch = !normalizedSearch ||
+                          normalizedName.includes(normalizedSearch) ||
+                          normalizedDescription.includes(normalizedSearch) ||
+                          normalizedTags.some((tag) => String(tag || '').toLowerCase().includes(normalizedSearch)) ||
+                          getBusinessCategoryLabel(b).toLowerCase().includes(normalizedSearch) ||
+                          getBusinessSubcategoryLabel(b).toLowerCase().includes(normalizedSearch);
     
     // Check if matching primary category
     const matchesCategory = selectedCategory === 'all' || b.categoryId === selectedCategory;
@@ -829,7 +920,8 @@ export default function WebPortal({
     const matchesRating = filterRating === 0 || b.rating >= filterRating;
 
     // Discovery Filter: Open now check 
-    const matchesOpenNow = !filterOpenNow || b.hours.includes('24') || b.hours.includes('AM');
+    const businessHours = String(b.hours || '');
+    const matchesOpenNow = !filterOpenNow || businessHours.includes('24') || businessHours.includes('AM');
 
     // Discovery Filter: Price range matching
     const matchesPrice = filterPriceRange === 'all' || b.priceRange === filterPriceRange;
@@ -879,6 +971,13 @@ export default function WebPortal({
     }
     return 0;
   });
+  const homepageSortedBusinesses = [...approvedInLocality].sort((a, b) => {
+    if (a.isSponsored && !b.isSponsored) return -1;
+    if (!a.isSponsored && b.isSponsored) return 1;
+    if (a.featured && !b.featured) return -1;
+    if (!a.featured && b.featured) return 1;
+    return b.rating - a.rating;
+  });
   const defaultHeroStatCards = [
     { label: 'Happy Users', value: '15K+', Icon: Users, className: 'text-indigo-600 bg-indigo-50' },
     { label: 'Verified Businesses', value: `${sortedBusinesses.length}+`, Icon: CheckCircle, className: 'text-emerald-600 bg-emerald-50' },
@@ -908,6 +1007,7 @@ export default function WebPortal({
   // Separate sorted lists
   const featuredBusinesses = sortedBusinesses.filter(b => b.featured);
   const regularBusinesses = sortedBusinesses.filter(b => !b.featured);
+  const homepageFeaturedBusinesses = homepageSortedBusinesses.filter(b => b.featured);
   const FEATURED_PAGE_SIZE = 6;
   const REGULAR_PAGE_SIZE = 18;
   const COMMUNITY_PAGE_SIZE = 8;
@@ -925,6 +1025,73 @@ export default function WebPortal({
   const pagedRegularBusinesses = regularBusinesses.slice(
     (safeRegularPage - 1) * REGULAR_PAGE_SIZE,
     safeRegularPage * REGULAR_PAGE_SIZE
+  );
+  const searchResultBusinesses = sortedBusinesses;
+  const searchResultTotalPages = Math.max(1, Math.ceil(searchResultBusinesses.length / REGULAR_PAGE_SIZE));
+  const safeSearchResultPage = Math.min(regularPage, searchResultTotalPages);
+  const pagedSearchResultBusinesses = searchResultBusinesses.slice(
+    (safeSearchResultPage - 1) * REGULAR_PAGE_SIZE,
+    safeSearchResultPage * REGULAR_PAGE_SIZE
+  );
+  const searchSuggestions = useMemo<SearchSuggestion[]>(() => {
+    const categorySuggestions: SearchSuggestion[] = BUSINESS_CATEGORIES.map((category) => ({
+      id: `category-${category.id}`,
+      type: 'category',
+      displayValue: category.name,
+      queryValue: category.name,
+      categoryId: category.id,
+    }));
+    const subcategorySuggestions: SearchSuggestion[] = BUSINESS_SUBCATEGORIES.map((subcategory) => ({
+      id: `subcategory-${subcategory.id}`,
+      type: 'subcategory',
+      displayValue: subcategory.name,
+      queryValue: subcategory.name,
+      categoryId: subcategory.categoryId,
+      subcategoryId: subcategory.id,
+    }));
+    const businessSuggestions: SearchSuggestion[] = approvedInLocality.map((business) => {
+      const categoryLabel = getBusinessCategoryLabel(business);
+      const subcategoryLabel = getBusinessSubcategoryLabel(business);
+      const contextualLabel = subcategoryLabel && subcategoryLabel !== categoryLabel
+        ? `${business.name} in ${subcategoryLabel}`
+        : `${business.name} in ${categoryLabel}`;
+      return {
+        id: `business-${business.id}`,
+        type: 'business',
+        displayValue: contextualLabel,
+        queryValue: business.name,
+        categoryId: business.categoryId || undefined,
+        subcategoryId: business.subcategoryId || undefined,
+        businessId: business.id,
+      };
+    });
+    return [...categorySuggestions, ...subcategorySuggestions, ...businessSuggestions];
+  }, [approvedInLocality]);
+  const filteredSearchSuggestions = useMemo<SearchSuggestion[]>(() => {
+    const normalizedQuery = searchQuery.trim().toLowerCase();
+    if (!normalizedQuery) return [];
+    const categoryMatches = searchSuggestions.filter((suggestion) => (
+      (suggestion.type === 'category' || suggestion.type === 'subcategory') &&
+      suggestion.displayValue.toLowerCase().includes(normalizedQuery)
+    ));
+    if (categoryMatches.length > 0) {
+      return categoryMatches.slice(0, 8);
+    }
+    return searchSuggestions
+      .filter((suggestion) => (
+        suggestion.type === 'business' &&
+        (
+          suggestion.queryValue.toLowerCase().includes(normalizedQuery) ||
+          suggestion.displayValue.toLowerCase().includes(normalizedQuery)
+        )
+      ))
+      .slice(0, 8);
+  }, [searchQuery, searchSuggestions]);
+  const shouldShowSearchSuggestions = (
+    searchMode === 'keyword' &&
+    isSearchInputFocused &&
+    searchQuery.trim().length > 0 &&
+    filteredSearchSuggestions.length > 0
   );
   const localityCommunityItems = communityItems
     .filter((item) => item.localityId === activeLocalityId)
@@ -993,6 +1160,29 @@ export default function WebPortal({
     if (!matchesDateWindow(ad.startDate, ad.endDate)) return false;
     return matchesTargeting(ad.localityIds, ad.pincodes);
   });
+  const adMatchesBusinessContext = (ad: ListingAd, candidates: Business[]) => {
+    const adCategoryIds = ad.categoryIds || [];
+    const adTags = (ad.tags || []).map((tag) => tag.toLowerCase());
+    if (adCategoryIds.length === 0 && adTags.length === 0) return true;
+    return candidates.some((business) => {
+      const businessText = [
+        business.name,
+        business.description,
+        business.categoryId,
+        business.subcategoryId,
+        getBusinessCategoryLabel(business),
+        getBusinessSubcategoryLabel(business),
+        ...(business.tags || [])
+      ].join(' ').toLowerCase();
+      return (
+        adCategoryIds.includes(business.categoryId) ||
+        adTags.some((tag) => tag && businessText.includes(tag))
+      );
+    });
+  };
+  const getAdsForBusinessContext = (candidates: Business[], ads: ListingAd[]) => (
+    ads.filter((ad) => adMatchesBusinessContext(ad, candidates))
+  );
   const activeCoupons = coupons.filter((coupon) => {
     const relatedBusiness = businesses.find((business) => business.id === coupon.businessId);
     if (coupon.isActive === false) return false;
@@ -1065,7 +1255,7 @@ export default function WebPortal({
     { title: 'Driver / Taxi', description: 'Travel support', query: 'Taxi', Icon: Car, iconClassName: 'text-orange-500', bgClassName: 'bg-orange-50' }
   ];
   const getSectionBusinessPool = (section: HomepageSection) => {
-    const scopedBusinesses = sortedBusinesses
+    const scopedBusinesses = homepageSortedBusinesses
       .filter((business) => business.status === 'approved')
       .filter((business) => !section.categoryId || business.categoryId === section.categoryId)
       .filter((business) => !section.subcategoryId || business.subcategoryId === section.subcategoryId);
@@ -1098,10 +1288,10 @@ export default function WebPortal({
     section.mobileDisplayMode || (section.sectionType === 'verified_business_grid' ? 'stack' : 'carousel')
   );
   const getDesktopGridCount = (_requestedCount: number, itemCount: number) => (
-    Math.max(1, Math.min(Math.max(1, itemCount), 4))
+    Math.max(1, Math.min(Math.max(1, itemCount), 5))
   );
   const getDesktopSectionItems = <T,>(items: T[], sectionMaxItems: number) => (
-    items.slice(0, sectionMaxItems)
+    items.slice(0, Math.min(sectionMaxItems, 10))
   );
   const getSwipeDotCount = (itemCount: number, visibleCount: number) => (
     Math.max(1, Math.ceil(itemCount / Math.max(1, visibleCount)))
@@ -1118,13 +1308,51 @@ export default function WebPortal({
     return localities.find((locality) => locality.id === biz.localityId)?.name.split(',')[0] || 'Area not set';
   };
 
-  const getBusinessCategoryLabel = (biz: Business) => (
-    getCategoryById(biz.categoryId)?.name || biz.sourceCategoryLabel || biz.categoryId || 'Local Service'
-  );
+  function getBusinessCategoryLabel(biz: Business) {
+    return getCategoryById(biz.categoryId)?.name || biz.sourceCategoryLabel || biz.categoryId || 'Local Service';
+  }
 
-  const getBusinessSubcategoryLabel = (biz: Business) => (
-    getSubcategoryById(biz.subcategoryId)?.name || biz.sourceSubcategoryLabel || getBusinessCategoryLabel(biz)
-  );
+  function getBusinessSubcategoryLabel(biz: Business) {
+    return getSubcategoryById(biz.subcategoryId)?.name || biz.sourceSubcategoryLabel || getBusinessCategoryLabel(biz);
+  }
+
+  const applySearchSuggestion = (suggestion: SearchSuggestion) => {
+    setSearchQuery(suggestion.queryValue);
+    setSelectedCategory(suggestion.categoryId || 'all');
+    setSelectedSubcategory(suggestion.subcategoryId || 'all');
+    setIsSearchInputFocused(false);
+  };
+
+  const renderSearchSuggestions = () => {
+    if (!shouldShowSearchSuggestions) return null;
+    return (
+      <div className="absolute left-0 right-0 top-full z-30 mt-2 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
+        {filteredSearchSuggestions.map((suggestion) => (
+          <button
+            key={suggestion.id}
+            type="button"
+            onMouseDown={(event) => {
+              event.preventDefault();
+              applySearchSuggestion(suggestion);
+            }}
+            className="flex w-full items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 text-left text-sm text-slate-700 transition hover:bg-indigo-50 hover:text-indigo-700 last:border-b-0"
+          >
+            <div className="min-w-0">
+              <div className="truncate font-medium">{suggestion.displayValue}</div>
+              <div className="mt-0.5 text-[11px] uppercase tracking-wide text-slate-400">
+                {suggestion.type === 'business'
+                  ? 'Business'
+                  : suggestion.type === 'subcategory'
+                    ? 'Subcategory'
+                    : 'Category'}
+              </div>
+            </div>
+            <Search className="h-3.5 w-3.5 flex-shrink-0 text-slate-300" />
+          </button>
+        ))}
+      </div>
+    );
+  };
 
   const openBusinessDirections = (biz: Business, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -1163,32 +1391,37 @@ export default function WebPortal({
       highlightClass?: string;
       badgeLabel?: string;
       badgeClassName?: string;
+      showImage?: boolean;
     }
   ) => {
     const categoryLabel = getBusinessCategoryLabel(biz);
     const areaLabel = getBusinessAreaName(biz);
     const hasPhone = Boolean((biz.phone || '').replace(/\D/g, '').slice(-10));
+    const showImage = options?.showImage === true;
     return (
       <div
+        key={biz.id}
         onClick={() => openBusinessDetails(biz)}
         className={`md:hidden w-full min-w-0 overflow-hidden rounded-2xl border bg-white p-3 shadow-sm transition active:scale-[0.99] ${options?.highlightClass || 'border-slate-200'}`}
       >
         <div className="flex gap-3">
-          <div className="relative h-24 w-24 flex-shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
-            <img
-              src={getBusinessImageUrl(biz)}
-              alt={biz.name}
-              onError={(e) => {
-                (e.target as HTMLImageElement).src = getCategoryFallbackImage(biz.categoryId);
-              }}
-              className={`h-full w-full ${hasUploadedBusinessImage(biz) ? 'object-cover' : 'object-contain p-2.5'}`}
-            />
-            {options?.badgeLabel && (
-              <span className={`absolute left-1.5 top-1.5 rounded-full px-1.5 py-0.5 text-[9px] font-bold ${options.badgeClassName || 'bg-slate-900 text-white'}`}>
-                {options.badgeLabel}
-              </span>
-            )}
-          </div>
+          {showImage && (
+            <div className="relative h-24 w-24 flex-shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
+              <img
+                src={getBusinessImageUrl(biz)}
+                alt={biz.name}
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src = getCategoryFallbackImage(biz.categoryId);
+                }}
+                className={`h-full w-full ${hasUploadedBusinessImage(biz) ? 'object-cover' : 'object-contain p-2.5'}`}
+              />
+              {options?.badgeLabel && (
+                <span className={`absolute left-1.5 top-1.5 rounded-full px-1.5 py-0.5 text-[9px] font-bold ${options.badgeClassName || 'bg-slate-900 text-white'}`}>
+                  {options.badgeLabel}
+                </span>
+              )}
+            </div>
+          )}
 
           <div className="min-w-0 flex-1 space-y-2">
             <div className="flex items-start justify-between gap-2">
@@ -1199,6 +1432,11 @@ export default function WebPortal({
                 <div className="truncate text-xs font-medium text-slate-500">
                   {categoryLabel}
                 </div>
+                {!showImage && options?.badgeLabel && (
+                  <span className={`mt-1 inline-flex rounded-full px-1.5 py-0.5 text-[9px] font-bold ${options.badgeClassName || 'bg-slate-900 text-white'}`}>
+                    {options.badgeLabel}
+                  </span>
+                )}
               </div>
               <button
                 type="button"
@@ -1219,27 +1457,14 @@ export default function WebPortal({
             </div>
 
             {hasPhone ? (
-              <div className="grid grid-cols-2 gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={(e) => handlePrimaryBusinessAction(biz, e)}
-                  className="inline-flex items-center justify-center gap-1 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white"
-                >
-                  <Phone className="h-3.5 w-3.5" />
-                  <span>Call</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    openBusinessDetails(biz);
-                  }}
-                  className="inline-flex items-center justify-center gap-1 rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700"
-                >
-                  <ExternalLink className="h-3.5 w-3.5" />
-                  <span>Details</span>
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={(e) => handlePrimaryBusinessAction(biz, e)}
+                className="inline-flex w-full items-center justify-center gap-1 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white"
+              >
+                <Phone className="h-3.5 w-3.5" />
+                <span>Call</span>
+              </button>
             ) : (
               <button
                 type="button"
@@ -1259,7 +1484,7 @@ export default function WebPortal({
     );
   };
 
-  const renderMobileBusinessCard = (biz: Business, badgeLabel?: string, cardsPerView = 2) => {
+  const renderMobileBusinessCard = (biz: Business, badgeLabel?: string, cardsPerView = 2, showImage = false) => {
     const hasPhone = Boolean((biz.phone || '').replace(/\D/g, '').slice(-10));
     return (
       <div
@@ -1273,34 +1498,53 @@ export default function WebPortal({
           minWidth: cardsPerView <= 1 ? '100%' : `calc((100% - ${(cardsPerView - 1) * 12}px) / ${cardsPerView})`
         }}
       >
-        <div className="relative h-28 bg-slate-100">
-          <img
-            src={getBusinessImageUrl(biz)}
-            alt={biz.name}
-            onError={(e) => {
-              (e.target as HTMLImageElement).src = getCategoryFallbackImage(biz.categoryId);
-            }}
-            className={`h-full w-full ${hasUploadedBusinessImage(biz) ? 'object-cover' : 'object-contain p-4'}`}
-          />
-          {(badgeLabel || biz.isSponsored) && (
-            <span className="absolute left-2 top-2 rounded-md bg-indigo-600 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-white">
-              {badgeLabel || 'Sponsored'}
-            </span>
-          )}
-          <button
-            type="button"
-            onClick={(e) => e.stopPropagation()}
-            className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-slate-600 shadow-sm"
-            title="Save business"
-          >
-            <Heart className="h-4 w-4" />
-          </button>
-        </div>
+        {showImage && (
+          <div className="relative h-28 bg-slate-100">
+            <img
+              src={getBusinessImageUrl(biz)}
+              alt={biz.name}
+              onError={(e) => {
+                (e.target as HTMLImageElement).src = getCategoryFallbackImage(biz.categoryId);
+              }}
+              className={`h-full w-full ${hasUploadedBusinessImage(biz) ? 'object-cover' : 'object-contain p-4'}`}
+            />
+            {(badgeLabel || biz.isSponsored) && (
+              <span className="absolute left-2 top-2 rounded-md bg-indigo-600 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-white">
+                {badgeLabel || 'Sponsored'}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={(e) => e.stopPropagation()}
+              className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-slate-600 shadow-sm"
+              title="Save business"
+            >
+              <Heart className="h-4 w-4" />
+            </button>
+          </div>
+        )}
         <div className="space-y-1.5 p-3">
-          <h4 className="truncate text-sm font-bold text-slate-950">{biz.name}</h4>
+          <div className="flex items-start justify-between gap-2">
+            <h4 className="truncate text-sm font-bold text-slate-950">{biz.name}</h4>
+            {!showImage && (
+              <button
+                type="button"
+                onClick={(e) => e.stopPropagation()}
+                className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm"
+                title="Save business"
+              >
+                <Heart className="h-4 w-4" />
+              </button>
+            )}
+          </div>
           <div className="truncate text-xs font-medium text-slate-500">
             {getBusinessCategoryLabel(biz)}
           </div>
+          {!showImage && (badgeLabel || biz.isSponsored) && (
+            <span className="inline-flex rounded-md bg-indigo-600 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-white">
+              {badgeLabel || 'Sponsored'}
+            </span>
+          )}
           <div className="flex items-center gap-2 text-xs">
             <span className="inline-flex items-center gap-1 font-semibold text-amber-600">
               <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
@@ -1377,7 +1621,7 @@ export default function WebPortal({
     alert('Thank you! Your details were submitted to the seller and platform team.');
   };
 
-  const renderDesktopBusinessTile = (biz: Business, accentClassName = 'border-slate-200', badgeLabel?: string) => {
+  const renderDesktopBusinessTile = (biz: Business, accentClassName = 'border-slate-200', badgeLabel?: string, showImage = false) => {
     const hasPhone = Boolean((biz.phone || '').replace(/\D/g, '').slice(-10));
     return (
       <div
@@ -1385,34 +1629,41 @@ export default function WebPortal({
         onClick={() => openBusinessDetails(biz)}
         className={`hidden h-full w-full min-w-0 cursor-pointer overflow-hidden rounded-xl border bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md md:flex md:flex-col ${accentClassName}`}
       >
-        <div className="relative">
-          <img
-            src={getBusinessImageUrl(biz)}
-            alt={biz.name}
-            onError={(e) => {
-              (e.target as HTMLImageElement).src = getCategoryFallbackImage(biz.categoryId);
-            }}
-            className={`h-40 w-full border-b border-slate-200 bg-slate-100 ${hasUploadedBusinessImage(biz) ? 'object-cover' : 'object-contain p-4'}`}
-          />
-          {(badgeLabel || biz.isSponsored) && (
-            <span className="absolute left-2 top-2 rounded-md bg-indigo-600 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-white">
-              {badgeLabel || 'Sponsored'}
-            </span>
-          )}
-          <button
-            type="button"
-            onClick={(e) => e.stopPropagation()}
-            className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-slate-600 shadow-sm backdrop-blur"
-            title="Save business"
-          >
-            <Heart className="h-4 w-4" />
-          </button>
-        </div>
+        {showImage && (
+          <div className="relative">
+            <img
+              src={getBusinessImageUrl(biz)}
+              alt={biz.name}
+              onError={(e) => {
+                (e.target as HTMLImageElement).src = getCategoryFallbackImage(biz.categoryId);
+              }}
+              className={`h-40 w-full border-b border-slate-200 bg-slate-100 ${hasUploadedBusinessImage(biz) ? 'object-cover' : 'object-contain p-4'}`}
+            />
+            {(badgeLabel || biz.isSponsored) && (
+              <span className="absolute left-2 top-2 rounded-md bg-indigo-600 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-white">
+                {badgeLabel || 'Sponsored'}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={(e) => e.stopPropagation()}
+              className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-slate-600 shadow-sm backdrop-blur"
+              title="Save business"
+            >
+              <Heart className="h-4 w-4" />
+            </button>
+          </div>
+        )}
         <div className="flex min-h-0 flex-1 flex-col space-y-2 p-3">
           <div className="flex items-center justify-between gap-2">
             <span className="min-w-0 flex-1 truncate text-xs font-semibold text-slate-500">
               {getBusinessCategoryLabel(biz)}
             </span>
+            {!showImage && (badgeLabel || biz.isSponsored) && (
+              <span className="rounded-md bg-indigo-600 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-white">
+                {badgeLabel || 'Sponsored'}
+              </span>
+            )}
             {biz.verifiedBadge && (
               <CheckCircle className="h-4 w-4 flex-shrink-0 text-emerald-500" />
             )}
@@ -1427,6 +1678,16 @@ export default function WebPortal({
             <MapPin className="h-3.5 w-3.5 flex-shrink-0 text-slate-400" />
             <span className="truncate">{getBusinessAreaName(biz)}</span>
           </div>
+          {!showImage && (
+            <button
+              type="button"
+              onClick={(e) => e.stopPropagation()}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm"
+              title="Save business"
+            >
+              <Heart className="h-4 w-4" />
+            </button>
+          )}
           {hasPhone ? (
             <button
               type="button"
@@ -1486,7 +1747,7 @@ export default function WebPortal({
         <p className="mt-2 line-clamp-2 break-words text-sm font-medium text-slate-600">
           {subcategoryLabel}
           <span className="mx-2 text-slate-300">•</span>
-          {biz.tags.slice(0, 1)[0] || 'Nearby'}
+          {(biz.tags || []).slice(0, 1)[0] || 'Nearby'}
         </p>
         <p className="mt-2 line-clamp-2 break-words text-sm text-slate-500">
           {localityLabel}
@@ -1495,28 +1756,15 @@ export default function WebPortal({
         </p>
         {options?.stack ? (
           hasPhone ? (
-            <div className="mt-5 grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={(e) => handlePrimaryBusinessAction(biz, e)}
-                className="inline-flex min-w-0 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-white px-3 py-2.5 text-sm font-semibold text-emerald-700"
-                title="Call business"
-              >
-                <Phone className="h-4 w-4" />
-                <span className="truncate">Call</span>
-              </button>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  openBusinessDetails(biz);
-                }}
-                className="inline-flex min-w-0 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700"
-              >
-                <ExternalLink className="h-4 w-4 text-indigo-600" />
-                <span className="truncate">Details</span>
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={(e) => handlePrimaryBusinessAction(biz, e)}
+              className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-white px-3 py-2.5 text-sm font-semibold text-emerald-700"
+              title="Call business"
+            >
+              <Phone className="h-4 w-4" />
+              <span className="truncate">Call</span>
+            </button>
           ) : (
             <button
               type="button"
@@ -1657,7 +1905,9 @@ export default function WebPortal({
 
   const renderHomepageSection = (section: HomepageSection) => {
     const sectionKey = `${section.sectionType}-${section.id}`;
-    const sectionMaxItems = section.maxItems || 6;
+    const sectionMaxItems = ['featured_businesses', 'business_shelf', 'text_business_strip', 'verified_business_grid'].includes(section.sectionType)
+      ? Math.min(section.maxItems || 10, 10)
+      : section.maxItems || 6;
 
     if (section.sectionType === 'hero_banner') {
       const heroTitle = activeHeroSlide?.title || `Discover Trusted Businesses in ${selectedLocalityNames || currentLocality.name}`;
@@ -1713,9 +1963,18 @@ export default function WebPortal({
                       type="text"
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
+                      onFocus={() => setIsSearchInputFocused(true)}
+                      onBlur={() => window.setTimeout(() => setIsSearchInputFocused(false), 120)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          openResultsPage();
+                        }
+                      }}
                       placeholder="Search businesses, services..."
                       className="h-12 w-full rounded-xl border border-transparent bg-white pl-10 pr-3 text-sm font-medium text-slate-800 outline-none placeholder:text-slate-400 focus:border-indigo-200 focus:bg-indigo-50/30"
                     />
+                    {renderSearchSuggestions()}
                   </label>
                   <div
                     className="hidden h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 md:inline-flex"
@@ -1726,11 +1985,7 @@ export default function WebPortal({
                   </div>
                   <button
                     type="button"
-                    onClick={() => {
-                      setSelectedBiz(null);
-                      pushHistoryIfNeeded(buildCategoryRoutePath(selectedCategory));
-                      scrollToHomepageResults();
-                    }}
+                    onClick={openResultsPage}
                     className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-indigo-700"
                   >
                     <Search className="h-4 w-4" />
@@ -1808,9 +2063,18 @@ export default function WebPortal({
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
+                  onFocus={() => setIsSearchInputFocused(true)}
+                  onBlur={() => window.setTimeout(() => setIsSearchInputFocused(false), 120)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      openResultsPage();
+                    }
+                  }}
                   placeholder="Search businesses, services, products..."
                   className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
+                {renderSearchSuggestions()}
               </div>
               <select
                 id="public-category-filter"
@@ -1818,6 +2082,7 @@ export default function WebPortal({
                 onChange={(e) => {
                   setSelectedCategory(e.target.value);
                   setSelectedSubcategory('all');
+                  setIsResultsPage(true);
                 }}
                 className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               >
@@ -1829,7 +2094,10 @@ export default function WebPortal({
               <select
                 value={selectedSubcategory}
                 disabled={selectedCategory === 'all'}
-                onChange={(e) => setSelectedSubcategory(e.target.value)}
+                onChange={(e) => {
+                  setSelectedSubcategory(e.target.value);
+                  setIsResultsPage(true);
+                }}
                 className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-100 disabled:text-slate-400"
               >
                 <option value="all">All Subcategories</option>
@@ -1847,11 +2115,9 @@ export default function WebPortal({
                   <button
                     key={category.id}
                     type="button"
-                    onClick={() => {
-                      setSelectedCategory(category.id);
-                      setSelectedSubcategory('all');
-                      setSelectedBiz(null);
-                    }}
+                  onClick={() => {
+                    openResultsForCategory(category.id);
+                  }}
                     className={`rounded-xl border px-4 py-2 text-xs font-semibold transition ${
                       active
                         ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
@@ -1909,13 +2175,23 @@ export default function WebPortal({
     if (section.sectionType === 'promo_banner') {
       const promoAd = activeListingAds.find((ad) => (ad.placementKey || 'homepage_inline_primary') === (section.placementKey || 'homepage_inline_primary')) || null;
       if (!promoAd) return null;
+      const promoImage = getMediaProxyUrl(promoAd.imageUrl);
       return (
-        <section
+        <button
           key={sectionKey}
-          className="overflow-hidden rounded-2xl p-5 text-white shadow-lg xl:hidden"
+          type="button"
+          onClick={() => handleListingAdAction(promoAd)}
+          className="block w-full overflow-hidden rounded-2xl bg-white text-left shadow-lg xl:hidden"
           style={{ backgroundColor: promoAd.backgroundColor || section.backgroundColor || '#4338ca' }}
         >
-          <div className="relative min-h-[150px] overflow-hidden rounded-xl">
+          {promoImage ? (
+            <img
+              src={promoImage}
+              alt={promoAd.title}
+              className="h-auto w-full rounded-2xl object-cover"
+            />
+          ) : (
+          <div className="relative min-h-[150px] overflow-hidden rounded-xl p-5 text-white">
             <div className="absolute -right-5 bottom-0 hidden h-32 w-32 rounded-full bg-white/10 md:block" />
             <Megaphone className="absolute bottom-4 right-5 h-24 w-24 rotate-[-10deg] text-white/20" />
             <div className="relative max-w-lg space-y-3">
@@ -1924,29 +2200,26 @@ export default function WebPortal({
               </span>
               <h3 className="text-2xl font-extrabold leading-tight">{promoAd.title}</h3>
               <p className="max-w-2xl text-sm text-white/85">{promoAd.description}</p>
-              <button
-                type="button"
-                onClick={() => handleListingAdAction(promoAd)}
-                className="rounded-xl bg-white px-5 py-3 text-sm font-bold text-slate-900"
-              >
+              <span className="inline-flex rounded-xl bg-white px-5 py-3 text-sm font-bold text-slate-900">
                 {promoAd.ctaText}
-              </button>
+              </span>
             </div>
           </div>
-        </section>
+          )}
+        </button>
       );
     }
 
     if (section.sectionType === 'featured_businesses') {
       const featuredPool = section.listingSourceMode === 'manual' && (section.pinnedBusinessIds || []).length > 0
         ? getSectionBusinessPool(section)
-        : featuredBusinesses;
+        : homepageFeaturedBusinesses;
       const desktopCardCount = getDesktopCardCount(section, Math.min(3, sectionMaxItems));
       const mobileCardCount = getMobileCardCount(section, 2);
       const mobileDisplayMode = getMobileDisplayMode(section);
       const mobileFeaturedItems = mobileDisplayMode === 'stack'
         ? featuredPool.slice(0, mobileCardCount)
-        : getRotatedItems(featuredPool, Math.min(mobileCardCount, sectionMaxItems), section.autoRotate);
+        : featuredPool.slice(0, sectionMaxItems);
       const desktopFeaturedItems = getDesktopSectionItems(featuredPool, sectionMaxItems);
       const desktopFeaturedGridCount = getDesktopGridCount(desktopCardCount, desktopFeaturedItems.length);
       const featuredDotCount = getSwipeDotCount(featuredPool.length, mobileCardCount);
@@ -1955,20 +2228,16 @@ export default function WebPortal({
       return (
         <section key={sectionKey} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
           {renderSectionHeader(section.title, section.subtitle, section.showViewAll, () => {
-            setViewAllModal({
-              kind: 'businesses',
-              title: section.title,
-              items: featuredPool
-            });
+            openResultsForCategory(section.categoryId || 'all', section.subcategoryId || 'all');
           })}
           {mobileDisplayMode === 'stack' ? (
             <div className="mt-4 space-y-3 md:hidden">
-              {mobileFeaturedItems.map((business) => renderCompactBusinessRow(business))}
+              {mobileFeaturedItems.map((business) => renderCompactBusinessRow(business, { showImage: true }))}
             </div>
           ) : (
             <>
-              <div className="no-scrollbar mt-4 flex snap-x snap-mandatory gap-3 overflow-x-auto pb-1 md:hidden">
-                {mobileFeaturedItems.map((business) => renderMobileBusinessCard(business, 'Sponsored', mobileCardCount))}
+              <div data-mobile-auto-scroll="true" className="no-scrollbar mt-4 flex snap-x snap-mandatory gap-3 overflow-x-auto pb-1 md:hidden">
+                {mobileFeaturedItems.map((business) => renderMobileBusinessCard(business, 'Sponsored', mobileCardCount, true))}
               </div>
               <SwipeDots totalDots={featuredDotCount} activeIndex={featuredDotIndex} className="mt-3 md:hidden" />
             </>
@@ -1978,7 +2247,7 @@ export default function WebPortal({
             style={{ gridTemplateColumns: `repeat(${desktopFeaturedGridCount}, 200px)` }}
           >
             {desktopFeaturedItems.map((business) => (
-              renderDesktopBusinessTile(business, 'border-indigo-200', 'Sponsored')
+              renderDesktopBusinessTile(business, 'border-indigo-200', 'Sponsored', true)
             ))}
           </div>
         </section>
@@ -1992,7 +2261,7 @@ export default function WebPortal({
       const mobileDisplayMode = getMobileDisplayMode(section);
       const mobileShelfItems = mobileDisplayMode === 'stack'
         ? shelfBusinessMatches.slice(0, mobileCardCount)
-        : getRotatedItems(shelfBusinessMatches, Math.min(mobileCardCount, sectionMaxItems), section.autoRotate);
+        : shelfBusinessMatches.slice(0, sectionMaxItems);
       const desktopShelfItems = getDesktopSectionItems(shelfBusinessMatches, sectionMaxItems);
       const desktopShelfGridCount = getDesktopGridCount(desktopCardCount, desktopShelfItems.length);
       const shelfDotCount = getSwipeDotCount(shelfBusinessMatches.length, mobileCardCount);
@@ -2001,11 +2270,7 @@ export default function WebPortal({
       return (
         <section key={sectionKey} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
           {renderSectionHeader(section.title, section.subtitle, section.showViewAll, () => {
-            setViewAllModal({
-              kind: 'businesses',
-              title: section.title,
-              items: shelfBusinessMatches
-            });
+            openResultsForCategory(section.categoryId || 'all', section.subcategoryId || 'all');
           })}
           {mobileDisplayMode === 'stack' ? (
             <div className="mt-4 space-y-3 md:hidden">
@@ -2013,7 +2278,7 @@ export default function WebPortal({
             </div>
           ) : (
             <>
-              <div className="no-scrollbar mt-4 flex snap-x snap-mandatory gap-3 overflow-x-auto pb-1 md:hidden">
+              <div data-mobile-auto-scroll="true" className="no-scrollbar mt-4 flex snap-x snap-mandatory gap-3 overflow-x-auto pb-1 md:hidden">
                 {mobileShelfItems.map((business) => renderMobileBusinessCard(business, undefined, mobileCardCount))}
               </div>
               <SwipeDots totalDots={shelfDotCount} activeIndex={shelfDotIndex} className="mt-3 md:hidden" />
@@ -2038,7 +2303,7 @@ export default function WebPortal({
       const mobileDisplayMode = getMobileDisplayMode(section);
       const mobileStripItems = mobileDisplayMode === 'stack'
         ? stripPool.slice(0, mobileCardCount)
-        : getRotatedItems(stripPool, Math.min(mobileCardCount, sectionMaxItems), section.autoRotate);
+        : stripPool.slice(0, sectionMaxItems);
       const desktopStripItems = getDesktopSectionItems(stripPool, sectionMaxItems);
       const desktopStripGridCount = getDesktopGridCount(desktopCardCount, desktopStripItems.length);
       const stripDotCount = getSwipeDotCount(stripPool.length, mobileCardCount);
@@ -2047,11 +2312,7 @@ export default function WebPortal({
       return (
         <section key={sectionKey} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:p-5">
           {renderSectionHeader(section.title, section.subtitle, section.showViewAll, () => {
-            setViewAllModal({
-              kind: 'businesses',
-              title: section.title,
-              items: stripPool
-            });
+            openResultsForCategory(section.categoryId || 'all', section.subcategoryId || 'all');
           })}
           {mobileDisplayMode === 'stack' ? (
             <div className="mt-4 space-y-3 md:hidden">
@@ -2059,7 +2320,7 @@ export default function WebPortal({
             </div>
           ) : (
             <>
-              <div className="no-scrollbar mt-4 flex snap-x snap-mandatory gap-4 overflow-x-auto pb-1 md:hidden">
+              <div data-mobile-auto-scroll="true" className="no-scrollbar mt-4 flex snap-x snap-mandatory gap-4 overflow-x-auto pb-1 md:hidden">
                 {mobileStripItems.map((business) => renderTextBusinessStripCard(business, { cardsPerView: mobileCardCount }))}
               </div>
               <SwipeDots totalDots={stripDotCount} activeIndex={stripDotIndex} className="mt-3 md:hidden" />
@@ -2211,7 +2472,7 @@ export default function WebPortal({
       const mobileDisplayMode = getMobileDisplayMode(section);
       const mobileVerifiedItems = mobileDisplayMode === 'stack'
         ? verifiedPool.slice(0, mobileCardCount)
-        : getRotatedItems(verifiedPool, Math.min(mobileCardCount, sectionMaxItems), section.autoRotate);
+        : verifiedPool.slice(0, sectionMaxItems);
       const desktopVerifiedItems = getDesktopSectionItems(verifiedPool, sectionMaxItems);
       const desktopVerifiedGridCount = getDesktopGridCount(desktopCardCount, desktopVerifiedItems.length);
       const verifiedDotCount = getSwipeDotCount(verifiedPool.length, mobileCardCount);
@@ -2223,7 +2484,7 @@ export default function WebPortal({
             <div>
               <div className="flex items-center gap-3">
                 <h3 className="text-lg font-extrabold text-slate-950">{section.title}</h3>
-                <span className="text-xs font-semibold text-slate-500">{sortedBusinesses.length} Businesses</span>
+                <span className="text-xs font-semibold text-slate-500">{homepageSortedBusinesses.length} Businesses</span>
               </div>
               {section.subtitle && <p className="mt-1 text-xs text-slate-500">{section.subtitle}</p>}
             </div>
@@ -2252,7 +2513,7 @@ export default function WebPortal({
             </div>
           ) : (
             <>
-              <div className="no-scrollbar mt-4 flex snap-x snap-mandatory gap-3 overflow-x-auto pb-1 md:hidden">
+              <div data-mobile-auto-scroll="true" className="no-scrollbar mt-4 flex snap-x snap-mandatory gap-3 overflow-x-auto pb-1 md:hidden">
                 {mobileVerifiedItems.map((business) => renderMobileBusinessCard(business, undefined, mobileCardCount))}
               </div>
               <SwipeDots totalDots={verifiedDotCount} activeIndex={verifiedDotIndex} className="mt-3 md:hidden" />
@@ -2267,11 +2528,7 @@ export default function WebPortal({
           {section.showViewAll && verifiedPool.length > desktopVerifiedItems.length && (
             <button
               type="button"
-              onClick={() => {
-                setSearchQuery('');
-                handleCategoryShortcut('all');
-                scrollToPublicSearch();
-              }}
+              onClick={() => openResultsForCategory(section.categoryId || 'all', section.subcategoryId || 'all')}
               className="mx-auto mt-4 block rounded-xl bg-indigo-50 px-8 py-3 text-sm font-bold text-indigo-700 transition hover:bg-indigo-100"
             >
               View More Businesses
@@ -2528,6 +2785,7 @@ export default function WebPortal({
       endDate: todayIso,
       actionType: 'lead_form',
       localityIds: [currentLocality.id],
+      tags: ['business', 'advertise', 'marketing'],
       placementKey: 'homepage_sidebar_top',
       deviceTarget: 'all',
       mobileRowPosition: 3,
@@ -2546,6 +2804,8 @@ export default function WebPortal({
       actionType: 'landing_page',
       targetUrl: buildCategoryRoutePath('food-restaurants'),
       localityIds: [currentLocality.id],
+      categoryIds: ['food-restaurants'],
+      tags: ['food', 'restaurant', 'delivery'],
       placementKey: 'homepage_sidebar_food',
       deviceTarget: 'all',
       mobileRowPosition: 3,
@@ -2564,6 +2824,8 @@ export default function WebPortal({
       actionType: 'landing_page',
       targetUrl: buildCategoryRoutePath('beauty-wellness'),
       localityIds: [currentLocality.id],
+      categoryIds: ['beauty-wellness', 'health-medical'],
+      tags: ['clinic', 'beauty', 'salon', 'skin'],
       placementKey: 'homepage_sidebar_clinic',
       deviceTarget: 'all',
       mobileRowPosition: 3,
@@ -2581,6 +2843,8 @@ export default function WebPortal({
       endDate: todayIso,
       actionType: 'lead_form',
       localityIds: [currentLocality.id],
+      categoryIds: ['professional-services', 'digital-technology'],
+      tags: ['marketing', 'seo', 'social media'],
       placementKey: 'homepage_sidebar_marketing',
       deviceTarget: 'all',
       mobileRowPosition: 3,
@@ -2590,6 +2854,9 @@ export default function WebPortal({
   const desktopSidebarAds = [...activeListingAds, ...fallbackSidebarAds]
     .filter((ad) => (ad.deviceTarget || 'all') !== 'mobile')
     .slice(0, 4);
+  const contextualListingAds = getAdsForBusinessContext(sortedBusinesses, [...activeListingAds, ...fallbackSidebarAds]);
+  const desktopResultAds = contextualListingAds.filter((ad) => (ad.deviceTarget || 'all') !== 'mobile');
+  const mobileResultAds = contextualListingAds.filter((ad) => (ad.deviceTarget || 'all') !== 'desktop');
   const mobileInlineAds = [...activeListingAds, ...fallbackSidebarAds]
     .filter((ad) => (ad.deviceTarget || 'all') !== 'desktop')
     .filter((ad) => (ad.mobileRowPosition || 0) > 0)
@@ -2709,16 +2976,25 @@ export default function WebPortal({
   };
   const renderSidebarAdCard = (ad: ListingAd, index: number) => {
     const isDark = index === 1 || ad.backgroundColor === '#064e3b';
+    const adImage = getMediaProxyUrl(ad.imageUrl);
     return (
       <button
         key={`${ad.id}-${index}`}
         type="button"
         onClick={() => handleListingAdAction(ad)}
-        className={`relative min-h-[220px] overflow-hidden rounded-2xl p-6 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${
+        className={`relative min-h-[220px] overflow-hidden rounded-2xl text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${
           isDark ? 'text-white' : 'text-indigo-950'
         }`}
         style={{ backgroundColor: ad.backgroundColor || (isDark ? '#064e3b' : '#ede9fe') }}
       >
+        {adImage ? (
+          <img
+            src={adImage}
+            alt={ad.title}
+            className="h-full min-h-[220px] w-full rounded-2xl object-cover"
+          />
+        ) : (
+        <div className="relative min-h-[220px] p-6">
         <span className={`text-[10px] font-bold uppercase tracking-wide ${isDark ? 'text-white/70' : 'text-indigo-500'}`}>
           {ad.badge || 'Advertisement'}
         </span>
@@ -2729,13 +3005,7 @@ export default function WebPortal({
         }`}>
           {ad.ctaText}
         </span>
-        {ad.imageUrl ? (
-          <img
-            src={getMediaProxyUrl(ad.imageUrl)}
-            alt=""
-            className="absolute bottom-0 right-0 h-36 w-36 rounded-tl-[2rem] object-cover shadow-2xl"
-          />
-        ) : index === 1 ? (
+        {index === 1 ? (
           <img
             src="https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?auto=format&fit=crop&w=420&q=80"
             alt=""
@@ -2743,6 +3013,8 @@ export default function WebPortal({
           />
         ) : (
           <Megaphone className={`absolute bottom-5 right-5 h-24 w-24 rotate-[-12deg] ${isDark ? 'text-white/15' : 'text-indigo-400/25'}`} />
+        )}
+        </div>
         )}
       </button>
     );
@@ -2901,7 +3173,7 @@ export default function WebPortal({
       </div>}
 
       {/* RENDER TAB 1: YELLOW PAGES BUSINESS DIRECTORY FINDER */}
-      {activePortalTab === 'listings' && (
+      {activePortalTab === 'listings' && !isResultsPage && (
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_280px]">
           <div className="min-w-0 space-y-5">
             <div id="homepage-results-anchor" className="scroll-mt-24" />
@@ -2948,11 +3220,30 @@ export default function WebPortal({
           </aside>
         </div>
       )}
-      {activePortalTab === 'listings' && false && (
-        <div className="space-y-6">
+      {activePortalTab === 'listings' && isResultsPage && (
+        <div id="results-page-top" className="space-y-3 scroll-mt-20 md:space-y-6">
+          <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm md:p-5">
+            <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2 text-xs font-bold text-slate-500">
+                  <button type="button" onClick={openHomePage} className="text-indigo-600 hover:text-indigo-700">
+                    Home
+                  </button>
+                  <ChevronRight className="h-3.5 w-3.5 text-slate-300" />
+                  <span>Search Results</span>
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 font-mono text-[10px] text-slate-500">
+                    {sortedBusinesses.length} results
+                  </span>
+                </div>
+                <h2 className="mt-1 text-xl font-extrabold leading-tight text-slate-950 md:mt-2 md:text-2xl">
+                  {getSearchResultsKeyword()} Businesses in {selectedLocalityNames || currentLocality.name}
+                </h2>
+              </div>
+            </div>
+          </div>
           {/* Advanced Multi-Mode Search Suite */}
-          <div id="public-listing-search" className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4 scroll-mt-24">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3 flex-wrap gap-2">
+          <div id="public-listing-search" className="rounded-2xl border border-slate-200 bg-white p-3 shadow-xs scroll-mt-20 md:p-5">
+            <div className="hidden items-center justify-between border-b border-slate-100 pb-3 flex-wrap gap-2">
               <span className="text-xs font-bold font-mono uppercase text-indigo-600 tracking-wider flex items-center gap-1">
                 <Compass className="w-3.5 h-3.5" /> Discovery Search Suite:
               </span>
@@ -2984,50 +3275,48 @@ export default function WebPortal({
 
             {/* Render conditional inputs matching active Search Mode */}
             {searchMode === 'keyword' && (
-              <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_210px_210px_auto] items-center gap-3">
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 md:gap-3">
                 <div className="relative min-w-0">
                   <input
                     id="public-listing-search-input"
                     type="text"
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search businesses by name, special tags, services..."
-                    className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition font-sans"
+                    onChange={(e) => {
+                      setSearchQuery(e.target.value);
+                      setSelectedCategory('all');
+                      setSelectedSubcategory('all');
+                    }}
+                    onFocus={() => setIsSearchInputFocused(true)}
+                    onBlur={() => window.setTimeout(() => setIsSearchInputFocused(false), 120)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        openResultsPage();
+                      }
+                    }}
+                    placeholder="Search businesses, tags, services..."
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-9 pr-3 text-sm font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
-                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3.5" />
+                  {renderSearchSuggestions()}
+                  <Search className="absolute left-3 top-3.5 h-4 w-4 text-slate-400" />
                 </div>
-                <label className="sr-only" htmlFor="public-category-filter">Category</label>
-                <select
-                  id="public-category-filter"
-                  value={selectedCategory}
-                  onChange={(e) => {
-                    setSelectedCategory(e.target.value);
-                    setSelectedSubcategory('all');
-                  }}
-                  className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition font-sans font-semibold text-slate-700"
+                <button
+                  type="button"
+                  onClick={openResultsPage}
+                  className="inline-flex h-12 items-center justify-center rounded-xl bg-indigo-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-indigo-700"
+                  title="Search"
                 >
-                  <option value="all">All Categories</option>
-                  {BUSINESS_CATEGORIES.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
-                <label className="sr-only" htmlFor="public-subcategory-filter">Subcategory</label>
-                <select
-                  id="public-subcategory-filter"
-                  value={selectedSubcategory}
-                  disabled={selectedCategory === 'all'}
-                  onChange={(e) => setSelectedSubcategory(e.target.value)}
-                  className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition font-sans font-semibold text-slate-700 disabled:text-slate-400 disabled:bg-slate-100"
-                >
-                  <option value="all">All Subcategories</option>
-                  {getSubcategoriesForCategory(selectedCategory).map((s) => (
-                    <option key={s.id} value={s.id}>{s.name}</option>
-                  ))}
-                </select>
+                  <Search className="h-4 w-4" />
+                  <span className="ml-2 hidden sm:inline">Search</span>
+                </button>
                 {searchQuery && (
                   <button
-                    onClick={() => setSearchQuery('')}
-                    className="text-xs text-slate-400 hover:text-red-500 font-mono flex-shrink-0 cursor-pointer"
+                    onClick={() => {
+                      setSearchQuery('');
+                      setSelectedCategory('all');
+                      setSelectedSubcategory('all');
+                    }}
+                    className="col-span-full justify-self-end text-xs font-mono text-slate-400 hover:text-red-500"
                   >
                     Clear Filter
                   </button>
@@ -3370,7 +3659,7 @@ export default function WebPortal({
           </div>
 
           {/* Bulletin local campaign strip */}
-          <div className="bg-gradient-to-r from-amber-500/10 via-amber-600/5 to-transparent border-l-4 border-amber-500 rounded-r-2xl p-3.5 flex items-center justify-between gap-4 shadow-2xs">
+          <div className="hidden bg-gradient-to-r from-amber-500/10 via-amber-600/5 to-transparent border-l-4 border-amber-500 rounded-r-2xl p-3.5 items-center justify-between gap-4 shadow-2xs">
             <div className="flex items-center gap-3">
               <div className="bg-amber-400 text-amber-950 text-[10px] uppercase font-mono font-bold px-2 py-1 rounded-md tracking-wider">
                 LOCAL BULLETIN
@@ -3417,7 +3706,7 @@ export default function WebPortal({
           <div className="space-y-6">
             
             {/* VIP Premium Sponsored Segment */}
-            {featuredBusinesses.length > 0 && (
+            {false && featuredBusinesses.length > 0 && (
               <div className="space-y-3">
                 <h3 className="text-xs font-bold font-mono text-indigo-650 tracking-widest uppercase flex items-center gap-1.5">
                   ⭐ Premium Featured &amp; Sponsored ({featuredBusinesses.length})
@@ -3501,7 +3790,7 @@ export default function WebPortal({
                               
                               {biz.areasOfOperation && biz.areasOfOperation.length > 0 && (
                                 <div className="font-sans text-[10px] text-slate-400 mt-1 truncate">
-                                  🗺️ Service Areas: {biz.areasOfOperation.map(aid => MASTER_AREAS.find(a => a.id === aid)?.name).filter(Boolean).join(', ')}
+                                  🗺️ Service Areas: {(biz.areasOfOperation || []).map(aid => MASTER_AREAS.find(a => a.id === aid)?.name).filter(Boolean).join(', ')}
                                 </div>
                               )}
                             </div>
@@ -3531,10 +3820,10 @@ export default function WebPortal({
             {/* Standard Approved Listings Segment */}
             <div className="space-y-3">
               <h3 className="text-xs font-bold font-mono text-slate-400 tracking-widest uppercase mb-1">
-                Active Verified Listings Directory ({regularBusinesses.length})
+                Active Verified Listings Directory ({searchResultBusinesses.length})
               </h3>
 
-              {regularBusinesses.length === 0 && featuredBusinesses.length === 0 ? (
+              {searchResultBusinesses.length === 0 ? (
                 <div className="text-center py-16 bg-white rounded-2xl border border-dashed border-slate-200 p-8">
                   <Compass className="w-12 h-12 text-slate-300 mx-auto mb-3 animate-spin" style={{ animationDuration: '6s' }} />
                   <p className="text-base font-bold text-slate-850">No verified businesses found matching criteria</p>
@@ -3543,45 +3832,50 @@ export default function WebPortal({
                   </p>
                 </div>
               ) : (
-                regularBusinesses.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-5 py-10 text-center text-xs text-slate-400">
-                    Featured listings are available above. No additional standard listings matched this filter set.
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {pagedRegularBusinesses.map((biz, index) => {
+                (
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
+                    {pagedSearchResultBusinesses.map((biz, index) => {
                       const hasViewed = viewedBusinessIds.includes(biz.id);
-                      const injectAd = activeListingAds.length > 0 && index > 0 && index % 9 === 8;
-                      const ad = activeListingAds.length > 0
-                        ? activeListingAds[Math.floor(index / 9) % activeListingAds.length]
+                      const resultAds = desktopResultAds.length > 0 ? desktopResultAds : mobileResultAds;
+                      const injectAd = resultAds.length > 0 && (index + 1) % 4 === 0;
+                      const ad = resultAds.length > 0
+                        ? resultAds[Math.floor(index / 4) % resultAds.length]
                         : null;
 
                       return (
                         <React.Fragment key={biz.id}>
-                          {renderCompactBusinessRow(biz, biz.isSponsored ? {
-                            badgeLabel: 'CPC',
-                            badgeClassName: 'bg-amber-500 text-slate-950'
+                          {renderCompactBusinessRow(biz, (biz.featured || biz.isSponsored) ? {
+                            badgeLabel: 'VIP',
+                            badgeClassName: 'bg-indigo-700 text-white',
+                            showImage: true
                           } : undefined)}
                           <div 
                             onClick={() => openBusinessDetails(biz)}
-                            className="hidden cursor-pointer flex-col justify-between rounded-2xl border border-slate-200 bg-white p-4 shadow-2xs transition hover:border-indigo-400 hover:shadow-md md:flex"
+                            className="relative hidden cursor-pointer flex-col justify-between rounded-2xl border border-slate-200 bg-white p-4 shadow-2xs transition hover:border-indigo-400 hover:shadow-md md:flex"
                           >
+                            {(biz.featured || biz.isSponsored) && (
+                              <span className="absolute right-3 top-3 z-10 rounded-full bg-indigo-700 px-2.5 py-1 text-[9px] font-bold uppercase tracking-wide text-white shadow-sm">
+                                Sponsored VIP
+                              </span>
+                            )}
                             <div className="space-y-3">
-                              <div className="relative">
-                                <img 
-                                  src={getBusinessImageUrl(biz)}
-                                  alt={biz.name}
-                                  onError={(e) => {
-                                    (e.target as HTMLImageElement).src = getCategoryFallbackImage(biz.categoryId);
-                                  }}
-                                  className={`w-full h-36 rounded-xl border border-slate-200/60 bg-slate-100 ${hasUploadedBusinessImage(biz) ? 'object-cover' : 'object-contain p-4'}`}
-                                />
-                                {biz.verifiedBadge && (
-                                  <span className="absolute top-2 left-2 bg-emerald-600 text-white text-[9px] uppercase font-mono font-bold px-2 py-0.5 rounded-full flex items-center gap-0.5">
-                                    Verified Badge
-                                  </span>
-                                )}
-                              </div>
+                              {(biz.featured || biz.isSponsored) && (
+                                <div className="relative">
+                                  <img 
+                                    src={getBusinessImageUrl(biz)}
+                                    alt={biz.name}
+                                    onError={(e) => {
+                                      (e.target as HTMLImageElement).src = getCategoryFallbackImage(biz.categoryId);
+                                    }}
+                                    className={`w-full h-36 rounded-xl border border-slate-200/60 bg-slate-100 ${hasUploadedBusinessImage(biz) ? 'object-cover' : 'object-contain p-4'}`}
+                                  />
+                                  {biz.verifiedBadge && (
+                                    <span className="absolute top-2 left-2 bg-emerald-600 text-white text-[9px] uppercase font-mono font-bold px-2 py-0.5 rounded-full flex items-center gap-0.5">
+                                      Verified Badge
+                                    </span>
+                                  )}
+                                </div>
+                              )}
 
                               <div className="space-y-1">
                                 <div className="flex items-center justify-between">
@@ -3595,6 +3889,9 @@ export default function WebPortal({
                                 </div>
                                 <h4 className="font-bold text-slate-900 text-sm leading-tight truncate flex items-center gap-1">
                                   {biz.name}
+                                  {biz.verifiedBadge && !(biz.featured || biz.isSponsored) && (
+                                    <CheckCircle className="h-3.5 w-3.5 flex-shrink-0 text-emerald-500" />
+                                  )}
                                   {biz.isSponsored && (
                                     <span className="bg-amber-100 text-amber-800 text-[8px] font-mono font-bold px-1 rounded">CPC</span>
                                   )}
@@ -3635,11 +3932,10 @@ export default function WebPortal({
 
                           {injectAd && ad && (
                             <div
-                              className="col-span-full border border-slate-800 rounded-3xl p-6 text-white shadow-lg flex flex-col md:flex-row items-center justify-between gap-6 relative overflow-hidden"
+                              className="min-h-[220px] overflow-hidden rounded-2xl border border-slate-200 bg-white text-slate-950 shadow-sm"
                               style={{ backgroundColor: ad.backgroundColor || '#0f172a' }}
                             >
-                              <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 rounded-full blur-2xl pointer-events-none"></div>
-                              <div className="flex flex-col md:flex-row items-center md:items-start gap-4">
+                              <div className="hidden">
                                 <div className="bg-amber-400 text-slate-950 p-3 rounded-full flex-shrink-0 animate-bounce shadow">
                                   <Megaphone className="w-5 h-5" />
                                 </div>
@@ -3656,10 +3952,24 @@ export default function WebPortal({
                               </div>
                               <button
                                 onClick={() => handleListingAdAction(ad)}
-                                className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs px-5 py-3 rounded-xl transition shadow flex items-center gap-2 flex-shrink-0 cursor-pointer w-full md:w-auto justify-center"
+                                className="h-full min-h-[220px] w-full cursor-pointer overflow-hidden rounded-2xl text-left"
                               >
-                                <span>{ad.ctaText}</span>
-                                <ExternalLink className="w-3.5 h-3.5" />
+                                {getMediaProxyUrl(ad.imageUrl) ? (
+                                  <img
+                                    src={getMediaProxyUrl(ad.imageUrl)}
+                                    alt={ad.title}
+                                    className="h-full min-h-[220px] w-full rounded-2xl object-cover"
+                                  />
+                                ) : (
+                                  <div className="flex h-full min-h-[220px] flex-col justify-between p-4 text-white">
+                                    <span className="text-[10px] font-bold uppercase tracking-wide text-white/70">{ad.badge}</span>
+                                    <div>
+                                      <h4 className="text-lg font-extrabold leading-tight">{ad.title}</h4>
+                                      <p className="mt-2 line-clamp-3 text-xs text-white/80">{ad.description}</p>
+                                    </div>
+                                    <span className="inline-flex rounded-xl bg-white px-4 py-2 text-xs font-bold text-slate-900">{ad.ctaText}</span>
+                                  </div>
+                                )}
                               </button>
                             </div>
                           )}
@@ -3669,10 +3979,10 @@ export default function WebPortal({
                   </div>
                 )
               )}
-              {regularBusinesses.length > 0 && (
+              {searchResultBusinesses.length > 0 && (
                 <PaginationControls
-                  currentPage={safeRegularPage}
-                  totalPages={regularTotalPages}
+                  currentPage={safeSearchResultPage}
+                  totalPages={searchResultTotalPages}
                   onPageChange={setRegularPage}
                 />
               )}
@@ -4307,7 +4617,7 @@ export default function WebPortal({
                     {getBusinessCategoryLabel(selectedBiz)}
                     {(selectedBiz.subcategoryId || selectedBiz.sourceSubcategoryLabel) && ` / ${getBusinessSubcategoryLabel(selectedBiz)}`}
                   </span>
-                  {selectedBiz.tags.map(t => (
+                  {(selectedBiz.tags || []).map(t => (
                     <span key={t} className="text-xs bg-slate-50 text-slate-500 px-2 py-0.5 rounded-full">
                       #{t}
                     </span>
@@ -4323,7 +4633,7 @@ export default function WebPortal({
               {selectedBiz.areasOfOperation && (
                 <div className="bg-slate-50/50 border border-slate-100 rounded-xl p-3 flex flex-wrap gap-2 items-center text-xs">
                   <span className="font-bold text-slate-400 font-mono text-[9px] uppercase">Service Areas:</span>
-                  {selectedBiz.areasOfOperation.map(aid => {
+                  {(selectedBiz.areasOfOperation || []).map(aid => {
                     const area = MASTER_AREAS.find(a => a.id === aid);
                     return (
                       <span key={aid} className="bg-indigo-50 border border-indigo-150 text-indigo-805 px-2 py-0.5 rounded-md text-[10px] font-medium">

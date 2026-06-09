@@ -15,7 +15,7 @@ import happyBusinessLogo from './assets/happy-business-logo.png';
 import { 
   Layout, Smartphone, Shield, BookOpen, Layers, RefreshCw, 
   User, CheckCircle, ShieldAlert, KeyRound, Wrench, Briefcase, HelpCircle,
-  Sliders, Settings, X, Database, MapPin, Search, LogOut, ChevronDown
+  Sliders, Settings, X, Database, MapPin, Search, LogOut, ChevronDown, Menu
 } from 'lucide-react';
 import {
   BUSINESS_CATEGORIES,
@@ -139,7 +139,32 @@ const normalizeBusinessTaxonomy = (business: Business): Business => {
 };
 
 const normalizeStoredBusiness = (business: Business): Business => {
-  const normalized = normalizeBusinessTaxonomy(business);
+  const sanitizedBusiness: Business = {
+    ...business,
+    name: String(business.name || '').trim(),
+    categoryId: String(business.categoryId || '').trim(),
+    subcategoryId: String(business.subcategoryId || '').trim(),
+    sourceCategoryLabel: business.sourceCategoryLabel ? String(business.sourceCategoryLabel).trim() : undefined,
+    sourceSubcategoryLabel: business.sourceSubcategoryLabel ? String(business.sourceSubcategoryLabel).trim() : undefined,
+    address: String(business.address || '').trim(),
+    phone: String(business.phone || '').trim(),
+    website: String(business.website || '').trim(),
+    description: String(business.description || '').trim(),
+    tags: Array.isArray(business.tags)
+      ? business.tags.map((tag) => String(tag || '').trim()).filter(Boolean)
+      : [],
+    hours: typeof business.hours === 'string' ? business.hours : '',
+    areasOfOperation: Array.isArray(business.areasOfOperation)
+      ? business.areasOfOperation.map((areaId) => String(areaId || '').trim()).filter(Boolean)
+      : [],
+    languagesSpoken: Array.isArray(business.languagesSpoken)
+      ? business.languagesSpoken.map((language) => String(language || '').trim()).filter(Boolean)
+      : undefined,
+    paymentMethods: Array.isArray(business.paymentMethods)
+      ? business.paymentMethods.map((method) => String(method || '').trim()).filter(Boolean)
+      : undefined,
+  };
+  const normalized = normalizeBusinessTaxonomy(sanitizedBusiness);
   const isUploadedListing =
     normalized.id.startsWith('csv_') ||
     normalized.id.startsWith('b_dynamic_') ||
@@ -257,6 +282,8 @@ const normalizeStoredListingAd = (ad: ListingAd): ListingAd => ({
   ...ad,
   localityIds: normalizeStringList(ad.localityIds),
   pincodes: normalizeStringList(ad.pincodes),
+  categoryIds: normalizeStringList(ad.categoryIds),
+  tags: normalizeStringList(ad.tags),
   placementKey: ad.placementKey || 'homepage_inline_primary',
   deviceTarget: ad.deviceTarget || 'all',
   imageUrl: ad.imageUrl?.trim() || undefined,
@@ -914,6 +941,7 @@ export default function App() {
   const [urlCategoryFilter, setUrlCategoryFilter] = useState<string | null>(null);
   const [urlSubcategoryFilter, setUrlSubcategoryFilter] = useState<string | null>(null);
   const [urlSearchFilter, setUrlSearchFilter] = useState<string | null>(null);
+  const [urlIsSearchResults, setUrlIsSearchResults] = useState(false);
   const [urlFilterNonce, setUrlFilterNonce] = useState(0);
   const [urlSelectedBusinessId, setUrlSelectedBusinessId] = useState<string | null>(null);
   const [urlSelectionNonce, setUrlSelectionNonce] = useState(0);
@@ -993,6 +1021,7 @@ export default function App() {
   const [showSandbox, setShowSandbox] = useState(false); // Controls floating simulation HUD
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
 
   // Active User session simulation
   const [userSession, setUserSession] = useState<UserSession>(() => {
@@ -1353,6 +1382,7 @@ export default function App() {
       let resolvedCategoryId: string | null = null;
       let resolvedSearch: string | null = null;
       let resolvedBusinessId: string | null = null;
+      let shouldOpenSearchResults = false;
 
       let scopedSegments = pathSegments;
       if (pathSegments.length > 0) {
@@ -1376,10 +1406,12 @@ export default function App() {
         if (matchedIntent) {
           resolvedCategoryId = matchedIntent.categoryId;
           resolvedSearch = matchedIntent.q;
+          shouldOpenSearchResults = true;
         } else {
           const categoryFromSlug = categorySlugLookup.get(intentOrCategorySegment);
           if (categoryFromSlug) {
             resolvedCategoryId = categoryFromSlug;
+            shouldOpenSearchResults = true;
           }
         }
 
@@ -1402,16 +1434,24 @@ export default function App() {
 
       const categoryParam = (params.get('category') || '').trim().toLowerCase();
       if (!resolvedCategoryId) {
-        if (categoryParam && INITIAL_CATEGORIES.some((category) => category.id === categoryParam)) {
-          resolvedCategoryId = categoryParam;
+        const normalizedCategoryParam = resolveMasterCategoryId(categoryParam);
+        if (categoryParam && BUSINESS_CATEGORIES.some((category) => category.id === normalizedCategoryParam)) {
+          resolvedCategoryId = normalizedCategoryParam;
+          shouldOpenSearchResults = true;
         } else if (categoryParam === 'all') {
           resolvedCategoryId = 'all';
+          shouldOpenSearchResults = true;
         }
+      } else if (categoryParam) {
+        shouldOpenSearchResults = true;
       }
 
-      const searchParam = (params.get('q') || '').trim();
+      const searchParam = (params.get('srp') || params.get('q') || '').trim();
       if (!resolvedSearch && searchParam) {
         resolvedSearch = searchParam;
+      }
+      if (searchParam) {
+        shouldOpenSearchResults = true;
       }
       if (!resolvedBusinessId) {
         const businessParam = (params.get('biz') || '').trim();
@@ -1429,6 +1469,7 @@ export default function App() {
 
       setUrlCategoryFilter(resolvedCategoryId);
       setUrlSearchFilter(resolvedSearch || null);
+      setUrlIsSearchResults(shouldOpenSearchResults);
       setUrlSelectedBusinessId(resolvedBusinessId);
       setUrlFilterNonce((prev) => prev + 1);
       setUrlSelectionNonce((prev) => prev + 1);
@@ -1541,6 +1582,7 @@ export default function App() {
     setAuditLogs(prev => [freshLog, ...prev]);
 
     const shouldPostToServer = (() => {
+      if (import.meta.env.DEV) return false;
       if (actionType === 'contact_view') return true;
       if (!likelyAutomated) return true;
       if (userSession.isAuthenticated) return true;
@@ -2197,6 +2239,8 @@ export default function App() {
       let localityToken = (url.searchParams.get('locality') || '').trim().toLowerCase();
       let categoryToken = (url.searchParams.get('category') || '').trim().toLowerCase();
       let subcategoryToken = (url.searchParams.get('subcategory') || '').trim().toLowerCase();
+      const srpToken = (url.searchParams.get('srp') || url.searchParams.get('q') || '').trim();
+      let shouldOpenSearchResults = Boolean(srpToken || categoryToken || subcategoryToken);
 
       if (pathParts[0] === 'pin' && pathParts[1]) {
         pincodeToken = pathParts[1].replace(/\D/g, '');
@@ -2213,6 +2257,7 @@ export default function App() {
         } else {
           subcategoryToken = routeCategoryToken;
         }
+        shouldOpenSearchResults = true;
       }
 
       const directLink = localityCategoryLinks.find((link) => link.slug.toLowerCase() === pathParts.join('/').toLowerCase());
@@ -2220,6 +2265,7 @@ export default function App() {
         localityToken = directLink.localityId;
         categoryToken = directLink.categoryId;
         subcategoryToken = directLink.subcategoryId || subcategoryToken;
+        shouldOpenSearchResults = true;
       }
 
       if (/^\d{6}$/.test(pincodeToken)) {
@@ -2252,6 +2298,8 @@ export default function App() {
       const resolvedSubcategory = mappedSubcategory?.id || null;
       setUrlCategoryFilter(resolvedCategory);
       setUrlSubcategoryFilter(resolvedSubcategory);
+      setUrlSearchFilter(srpToken || null);
+      setUrlIsSearchResults(shouldOpenSearchResults);
       setUrlFilterNonce((prev) => prev + 1);
     };
 
@@ -2519,17 +2567,21 @@ export default function App() {
   })();
   const handleMainLogoHome = () => {
     setActiveViewWithAudit('web');
+    setUrlIsSearchResults(false);
+    setUrlCategoryFilter(null);
+    setUrlSubcategoryFilter(null);
+    setUrlSearchFilter(null);
+    setUrlFilterNonce((prev) => prev + 1);
     const normalizedPin = savedPincode?.replace(/\D/g, '') || '';
     if (/^\d{6}$/.test(normalizedPin)) {
       const matched = pincodeMappings.find((mapping) => mapping.pincode === normalizedPin);
       if (matched) {
         setActiveLocalityId(matched.localityId);
+        window.history.pushState({}, '', buildLocalityPath(matched.localityId));
+        return;
       }
-      const homeUrl = `${window.location.origin}/pin/${normalizedPin}`;
-      window.history.pushState({}, '', homeUrl);
-    } else {
-      window.history.pushState({}, '', `${window.location.origin}/`);
     }
+    window.history.pushState({}, '', buildLocalityPath(activeLocality?.id || activeLocalityId || 'roadpali'));
   };
   const handleSearchShortcut = () => {
     const searchForm = document.getElementById('public-listing-search');
@@ -2696,7 +2748,7 @@ export default function App() {
       
       {/* Top Navigation Frame - Pristine, Live, Human-labeled web directory */}
       <nav id="platform-navbar" className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 px-4 py-2.5 shadow-sm backdrop-blur md:top-auto md:px-8 md:py-0">
-        <div className="flex items-center gap-2.5 md:hidden">
+        <div className="relative flex items-center gap-2 md:hidden">
           <button
             type="button"
             onClick={handleMainLogoHome}
@@ -2706,7 +2758,7 @@ export default function App() {
           <img
             src={happyBusinessLogo}
             alt="Localisy"
-            className="h-8 w-auto max-w-[116px] object-contain"
+            className="h-7 w-auto max-w-[92px] object-contain"
           />
           </button>
 
@@ -2714,45 +2766,51 @@ export default function App() {
           <button
             type="button"
             onClick={() => setShowPincodeModal(true)}
-            className="min-w-0 flex-1 md:flex-none md:min-w-[320px] inline-flex h-10 md:h-12 items-center gap-2 rounded-full border border-indigo-100 bg-indigo-50 px-3 md:px-4 text-xs md:text-sm font-bold text-indigo-950 shadow-sm transition hover:border-indigo-200"
+            className="min-w-0 flex-1 inline-flex h-9 items-center gap-1.5 rounded-full border border-indigo-100 bg-indigo-50 px-2.5 text-xs font-bold text-indigo-950 shadow-sm transition hover:border-indigo-200"
             title="Change pincode or locality"
           >
-            <MapPin className="w-4 h-4 text-indigo-600 shrink-0" />
+            <MapPin className="h-3.5 w-3.5 shrink-0 text-indigo-600" />
             <span className="truncate">
               <span className="font-extrabold text-slate-800">{displayedPincode}</span>
-              <span className="text-indigo-500 font-sans font-semibold ml-1">
-                <span className="md:hidden">{compactNodeLabel}</span>
-                <span className="hidden md:inline">({activeNodeLabel})</span>
-              </span>
             </span>
-            <span className="hidden md:inline text-[10px] text-indigo-600 underline ml-auto font-bold">Change</span>
           </button>
 
           <div className="relative shrink-0">
             <button
               type="button"
-              onClick={() => userSession.isAuthenticated ? setShowUserMenu((open) => !open) : setShowAuthModal(true)}
-              className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-800 shadow-sm transition hover:border-indigo-200 hover:text-indigo-600 cursor-pointer"
-              title={userSession.isAuthenticated ? 'Open profile menu' : 'Sign in to your account'}
+              onClick={() => setShowMobileMenu((open) => !open)}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-800 shadow-sm transition hover:border-indigo-200 hover:text-indigo-600"
+              title="Open menu"
             >
-              <User className="h-4 w-4" />
-              <span className="max-w-[72px] truncate">
-                {userSession.isAuthenticated && userSession.userPhone ? userSession.userName.split(' ')[0] : 'Sign In'}
-              </span>
-              {userSession.isAuthenticated && userSession.userPhone && <ChevronDown className="h-3.5 w-3.5" />}
+              {showMobileMenu ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
             </button>
 
-            {showUserMenu && userSession.isAuthenticated && userSession.userPhone && (
-              <div className="absolute right-0 top-full mt-2 w-56 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl z-50">
-                <div className="mb-1 border-b border-slate-100 px-3 py-2">
-                  <span className="block truncate text-xs font-bold text-slate-900">{userSession.userName}</span>
-                  <span className="block truncate text-[10px] text-slate-500">{userSession.userPhone}</span>
-                </div>
+            {showMobileMenu && (
+              <div className="absolute right-0 top-full z-50 mt-2 w-64 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl">
+                {userSession.isAuthenticated && userSession.userPhone ? (
+                  <div className="mb-1 border-b border-slate-100 px-3 py-2">
+                    <span className="block truncate text-xs font-bold text-slate-900">{userSession.userName}</span>
+                    <span className="block truncate text-[10px] text-slate-500">{userSession.userPhone}</span>
+                  </div>
+                ) : null}
+                {!userSession.isAuthenticated && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMobileMenu(false);
+                      setShowAuthModal(true);
+                    }}
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700"
+                  >
+                    <User className="h-4 w-4" />
+                    Sign In
+                  </button>
+                )}
                 {canAccessAdmin && (
                   <button
                     type="button"
                     onClick={() => {
-                      setShowUserMenu(false);
+                      setShowMobileMenu(false);
                       setActiveViewWithAudit('admin');
                     }}
                     className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-emerald-50 hover:text-emerald-700"
@@ -2764,7 +2822,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => {
-                    setShowUserMenu(false);
+                    setShowMobileMenu(false);
                     window.dispatchEvent(new CustomEvent('localsy:open-business-application'));
                     const seekWebPortal = document.getElementById('web-portal-root');
                     if (seekWebPortal) seekWebPortal.scrollIntoView({ behavior: 'smooth' });
@@ -2774,19 +2832,24 @@ export default function App() {
                   <Briefcase className="w-4 h-4" />
                   Advertise Business
                 </button>
-                <button
-                  type="button"
-                  onClick={handleLogout}
-                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50"
-                >
-                  <LogOut className="w-4 h-4" />
-                  Log Out
-                </button>
+                {userSession.isAuthenticated && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMobileMenu(false);
+                      handleLogout();
+                    }}
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    Log Out
+                  </button>
+                )}
               </div>
             )}
           </div>
 
-          <div className={`grid w-full gap-2 md:hidden ${userSession.isAuthenticated && userSession.userPhone ? 'grid-cols-2' : 'grid-cols-2'}`}>
+          <div className={`hidden w-full gap-2 md:hidden ${userSession.isAuthenticated && userSession.userPhone ? 'grid-cols-2' : 'grid-cols-2'}`}>
             {userSession.isAuthenticated && userSession.userPhone ? (
               <>
                 <button
@@ -3101,6 +3164,7 @@ export default function App() {
             savedPincode={savedPincode}
             initialCategoryFilter={urlCategoryFilter}
             initialSearchFilter={urlSearchFilter}
+            initialResultsPage={urlIsSearchResults}
             filterNonce={urlFilterNonce}
             initialSelectedBusinessId={urlSelectedBusinessId}
             selectionNonce={urlSelectionNonce}
