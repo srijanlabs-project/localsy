@@ -296,6 +296,7 @@ const getPublicLocalityUrl = (locality?: Locality | null) => {
 
 type AdminWorkspaceTab = 'moderation' | 'listing-status' | 'bulk-upload' | 'taxonomy-mapping' | 'data-audit';
 type ListingStatusFilter = 'all' | 'approved' | 'rejected' | 'pending';
+type AdminConsoleSurface = 'admin' | 'operations';
 type AdminOperationsSection = 'listings' | 'homepage' | 'campaigns' | 'geography' | 'content' | 'platform';
 
 type OrderedCategoryPickerProps = {
@@ -620,6 +621,7 @@ export default function AdminConsole({
   const [editedHrs, setEditedHrs] = useState<Record<string, string>>({});
   const [importResult, setImportResult] = useState<string>('');
   const [importPreview, setImportPreview] = useState<ImportPreviewRow[]>([]);
+  const [consoleSurface, setConsoleSurface] = useState<AdminConsoleSurface>('admin');
   const [adminWorkspaceTab, setAdminWorkspaceTab] = useState<AdminWorkspaceTab>('moderation');
   const [listingStatusFilter, setListingStatusFilter] = useState<ListingStatusFilter>('all');
   const [operationsSection, setOperationsSection] = useState<AdminOperationsSection>('homepage');
@@ -1257,14 +1259,15 @@ export default function AdminConsole({
     id: sectionType,
     label: homepageSectionLabels[sectionType]
   }));
-  const operationsSectionTabs: Array<{ id: AdminOperationsSection; label: string }> = [
-    { id: 'listings', label: 'Listings Ops' },
-    { id: 'homepage', label: 'Homepage CMS' },
-    { id: 'campaigns', label: 'Campaigns' },
-    { id: 'geography', label: 'Geography & Routing' },
-    { id: 'content', label: 'Content & Community' },
-    { id: 'platform', label: 'Platform Config' }
+  const operationsSectionTabs: Array<{ id: AdminOperationsSection; label: string; description: string }> = [
+    { id: 'listings', label: 'Listings', description: 'Activate, deactivate, and review uploaded business records.' },
+    { id: 'homepage', label: 'Homepage CMS', description: 'Manage layouts, hero banners, publishing, templates, and preview states.' },
+    { id: 'campaigns', label: 'Ads & Offers', description: 'Run ad banners, offers, campaigns, and monitor incoming ad leads.' },
+    { id: 'geography', label: 'Geography & Routing', description: 'Manage localities, pincode routing, and locality-category URL mapping.' },
+    { id: 'content', label: 'Updates & Community', description: 'Publish locality updates and community-led content blocks.' },
+    { id: 'platform', label: 'Platform Config', description: 'Control API sync, taxonomy, defaults, SEO discovery, and core configuration.' }
   ];
+  const selectedOperationsTab = operationsSectionTabs.find((tab) => tab.id === operationsSection) || operationsSectionTabs[0];
 
   const selectedHomepageLayout = homepageLayouts.find((layout) => layout.localityId === homepageLocalityId);
   const homepageSections = [...(selectedHomepageLayout?.sections || [])].sort((a, b) => a.sortOrder - b.sortOrder);
@@ -3432,9 +3435,40 @@ export default function AdminConsole({
   };
 
   return (
-    <div id="admin-console-root" className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+    <div id="admin-console-root" className="space-y-6">
+      <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h2 className="text-lg font-bold text-slate-950">Console Workspace</h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Open admin review tools and operations management in separate full-width tabs so each workspace has enough room.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {[
+              { id: 'admin', label: 'Admin Workspace' },
+              { id: 'operations', label: 'Operations Workspace' },
+            ].map((surface) => (
+              <button
+                key={surface.id}
+                type="button"
+                onClick={() => setConsoleSurface(surface.id as AdminConsoleSurface)}
+                className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold transition ${
+                  consoleSurface === surface.id
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                {surface.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
       {/* Moderation Module */}
-      <div className="lg:col-span-2 space-y-6">
+      {consoleSurface === 'admin' && (
+      <div className="space-y-6">
         <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
@@ -4183,15 +4217,17 @@ export default function AdminConsole({
         </div>
         )}
       </div>
+      )}
 
       {/* Domain Mapping Panel and Locality Spinner */}
+      {consoleSurface === 'operations' && (
       <div className="space-y-6">
         <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm space-y-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <h3 className="text-base font-extrabold text-slate-950">Operations Workspace</h3>
               <p className="text-[11px] text-slate-500 mt-1">
-                Switch manager groups so each operational form set stays focused instead of piling everything into one long sidebar.
+                Switch manager groups in a dedicated full-width view instead of squeezing every control into the old sidebar.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -4266,6 +4302,10 @@ export default function AdminConsole({
               <option value="active">Active</option>
               <option value="inactive">Inactive</option>
             </select>
+          </div>
+
+          <div className="rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2 text-[11px] text-indigo-900">
+            <span className="font-bold">{selectedOperationsTab.label}:</span> {selectedOperationsTab.description}
           </div>
         </div>
 
@@ -4447,7 +4487,7 @@ export default function AdminConsole({
         </div>}
 
         {/* Pincode Routing Master Config Panel */}
-        {operationsSection === 'homepage' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+        {operationsSection === 'geography' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
           <div>
             <h3 className="text-base font-extrabold text-slate-950 flex items-center gap-2">
               <MapPin className="w-4 h-4 text-indigo-500" />
@@ -4556,7 +4596,7 @@ export default function AdminConsole({
           </div>
         </div>}
 
-        {operationsSection === 'platform' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+        {operationsSection === 'listings' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-base font-extrabold text-slate-950">Uploaded Listings</h3>
             <span className="text-[10px] font-mono text-slate-500">20 per page</span>
@@ -4643,7 +4683,7 @@ export default function AdminConsole({
           </div>
         </div>}
 
-        {operationsSection === 'geography' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+        {operationsSection === 'homepage' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
           <div className="flex items-center justify-between gap-3">
             <div>
               <h3 className="text-base font-extrabold text-slate-950">Homepage Layout Manager</h3>
@@ -4922,12 +4962,12 @@ export default function AdminConsole({
           </div>
         </div>}
 
-        {operationsSection === 'listings' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+        {operationsSection === 'platform' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h3 className="text-base font-extrabold text-slate-950">API Configuration</h3>
+              <h3 className="text-base font-extrabold text-slate-950">Platform Configuration</h3>
               <p className="text-[11px] text-slate-500 mt-1">
-                Control where homepage builder content syncs and whether browser edits autosave through the local API layer.
+                Control sync endpoints, fallback defaults, taxonomy, geography, and discovery settings for the platform.
               </p>
             </div>
             <span className="text-[10px] font-mono text-slate-500 bg-slate-100 border border-slate-200 rounded-lg px-2.5 py-1">
@@ -5132,6 +5172,27 @@ export default function AdminConsole({
               onSave={onSaveSeoDiscoveryConfig}
             />
           )}
+        </div>}
+
+        {operationsSection === 'homepage' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h3 className="text-base font-extrabold text-slate-950">Publishing & Scalable Homepage</h3>
+              <p className="text-[11px] text-slate-500 mt-1">
+                Publish locality pages, preview resolved payloads, and manage scalable templates, assignments, and campaigns from one place.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-[11px] md:w-[22rem]">
+              <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2">
+                <div className="text-[10px] uppercase tracking-wide text-emerald-700">Snapshots</div>
+                <div className="mt-1 text-lg font-extrabold text-emerald-950">{scalableSnapshotCount}</div>
+              </div>
+              <div className="rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2">
+                <div className="text-[10px] uppercase tracking-wide text-indigo-700">Templates</div>
+                <div className="mt-1 text-lg font-extrabold text-indigo-950">{scalableTemplateCount}</div>
+              </div>
+            </div>
+          </div>
 
           <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs space-y-3">
             <div className="flex items-center justify-between gap-3">
@@ -7200,6 +7261,7 @@ export default function AdminConsole({
           </div>
         </div>}
       </div>
+      )}
       {selectedBackendBiz && backendDraft && (
         <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
