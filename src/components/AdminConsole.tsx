@@ -298,6 +298,7 @@ type AdminWorkspaceTab = 'moderation' | 'listing-status' | 'bulk-upload' | 'taxo
 type ListingStatusFilter = 'all' | 'approved' | 'rejected' | 'pending';
 type AdminConsoleSurface = 'admin' | 'operations';
 type AdminOperationsSection = 'listings' | 'homepage' | 'campaigns' | 'geography' | 'content' | 'platform';
+type HomepageCmsSubtab = 'layout' | 'hero' | 'publish' | 'templates' | 'assignments' | 'campaigns' | 'insights';
 
 type OrderedCategoryPickerProps = {
   label: string;
@@ -625,6 +626,7 @@ export default function AdminConsole({
   const [adminWorkspaceTab, setAdminWorkspaceTab] = useState<AdminWorkspaceTab>('moderation');
   const [listingStatusFilter, setListingStatusFilter] = useState<ListingStatusFilter>('all');
   const [operationsSection, setOperationsSection] = useState<AdminOperationsSection>('homepage');
+  const [homepageCmsSubtab, setHomepageCmsSubtab] = useState<HomepageCmsSubtab>('layout');
   const [listingStatusPage, setListingStatusPage] = useState(1);
   const [auditPage, setAuditPage] = useState(1);
   const [importPreviewPage, setImportPreviewPage] = useState(1);
@@ -1268,6 +1270,16 @@ export default function AdminConsole({
     { id: 'platform', label: 'Platform Config', description: 'Control API sync, taxonomy, defaults, SEO discovery, and core configuration.' }
   ];
   const selectedOperationsTab = operationsSectionTabs.find((tab) => tab.id === operationsSection) || operationsSectionTabs[0];
+  const homepageCmsSubtabs: Array<{ id: HomepageCmsSubtab; label: string; description: string }> = [
+    { id: 'layout', label: 'Layout', description: 'Arrange homepage sections for the selected locality.' },
+    { id: 'hero', label: 'Hero Banners', description: 'Manage hero banners and top stat cards.' },
+    { id: 'publish', label: 'Publish', description: 'Publish locality pages, reseed legacy data, and manage scope-based releases.' },
+    { id: 'templates', label: 'Templates', description: 'Create and maintain reusable scalable homepage templates.' },
+    { id: 'assignments', label: 'Assignments', description: 'Map templates to locality, category, subcategory, and pincode contexts.' },
+    { id: 'campaigns', label: 'Campaign Builder', description: 'Manage scalable campaigns for hero, ads, offers, content, and sponsorships.' },
+    { id: 'insights', label: 'Snapshots & Preview', description: 'Review published snapshots and load resolved homepage previews.' },
+  ];
+  const selectedHomepageCmsSubtab = homepageCmsSubtabs.find((tab) => tab.id === homepageCmsSubtab) || homepageCmsSubtabs[0];
 
   const selectedHomepageLayout = homepageLayouts.find((layout) => layout.localityId === homepageLocalityId);
   const homepageSections = [...(selectedHomepageLayout?.sections || [])].sort((a, b) => a.sortOrder - b.sortOrder);
@@ -4235,7 +4247,12 @@ export default function AdminConsole({
                 <button
                   key={tab.id}
                   type="button"
-                  onClick={() => setOperationsSection(tab.id)}
+                  onClick={() => {
+                    setOperationsSection(tab.id);
+                    if (tab.id === 'homepage') {
+                      setHomepageCmsSubtab('layout');
+                    }
+                  }}
                   className={`rounded-lg px-3 py-1.5 text-xs font-bold ${
                     operationsSection === tab.id ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-700'
                   }`}
@@ -4308,6 +4325,38 @@ export default function AdminConsole({
             <span className="font-bold">{selectedOperationsTab.label}:</span> {selectedOperationsTab.description}
           </div>
         </div>
+
+        {operationsSection === 'homepage' && (
+          <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm space-y-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <h4 className="text-sm font-extrabold text-slate-950">Homepage CMS Sections</h4>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Switch one homepage subsection at a time so the page stays fast to scan and easier to operate.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {homepageCmsSubtabs.map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setHomepageCmsSubtab(tab.id)}
+                    className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+                      homepageCmsSubtab === tab.id
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-[11px] text-emerald-900">
+              <span className="font-bold">{selectedHomepageCmsSubtab.label}:</span> {selectedHomepageCmsSubtab.description}
+            </div>
+          </div>
+        )}
 
         {/* Dynamic Mapping and DNS Status */}
         {showInternalTopology && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
@@ -4683,7 +4732,7 @@ export default function AdminConsole({
           </div>
         </div>}
 
-        {operationsSection === 'homepage' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+        {operationsSection === 'homepage' && homepageCmsSubtab === 'layout' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
           <div className="flex items-center justify-between gap-3">
             <div>
               <h3 className="text-base font-extrabold text-slate-950">Homepage Layout Manager</h3>
@@ -5174,12 +5223,12 @@ export default function AdminConsole({
           )}
         </div>}
 
-        {operationsSection === 'homepage' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+        {operationsSection === 'homepage' && ['publish', 'templates', 'assignments', 'campaigns', 'insights'].includes(homepageCmsSubtab) && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
-              <h3 className="text-base font-extrabold text-slate-950">Publishing & Scalable Homepage</h3>
+              <h3 className="text-base font-extrabold text-slate-950">{selectedHomepageCmsSubtab.label}</h3>
               <p className="text-[11px] text-slate-500 mt-1">
-                Publish locality pages, preview resolved payloads, and manage scalable templates, assignments, and campaigns from one place.
+                {selectedHomepageCmsSubtab.description}
               </p>
             </div>
             <div className="grid grid-cols-2 gap-2 text-[11px] md:w-[22rem]">
@@ -5194,6 +5243,7 @@ export default function AdminConsole({
             </div>
           </div>
 
+          {homepageCmsSubtab === 'publish' && (
           <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs space-y-3">
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -5281,6 +5331,7 @@ export default function AdminConsole({
               </button>
             </div>
 
+            {homepageCmsSubtab === 'insights' && (
             <div className="rounded-xl border border-emerald-100 bg-white p-3 space-y-3">
               <div className="flex items-center justify-between gap-2">
                 <div>
@@ -5376,7 +5427,9 @@ export default function AdminConsole({
                 Delete Scoped Snapshot Set
               </button>
             </div>
+            )}
 
+            {homepageCmsSubtab === 'insights' && (
             <div className="rounded-xl border border-emerald-100 bg-white p-3 space-y-3">
               <div className="flex items-center justify-between gap-2">
                 <div>
@@ -5452,7 +5505,9 @@ export default function AdminConsole({
                 </div>
               )}
             </div>
+            )}
 
+            {homepageCmsSubtab === 'insights' && (
             <div className="rounded-xl border border-emerald-100 bg-white p-3 space-y-3">
               <div>
                 <div className="text-xs font-bold text-slate-900">Resolved Homepage Preview</div>
@@ -5667,8 +5722,11 @@ export default function AdminConsole({
                 </div>
               )}
             </div>
+            )}
 
-            <div className="grid gap-4 xl:grid-cols-3">
+            {['templates', 'assignments', 'campaigns'].includes(homepageCmsSubtab) && (
+            <div className="grid gap-4 xl:grid-cols-1">
+              {homepageCmsSubtab === 'templates' && (
               <div className="rounded-xl border border-emerald-100 bg-white p-3 space-y-3">
                 <div className="flex items-center justify-between gap-2">
                   <div>
@@ -5816,7 +5874,9 @@ export default function AdminConsole({
                   </div>
                 )}
               </div>
+              )}
 
+              {homepageCmsSubtab === 'assignments' && (
               <div className="rounded-xl border border-emerald-100 bg-white p-3 space-y-3">
                 <div className="flex items-center justify-between gap-2">
                   <div>
@@ -5944,7 +6004,9 @@ export default function AdminConsole({
                   ))}
                 </div>
               </div>
+              )}
 
+              {homepageCmsSubtab === 'campaigns' && (
               <div className="rounded-xl border border-emerald-100 bg-white p-3 space-y-3">
                 <div className="flex items-center justify-between gap-2">
                   <div>
@@ -6257,8 +6319,11 @@ export default function AdminConsole({
                   ))}
                 </div>
               </div>
+              )}
             </div>
+            )}
           </div>
+          )}
         </div>}
 
         {operationsSection === 'campaigns' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
@@ -6971,7 +7036,7 @@ export default function AdminConsole({
           </div>
         </div>}
 
-        {operationsSection === 'homepage' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+        {operationsSection === 'homepage' && homepageCmsSubtab === 'hero' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
           <h3 className="text-base font-extrabold text-slate-950">Hero Banner Manager</h3>
           <form onSubmit={handleCreateHeroBannerSubmit} className="space-y-3 text-xs">
             <select

@@ -81,7 +81,7 @@ app.use((req, res, next) => {
   next();
 });
 
-let pgClient = null;
+let pgPool = null;
 let pgInitAttempted = false;
 let memoryUsers = null;
 let memoryBusinesses = null;
@@ -1031,11 +1031,10 @@ async function readUsers() {
 async function writeUsers(users) {
   const client = await getPgClient();
   if (client) {
-    await client.query('BEGIN');
-    try {
-      await client.query('DELETE FROM app_users');
+    await runInPgTransaction(async (tx) => {
+      await tx.query('DELETE FROM app_users');
       for (const user of users) {
-        await client.query(
+        await tx.query(
           `INSERT INTO app_users (id, name, email, phone, user_type, role, password_hash, created_at, status)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
           [
@@ -1051,12 +1050,8 @@ async function writeUsers(users) {
           ],
         );
       }
-      await client.query('COMMIT');
-      return;
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    }
+    }, 'writeUsers');
+    return;
   }
 
   try {
@@ -1425,9 +1420,8 @@ async function readHomepageConfigFromTables(client) {
   });
 }
 
-async function syncHomepageConfigToTables(client, state) {
-  await client.query('BEGIN');
-  try {
+async function syncHomepageConfigToTables(_client, state) {
+  await runInPgTransaction(async (client) => {
     for (const layout of state.homepageLayouts || []) {
       const sanitizedLayout = sanitizeLegacyHomepageLayout(layout);
       await client.query(
@@ -1596,11 +1590,7 @@ async function syncHomepageConfigToTables(client, state) {
       ['homepage_config', JSON.stringify(state)],
     );
 
-    await client.query('COMMIT');
-  } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
-  }
+  }, 'syncHomepageConfigToTables');
 }
 
 function sanitizeSeoRouteIntent(value, index = 0) {
@@ -2614,9 +2604,8 @@ async function readBusinessTaxonomyFromTables(client) {
   });
 }
 
-async function syncBusinessTaxonomyToTables(client, taxonomy) {
-  await client.query('BEGIN');
-  try {
+async function syncBusinessTaxonomyToTables(_client, taxonomy) {
+  await runInPgTransaction(async (client) => {
     await client.query('DELETE FROM business_subcategories');
     await client.query('DELETE FROM business_categories');
 
@@ -2656,11 +2645,7 @@ async function syncBusinessTaxonomyToTables(client, taxonomy) {
       );
     }
 
-    await client.query('COMMIT');
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
-  }
+  }, 'syncBusinessTaxonomyToTables');
 }
 
 async function readBusinessTaxonomy() {
@@ -2771,9 +2756,8 @@ async function readLocalityRoutingConfigFromTables(client) {
   });
 }
 
-async function syncLocalityRoutingConfigToTables(client, config) {
-  await client.query('BEGIN');
-  try {
+async function syncLocalityRoutingConfigToTables(_client, config) {
+  await runInPgTransaction(async (client) => {
     await client.query('DELETE FROM platform_pincode_mappings');
     await client.query('DELETE FROM platform_subdomains');
     await client.query('DELETE FROM platform_localities');
@@ -2827,11 +2811,7 @@ async function syncLocalityRoutingConfigToTables(client, config) {
       ['default_locality_id', JSON.stringify(config.defaultLocalityId)],
     );
 
-    await client.query('COMMIT');
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
-  }
+  }, 'syncLocalityRoutingConfigToTables');
 }
 
 async function readLocalityRoutingConfig() {
@@ -2932,9 +2912,8 @@ async function readGeographyConfigFromTables(client) {
   });
 }
 
-async function syncGeographyConfigToTables(client, config) {
-  await client.query('BEGIN');
-  try {
+async function syncGeographyConfigToTables(_client, config) {
+  await runInPgTransaction(async (client) => {
     await client.query('DELETE FROM platform_areas');
     await client.query('DELETE FROM platform_cities');
     await client.query('DELETE FROM platform_states');
@@ -2963,11 +2942,7 @@ async function syncGeographyConfigToTables(client, config) {
       );
     }
 
-    await client.query('COMMIT');
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
-  }
+  }, 'syncGeographyConfigToTables');
 }
 
 async function readGeographyConfig() {
@@ -3624,141 +3599,166 @@ async function deleteRowsMissingFromIdSet(client, tableName, ids) {
   );
 }
 
-async function syncScalableCmsStateToTables(client, state) {
-  await client.query('BEGIN');
-  try {
+function addSyncEntityContext(error, entityType, entityId) {
+  if (!error || typeof error !== 'object') {
+    return new Error(`Failed syncing ${entityType} ${entityId}`);
+  }
+  error.message = `Failed syncing ${entityType} ${entityId}: ${error.message || 'Unknown database error'}`;
+  error.syncEntityType = entityType;
+  error.syncEntityId = entityId;
+  return error;
+}
+
+async function syncScalableCmsStateToTables(_client, state) {
+  await runInPgTransaction(async (client) => {
     for (const template of state.templates) {
-      await client.query(
-        `INSERT INTO cms_templates (id, name, template_scope, locality_ids, status, priority, is_fallback, sections, metadata, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10::timestamptz)
-         ON CONFLICT (id)
-         DO UPDATE SET
-           name = EXCLUDED.name,
-           template_scope = EXCLUDED.template_scope,
-           locality_ids = EXCLUDED.locality_ids,
-           status = EXCLUDED.status,
-           priority = EXCLUDED.priority,
-           is_fallback = EXCLUDED.is_fallback,
-           sections = EXCLUDED.sections,
-           metadata = EXCLUDED.metadata,
-           updated_at = EXCLUDED.updated_at`,
-        [
-          template.id,
-          template.name,
-          template.templateScope,
-          template.localityIds,
-          template.status,
-          template.priority,
-          template.isFallback,
-          JSON.stringify(template.sections || []),
-          JSON.stringify(template.metadata || {}),
-          template.updatedAt || new Date().toISOString(),
-        ],
-      );
+      try {
+        await client.query(
+          `INSERT INTO cms_templates (id, name, template_scope, locality_ids, status, priority, is_fallback, sections, metadata, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10::timestamptz)
+           ON CONFLICT (id)
+           DO UPDATE SET
+             name = EXCLUDED.name,
+             template_scope = EXCLUDED.template_scope,
+             locality_ids = EXCLUDED.locality_ids,
+             status = EXCLUDED.status,
+             priority = EXCLUDED.priority,
+             is_fallback = EXCLUDED.is_fallback,
+             sections = EXCLUDED.sections,
+             metadata = EXCLUDED.metadata,
+             updated_at = EXCLUDED.updated_at`,
+          [
+            template.id,
+            template.name,
+            template.templateScope,
+            template.localityIds,
+            template.status,
+            template.priority,
+            template.isFallback,
+            JSON.stringify(template.sections || []),
+            JSON.stringify(template.metadata || {}),
+            template.updatedAt || new Date().toISOString(),
+          ],
+        );
+      } catch (error) {
+        throw addSyncEntityContext(error, 'scalable template', template.id);
+      }
     }
 
     for (const assignment of state.assignments) {
-      await client.query(
-        `INSERT INTO cms_template_assignments (id, locality_id, template_id, category_id, subcategory_id, pincode, status, priority, is_fallback, metadata, updated_at)
-         VALUES ($1, $2, $3, NULLIF($4, ''), NULLIF($5, ''), NULLIF($6, ''), $7, $8, $9, $10::jsonb, $11::timestamptz)
-         ON CONFLICT (id)
-         DO UPDATE SET
-           locality_id = EXCLUDED.locality_id,
-           template_id = EXCLUDED.template_id,
-           category_id = EXCLUDED.category_id,
-           subcategory_id = EXCLUDED.subcategory_id,
-           pincode = EXCLUDED.pincode,
-           status = EXCLUDED.status,
-           priority = EXCLUDED.priority,
-           is_fallback = EXCLUDED.is_fallback,
-           metadata = EXCLUDED.metadata,
-           updated_at = EXCLUDED.updated_at`,
-        [
-          assignment.id,
-          assignment.localityId,
-          assignment.templateId,
-          assignment.categoryId || '',
-          assignment.subcategoryId || '',
-          assignment.pincode || '',
-          assignment.status,
-          assignment.priority,
-          assignment.isFallback,
-          JSON.stringify(assignment.metadata || {}),
-          assignment.updatedAt || new Date().toISOString(),
-        ],
-      );
+      try {
+        await client.query(
+          `INSERT INTO cms_template_assignments (id, locality_id, template_id, category_id, subcategory_id, pincode, status, priority, is_fallback, metadata, updated_at)
+           VALUES ($1, $2, $3, NULLIF($4, ''), NULLIF($5, ''), NULLIF($6, ''), $7, $8, $9, $10::jsonb, $11::timestamptz)
+           ON CONFLICT (id)
+           DO UPDATE SET
+             locality_id = EXCLUDED.locality_id,
+             template_id = EXCLUDED.template_id,
+             category_id = EXCLUDED.category_id,
+             subcategory_id = EXCLUDED.subcategory_id,
+             pincode = EXCLUDED.pincode,
+             status = EXCLUDED.status,
+             priority = EXCLUDED.priority,
+             is_fallback = EXCLUDED.is_fallback,
+             metadata = EXCLUDED.metadata,
+             updated_at = EXCLUDED.updated_at`,
+          [
+            assignment.id,
+            assignment.localityId,
+            assignment.templateId,
+            assignment.categoryId || '',
+            assignment.subcategoryId || '',
+            assignment.pincode || '',
+            assignment.status,
+            assignment.priority,
+            assignment.isFallback,
+            JSON.stringify(assignment.metadata || {}),
+            assignment.updatedAt || new Date().toISOString(),
+          ],
+        );
+      } catch (error) {
+        throw addSyncEntityContext(error, 'scalable assignment', assignment.id);
+      }
     }
 
     for (const campaign of state.campaigns) {
-      await client.query(
-        `INSERT INTO cms_campaigns (id, name, campaign_type, status, priority, is_fallback, start_date, end_date, device_target, placement_keys, targets, max_items, payload, metadata, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, '')::date, NULLIF($8, '')::date, $9, $10, $11::jsonb, $12, $13::jsonb, $14::jsonb, $15::timestamptz)
-         ON CONFLICT (id)
-         DO UPDATE SET
-           name = EXCLUDED.name,
-           campaign_type = EXCLUDED.campaign_type,
-           status = EXCLUDED.status,
-           priority = EXCLUDED.priority,
-           is_fallback = EXCLUDED.is_fallback,
-           start_date = EXCLUDED.start_date,
-           end_date = EXCLUDED.end_date,
-           device_target = EXCLUDED.device_target,
-           placement_keys = EXCLUDED.placement_keys,
-           targets = EXCLUDED.targets,
-           max_items = EXCLUDED.max_items,
-           payload = EXCLUDED.payload,
-           metadata = EXCLUDED.metadata,
-           updated_at = EXCLUDED.updated_at`,
-        [
-          campaign.id,
-          campaign.name,
-          campaign.campaignType,
-          campaign.status,
-          campaign.priority,
-          campaign.isFallback,
-          campaign.startDate || '',
-          campaign.endDate || '',
-          campaign.deviceTarget || 'all',
-          campaign.placementKeys || [],
-          JSON.stringify(campaign.targets || {}),
-          campaign.maxItems ?? null,
-          JSON.stringify(campaign.payload || {}),
-          JSON.stringify(campaign.metadata || {}),
-          campaign.updatedAt || new Date().toISOString(),
-        ],
-      );
+      try {
+        await client.query(
+          `INSERT INTO cms_campaigns (id, name, campaign_type, status, priority, is_fallback, start_date, end_date, device_target, placement_keys, targets, max_items, payload, metadata, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, '')::date, NULLIF($8, '')::date, $9, $10, $11::jsonb, $12, $13::jsonb, $14::jsonb, $15::timestamptz)
+           ON CONFLICT (id)
+           DO UPDATE SET
+             name = EXCLUDED.name,
+             campaign_type = EXCLUDED.campaign_type,
+             status = EXCLUDED.status,
+             priority = EXCLUDED.priority,
+             is_fallback = EXCLUDED.is_fallback,
+             start_date = EXCLUDED.start_date,
+             end_date = EXCLUDED.end_date,
+             device_target = EXCLUDED.device_target,
+             placement_keys = EXCLUDED.placement_keys,
+             targets = EXCLUDED.targets,
+             max_items = EXCLUDED.max_items,
+             payload = EXCLUDED.payload,
+             metadata = EXCLUDED.metadata,
+             updated_at = EXCLUDED.updated_at`,
+          [
+            campaign.id,
+            campaign.name,
+            campaign.campaignType,
+            campaign.status,
+            campaign.priority,
+            campaign.isFallback,
+            campaign.startDate || '',
+            campaign.endDate || '',
+            campaign.deviceTarget || 'all',
+            campaign.placementKeys || [],
+            JSON.stringify(campaign.targets || {}),
+            campaign.maxItems ?? null,
+            JSON.stringify(campaign.payload || {}),
+            JSON.stringify(campaign.metadata || {}),
+            campaign.updatedAt || new Date().toISOString(),
+          ],
+        );
+      } catch (error) {
+        throw addSyncEntityContext(error, 'scalable campaign', campaign.id);
+      }
     }
 
     for (const snapshot of state.publishedSnapshots) {
-      await client.query(
-        `INSERT INTO published_homepage_snapshots (id, locality_id, category_id, subcategory_id, pincode, placement_key, device_target, page_type, payload, published_at, updated_at)
-         VALUES ($1, $2, NULLIF($3, ''), NULLIF($4, ''), NULLIF($5, ''), NULLIF($6, ''), $7, $8, $9::jsonb, $10::timestamptz, $11::timestamptz)
-         ON CONFLICT (id)
-         DO UPDATE SET
-           locality_id = EXCLUDED.locality_id,
-           category_id = EXCLUDED.category_id,
-           subcategory_id = EXCLUDED.subcategory_id,
-           pincode = EXCLUDED.pincode,
-           placement_key = EXCLUDED.placement_key,
-           device_target = EXCLUDED.device_target,
-           page_type = EXCLUDED.page_type,
-           payload = EXCLUDED.payload,
-           published_at = EXCLUDED.published_at,
-           updated_at = EXCLUDED.updated_at`,
-        [
-          snapshot.id,
-          snapshot.localityId,
-          snapshot.categoryId || '',
-          snapshot.subcategoryId || '',
-          snapshot.pincode || '',
-          snapshot.placementKey || '',
-          snapshot.deviceTarget || 'all',
-          snapshot.pageType || 'homepage',
-          JSON.stringify(snapshot.payload || {}),
-          snapshot.publishedAt || new Date().toISOString(),
-          snapshot.updatedAt || new Date().toISOString(),
-        ],
-      );
+      try {
+        await client.query(
+          `INSERT INTO published_homepage_snapshots (id, locality_id, category_id, subcategory_id, pincode, placement_key, device_target, page_type, payload, published_at, updated_at)
+           VALUES ($1, $2, NULLIF($3, ''), NULLIF($4, ''), NULLIF($5, ''), NULLIF($6, ''), $7, $8, $9::jsonb, $10::timestamptz, $11::timestamptz)
+           ON CONFLICT (id)
+           DO UPDATE SET
+             locality_id = EXCLUDED.locality_id,
+             category_id = EXCLUDED.category_id,
+             subcategory_id = EXCLUDED.subcategory_id,
+             pincode = EXCLUDED.pincode,
+             placement_key = EXCLUDED.placement_key,
+             device_target = EXCLUDED.device_target,
+             page_type = EXCLUDED.page_type,
+             payload = EXCLUDED.payload,
+             published_at = EXCLUDED.published_at,
+             updated_at = EXCLUDED.updated_at`,
+          [
+            snapshot.id,
+            snapshot.localityId,
+            snapshot.categoryId || '',
+            snapshot.subcategoryId || '',
+            snapshot.pincode || '',
+            snapshot.placementKey || '',
+            snapshot.deviceTarget || 'all',
+            snapshot.pageType || 'homepage',
+            JSON.stringify(snapshot.payload || {}),
+            snapshot.publishedAt || new Date().toISOString(),
+            snapshot.updatedAt || new Date().toISOString(),
+          ],
+        );
+      } catch (error) {
+        throw addSyncEntityContext(error, 'published snapshot', snapshot.id);
+      }
     }
 
     await deleteRowsMissingFromIdSet(client, 'published_homepage_snapshots', state.publishedSnapshots.map((snapshot) => snapshot.id));
@@ -3773,12 +3773,7 @@ async function syncScalableCmsStateToTables(client, state) {
        DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
       ['scalable_cms_state', JSON.stringify(state)],
     );
-
-    await client.query('COMMIT');
-  } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
-  }
+  }, 'syncScalableCmsStateToTables');
 }
 
 async function readScalableCmsState() {
@@ -4962,19 +4957,19 @@ async function fetchObjectFromStorage({ key }) {
 }
 
 async function getPgClient() {
-  if (pgInitAttempted) return pgClient;
+  if (pgInitAttempted) return pgPool;
   pgInitAttempted = true;
   const dbUrl = process.env.DATABASE_URL;
   if (!dbUrl) return null;
 
   try {
-    const { Client } = await import('pg');
-    pgClient = new Client({
+    const { Pool } = await import('pg');
+    pgPool = new Pool({
       connectionString: dbUrl,
       ssl: dbUrl.includes('localhost') ? false : { rejectUnauthorized: false },
+      max: Math.max(2, parseInt(process.env.PG_POOL_MAX || '10', 10) || 10),
     });
-    await pgClient.connect();
-    await pgClient.query(`
+    await pgPool.query(`
       CREATE TABLE IF NOT EXISTS compliance_audit_logs (
         id TEXT PRIMARY KEY,
         timestamp TIMESTAMPTZ NOT NULL,
@@ -4986,7 +4981,7 @@ async function getPgClient() {
         user_name TEXT NOT NULL
       )
     `);
-    await pgClient.query(`
+    await pgPool.query(`
       CREATE TABLE IF NOT EXISTS app_users (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
@@ -4999,7 +4994,7 @@ async function getPgClient() {
         status TEXT NOT NULL DEFAULT 'active'
       )
     `);
-    await pgClient.query(`
+    await pgPool.query(`
       CREATE TABLE IF NOT EXISTS auth_otp_challenges (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL,
@@ -5011,7 +5006,7 @@ async function getPgClient() {
         used_at TIMESTAMPTZ
       )
     `);
-    await pgClient.query(`
+    await pgPool.query(`
       CREATE TABLE IF NOT EXISTS contact_view_events (
         id TEXT PRIMARY KEY,
         business_id TEXT NOT NULL,
@@ -5023,14 +5018,14 @@ async function getPgClient() {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `);
-    await pgClient.query(`
+    await pgPool.query(`
       CREATE TABLE IF NOT EXISTS app_state (
         key TEXT PRIMARY KEY,
         value JSONB NOT NULL,
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `);
-    await pgClient.query(`
+    await pgPool.query(`
       CREATE TABLE IF NOT EXISTS business_categories (
         id TEXT PRIMARY KEY,
         legacy_id BIGINT NOT NULL,
@@ -5043,7 +5038,7 @@ async function getPgClient() {
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `);
-    await pgClient.query(`
+    await pgPool.query(`
       CREATE TABLE IF NOT EXISTS business_subcategories (
         id TEXT PRIMARY KEY,
         legacy_id BIGINT NOT NULL,
@@ -5058,7 +5053,7 @@ async function getPgClient() {
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `);
-    await pgClient.query(`
+    await pgPool.query(`
       CREATE TABLE IF NOT EXISTS platform_localities (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
@@ -5073,7 +5068,7 @@ async function getPgClient() {
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `);
-    await pgClient.query(`
+    await pgPool.query(`
       CREATE TABLE IF NOT EXISTS platform_states (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
@@ -5081,7 +5076,7 @@ async function getPgClient() {
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `);
-    await pgClient.query(`
+    await pgPool.query(`
       CREATE TABLE IF NOT EXISTS platform_cities (
         id TEXT PRIMARY KEY,
         state_id TEXT NOT NULL REFERENCES platform_states(id) ON DELETE CASCADE,
@@ -5090,7 +5085,7 @@ async function getPgClient() {
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `);
-    await pgClient.query(`
+    await pgPool.query(`
       CREATE TABLE IF NOT EXISTS platform_areas (
         id TEXT PRIMARY KEY,
         city_id TEXT NOT NULL REFERENCES platform_cities(id) ON DELETE CASCADE,
@@ -5100,7 +5095,7 @@ async function getPgClient() {
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `);
-    await pgClient.query(`
+    await pgPool.query(`
       CREATE TABLE IF NOT EXISTS platform_subdomains (
         domain TEXT PRIMARY KEY,
         locality_id TEXT NOT NULL REFERENCES platform_localities(id) ON DELETE CASCADE,
@@ -5110,14 +5105,14 @@ async function getPgClient() {
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `);
-    await pgClient.query(`
+    await pgPool.query(`
       CREATE TABLE IF NOT EXISTS platform_pincode_mappings (
         pincode TEXT PRIMARY KEY,
         locality_id TEXT NOT NULL REFERENCES platform_localities(id) ON DELETE CASCADE,
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `);
-    await pgClient.query(`
+    await pgPool.query(`
       CREATE TABLE IF NOT EXISTS cms_templates (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
@@ -5131,7 +5126,7 @@ async function getPgClient() {
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `);
-    await pgClient.query(`
+    await pgPool.query(`
       CREATE TABLE IF NOT EXISTS cms_template_assignments (
         id TEXT PRIMARY KEY,
         locality_id TEXT NOT NULL,
@@ -5146,7 +5141,7 @@ async function getPgClient() {
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `);
-    await pgClient.query(`
+    await pgPool.query(`
       CREATE TABLE IF NOT EXISTS cms_campaigns (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
@@ -5165,7 +5160,7 @@ async function getPgClient() {
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `);
-    await pgClient.query(`
+    await pgPool.query(`
       CREATE TABLE IF NOT EXISTS published_homepage_snapshots (
         id TEXT PRIMARY KEY,
         locality_id TEXT NOT NULL,
@@ -5180,7 +5175,7 @@ async function getPgClient() {
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `);
-    await pgClient.query(`
+    await pgPool.query(`
       CREATE TABLE IF NOT EXISTS homepage_layouts (
         id TEXT PRIMARY KEY,
         locality_id TEXT NOT NULL UNIQUE,
@@ -5191,7 +5186,7 @@ async function getPgClient() {
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `);
-    await pgClient.query(`
+    await pgPool.query(`
       CREATE TABLE IF NOT EXISTS homepage_hero_banners (
         id TEXT PRIMARY KEY,
         locality_id TEXT NOT NULL,
@@ -5202,7 +5197,7 @@ async function getPgClient() {
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `);
-    await pgClient.query(`
+    await pgPool.query(`
       CREATE TABLE IF NOT EXISTS homepage_listing_ads (
         id TEXT PRIMARY KEY,
         placement_key TEXT,
@@ -5214,7 +5209,7 @@ async function getPgClient() {
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `);
-    await pgClient.query(`
+    await pgPool.query(`
       CREATE TABLE IF NOT EXISTS homepage_coupons (
         id TEXT PRIMARY KEY,
         business_id TEXT,
@@ -5227,7 +5222,7 @@ async function getPgClient() {
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `);
-    await pgClient.query(`
+    await pgPool.query(`
       CREATE TABLE IF NOT EXISTS homepage_community_items (
         id TEXT PRIMARY KEY,
         locality_id TEXT NOT NULL,
@@ -5239,7 +5234,7 @@ async function getPgClient() {
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `);
-    await pgClient.query(`
+    await pgPool.query(`
       CREATE TABLE IF NOT EXISTS homepage_locality_category_links (
         id TEXT PRIMARY KEY,
         locality_id TEXT NOT NULL,
@@ -5250,28 +5245,51 @@ async function getPgClient() {
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `);
-    await pgClient.query(`ALTER TABLE published_homepage_snapshots ADD COLUMN IF NOT EXISTS placement_key TEXT`);
-    await pgClient.query(`CREATE INDEX IF NOT EXISTS idx_business_subcategories_category ON business_subcategories(category_id, sort_order)`);
-    await pgClient.query(`CREATE INDEX IF NOT EXISTS idx_platform_cities_state ON platform_cities(state_id)`);
-    await pgClient.query(`CREATE INDEX IF NOT EXISTS idx_platform_areas_city ON platform_areas(city_id)`);
-    await pgClient.query(`CREATE INDEX IF NOT EXISTS idx_platform_areas_pincode ON platform_areas(pincode)`);
-    await pgClient.query(`CREATE INDEX IF NOT EXISTS idx_platform_subdomains_locality ON platform_subdomains(locality_id)`);
-    await pgClient.query(`CREATE INDEX IF NOT EXISTS idx_platform_pincode_locality ON platform_pincode_mappings(locality_id)`);
-    await pgClient.query(`CREATE INDEX IF NOT EXISTS idx_cms_template_assignments_locality ON cms_template_assignments(locality_id)`);
-    await pgClient.query(`CREATE INDEX IF NOT EXISTS idx_cms_template_assignments_targeting ON cms_template_assignments(locality_id, category_id, subcategory_id, pincode)`);
-    await pgClient.query(`CREATE INDEX IF NOT EXISTS idx_cms_campaigns_type_status ON cms_campaigns(campaign_type, status, priority DESC)`);
-    await pgClient.query(`CREATE INDEX IF NOT EXISTS idx_published_homepage_snapshots_lookup ON published_homepage_snapshots(locality_id, category_id, subcategory_id, pincode, placement_key, device_target, page_type)`);
-    await pgClient.query(`CREATE INDEX IF NOT EXISTS idx_homepage_layouts_locality ON homepage_layouts(locality_id)`);
-    await pgClient.query(`CREATE INDEX IF NOT EXISTS idx_homepage_hero_banners_locality ON homepage_hero_banners(locality_id, is_active)`);
-    await pgClient.query(`CREATE INDEX IF NOT EXISTS idx_homepage_listing_ads_lookup ON homepage_listing_ads(placement_key, device_target, is_active)`);
-    await pgClient.query(`CREATE INDEX IF NOT EXISTS idx_homepage_coupons_business ON homepage_coupons(target_business_id, is_active)`);
-    await pgClient.query(`CREATE INDEX IF NOT EXISTS idx_homepage_community_items_locality ON homepage_community_items(locality_id, status)`);
-    await pgClient.query(`CREATE INDEX IF NOT EXISTS idx_homepage_locality_category_links_lookup ON homepage_locality_category_links(locality_id, category_id, subcategory_id)`);
-    return pgClient;
+    await pgPool.query(`ALTER TABLE published_homepage_snapshots ADD COLUMN IF NOT EXISTS placement_key TEXT`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_business_subcategories_category ON business_subcategories(category_id, sort_order)`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_platform_cities_state ON platform_cities(state_id)`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_platform_areas_city ON platform_areas(city_id)`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_platform_areas_pincode ON platform_areas(pincode)`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_platform_subdomains_locality ON platform_subdomains(locality_id)`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_platform_pincode_locality ON platform_pincode_mappings(locality_id)`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_cms_template_assignments_locality ON cms_template_assignments(locality_id)`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_cms_template_assignments_targeting ON cms_template_assignments(locality_id, category_id, subcategory_id, pincode)`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_cms_campaigns_type_status ON cms_campaigns(campaign_type, status, priority DESC)`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_published_homepage_snapshots_lookup ON published_homepage_snapshots(locality_id, category_id, subcategory_id, pincode, placement_key, device_target, page_type)`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_homepage_layouts_locality ON homepage_layouts(locality_id)`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_homepage_hero_banners_locality ON homepage_hero_banners(locality_id, is_active)`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_homepage_listing_ads_lookup ON homepage_listing_ads(placement_key, device_target, is_active)`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_homepage_coupons_business ON homepage_coupons(target_business_id, is_active)`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_homepage_community_items_locality ON homepage_community_items(locality_id, status)`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_homepage_locality_category_links_lookup ON homepage_locality_category_links(locality_id, category_id, subcategory_id)`);
+    return pgPool;
   } catch (err) {
     console.error('Postgres audit logging unavailable, using file fallback:', err?.message || err);
-    pgClient = null;
+    pgPool = null;
     return null;
+  }
+}
+
+async function runInPgTransaction(work, label = 'transaction') {
+  const db = await getPgClient();
+  if (!db || typeof db.connect !== 'function') {
+    throw new Error(`Postgres is unavailable for ${label}`);
+  }
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await work(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    try {
+      await client.query('ROLLBACK');
+    } catch (rollbackError) {
+      console.error(`Rollback failed during ${label}:`, rollbackError);
+    }
+    throw error;
+  } finally {
+    client.release();
   }
 }
 
