@@ -1,0 +1,75 @@
+{
+  "heroStatTemplates": [
+    {
+      "enabled": true,
+      "label": "Happy Users",
+      "value": "15K+",
+      "localityIds": [],
+      "pincodes": []
+    },
+    {
+      "enabled": true,
+      "label": "Verified Businesses",
+      "value": "3K+",
+      "localityIds": [],
+      "pincodes": []
+    },
+    {
+      "enabled": true,
+      "label": "Average Rating",
+      "value": "4.8",
+      "localityIds": [],
+      "pincodes": []
+    }
+  ],
+  "heroBannerDraftDefaults": {
+    "ctaLabel": "Explore Businesses",
+    "ctaType": "search_category",
+    "ctaTarget": "all",
+    "durationDays": 30
+  },
+  "heroQuickActions": [
+    {
+      "label": "Restaurants",
+      "categoryId": "food-restaurants",
+      "subcategoryId": "restaurants"
+    },
+    {
+      "label": "Doctors",
+      "categoryId": "health-medical",
+      "subcategoryId": "clinics"
+    },
+    {
+      "label": "Electricians",
+      "categoryId": "home-services",
+      "subcategoryId": "electricians"
+    },
+    {
+      "label": "Home Bakers",
+      "categoryId": "food-restaurants",
+      "subcategoryId": "bakeries"
+    },
+    {
+      "label": "Plumbers",
+      "categoryId": "home-services",
+      "subcategoryId": "plumbers"
+    },
+    {
+      "label": "Maid Services",
+      "categoryId": "home-services",
+      "subcategoryId": "house-cleaning"
+    }
+  ],
+  "searchShortcutCategoryIds": [
+    "food-restaurants",
+    "health-medical",
+    "home-services",
+    "beauty-wellness",
+    "shopping-retail",
+    "professional-services"
+  ],
+  "metadata": {
+    "seededFromCode": true,
+    "updatedAt": "2026-06-10T00:00:00.000Z"
+  }
+}

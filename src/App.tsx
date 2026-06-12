@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useMemo, useRef, Suspense, lazy } from 'react';
 import { 
-  INITIAL_LOCALITIES, INITIAL_BUSINESSES, INITIAL_CATEGORIES, INITIAL_REVIEWS,
-  INITIAL_COMMUNITY_ITEMS, INITIAL_CRM_CONTACTS, INITIAL_COUPONS, MASTER_AREAS
+  INITIAL_REVIEWS,
+  INITIAL_CRM_CONTACTS
 } from './data';
 import { 
   Locality, Business, SubdomainMapping, Review, UserSession, UserRole,
-  CommunityItem, CRMContact, MarketingCoupon, AuditEvent, ListingAd, AdLead, HeroBanner, HeroBannerStat,
-  HomepageLayout, HomepageSection, HomepageSectionType, ApiConfiguration, HomepageConfigState
+  CommunityItem, CRMContact, MarketingCoupon, AuditEvent, ListingAd, AdLead, HeroBanner, HeroBannerStat, BuyerActivityEvent,
+  HomepageLayout, HomepageSection, HomepageSectionType, ApiConfiguration, HomepageConfigState, ScalableHomepageConfigState, ScalableCampaign, ScalableHomepageTemplate, ScalableHomepageAssignment, BusinessTaxonomyState, BusinessCategory, BusinessSubcategory, LocalityRoutingConfigState, PincodeRoutingMapping, GeographyConfigState, StateMaster, CityMaster, AreaMaster, HomepageDefaultsConfigState, FallbackListingAdTemplate, HeroBannerDraftDefaults, SeoDiscoveryConfigState, SeoRouteIntent, SeoLocalityMetadata, SeoCategoryLabel, SeoTopListingGroup, SeoDefaultListingGroup, ResolvedHomepagePublishRequest, ResolvedHomepageSnapshotDeleteRequest, ScalableLegacyOwnershipSummary, PublishedHomepageSnapshot
 } from './types';
 import WebPortal from './components/WebPortal';
 import PincodeSelectionModal from './components/PincodeSelectionModal';
@@ -22,19 +22,32 @@ import {
   BUSINESS_SUBCATEGORIES,
   getCategoryById,
   getSubcategoryById,
+  setBusinessTaxonomyCatalog,
   resolveDefaultSubcategoryId,
   resolveMasterCategoryId
 } from './categoryMaster';
-
-const DEFAULT_PINCODE_MAPPINGS: Array<{ pincode: string; localityId: string }> = [
-  { pincode: '410101', localityId: 'roadpali' }, // Kalamboli (routed to Roadpali/Kalamboli single page)
-  { pincode: '410218', localityId: 'roadpali' }, // Kalamboli (routed to Roadpali/Kalamboli single page)
-  { pincode: '410210', localityId: 'kharghar' },
-  { pincode: '410209', localityId: 'kamothe' },
-  { pincode: '410206', localityId: 'panvel' },
-  { pincode: '410221', localityId: 'panvel' },
-  { pincode: '410208', localityId: 'taloja' },
-];
+import { MASTER_AREAS, MASTER_CITIES, MASTER_STATES, setGeographyCatalog } from './geographyMaster';
+import {
+  DEFAULT_LOCALITIES,
+  DEFAULT_LOCALITY_ID,
+  DEFAULT_PINCODE_MAPPINGS,
+  buildDefaultSubdomainMappings,
+} from '../shared/localityRoutingSeed.js';
+import {
+  DEFAULT_FALLBACK_LISTING_AD_TEMPLATES,
+  DEFAULT_HERO_BANNER_DRAFT_DEFAULTS,
+  DEFAULT_HERO_QUICK_ACTIONS,
+  DEFAULT_HERO_STAT_TEMPLATES,
+  DEFAULT_HOMEPAGE_SECTION_TEMPLATES,
+  DEFAULT_SEARCH_SHORTCUT_CATEGORY_IDS,
+} from '../shared/homepageDefaultsSeed.js';
+import {
+  DEFAULT_SEO_CATEGORY_LABELS,
+  DEFAULT_SEO_DEFAULT_LISTING_NAMES,
+  DEFAULT_SEO_LOCALITY_METADATA,
+  DEFAULT_SEO_ROUTE_INTENTS,
+  DEFAULT_SEO_TOP_LISTINGS,
+} from '../shared/seoDiscoverySeed.js';
 
 const PUBLIC_SITE_ORIGIN = 'https://www.localisy.in';
 const LOCALITY_GEO_CENTERS: Record<string, { lat: number; lng: number }> = {
@@ -193,28 +206,20 @@ type LocalityCategoryLink = {
 const DEFAULT_API_CONFIGURATION: ApiConfiguration = {
   syncMode: 'api',
   homepageConfigEndpoint: '/api/homepage-config',
+  adLeadsEndpoint: '/api/ad-leads',
+  homepageDefaultsConfigEndpoint: '/api/homepage-defaults-config',
+  localityRoutingConfigEndpoint: '/api/locality-routing-config',
+  geographyConfigEndpoint: '/api/geography-config',
+  taxonomyConfigEndpoint: '/api/business-taxonomy',
+  seoDiscoveryConfigEndpoint: '/api/seo-discovery-config',
+  scalableHomepageConfigEndpoint: '/api/scalable-homepage-config',
+  resolvedHomepageEndpoint: '/api/resolved-homepage',
+  publishResolvedHomepageEndpoint: '/api/resolved-homepage/publish',
   businessesEndpoint: '/api/businesses',
   auditEventsEndpoint: '/api/audit-events',
   autoSyncHomepage: true,
   autoSyncBusinesses: true
 };
-
-type SeoRouteIntent = {
-  id: string;
-  slug: string;
-  categoryId: string;
-  q: string;
-  labelPrefix: string;
-};
-
-const SEO_ROUTE_INTENTS: SeoRouteIntent[] = [
-  { id: 'electrician', slug: 'electrician', categoryId: 'home-services', q: 'Electrician', labelPrefix: 'Electrician' },
-  { id: 'salon', slug: 'salon', categoryId: 'beauty-wellness', q: 'Salon', labelPrefix: 'Salon' },
-  { id: 'dental', slug: 'dental-clinic', categoryId: 'health-medical', q: 'Dental Clinic', labelPrefix: 'Dental Clinic' },
-  { id: 'restaurant', slug: 'restaurant', categoryId: 'food-restaurants', q: 'Restaurant', labelPrefix: 'Restaurant' },
-  { id: 'grocery', slug: 'grocery-store', categoryId: 'shopping-retail', q: 'Grocery Store', labelPrefix: 'Grocery Store' },
-  { id: 'chartered', slug: 'ca', categoryId: 'professional-services', q: 'Chartered Accountant', labelPrefix: 'CA' },
-];
 
 const slugifyForUrl = (value: string) => value
   .toLowerCase()
@@ -246,6 +251,15 @@ const isLikelyAutomatedClient = () => {
 const normalizeApiConfiguration = (value?: Partial<ApiConfiguration> | null): ApiConfiguration => ({
   syncMode: value?.syncMode === 'local' ? 'local' : 'api',
   homepageConfigEndpoint: value?.homepageConfigEndpoint || DEFAULT_API_CONFIGURATION.homepageConfigEndpoint,
+  adLeadsEndpoint: value?.adLeadsEndpoint || DEFAULT_API_CONFIGURATION.adLeadsEndpoint,
+  homepageDefaultsConfigEndpoint: value?.homepageDefaultsConfigEndpoint || DEFAULT_API_CONFIGURATION.homepageDefaultsConfigEndpoint,
+  localityRoutingConfigEndpoint: value?.localityRoutingConfigEndpoint || DEFAULT_API_CONFIGURATION.localityRoutingConfigEndpoint,
+  geographyConfigEndpoint: value?.geographyConfigEndpoint || DEFAULT_API_CONFIGURATION.geographyConfigEndpoint,
+  taxonomyConfigEndpoint: value?.taxonomyConfigEndpoint || DEFAULT_API_CONFIGURATION.taxonomyConfigEndpoint,
+  seoDiscoveryConfigEndpoint: value?.seoDiscoveryConfigEndpoint || DEFAULT_API_CONFIGURATION.seoDiscoveryConfigEndpoint,
+  scalableHomepageConfigEndpoint: value?.scalableHomepageConfigEndpoint || DEFAULT_API_CONFIGURATION.scalableHomepageConfigEndpoint,
+  resolvedHomepageEndpoint: value?.resolvedHomepageEndpoint || DEFAULT_API_CONFIGURATION.resolvedHomepageEndpoint,
+  publishResolvedHomepageEndpoint: value?.publishResolvedHomepageEndpoint || DEFAULT_API_CONFIGURATION.publishResolvedHomepageEndpoint,
   businessesEndpoint: value?.businessesEndpoint || DEFAULT_API_CONFIGURATION.businessesEndpoint,
   auditEventsEndpoint: value?.auditEventsEndpoint || DEFAULT_API_CONFIGURATION.auditEventsEndpoint,
   autoSyncHomepage: value?.autoSyncHomepage ?? DEFAULT_API_CONFIGURATION.autoSyncHomepage,
@@ -254,11 +268,542 @@ const normalizeApiConfiguration = (value?: Partial<ApiConfiguration> | null): Ap
   lastBusinessesSyncAt: value?.lastBusinessesSyncAt
 });
 
+const readPersistedApiConfiguration = (): ApiConfiguration => {
+  if (typeof window === 'undefined') return DEFAULT_API_CONFIGURATION;
+  const saved = window.localStorage.getItem('yp_api_configuration');
+  if (!saved) return DEFAULT_API_CONFIGURATION;
+  try {
+    return normalizeApiConfiguration(JSON.parse(saved));
+  } catch {
+    window.localStorage.removeItem('yp_api_configuration');
+    return DEFAULT_API_CONFIGURATION;
+  }
+};
+
 const getPersistableApiConfiguration = (value: ApiConfiguration): ApiConfiguration => ({
   ...normalizeApiConfiguration(value),
   lastHomepageSyncAt: undefined,
   lastBusinessesSyncAt: undefined
 });
+
+const normalizeStoredLocality = (locality: Locality): Locality => ({
+  ...locality,
+  id: String(locality.id || '').trim(),
+  name: String(locality.name || '').trim(),
+  slug: String(locality.slug || locality.id || '').trim(),
+  subdomain: String(locality.subdomain || '').trim(),
+  description: String(locality.description || '').trim(),
+  status: locality.status === 'inactive' ? 'inactive' : 'active',
+  coverImage: String(locality.coverImage || '').trim(),
+  stats: {
+    numBusinesses: Number(locality.stats?.numBusinesses || 0),
+    numPending: Number(locality.stats?.numPending || 0),
+  },
+  carouselImages: Array.isArray(locality.carouselImages)
+    ? locality.carouselImages.map((image) => String(image || '').trim()).filter(Boolean)
+    : [],
+});
+
+const normalizeStoredSubdomain = (subdomain: SubdomainMapping): SubdomainMapping => ({
+  domain: String(subdomain.domain || '').trim(),
+  localityId: String(subdomain.localityId || '').trim(),
+  sslEnabled: Boolean(subdomain.sslEnabled),
+  dnsStatus: subdomain.dnsStatus === 'pending' || subdomain.dnsStatus === 'failed' ? subdomain.dnsStatus : 'active',
+  createdAt: String(subdomain.createdAt || new Date().toISOString()),
+});
+
+const normalizeStoredPincodeMapping = (mapping: PincodeRoutingMapping): PincodeRoutingMapping => ({
+  pincode: String(mapping.pincode || '').replace(/\D/g, '').slice(0, 6),
+  localityId: String(mapping.localityId || '').trim(),
+});
+
+const normalizeLocalityRoutingConfigState = (
+  value?: Partial<LocalityRoutingConfigState> | null,
+): LocalityRoutingConfigState => {
+  const fallbackLocalities = (DEFAULT_LOCALITIES as Locality[]).map(normalizeStoredLocality);
+  const localities = Array.isArray(value?.localities)
+    ? value.localities.map(normalizeStoredLocality).filter((locality) => locality.id && locality.name)
+    : fallbackLocalities;
+  const localityIds = new Set(localities.map((locality) => locality.id));
+  const subdomains = Array.isArray(value?.subdomains)
+    ? value.subdomains
+        .map(normalizeStoredSubdomain)
+        .filter((subdomain) => subdomain.domain && localityIds.has(subdomain.localityId))
+    : (buildDefaultSubdomainMappings(localities as unknown as typeof DEFAULT_LOCALITIES) as SubdomainMapping[]).map(normalizeStoredSubdomain);
+  const pincodeMappings = Array.isArray(value?.pincodeMappings)
+    ? value.pincodeMappings
+        .map(normalizeStoredPincodeMapping)
+        .filter((mapping) => mapping.pincode && localityIds.has(mapping.localityId))
+    : (DEFAULT_PINCODE_MAPPINGS as PincodeRoutingMapping[]).map(normalizeStoredPincodeMapping);
+  const defaultLocalityId = localityIds.has(String(value?.defaultLocalityId || ''))
+    ? String(value?.defaultLocalityId)
+    : (localities[0]?.id || DEFAULT_LOCALITY_ID);
+  return {
+    localities,
+    subdomains,
+    pincodeMappings,
+    defaultLocalityId,
+    metadata: {
+      seededFromCode: value?.metadata?.seededFromCode ?? true,
+      updatedAt: value?.metadata?.updatedAt || new Date().toISOString(),
+    },
+  };
+};
+
+const normalizeStoredState = (state: StateMaster): StateMaster => ({
+  id: String(state.id || '').trim(),
+  name: String(state.name || '').trim(),
+});
+
+const normalizeStoredCity = (city: CityMaster): CityMaster => ({
+  id: String(city.id || '').trim(),
+  stateId: String(city.stateId || '').trim(),
+  name: String(city.name || '').trim(),
+});
+
+const normalizeStoredArea = (area: AreaMaster): AreaMaster => ({
+  id: String(area.id || '').trim(),
+  cityId: String(area.cityId || '').trim(),
+  name: String(area.name || '').trim(),
+  pincode: String(area.pincode || '').replace(/\D/g, '').slice(0, 6),
+});
+
+const normalizeGeographyConfigState = (
+  value?: Partial<GeographyConfigState> | null,
+): GeographyConfigState => {
+  const states = Array.isArray(value?.states)
+    ? value.states.map(normalizeStoredState).filter((state) => state.id && state.name)
+    : [...MASTER_STATES].map(normalizeStoredState);
+  const stateIds = new Set(states.map((state) => state.id));
+  const cities = Array.isArray(value?.cities)
+    ? value.cities.map(normalizeStoredCity).filter((city) => city.id && city.name && stateIds.has(city.stateId))
+    : [...MASTER_CITIES].map(normalizeStoredCity);
+  const cityIds = new Set(cities.map((city) => city.id));
+  const areas = Array.isArray(value?.areas)
+    ? value.areas.map(normalizeStoredArea).filter((area) => area.id && area.name && area.pincode && cityIds.has(area.cityId))
+    : [...MASTER_AREAS].map(normalizeStoredArea);
+  return {
+    states,
+    cities,
+    areas,
+    metadata: {
+      seededFromCode: value?.metadata?.seededFromCode ?? true,
+      updatedAt: value?.metadata?.updatedAt || new Date().toISOString(),
+    },
+  };
+};
+
+const formatValidationExamples = (entries: string[], limit = 3) => {
+  if (entries.length <= limit) return entries.join(', ');
+  return `${entries.slice(0, limit).join(', ')} +${entries.length - limit} more`;
+};
+
+const validateGeographyConfigForOperations = (
+  config: GeographyConfigState,
+  businesses: Business[],
+  pincodeMappings: PincodeRoutingMapping[],
+) => {
+  const errors: string[] = [];
+  const seenStateNames = new Map<string, string>();
+  const seenCityNames = new Map<string, string>();
+  const seenAreaNames = new Map<string, string>();
+  const stateIds = new Set<string>();
+  const cityIds = new Set<string>();
+  const areaIds = new Set<string>();
+
+  const duplicateStateIds = config.states
+    .map((state) => state.id)
+    .filter((id, index, values) => values.indexOf(id) !== index);
+  if (duplicateStateIds.length > 0) {
+    errors.push(`Duplicate state IDs are not allowed: ${formatValidationExamples([...new Set(duplicateStateIds)])}.`);
+  }
+
+  const duplicateCityIds = config.cities
+    .map((city) => city.id)
+    .filter((id, index, values) => values.indexOf(id) !== index);
+  if (duplicateCityIds.length > 0) {
+    errors.push(`Duplicate city IDs are not allowed: ${formatValidationExamples([...new Set(duplicateCityIds)])}.`);
+  }
+
+  const duplicateAreaIds = config.areas
+    .map((area) => area.id)
+    .filter((id, index, values) => values.indexOf(id) !== index);
+  if (duplicateAreaIds.length > 0) {
+    errors.push(`Duplicate area IDs are not allowed: ${formatValidationExamples([...new Set(duplicateAreaIds)])}.`);
+  }
+
+  for (const state of config.states) {
+    stateIds.add(state.id);
+    const key = slugifyForUrl(state.name);
+    const existing = seenStateNames.get(key);
+    if (existing && existing !== state.id) {
+      errors.push(`State name "${state.name}" is duplicated. Keep state names unique.`);
+      break;
+    }
+    seenStateNames.set(key, state.id);
+  }
+
+  for (const city of config.cities) {
+    cityIds.add(city.id);
+    if (!stateIds.has(city.stateId)) {
+      errors.push(`City "${city.name}" points to missing state "${city.stateId}".`);
+    }
+    const key = `${city.stateId}::${slugifyForUrl(city.name)}`;
+    const existing = seenCityNames.get(key);
+    if (existing && existing !== city.id) {
+      errors.push(`City name "${city.name}" is duplicated inside the same state.`);
+      break;
+    }
+    seenCityNames.set(key, city.id);
+  }
+
+  for (const area of config.areas) {
+    areaIds.add(area.id);
+    if (!cityIds.has(area.cityId)) {
+      errors.push(`Area "${area.name}" points to missing city "${area.cityId}".`);
+    }
+    if (!/^\d{6}$/.test(area.pincode)) {
+      errors.push(`Area "${area.name}" must have a valid 6-digit pincode.`);
+    }
+    const key = `${area.cityId}::${slugifyForUrl(area.name)}`;
+    const existing = seenAreaNames.get(key);
+    if (existing && existing !== area.id) {
+      errors.push(`Area name "${area.name}" is duplicated inside the same city.`);
+      break;
+    }
+    seenAreaNames.set(key, area.id);
+  }
+
+  const cityLookup = new Map(config.cities.map((city) => [city.id, city]));
+  const areaLookup = new Map(config.areas.map((area) => [area.id, area]));
+  const pincodeLocalityLookup = new Map(pincodeMappings.map((mapping) => [mapping.pincode, mapping.localityId]));
+
+  const missingPrimaryGeoBusinesses = businesses
+    .filter((business) => !stateIds.has(business.stateId) || !cityIds.has(business.cityId) || !areaIds.has(business.areaId))
+    .map((business) => business.name);
+  if (missingPrimaryGeoBusinesses.length > 0) {
+    errors.push(`These listings would lose their primary geography mapping: ${formatValidationExamples(missingPrimaryGeoBusinesses)}.`);
+  }
+
+  const missingOperationalAreaBusinesses = businesses
+    .filter((business) => business.areasOfOperation.some((areaId) => !areaIds.has(areaId)))
+    .map((business) => business.name);
+  if (missingOperationalAreaBusinesses.length > 0) {
+    errors.push(`These listings reference areas of operation that would be removed: ${formatValidationExamples(missingOperationalAreaBusinesses)}.`);
+  }
+
+  const mismatchedAreaChainBusinesses = businesses
+    .filter((business) => {
+      const area = areaLookup.get(business.areaId);
+      const city = cityLookup.get(business.cityId);
+      if (!area || !city) return false;
+      return area.cityId !== business.cityId || city.stateId !== business.stateId;
+    })
+    .map((business) => business.name);
+  if (mismatchedAreaChainBusinesses.length > 0) {
+    errors.push(`These listings would no longer match their state/city/area hierarchy: ${formatValidationExamples(mismatchedAreaChainBusinesses)}.`);
+  }
+
+  const localityMismatchBusinesses = businesses
+    .filter((business) => {
+      const area = areaLookup.get(business.areaId);
+      const resolvedPincode = String(business.pincode || area?.pincode || '').trim();
+      if (!resolvedPincode) return false;
+      const mappedLocalityId = pincodeLocalityLookup.get(resolvedPincode);
+      return Boolean(mappedLocalityId) && mappedLocalityId !== business.localityId;
+    })
+    .map((business) => business.name);
+  if (localityMismatchBusinesses.length > 0) {
+    errors.push(`These listings would conflict with locality-pincode routing rules: ${formatValidationExamples(localityMismatchBusinesses)}.`);
+  }
+
+  return errors;
+};
+
+const normalizeFallbackListingAdTemplate = (
+  ad: Partial<FallbackListingAdTemplate>,
+  index: number,
+): FallbackListingAdTemplate => ({
+  id: String(ad.id || `fallback_ad_${index + 1}`).trim(),
+  title: String(ad.title || `Fallback Ad ${index + 1}`).trim(),
+  description: String(ad.description || '').trim(),
+  badge: String(ad.badge || 'Advertisement').trim(),
+  ctaText: String(ad.ctaText || 'Learn More').trim(),
+  backgroundColor: String(ad.backgroundColor || '#eef2ff').trim(),
+  imageUrl: ad.imageUrl ? String(ad.imageUrl).trim() : undefined,
+  actionType: ad.actionType === 'landing_page' || ad.actionType === 'landing_listing' || ad.actionType === 'lead_form'
+    ? ad.actionType
+    : 'landing_page',
+  targetUrl: ad.targetUrl ? String(ad.targetUrl).trim() : undefined,
+  targetCategoryId: ad.targetCategoryId ? String(ad.targetCategoryId).trim() : undefined,
+  categoryIds: normalizeStringList(ad.categoryIds),
+  tags: normalizeStringList(ad.tags),
+  placementKey: ad.placementKey ? String(ad.placementKey).trim() : undefined,
+  deviceTarget: ad.deviceTarget === 'desktop' || ad.deviceTarget === 'mobile' ? ad.deviceTarget : 'all',
+  mobileRowPosition: Number.isFinite(Number(ad.mobileRowPosition)) ? Number(ad.mobileRowPosition) : undefined,
+});
+
+const DEFAULT_MANAGED_HERO_BANNER_DRAFT_DEFAULTS: HeroBannerDraftDefaults = {
+  ctaLabel: String(DEFAULT_HERO_BANNER_DRAFT_DEFAULTS.ctaLabel || 'Explore Businesses'),
+  ctaType: (
+    DEFAULT_HERO_BANNER_DRAFT_DEFAULTS.ctaType === 'landing_page' ||
+    DEFAULT_HERO_BANNER_DRAFT_DEFAULTS.ctaType === 'landing_listing' ||
+    DEFAULT_HERO_BANNER_DRAFT_DEFAULTS.ctaType === 'lead_form' ||
+    DEFAULT_HERO_BANNER_DRAFT_DEFAULTS.ctaType === 'search_category'
+  )
+    ? DEFAULT_HERO_BANNER_DRAFT_DEFAULTS.ctaType
+    : 'search_category',
+  ctaTarget: String(DEFAULT_HERO_BANNER_DRAFT_DEFAULTS.ctaTarget || 'all'),
+  durationDays: Math.max(1, Number(DEFAULT_HERO_BANNER_DRAFT_DEFAULTS.durationDays || 30)),
+};
+
+const DEFAULT_MANAGED_HERO_STAT_TEMPLATES: HeroBannerStat[] = (DEFAULT_HERO_STAT_TEMPLATES as HeroBannerStat[]).map((stat) => ({
+  enabled: stat.enabled ?? true,
+  label: String(stat.label || '').trim(),
+  value: String(stat.value || '').trim(),
+  localityIds: normalizeStringList(stat.localityIds),
+  pincodes: normalizeStringList(stat.pincodes),
+}));
+
+const normalizeHeroBannerDraftDefaults = (
+  value?: Partial<HeroBannerDraftDefaults> | null,
+): HeroBannerDraftDefaults => ({
+  ctaLabel: String(value?.ctaLabel || DEFAULT_MANAGED_HERO_BANNER_DRAFT_DEFAULTS.ctaLabel).trim() || DEFAULT_MANAGED_HERO_BANNER_DRAFT_DEFAULTS.ctaLabel,
+  ctaType: value?.ctaType === 'landing_page' || value?.ctaType === 'landing_listing' || value?.ctaType === 'lead_form' || value?.ctaType === 'search_category'
+    ? value.ctaType
+    : DEFAULT_MANAGED_HERO_BANNER_DRAFT_DEFAULTS.ctaType,
+  ctaTarget: String(value?.ctaTarget || DEFAULT_MANAGED_HERO_BANNER_DRAFT_DEFAULTS.ctaTarget).trim() || DEFAULT_MANAGED_HERO_BANNER_DRAFT_DEFAULTS.ctaTarget,
+  durationDays: Math.max(1, Number.isFinite(Number(value?.durationDays)) ? Number(value?.durationDays) : DEFAULT_MANAGED_HERO_BANNER_DRAFT_DEFAULTS.durationDays),
+});
+
+const normalizeHeroStatTemplate = (
+  stat: Partial<HeroBannerStat> | null | undefined,
+  index: number,
+): HeroBannerStat => {
+  const fallback = DEFAULT_MANAGED_HERO_STAT_TEMPLATES[index] || DEFAULT_MANAGED_HERO_STAT_TEMPLATES[0];
+  return {
+    enabled: stat?.enabled ?? fallback.enabled ?? true,
+    label: String(stat?.label || fallback.label || `Stat ${index + 1}`).trim(),
+    value: String(stat?.value || fallback.value || '').trim(),
+    localityIds: normalizeStringList(stat?.localityIds),
+    pincodes: normalizeStringList(stat?.pincodes),
+  };
+};
+
+const normalizeHomepageCategoryShortcut = (
+  shortcut: { label?: string; categoryId?: string; subcategoryId?: string } | null | undefined,
+): { label: string; categoryId: string; subcategoryId?: string } => ({
+  label: String(shortcut?.label || '').trim(),
+  categoryId: String(shortcut?.categoryId || '').trim(),
+  subcategoryId: shortcut?.subcategoryId ? String(shortcut.subcategoryId).trim() : undefined,
+});
+
+let runtimeHeroStatTemplates: HeroBannerStat[] = DEFAULT_MANAGED_HERO_STAT_TEMPLATES.map(normalizeHeroStatTemplate);
+let runtimeHeroBannerDraftDefaults: HeroBannerDraftDefaults = normalizeHeroBannerDraftDefaults(DEFAULT_MANAGED_HERO_BANNER_DRAFT_DEFAULTS);
+
+const setHomepageDefaultsRuntimeCatalog = (config?: Partial<HomepageDefaultsConfigState> | null) => {
+  runtimeHeroStatTemplates = (
+    Array.isArray(config?.heroStatTemplates) && config.heroStatTemplates.length > 0
+      ? config.heroStatTemplates.map(normalizeHeroStatTemplate)
+      : DEFAULT_MANAGED_HERO_STAT_TEMPLATES.map(normalizeHeroStatTemplate)
+  );
+  runtimeHeroBannerDraftDefaults = normalizeHeroBannerDraftDefaults(config?.heroBannerDraftDefaults);
+};
+
+const getRuntimeHeroStatTemplates = () => runtimeHeroStatTemplates.map((stat) => ({
+  ...stat,
+  localityIds: [...(stat.localityIds || [])],
+  pincodes: [...(stat.pincodes || [])],
+}));
+
+const getRuntimeHeroBannerDraftDefaults = (): HeroBannerDraftDefaults => ({
+  ...runtimeHeroBannerDraftDefaults,
+});
+
+const normalizeHomepageDefaultsConfigState = (
+  value?: Partial<HomepageDefaultsConfigState> | null,
+): HomepageDefaultsConfigState => ({
+  sectionTemplates: Array.isArray(value?.sectionTemplates)
+    ? value.sectionTemplates.map((section, index) => normalizeHomepageSection(section, 'template', index))
+    : (DEFAULT_HOMEPAGE_SECTION_TEMPLATES as HomepageSection[]).map((section, index) => normalizeHomepageSection(section, 'template', index)),
+  fallbackListingAds: Array.isArray(value?.fallbackListingAds)
+    ? value.fallbackListingAds.map(normalizeFallbackListingAdTemplate)
+    : (DEFAULT_FALLBACK_LISTING_AD_TEMPLATES as FallbackListingAdTemplate[]).map(normalizeFallbackListingAdTemplate),
+  heroStatTemplates: Array.isArray(value?.heroStatTemplates) && value.heroStatTemplates.length > 0
+    ? value.heroStatTemplates.map(normalizeHeroStatTemplate)
+    : DEFAULT_MANAGED_HERO_STAT_TEMPLATES.map(normalizeHeroStatTemplate),
+  heroBannerDraftDefaults: normalizeHeroBannerDraftDefaults(value?.heroBannerDraftDefaults),
+  heroQuickActions: Array.isArray(value?.heroQuickActions) && value.heroQuickActions.length > 0
+    ? value.heroQuickActions
+        .map(normalizeHomepageCategoryShortcut)
+        .filter((shortcut) => shortcut.categoryId)
+    : DEFAULT_HERO_QUICK_ACTIONS.map(normalizeHomepageCategoryShortcut).filter((shortcut) => shortcut.categoryId),
+  searchShortcutCategoryIds: Array.isArray(value?.searchShortcutCategoryIds) && value.searchShortcutCategoryIds.length > 0
+    ? normalizeStringList(value.searchShortcutCategoryIds)
+    : normalizeStringList(DEFAULT_SEARCH_SHORTCUT_CATEGORY_IDS),
+  metadata: {
+    seededFromCode: value?.metadata?.seededFromCode ?? true,
+    updatedAt: value?.metadata?.updatedAt || new Date().toISOString(),
+  },
+});
+
+const normalizeSeoRouteIntent = (intent: Partial<SeoRouteIntent>, index: number): SeoRouteIntent => ({
+  id: String(intent.id || intent.slug || `seo-intent-${index + 1}`).trim(),
+  slug: slugifyForUrl(intent.slug || intent.q || intent.id || `seo-intent-${index + 1}`),
+  categoryId: String(intent.categoryId || '').trim(),
+  q: String(intent.q || '').trim(),
+  labelPrefix: String(intent.labelPrefix || intent.q || '').trim(),
+});
+
+const normalizeSeoLocalityMetadata = (
+  locality: Partial<SeoLocalityMetadata>,
+  index: number,
+): SeoLocalityMetadata => ({
+  id: String(locality.id || `seo-locality-${index + 1}`).trim(),
+  name: String(locality.name || locality.id || '').trim(),
+  city: String(locality.city || '').trim(),
+  intro: String(locality.intro || '').trim(),
+  pincodes: normalizeStringList(locality.pincodes),
+  subdomain: String(locality.subdomain || '').trim(),
+});
+
+const normalizeSeoCategoryLabel = (
+  label: Partial<SeoCategoryLabel>,
+  index: number,
+): SeoCategoryLabel => ({
+  categoryId: String(label.categoryId || `category-${index + 1}`).trim(),
+  label: String(label.label || label.categoryId || '').trim(),
+});
+
+const normalizeSeoTopListingGroup = (
+  group: Partial<SeoTopListingGroup>,
+  index: number,
+): SeoTopListingGroup => ({
+  localityId: String(group.localityId || `locality-${index + 1}`).trim(),
+  categoryId: String(group.categoryId || '').trim(),
+  listingNames: normalizeStringList(group.listingNames),
+});
+
+const normalizeSeoDefaultListingGroup = (
+  group: Partial<SeoDefaultListingGroup>,
+  index: number,
+): SeoDefaultListingGroup => ({
+  categoryId: String(group.categoryId || `category-${index + 1}`).trim(),
+  listingNames: normalizeStringList(group.listingNames),
+});
+
+const normalizeSeoDiscoveryConfigState = (
+  value?: Partial<SeoDiscoveryConfigState> | null,
+): SeoDiscoveryConfigState => ({
+  routeIntents: Array.isArray(value?.routeIntents)
+    ? value.routeIntents
+        .map(normalizeSeoRouteIntent)
+        .filter((intent) => intent.id && intent.slug && intent.categoryId && intent.q)
+    : (DEFAULT_SEO_ROUTE_INTENTS as SeoRouteIntent[])
+        .map(normalizeSeoRouteIntent)
+        .filter((intent) => intent.id && intent.slug && intent.categoryId && intent.q),
+  localityMetadata: Array.isArray(value?.localityMetadata)
+    ? value.localityMetadata
+        .map(normalizeSeoLocalityMetadata)
+        .filter((locality) => locality.id && locality.name)
+    : (DEFAULT_SEO_LOCALITY_METADATA as SeoLocalityMetadata[])
+        .map(normalizeSeoLocalityMetadata)
+        .filter((locality) => locality.id && locality.name),
+  categoryLabels: Array.isArray(value?.categoryLabels)
+    ? value.categoryLabels
+        .map(normalizeSeoCategoryLabel)
+        .filter((label) => label.categoryId && label.label)
+    : (DEFAULT_SEO_CATEGORY_LABELS as SeoCategoryLabel[])
+        .map(normalizeSeoCategoryLabel)
+        .filter((label) => label.categoryId && label.label),
+  topListings: Array.isArray(value?.topListings)
+    ? value.topListings
+        .map(normalizeSeoTopListingGroup)
+        .filter((group) => group.localityId && group.categoryId && group.listingNames.length > 0)
+    : (DEFAULT_SEO_TOP_LISTINGS as SeoTopListingGroup[])
+        .map(normalizeSeoTopListingGroup)
+        .filter((group) => group.localityId && group.categoryId && group.listingNames.length > 0),
+  defaultListingNames: Array.isArray(value?.defaultListingNames)
+    ? value.defaultListingNames
+        .map(normalizeSeoDefaultListingGroup)
+        .filter((group) => group.categoryId && group.listingNames.length > 0)
+    : (DEFAULT_SEO_DEFAULT_LISTING_NAMES as SeoDefaultListingGroup[])
+        .map(normalizeSeoDefaultListingGroup)
+        .filter((group) => group.categoryId && group.listingNames.length > 0),
+  metadata: {
+    seededFromCode: value?.metadata?.seededFromCode ?? true,
+    updatedAt: value?.metadata?.updatedAt || new Date().toISOString(),
+  },
+});
+
+const PORTAL_CATEGORY_TONES = [
+  'bg-emerald-500/10 text-emerald-600',
+  'bg-indigo-500/10 text-indigo-600',
+  'bg-amber-500/10 text-amber-600',
+  'bg-rose-500/10 text-rose-600',
+  'bg-orange-500/10 text-orange-600',
+  'bg-sky-500/10 text-sky-600',
+  'bg-pink-500/10 text-pink-600',
+  'bg-cyan-500/10 text-cyan-600',
+];
+
+const normalizeBusinessCategory = (category: Partial<BusinessCategory>, index: number): BusinessCategory => ({
+  id: String(category.id || category.slug || `category-${index + 1}`).trim(),
+  legacyId: Number.isFinite(Number(category.legacyId)) ? Number(category.legacyId) : index + 1,
+  name: String(category.name || category.id || '').trim(),
+  slug: String(category.slug || category.id || `category-${index + 1}`).trim(),
+  icon: String(category.icon || 'category_icon').trim(),
+  status: category.status === 'inactive' ? 'inactive' : 'active',
+  sortOrder: Number.isFinite(Number(category.sortOrder)) ? Number(category.sortOrder) : index + 1,
+});
+
+const normalizeBusinessSubcategory = (subcategory: Partial<BusinessSubcategory>, index: number): BusinessSubcategory => ({
+  id: String(subcategory.id || subcategory.slug || `subcategory-${index + 1}`).trim(),
+  legacyId: Number.isFinite(Number(subcategory.legacyId)) ? Number(subcategory.legacyId) : index + 1,
+  parentLegacyId: Number.isFinite(Number(subcategory.parentLegacyId)) ? Number(subcategory.parentLegacyId) : index + 1,
+  categoryId: String(subcategory.categoryId || '').trim(),
+  name: String(subcategory.name || subcategory.id || '').trim(),
+  slug: String(subcategory.slug || subcategory.id || `subcategory-${index + 1}`).trim(),
+  icon: String(subcategory.icon || 'subcategory_icon').trim(),
+  status: subcategory.status === 'inactive' ? 'inactive' : 'active',
+  sortOrder: Number.isFinite(Number(subcategory.sortOrder)) ? Number(subcategory.sortOrder) : index + 1,
+});
+
+const normalizeBusinessTaxonomyState = (value?: Partial<BusinessTaxonomyState> | null): BusinessTaxonomyState => {
+  const categories = Array.isArray(value?.categories)
+    ? value.categories.map(normalizeBusinessCategory).filter((category) => category.id && category.name)
+    : [...BUSINESS_CATEGORIES].map(normalizeBusinessCategory);
+  const categoryIds = new Set(categories.map((category) => category.id));
+  const subcategories = Array.isArray(value?.subcategories)
+    ? value.subcategories
+        .map(normalizeBusinessSubcategory)
+        .filter((subcategory) => subcategory.id && subcategory.name && categoryIds.has(subcategory.categoryId))
+    : [...BUSINESS_SUBCATEGORIES].map(normalizeBusinessSubcategory);
+  return {
+    categories: [...categories].sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)),
+    subcategories: [...subcategories].sort((a, b) => {
+      if (a.categoryId !== b.categoryId) return a.categoryId.localeCompare(b.categoryId);
+      return a.sortOrder - b.sortOrder || a.name.localeCompare(b.name);
+    }),
+    metadata: {
+      seededFromCode: value?.metadata?.seededFromCode ?? true,
+      updatedAt: value?.metadata?.updatedAt || new Date().toISOString(),
+    },
+  };
+};
+
+const buildPortalCategories = (categories: BusinessCategory[]) => ([
+  { id: 'all', name: 'All Categories', icon: 'Grid', color: PORTAL_CATEGORY_TONES[0] },
+  ...categories
+    .filter((category) => category.status === 'active')
+    .slice(0, 8)
+    .map((category, index) => ({
+      id: category.id,
+      name: category.name,
+      icon: category.icon || 'Grid',
+      color: PORTAL_CATEGORY_TONES[(index + 1) % PORTAL_CATEGORY_TONES.length],
+    })),
+]);
 
 const normalizeStoredCoupon = (coupon: MarketingCoupon): MarketingCoupon => {
   const endDate = coupon.endDate || coupon.expiryDate || getTodayIso();
@@ -290,14 +835,8 @@ const normalizeStoredListingAd = (ad: ListingAd): ListingAd => ({
   mobileRowPosition: ad.mobileRowPosition && ad.mobileRowPosition > 0 ? ad.mobileRowPosition : undefined
 });
 
-const DEFAULT_HERO_STATS: HeroBannerStat[] = [
-  { enabled: true, label: 'Happy Users', value: '15K+' },
-  { enabled: true, label: 'Verified Businesses', value: '3K+' },
-  { enabled: true, label: 'Average Rating', value: '4.8' }
-];
-
 const normalizeStoredHeroStat = (stat: HeroBannerStat | null | undefined, index: number): HeroBannerStat => {
-  const fallback = DEFAULT_HERO_STATS[index] || DEFAULT_HERO_STATS[0];
+  const fallback = runtimeHeroStatTemplates[index] || runtimeHeroStatTemplates[0] || normalizeHeroStatTemplate(null, index);
   return {
     enabled: stat?.enabled ?? true,
     label: String(stat?.label || fallback.label),
@@ -309,12 +848,12 @@ const normalizeStoredHeroStat = (stat: HeroBannerStat | null | undefined, index:
 
 const normalizeStoredHeroBanner = (banner: HeroBanner): HeroBanner => ({
   ...banner,
-  ctaLabel: banner.ctaLabel || 'Explore Businesses',
-  ctaType: banner.ctaType || 'search_category',
-  ctaTarget: banner.ctaTarget || 'all',
+  ctaLabel: banner.ctaLabel || getRuntimeHeroBannerDraftDefaults().ctaLabel,
+  ctaType: banner.ctaType || getRuntimeHeroBannerDraftDefaults().ctaType,
+  ctaTarget: banner.ctaTarget || getRuntimeHeroBannerDraftDefaults().ctaTarget,
   pincodes: normalizeStringList(banner.pincodes),
   heroStats: Array.isArray(banner.heroStats)
-    ? banner.heroStats.slice(0, 3).map((stat, index) => normalizeStoredHeroStat(stat, index))
+    ? banner.heroStats.map((stat, index) => normalizeStoredHeroStat(stat, index))
     : undefined
 });
 
@@ -337,6 +876,18 @@ const normalizeStoredCommunityItem = (item: CommunityItem): CommunityItem => {
     expireAt: item.expireAt || undefined
   };
 };
+
+const normalizeStoredAdLead = (lead: AdLead): AdLead => ({
+  ...lead,
+  id: String(lead.id || '').trim(),
+  adId: String(lead.adId || '').trim(),
+  sellerBusinessId: lead.sellerBusinessId ? String(lead.sellerBusinessId).trim() : undefined,
+  localityId: String(lead.localityId || '').trim(),
+  name: String(lead.name || '').trim(),
+  mobile: String(lead.mobile || '').trim(),
+  pincode: String(lead.pincode || '').trim(),
+  createdAt: lead.createdAt || new Date().toISOString(),
+});
 
 const getSectionLabel = (sectionType: HomepageSectionType) => {
   switch (sectionType) {
@@ -407,286 +958,35 @@ const reindexHomepageSections = (sections: HomepageSection[]) => (
     }))
 );
 
-const buildDefaultHomepageLayout = (locality: Locality): HomepageLayout => {
+const instantiateHomepageTemplateSections = (
+  locality: Locality,
+  templates: HomepageSection[],
+): HomepageSection[] => {
   const localityName = locality.name.split(',')[0];
-  const sections: HomepageSection[] = reindexHomepageSections([
-    {
-      id: `home_${locality.id}_hero`,
-      sectionType: 'hero_banner',
-      title: `Hero: ${localityName}`,
-      subtitle: `Primary visual banner for ${localityName}`,
-      status: 'active',
-      visible: true,
-      sortOrder: 10,
-      startDate: getTodayIso(),
+  return reindexHomepageSections(
+    templates.map((template, index) => normalizeHomepageSection({
+      ...template,
+      id: `home_${locality.id}_${template.id || template.sectionType || index + 1}`,
+      title: template.sectionType === 'hero_banner' && template.title === 'Hero'
+        ? `Hero: ${localityName}`
+        : template.sectionType === 'updates_feed' && template.title === 'Locality Updates'
+          ? `${localityName} Updates`
+          : template.title,
+      subtitle: template.sectionType === 'hero_banner' && template.subtitle === 'Primary visual banner for this locality'
+        ? `Primary visual banner for ${localityName}`
+        : template.subtitle,
+      startDate: template.sectionType === 'hero_banner' ? (template.startDate || getTodayIso()) : template.startDate,
       localityIds: [locality.id],
-      ctaLabel: 'Explore Businesses',
-      ctaType: 'search_category',
-      ctaTarget: 'all',
-      showViewAll: false
-    },
-    {
-      id: `home_${locality.id}_search`,
-      sectionType: 'search_discovery',
-      title: 'Search & Discover',
-      subtitle: 'Locality-aware search with quick categories',
-      status: 'active',
-      visible: true,
-      sortOrder: 20,
-      localityIds: [locality.id],
-      showViewAll: false
-    },
-    {
-      id: `home_${locality.id}_emergency`,
-      sectionType: 'emergency_grid',
-      title: 'Emergency Services',
-      subtitle: 'Critical support nearby',
-      status: 'active',
-      visible: true,
-      sortOrder: 30,
-      localityIds: [locality.id],
-      categoryIds: ['health-medical', 'home-services', 'automotive'],
-      maxItems: 8,
-      visibleSlots: 8,
-      showViewAll: true
-    },
-    {
-      id: `home_${locality.id}_promo`,
-      sectionType: 'promo_banner',
-      title: 'Promoted This Week',
-      subtitle: 'Scheduled paid banner placement',
-      status: 'active',
-      visible: true,
-      sortOrder: 40,
-      localityIds: [locality.id],
-      placementKey: 'homepage_inline_primary',
-      showViewAll: false
-    },
-    {
-      id: `home_${locality.id}_featured`,
-      sectionType: 'featured_businesses',
-      title: 'Premium Featured Businesses',
-      subtitle: 'Priority merchants in this locality',
-      status: 'active',
-      visible: true,
-      sortOrder: 50,
-      localityIds: [locality.id],
-      maxItems: 6,
-      visibleSlots: 3,
-      desktopCardCount: 3,
-      mobileCardCount: 2,
-      mobileDisplayMode: 'carousel',
-      autoRotate: true,
-      showViewAll: true
-    },
-    {
-      id: `home_${locality.id}_shelf`,
-      sectionType: 'business_shelf',
-      title: 'Home Kitchens & Bakers',
-      subtitle: 'Curated shelf with repeatable category merchandising',
-      status: 'active',
-      visible: true,
-      sortOrder: 60,
-      localityIds: [locality.id],
-      categoryId: 'food-restaurants',
-      maxItems: 6,
-      visibleSlots: 4,
-      desktopCardCount: 4,
-      mobileCardCount: 2,
-      mobileDisplayMode: 'carousel',
-      autoRotate: true,
-      showViewAll: true
-    },
-    {
-      id: `home_${locality.id}_health_shelf`,
-      sectionType: 'business_shelf',
-      title: 'Doctors & Clinics',
-      subtitle: 'Verified health and care businesses in this locality',
-      status: 'active',
-      visible: true,
-      sortOrder: 62,
-      localityIds: [locality.id],
-      categoryId: 'health-medical',
-      maxItems: 6,
-      visibleSlots: 4,
-      desktopCardCount: 4,
-      mobileCardCount: 2,
-      mobileDisplayMode: 'stack',
-      autoRotate: true,
-      showViewAll: true
-    },
-    {
-      id: `home_${locality.id}_services_shelf`,
-      sectionType: 'business_shelf',
-      title: 'Home Services Near You',
-      subtitle: 'Quick access to trusted electricians, plumbers, and repair pros',
-      status: 'active',
-      visible: true,
-      sortOrder: 64,
-      localityIds: [locality.id],
-      categoryId: 'home-services',
-      maxItems: 6,
-      visibleSlots: 4,
-      desktopCardCount: 4,
-      mobileCardCount: 2,
-      mobileDisplayMode: 'carousel',
-      autoRotate: true,
-      showViewAll: true
-    },
-    {
-      id: `home_${locality.id}_beauty_shelf`,
-      sectionType: 'business_shelf',
-      title: 'Beauty & Wellness Picks',
-      subtitle: 'Salons, skin care, and grooming experts around you',
-      status: 'active',
-      visible: true,
-      sortOrder: 66,
-      localityIds: [locality.id],
-      categoryId: 'beauty-wellness',
-      maxItems: 6,
-      visibleSlots: 4,
-      desktopCardCount: 4,
-      mobileCardCount: 2,
-      mobileDisplayMode: 'carousel',
-      autoRotate: true,
-      showViewAll: true
-    },
-    {
-      id: `home_${locality.id}_daily_needs_shelf`,
-      sectionType: 'business_shelf',
-      title: 'Groceries & Daily Needs',
-      subtitle: 'Everyday essentials from trusted nearby stores',
-      status: 'active',
-      visible: true,
-      sortOrder: 67,
-      localityIds: [locality.id],
-      categoryId: 'shopping-retail',
-      maxItems: 6,
-      visibleSlots: 4,
-      desktopCardCount: 4,
-      mobileCardCount: 2,
-      mobileDisplayMode: 'carousel',
-      autoRotate: true,
-      showViewAll: true
-    },
-    {
-      id: `home_${locality.id}_services_domestic`,
-      sectionType: 'text_business_strip',
-      title: 'Maid & Domestic Help',
-      subtitle: 'Trusted daily support professionals nearby',
-      status: 'active',
-      visible: true,
-      sortOrder: 65,
-      localityIds: [locality.id],
-      categoryId: 'home-services',
-      maxItems: 4,
-      visibleSlots: 4,
-      desktopCardCount: 4,
-      mobileCardCount: 2,
-      mobileDisplayMode: 'stack',
-      showViewAll: true
-    },
-    {
-      id: `home_${locality.id}_services_care`,
-      sectionType: 'text_business_strip',
-      title: 'Clinic & Care Experts',
-      subtitle: 'Text-first local listings for quick comparison',
-      status: 'active',
-      visible: true,
-      sortOrder: 68,
-      localityIds: [locality.id],
-      categoryId: 'health-medical',
-      maxItems: 4,
-      visibleSlots: 4,
-      desktopCardCount: 4,
-      mobileCardCount: 2,
-      mobileDisplayMode: 'stack',
-      showViewAll: true
-    },
-    {
-      id: `home_${locality.id}_education_strip`,
-      sectionType: 'text_business_strip',
-      title: 'Tutors & Training Experts',
-      subtitle: 'Quick-compare local education and coaching listings',
-      status: 'active',
-      visible: true,
-      sortOrder: 69,
-      localityIds: [locality.id],
-      categoryId: 'education-training',
-      maxItems: 4,
-      visibleSlots: 4,
-      desktopCardCount: 4,
-      mobileCardCount: 2,
-      mobileDisplayMode: 'stack',
-      showViewAll: true
-    },
-    {
-      id: `home_${locality.id}_categories`,
-      sectionType: 'category_grid',
-      title: 'Explore by Categories',
-      subtitle: 'Jump into high-intent categories',
-      status: 'active',
-      visible: true,
-      sortOrder: 70,
-      localityIds: [locality.id],
-      categoryIds: ['food-restaurants', 'health-medical', 'beauty-wellness', 'home-services', 'shopping-retail', 'education-training', 'professional-services', 'automotive'],
-      maxItems: 12,
-      visibleSlots: 12,
-      showViewAll: true
-    },
-    {
-      id: `home_${locality.id}_offers`,
-      sectionType: 'offers_list',
-      title: 'Offers & Deals',
-      subtitle: 'Scheduled offers filtered by locality and pincode',
-      status: 'active',
-      visible: true,
-      sortOrder: 80,
-      localityIds: [locality.id],
-      maxItems: 4,
-      showViewAll: true
-    },
-    {
-      id: `home_${locality.id}_updates`,
-      sectionType: 'updates_feed',
-      title: `${localityName} Updates`,
-      subtitle: 'Timed announcements and community updates',
-      status: 'active',
-      visible: true,
-      sortOrder: 90,
-      localityIds: [locality.id],
-      maxItems: 4,
-      showViewAll: true
-    },
-    {
-      id: `home_${locality.id}_verified`,
-      sectionType: 'verified_business_grid',
-      title: 'Verified Businesses Near You',
-      subtitle: 'Trusted approved listings for this locality',
-      status: 'active',
-      visible: true,
-      sortOrder: 100,
-      localityIds: [locality.id],
-      maxItems: 9,
-      visibleSlots: 5,
-      desktopCardCount: 5,
-      mobileCardCount: 2,
-      mobileDisplayMode: 'stack',
-      autoRotate: true,
-      showViewAll: true
-    },
-    {
-      id: `home_${locality.id}_trust`,
-      sectionType: 'trust_strip',
-      title: 'Trust Highlights',
-      subtitle: 'Closing reassurance and platform trust points',
-      status: 'active',
-      visible: true,
-      sortOrder: 110,
-      localityIds: [locality.id],
-      showViewAll: false
-    }
-  ]);
+    } as HomepageSection, locality.id, index))
+  );
+};
+
+const buildDefaultHomepageLayout = (
+  locality: Locality,
+  sectionTemplates: HomepageSection[] = DEFAULT_HOMEPAGE_SECTION_TEMPLATES as HomepageSection[],
+): HomepageLayout => {
+  const localityName = locality.name.split(',')[0];
+  const sections = instantiateHomepageTemplateSections(locality, sectionTemplates);
 
   return {
     id: `homepage_${locality.id}`,
@@ -701,11 +1001,12 @@ const buildDefaultHomepageLayout = (locality: Locality): HomepageLayout => {
 
 const normalizeHomepageLayout = (
   layout: HomepageLayout,
-  localities: Locality[]
+  localities: Locality[],
+  sectionTemplates: HomepageSection[] = DEFAULT_HOMEPAGE_SECTION_TEMPLATES as HomepageSection[],
 ): HomepageLayout => {
   const locality = localities.find((entry) => entry.id === layout.localityId);
   const fallbackLocality = locality || localities[0];
-  const defaultSections = fallbackLocality ? buildDefaultHomepageLayout(fallbackLocality).sections : [];
+  const defaultSections = fallbackLocality ? buildDefaultHomepageLayout(fallbackLocality, sectionTemplates).sections : [];
   const layoutSections = (layout.sections || []).map((section, index) => normalizeHomepageSection(section, layout.localityId, index));
   const existingIds = new Set(layoutSections.map((section) => section.id));
   const mergedSections = [
@@ -728,24 +1029,26 @@ const normalizeHomepageLayout = (
 
 const ensureHomepageLayouts = (
   layouts: HomepageLayout[],
-  localities: Locality[]
+  localities: Locality[],
+  sectionTemplates: HomepageSection[] = DEFAULT_HOMEPAGE_SECTION_TEMPLATES as HomepageSection[],
 ): HomepageLayout[] => {
-  const normalizedLayouts = layouts.map((layout) => normalizeHomepageLayout(layout, localities));
+  const normalizedLayouts = layouts.map((layout) => normalizeHomepageLayout(layout, localities, sectionTemplates));
   const existingLocalityIds = new Set(normalizedLayouts.map((layout) => layout.localityId));
   const missingLayouts = localities
     .filter((locality) => !existingLocalityIds.has(locality.id))
-    .map((locality) => buildDefaultHomepageLayout(locality));
+    .map((locality) => buildDefaultHomepageLayout(locality, sectionTemplates));
   return [...normalizedLayouts, ...missingLayouts];
 };
 
 const normalizeHomepageConfigState = (
   value: Partial<HomepageConfigState> | null | undefined,
-  localities: Locality[]
+  localities: Locality[],
+  sectionTemplates: HomepageSection[] = DEFAULT_HOMEPAGE_SECTION_TEMPLATES as HomepageSection[],
 ): HomepageConfigState => ({
   heroBanners: Array.isArray(value?.heroBanners) ? value!.heroBanners.map(normalizeStoredHeroBanner) : [],
   listingAds: Array.isArray(value?.listingAds) ? value!.listingAds.map(normalizeStoredListingAd) : [],
   coupons: Array.isArray(value?.coupons) ? value!.coupons.map(normalizeStoredCoupon) : [],
-  homepageLayouts: ensureHomepageLayouts(Array.isArray(value?.homepageLayouts) ? value!.homepageLayouts : [], localities),
+  homepageLayouts: ensureHomepageLayouts(Array.isArray(value?.homepageLayouts) ? value!.homepageLayouts : [], localities, sectionTemplates),
   localityCategoryLinks: Array.isArray(value?.localityCategoryLinks)
     ? value!.localityCategoryLinks.map((link) => ({
         id: String(link.id || ''),
@@ -759,14 +1062,179 @@ const normalizeHomepageConfigState = (
   apiConfiguration: normalizeApiConfiguration(value?.apiConfiguration)
 });
 
+const normalizeScalableHomepageConfigState = (
+  value: Partial<ScalableHomepageConfigState> | null | undefined
+): ScalableHomepageConfigState => ({
+  version: Number.isFinite(Number(value?.version)) ? Number(value?.version) : 1,
+  templates: Array.isArray(value?.templates) ? value!.templates : [],
+  assignments: Array.isArray(value?.assignments) ? value!.assignments : [],
+  campaigns: Array.isArray(value?.campaigns) ? value!.campaigns : [],
+  publishedSnapshots: Array.isArray(value?.publishedSnapshots) ? value!.publishedSnapshots : [],
+  metadata: {
+    seededFromLegacy: Boolean(value?.metadata?.seededFromLegacy),
+    notes: value?.metadata?.notes || '',
+    updatedAt: value?.metadata?.updatedAt || new Date().toISOString()
+  }
+});
+
+const getScalableEntityMetadataSource = (metadata?: Record<string, unknown>) => String(metadata?.source || '');
+const isScalableEntityDetachedFromLegacySync = (metadata?: Record<string, unknown>) => Boolean(metadata?.detachedFromLegacySync);
+const isLegacyManagedScalableEntity = (metadata?: Record<string, unknown>) => (
+  getScalableEntityMetadataSource(metadata).startsWith('legacy_') && !isScalableEntityDetachedFromLegacySync(metadata)
+);
+const shouldAllowLegacyScalableReseed = (config: ScalableHomepageConfigState) => (
+  Boolean(config.metadata?.seededFromLegacy) &&
+  [...config.templates, ...config.assignments, ...config.campaigns].every((entity) => isLegacyManagedScalableEntity(entity.metadata))
+);
+
+const syncScalableTemplatesFromLayouts = (
+  config: ScalableHomepageConfigState,
+  layouts: HomepageLayout[]
+): ScalableHomepageConfigState => {
+  const existingTemplatesById = new Map(config.templates.map((template) => [template.id, template]));
+  const syncedTemplates = layouts.map((layout): ScalableHomepageTemplate => {
+    const templateId = `tpl_${layout.id || `homepage_${layout.localityId}`}`;
+    const existing = existingTemplatesById.get(templateId);
+    return {
+      id: templateId,
+      name: layout.name || `${layout.localityId} Homepage Template`,
+      templateScope: 'locality',
+      localityIds: [layout.localityId],
+      status: layout.status === 'inactive' ? 'inactive' : 'active',
+      priority: existing?.priority ?? 100,
+      isFallback: existing?.isFallback ?? true,
+      sections: layout.sections,
+      metadata: {
+        ...(existing?.metadata || {}),
+        source: 'legacy_homepage_layout',
+        legacyLayoutId: layout.id,
+      },
+      updatedAt: layout.updatedAt || new Date().toISOString(),
+    };
+  });
+
+  const syncedTemplateIds = new Set(syncedTemplates.map((template) => template.id));
+  const preservedTemplates = config.templates.filter((template) => {
+    const metadata = (template.metadata as Record<string, unknown> | undefined) || {};
+    const source = getScalableEntityMetadataSource(metadata);
+    const detachedFromLegacySync = isScalableEntityDetachedFromLegacySync(metadata);
+    if (syncedTemplateIds.has(template.id)) {
+      return detachedFromLegacySync || !source.startsWith('legacy_');
+    }
+    if (source === 'legacy_homepage_layout') {
+      return detachedFromLegacySync;
+    }
+    return true;
+  });
+  const preservedTemplateIds = new Set(preservedTemplates.map((template) => template.id));
+  const activeSyncedTemplates = syncedTemplates.filter((template) => !preservedTemplateIds.has(template.id));
+
+  return {
+    ...config,
+    templates: [...preservedTemplates, ...activeSyncedTemplates],
+    metadata: {
+      ...config.metadata,
+      updatedAt: new Date().toISOString(),
+    },
+  };
+};
+
+const syncScalableAssignmentsFromLayouts = (
+  config: ScalableHomepageConfigState,
+  layouts: HomepageLayout[]
+): ScalableHomepageConfigState => {
+  const syncedAssignments: ScalableHomepageAssignment[] = layouts.map((layout) => ({
+    id: `assign_${layout.localityId}`,
+    localityId: layout.localityId,
+    templateId: `tpl_${layout.id || `homepage_${layout.localityId}`}`,
+    status: layout.status === 'inactive' ? 'inactive' : 'active',
+    priority: 100,
+    isFallback: true,
+    metadata: {
+      source: 'legacy_homepage_assignment',
+      legacyLayoutId: layout.id,
+    },
+    updatedAt: layout.updatedAt || new Date().toISOString(),
+  }));
+
+  const syncedAssignmentIds = new Set(syncedAssignments.map((assignment) => assignment.id));
+  const preservedAssignments = config.assignments.filter((assignment) => {
+    const metadata = (assignment.metadata as Record<string, unknown> | undefined) || {};
+    const source = getScalableEntityMetadataSource(metadata);
+    const detachedFromLegacySync = isScalableEntityDetachedFromLegacySync(metadata);
+    if (syncedAssignmentIds.has(assignment.id)) {
+      return detachedFromLegacySync || !source.startsWith('legacy_');
+    }
+    if (source === 'legacy_homepage_assignment') {
+      return detachedFromLegacySync;
+    }
+    return true;
+  });
+  const preservedAssignmentIds = new Set(preservedAssignments.map((assignment) => assignment.id));
+  const activeSyncedAssignments = syncedAssignments.filter((assignment) => !preservedAssignmentIds.has(assignment.id));
+
+  return {
+    ...config,
+    assignments: [...preservedAssignments, ...activeSyncedAssignments],
+    metadata: {
+      ...config.metadata,
+      updatedAt: new Date().toISOString(),
+    },
+  };
+};
+
+const syncScalableCampaignCollection = (
+  config: ScalableHomepageConfigState,
+  campaignType: ScalableCampaign['campaignType'],
+  nextCampaigns: ScalableCampaign[],
+  sourceTag: string
+): ScalableHomepageConfigState => {
+  const incomingCampaignIds = new Set(nextCampaigns.map((campaign) => campaign.id));
+  const preservedCampaigns = config.campaigns.filter((campaign) => {
+    if (campaign.campaignType !== campaignType) return true;
+    const metadata = (campaign.metadata as Record<string, unknown> | undefined) || {};
+    const source = getScalableEntityMetadataSource(metadata);
+    const detachedFromLegacySync = isScalableEntityDetachedFromLegacySync(metadata);
+    if (incomingCampaignIds.has(campaign.id)) {
+      return detachedFromLegacySync || source !== sourceTag;
+    }
+    if (source === sourceTag) {
+      return detachedFromLegacySync;
+    }
+    return true;
+  });
+  const preservedCampaignIds = new Set(preservedCampaigns.map((campaign) => campaign.id));
+
+  return {
+    ...config,
+    campaigns: [
+      ...preservedCampaigns,
+      ...nextCampaigns.filter((campaign) => !preservedCampaignIds.has(campaign.id)),
+    ],
+    metadata: {
+      ...config.metadata,
+      updatedAt: new Date().toISOString(),
+    },
+  };
+};
+
+type ScalableLegacyCampaignSourceTag =
+  | 'legacy_hero_banner'
+  | 'legacy_listing_ad'
+  | 'legacy_coupon'
+  | 'legacy_community_item'
+  | 'legacy_business_sponsorship';
+
 const ProposalPanel = lazy(() => import('./components/ProposalPanel'));
 const AndroidSimulator = lazy(() => import('./components/AndroidSimulator'));
 const AdminConsole = lazy(() => import('./components/AdminConsole'));
 
 export default function App() {
   const PRODUCTION_MODE = true;
+  const initialPersistedApiConfiguration = readPersistedApiConfiguration();
+  const shouldBootstrapManagedStateFromLocal = initialPersistedApiConfiguration.syncMode === 'local';
   // Database version management to clear stale browser caches when definitions evolve
-  const CURRENT_DB_VERSION = 'yp_v14_seo_subdomain_routes';
+  const CURRENT_DB_VERSION = 'yp_v16_hero_defaults_guardrails';
   
   // Clean sweep of ancient local storage shards if database version is old
   useState(() => {
@@ -793,6 +1261,9 @@ export default function App() {
 
   // Load from local storage or fallback to defaults
   const [localities, setLocalities] = useState<Locality[]>(() => {
+    if (!shouldBootstrapManagedStateFromLocal) {
+      return (DEFAULT_LOCALITIES as Locality[]).map(normalizeStoredLocality);
+    }
     const saved = localStorage.getItem('yp_localities');
     if (saved) {
       try {
@@ -821,10 +1292,13 @@ export default function App() {
       localStorage.removeItem('yp_homepage_layouts');
       localStorage.removeItem('yp_api_configuration');
     }
-    return INITIAL_LOCALITIES;
+    return (DEFAULT_LOCALITIES as Locality[]).map(normalizeStoredLocality);
   });
 
   const [businesses, setBusinesses] = useState<Business[]>(() => {
+    if (!shouldBootstrapManagedStateFromLocal) {
+      return [];
+    }
     const saved = localStorage.getItem('yp_businesses');
     if (saved) {
       try {
@@ -836,7 +1310,7 @@ export default function App() {
         // Fall through
       }
     }
-    return INITIAL_BUSINESSES.map(normalizeStoredBusiness);
+    return [];
   });
 
   const [reviews, setReviews] = useState<Review[]>(() => {
@@ -845,27 +1319,27 @@ export default function App() {
   });
 
   const [subdomains, setSubdomains] = useState<SubdomainMapping[]>(() => {
+    if (!shouldBootstrapManagedStateFromLocal) {
+      return (buildDefaultSubdomainMappings(DEFAULT_LOCALITIES) as SubdomainMapping[]).map(normalizeStoredSubdomain);
+    }
     const saved = localStorage.getItem('yp_subdomains');
     if (saved) return JSON.parse(saved);
 
     // Bootstrap subdomain maps from primary states
-    return INITIAL_LOCALITIES.map(l => ({
-      domain: l.subdomain,
-      localityId: l.id,
-      sslEnabled: true,
-      dnsStatus: 'active' as const,
-      createdAt: new Date().toISOString()
-    }));
+    return (buildDefaultSubdomainMappings(DEFAULT_LOCALITIES) as SubdomainMapping[]).map(normalizeStoredSubdomain);
   });
 
   const [defaultLocalityId, setDefaultLocalityId] = useState<string>(() => {
-    return localStorage.getItem('yp_default_locality_id') || 'roadpali';
+    if (!shouldBootstrapManagedStateFromLocal) {
+      return DEFAULT_LOCALITY_ID;
+    }
+    return localStorage.getItem('yp_default_locality_id') || DEFAULT_LOCALITY_ID;
   });
 
   const [activeLocalityId, setActiveLocalityId] = useState<string>(() => {
     const savedLoc = localStorage.getItem('yp_saved_locality_id');
     if (savedLoc) return savedLoc;
-    return localStorage.getItem('yp_default_locality_id') || 'roadpali';
+    return localStorage.getItem('yp_default_locality_id') || DEFAULT_LOCALITY_ID;
   });
 
   const [savedPincode, setSavedPincode] = useState<string | null>(() => {
@@ -878,12 +1352,18 @@ export default function App() {
   });
 
   const [pincodeMappings, setPincodeMappings] = useState<Array<{ pincode: string; localityId: string }>>(() => {
+    if (!shouldBootstrapManagedStateFromLocal) {
+      return (DEFAULT_PINCODE_MAPPINGS as PincodeRoutingMapping[]).map(normalizeStoredPincodeMapping);
+    }
     const saved = localStorage.getItem('yp_pincode_mappings');
     if (saved) return JSON.parse(saved);
-    return DEFAULT_PINCODE_MAPPINGS;
+    return (DEFAULT_PINCODE_MAPPINGS as PincodeRoutingMapping[]).map(normalizeStoredPincodeMapping);
   });
 
   const [listingAds, setListingAds] = useState<ListingAd[]>(() => {
+    if (!shouldBootstrapManagedStateFromLocal) {
+      return [];
+    }
     const saved = localStorage.getItem('yp_listing_ads');
     if (saved) return JSON.parse(saved).map(normalizeStoredListingAd);
     const now = new Date();
@@ -913,16 +1393,25 @@ export default function App() {
   });
 
   const [adLeads, setAdLeads] = useState<AdLead[]>(() => {
+    if (!shouldBootstrapManagedStateFromLocal) {
+      return [];
+    }
     const saved = localStorage.getItem('yp_ad_leads');
-    return saved ? JSON.parse(saved) : [];
+    return saved ? JSON.parse(saved).map(normalizeStoredAdLead) : [];
   });
 
   const [heroBanners, setHeroBanners] = useState<HeroBanner[]>(() => {
+    if (!shouldBootstrapManagedStateFromLocal) {
+      return [];
+    }
     const saved = localStorage.getItem('yp_hero_banners');
     if (saved) return JSON.parse(saved).map(normalizeStoredHeroBanner);
+    const heroBannerDraftDefaults = getRuntimeHeroBannerDraftDefaults();
     const startDate = new Date().toISOString().slice(0, 10);
-    const endDate = new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().slice(0, 10);
-    const seededHeroBanners: HeroBanner[] = INITIAL_LOCALITIES.map((locality) => ({
+    const seedHeroEndDate = new Date();
+    seedHeroEndDate.setDate(seedHeroEndDate.getDate() + heroBannerDraftDefaults.durationDays);
+    const endDate = seedHeroEndDate.toISOString().slice(0, 10);
+    const seededHeroBanners: HeroBanner[] = (DEFAULT_LOCALITIES as Locality[]).map((locality) => ({
       id: `hero_${locality.id}`,
       localityId: locality.id,
       title: `Hyper Local Directory for ${locality.name.split(',')[0]}`,
@@ -930,9 +1419,9 @@ export default function App() {
       imageUrl: (locality.carouselImages && locality.carouselImages[0]) || locality.coverImage,
       startDate,
       endDate,
-      ctaLabel: 'Explore Businesses',
-      ctaType: 'search_category',
-      ctaTarget: 'all',
+      ctaLabel: heroBannerDraftDefaults.ctaLabel,
+      ctaType: heroBannerDraftDefaults.ctaType,
+      ctaTarget: heroBannerDraftDefaults.ctaTarget,
       isActive: true
     }));
     return seededHeroBanners.map(normalizeStoredHeroBanner);
@@ -947,12 +1436,18 @@ export default function App() {
   const [urlSelectionNonce, setUrlSelectionNonce] = useState(0);
 
   const [localityCategoryLinks, setLocalityCategoryLinks] = useState<LocalityCategoryLink[]>(() => {
+    if (!shouldBootstrapManagedStateFromLocal) {
+      return [];
+    }
     const saved = localStorage.getItem('yp_locality_category_links');
     if (saved) return JSON.parse(saved);
     return [];
   });
 
   const [homepageLayouts, setHomepageLayouts] = useState<HomepageLayout[]>(() => {
+    if (!shouldBootstrapManagedStateFromLocal) {
+      return [];
+    }
     const saved = localStorage.getItem('yp_homepage_layouts');
     if (saved) {
       try {
@@ -965,24 +1460,36 @@ export default function App() {
   });
 
   const [apiConfiguration, setApiConfiguration] = useState<ApiConfiguration>(() => {
-    const saved = localStorage.getItem('yp_api_configuration');
-    if (saved) {
-      try {
-        return normalizeApiConfiguration(JSON.parse(saved));
-      } catch (error) {
-        localStorage.removeItem('yp_api_configuration');
-      }
-    }
-    return DEFAULT_API_CONFIGURATION;
+    return initialPersistedApiConfiguration;
   });
+  const [homepageDefaultsConfig, setHomepageDefaultsConfig] = useState<HomepageDefaultsConfigState>(() => (
+    normalizeHomepageDefaultsConfigState(null)
+  ));
+  const [homepageDefaultsConfigReady, setHomepageDefaultsConfigReady] = useState(false);
+  const [geographyConfigReady, setGeographyConfigReady] = useState(false);
+  const [geographyConfig, setGeographyConfig] = useState<GeographyConfigState>(() => (
+    normalizeGeographyConfigState(null)
+  ));
+  const [businessTaxonomy, setBusinessTaxonomy] = useState<BusinessTaxonomyState>(() => (
+    normalizeBusinessTaxonomyState(null)
+  ));
+  const [seoDiscoveryConfig, setSeoDiscoveryConfig] = useState<SeoDiscoveryConfigState>(() => (
+    normalizeSeoDiscoveryConfigState(null)
+  ));
+  const [scalableHomepageConfig, setScalableHomepageConfig] = useState<ScalableHomepageConfigState>(() => (
+    normalizeScalableHomepageConfigState(null)
+  ));
+  const [localityRoutingConfigReady, setLocalityRoutingConfigReady] = useState(false);
+  const [scalableHomepageConfigReady, setScalableHomepageConfigReady] = useState(false);
+  const portalCategories = useMemo(() => buildPortalCategories(businessTaxonomy.categories), [businessTaxonomy.categories]);
 
   const seoIntentBySlug = useMemo(() => {
     const lookup = new Map<string, SeoRouteIntent>();
-    for (const intent of SEO_ROUTE_INTENTS) {
+    for (const intent of seoDiscoveryConfig.routeIntents) {
       lookup.set(intent.slug, intent);
     }
     return lookup;
-  }, []);
+  }, [seoDiscoveryConfig.routeIntents]);
 
   const categorySlugLookup = useMemo(() => {
     const lookup = new Map<string, string>();
@@ -991,31 +1498,31 @@ export default function App() {
       lookup.set(category.slug.toLowerCase(), category.id);
       lookup.set(slugifyForUrl(category.name), category.id);
     }
-    for (const category of INITIAL_CATEGORIES) {
+    for (const category of portalCategories) {
       if (category.id === 'all') continue;
       lookup.set(category.id.toLowerCase(), resolveMasterCategoryId(category.id));
       lookup.set(slugifyForUrl(category.name), resolveMasterCategoryId(category.id));
     }
     return lookup;
-  }, []);
+  }, [portalCategories, businessTaxonomy.categories]);
 
   const seoIntentByCategoryAndQuery = useMemo(() => {
     const lookup = new Map<string, SeoRouteIntent>();
-    for (const intent of SEO_ROUTE_INTENTS) {
+    for (const intent of seoDiscoveryConfig.routeIntents) {
       lookup.set(`${intent.categoryId}::${intent.q.toLowerCase()}`, intent);
     }
     return lookup;
-  }, []);
+  }, [seoDiscoveryConfig.routeIntents]);
 
   const seoDefaultIntentByCategory = useMemo(() => {
     const lookup = new Map<string, SeoRouteIntent>();
-    for (const intent of SEO_ROUTE_INTENTS) {
+    for (const intent of seoDiscoveryConfig.routeIntents) {
       if (!lookup.has(intent.categoryId)) {
         lookup.set(intent.categoryId, intent);
       }
     }
     return lookup;
-  }, []);
+  }, [seoDiscoveryConfig.routeIntents]);
 
   const [activeView, setActiveView] = useState<'proposal' | 'web' | 'android' | 'admin'>('web'); // Default to pubic web portal for instant aesthetics!
   const [showSandbox, setShowSandbox] = useState(false); // Controls floating simulation HUD
@@ -1049,6 +1556,7 @@ export default function App() {
           userName: data.user.name,
           userPhone: data.user.phone || undefined,
           email: data.user.email,
+          sellerBusinessId: data.user.sellerBusinessId || undefined,
           authToken: token,
           isAuthenticated: true,
         });
@@ -1059,26 +1567,249 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (homepageConfigLoadedRef.current || localities.length === 0) return;
+    if (userSession.role !== 'seller' || !userSession.isAuthenticated || userSession.sellerBusinessId) return;
+
+    const normalizedSessionPhone = (userSession.userPhone || '').replace(/\D/g, '').slice(-10);
+    const normalizedSessionEmail = (userSession.email || '').trim().toLowerCase();
+    const matchedBusiness = businesses.find((business) => {
+      const normalizedBusinessPhone = (business.phone || '').replace(/\D/g, '').slice(-10);
+      const normalizedBusinessEmail = (business.email || '').trim().toLowerCase();
+      return (
+        (normalizedSessionPhone && normalizedBusinessPhone && normalizedSessionPhone === normalizedBusinessPhone) ||
+        (normalizedSessionEmail && normalizedBusinessEmail && normalizedSessionEmail === normalizedBusinessEmail)
+      );
+    });
+
+    if (!matchedBusiness) return;
+
+    setUserSession((prev) => {
+      if (prev.role !== 'seller' || prev.sellerBusinessId) return prev;
+      return {
+        ...prev,
+        sellerBusinessId: matchedBusiness.id,
+      };
+    });
+  }, [
+    businesses,
+    userSession.email,
+    userSession.isAuthenticated,
+    userSession.role,
+    userSession.sellerBusinessId,
+    userSession.userPhone,
+  ]);
+
+  useEffect(() => {
+    setHomepageDefaultsRuntimeCatalog(homepageDefaultsConfig);
+    setHeroBanners((prev) => prev.map(normalizeStoredHeroBanner));
+  }, [homepageDefaultsConfig]);
+
+  useEffect(() => {
+    if (!apiConfiguration.homepageDefaultsConfigEndpoint) {
+      setHomepageDefaultsConfigReady(true);
+      return;
+    }
     let cancelled = false;
 
-    fetch(apiConfiguration.homepageConfigEndpoint)
+    fetch(apiConfiguration.homepageDefaultsConfigEndpoint)
       .then((response) => (response.ok ? response.json() : null))
-      .then((data: { config?: Partial<HomepageConfigState> } | null) => {
-        if (cancelled || !data?.config) {
+      .then((data: { config?: Partial<HomepageDefaultsConfigState> } | null) => {
+        if (cancelled) return;
+        const normalized = normalizeHomepageDefaultsConfigState(data?.config || null);
+        setHomepageDefaultsConfig(normalized);
+        setHomepageDefaultsConfigReady(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setHomepageDefaultsConfigReady(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [apiConfiguration.homepageDefaultsConfigEndpoint]);
+
+  useEffect(() => {
+    if (!apiConfiguration.geographyConfigEndpoint) {
+      setGeographyConfigReady(true);
+      return;
+    }
+    let cancelled = false;
+
+    fetch(apiConfiguration.geographyConfigEndpoint)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { config?: Partial<GeographyConfigState> } | null) => {
+        if (cancelled) return;
+        const normalized = normalizeGeographyConfigState(data?.config || null);
+        setGeographyConfig(normalized);
+        setGeographyCatalog(normalized.states, normalized.cities, normalized.areas);
+        setBusinesses((prev) => prev.map(normalizeStoredBusiness));
+        setGeographyConfigReady(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setGeographyConfigReady(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [apiConfiguration.geographyConfigEndpoint]);
+
+  useEffect(() => {
+    if (!apiConfiguration.seoDiscoveryConfigEndpoint) {
+      return;
+    }
+    let cancelled = false;
+
+    fetch(apiConfiguration.seoDiscoveryConfigEndpoint)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { config?: Partial<SeoDiscoveryConfigState> } | null) => {
+        if (cancelled) return;
+        setSeoDiscoveryConfig(normalizeSeoDiscoveryConfigState(data?.config || null));
+      })
+      .catch(() => {
+        if (cancelled) return;
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [apiConfiguration.seoDiscoveryConfigEndpoint]);
+
+  useEffect(() => {
+    if (!apiConfiguration.localityRoutingConfigEndpoint) {
+      setLocalityRoutingConfigReady(true);
+      return;
+    }
+    let cancelled = false;
+
+    fetch(apiConfiguration.localityRoutingConfigEndpoint)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { config?: Partial<LocalityRoutingConfigState> } | null) => {
+        if (cancelled) return;
+        if (!data?.config) {
+          setLocalityRoutingConfigReady(true);
+          return;
+        }
+        const normalized = normalizeLocalityRoutingConfigState(data.config);
+        setLocalities(normalized.localities);
+        setSubdomains(normalized.subdomains);
+        setPincodeMappings(normalized.pincodeMappings);
+        setDefaultLocalityId(normalized.defaultLocalityId);
+        setLocalityRoutingConfigReady(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setLocalityRoutingConfigReady(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [apiConfiguration.localityRoutingConfigEndpoint]);
+
+  useEffect(() => {
+    setBusinessTaxonomyCatalog(businessTaxonomy.categories, businessTaxonomy.subcategories);
+    setBusinesses((prev) => prev.map(normalizeStoredBusiness));
+  }, [businessTaxonomy]);
+
+  useEffect(() => {
+    if (!apiConfiguration.taxonomyConfigEndpoint) return;
+    let cancelled = false;
+
+    fetch(apiConfiguration.taxonomyConfigEndpoint)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { taxonomy?: Partial<BusinessTaxonomyState> } | null) => {
+        if (cancelled || !data?.taxonomy) return;
+        const normalized = normalizeBusinessTaxonomyState(data.taxonomy);
+        setBusinessTaxonomy(normalized);
+      })
+      .catch(() => {
+        // Runtime catalog remains on the bundled fallback if taxonomy API is unavailable.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [apiConfiguration.taxonomyConfigEndpoint]);
+
+  useEffect(() => {
+    if (localities.length === 0) return;
+    if (!localities.some((locality) => locality.id === defaultLocalityId)) {
+      setDefaultLocalityId(localities[0].id);
+    }
+    if (!localities.some((locality) => locality.id === activeLocalityId)) {
+      setActiveLocalityId(localities[0].id);
+    }
+  }, [localities, activeLocalityId, defaultLocalityId]);
+
+  useEffect(() => {
+    if (!homepageDefaultsConfigReady || localities.length === 0) return;
+    const nextLayouts = ensureHomepageLayouts(homepageLayouts, localities, homepageDefaultsConfig.sectionTemplates);
+    const currentSignature = JSON.stringify(homepageLayouts);
+    const nextSignature = JSON.stringify(nextLayouts);
+    if (currentSignature === nextSignature) return;
+
+    if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint && homepageConfigLoadedRef.current) {
+      setHomepageConfigSyncSignatureForOverrides({ homepageLayouts: nextLayouts });
+    }
+    setHomepageLayouts(nextLayouts);
+    if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint && homepageConfigLoadedRef.current) {
+      void persistHomepageLayoutCollectionMutation(nextLayouts).catch(() => {
+        lastHomepageSyncSignatureRef.current = '';
+      });
+    }
+  }, [
+    apiConfiguration.homepageConfigEndpoint,
+    apiConfiguration.syncMode,
+    homepageDefaultsConfig.sectionTemplates,
+    homepageDefaultsConfigReady,
+    homepageLayouts,
+    localities,
+  ]);
+
+  useEffect(() => {
+    if (homepageConfigLoadedRef.current || !homepageDefaultsConfigReady || !geographyConfigReady || !localityRoutingConfigReady || localities.length === 0) return;
+    let cancelled = false;
+
+    Promise.all([
+      fetch(getHomepageApiConfigurationEndpoint()).then((response) => (response.ok ? response.json() : null)),
+      fetch(getHomepageLayoutsEndpoint()).then((response) => (response.ok ? response.json() : null)),
+      fetch(getHomepageConfigCollectionEndpoint('hero-banners')).then((response) => (response.ok ? response.json() : null)),
+      fetch(getHomepageConfigCollectionEndpoint('listing-ads')).then((response) => (response.ok ? response.json() : null)),
+      fetch(getHomepageConfigCollectionEndpoint('coupons')).then((response) => (response.ok ? response.json() : null)),
+      fetch(getHomepageConfigCollectionEndpoint('community-items')).then((response) => (response.ok ? response.json() : null)),
+      fetch(getHomepageConfigCollectionEndpoint('locality-category-links')).then((response) => (response.ok ? response.json() : null)),
+    ])
+      .then(([
+        apiConfigurationData,
+        layoutsData,
+        heroBannersData,
+        listingAdsData,
+        couponsData,
+        communityItemsData,
+        localityCategoryLinksData,
+      ]) => {
+        if (cancelled) {
           homepageConfigLoadedRef.current = true;
           return;
         }
 
-        const normalizedConfig = normalizeHomepageConfigState(data.config, localities);
-        setHeroBanners((prev) => normalizedConfig.heroBanners.length > 0 ? normalizedConfig.heroBanners : prev);
-        setListingAds((prev) => normalizedConfig.listingAds.length > 0 ? normalizedConfig.listingAds : prev);
-        setCoupons((prev) => normalizedConfig.coupons.length > 0 ? normalizedConfig.coupons : prev);
+        const normalizedConfig = normalizeHomepageConfigState({
+          apiConfiguration: apiConfigurationData?.apiConfiguration || {},
+          homepageLayouts: layoutsData?.layouts || [],
+          heroBanners: heroBannersData?.heroBanners || [],
+          listingAds: listingAdsData?.listingAds || [],
+          coupons: couponsData?.coupons || [],
+          communityItems: communityItemsData?.communityItems || [],
+          localityCategoryLinks: localityCategoryLinksData?.localityCategoryLinks || [],
+        }, localities, homepageDefaultsConfig.sectionTemplates);
+        setHeroBanners(normalizedConfig.heroBanners.map(normalizeStoredHeroBanner));
+        setListingAds(normalizedConfig.listingAds.map(normalizeStoredListingAd));
+        setCoupons(normalizedConfig.coupons.map(normalizeStoredCoupon));
         setHomepageLayouts(normalizedConfig.homepageLayouts);
         setLocalityCategoryLinks(normalizedConfig.localityCategoryLinks);
-        setCommunityItems((prev) => normalizedConfig.communityItems.length > 0
-          ? normalizedConfig.communityItems.map(normalizeStoredCommunityItem)
-          : prev);
+        setCommunityItems(normalizedConfig.communityItems.map(normalizeStoredCommunityItem));
         setApiConfiguration((prev) => normalizeApiConfiguration({
           ...prev,
           ...normalizedConfig.apiConfiguration,
@@ -1090,6 +1821,32 @@ export default function App() {
         });
         homepageConfigLoadedRef.current = true;
       })
+      .catch(() => fetch(apiConfiguration.homepageConfigEndpoint)
+        .then((response) => (response.ok ? response.json() : null))
+        .then((data: { config?: Partial<HomepageConfigState> } | null) => {
+          if (cancelled || !data?.config) {
+            homepageConfigLoadedRef.current = true;
+            return;
+          }
+
+          const normalizedConfig = normalizeHomepageConfigState(data.config, localities, homepageDefaultsConfig.sectionTemplates);
+          setHeroBanners(normalizedConfig.heroBanners.map(normalizeStoredHeroBanner));
+          setListingAds(normalizedConfig.listingAds.map(normalizeStoredListingAd));
+          setCoupons(normalizedConfig.coupons.map(normalizeStoredCoupon));
+          setHomepageLayouts(normalizedConfig.homepageLayouts);
+          setLocalityCategoryLinks(normalizedConfig.localityCategoryLinks);
+          setCommunityItems(normalizedConfig.communityItems.map(normalizeStoredCommunityItem));
+          setApiConfiguration((prev) => normalizeApiConfiguration({
+            ...prev,
+            ...normalizedConfig.apiConfiguration,
+            lastHomepageSyncAt: normalizedConfig.apiConfiguration.lastHomepageSyncAt || prev.lastHomepageSyncAt
+          }));
+          lastHomepageSyncSignatureRef.current = JSON.stringify({
+            ...normalizedConfig,
+            apiConfiguration: getPersistableApiConfiguration(normalizedConfig.apiConfiguration)
+          });
+          homepageConfigLoadedRef.current = true;
+        }))
       .catch(() => {
         homepageConfigLoadedRef.current = true;
       });
@@ -1097,7 +1854,64 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [apiConfiguration.homepageConfigEndpoint, localities]);
+  }, [apiConfiguration.homepageConfigEndpoint, geographyConfigReady, homepageDefaultsConfig.sectionTemplates, homepageDefaultsConfigReady, localityRoutingConfigReady, localities]);
+
+  useEffect(() => {
+    if (apiConfiguration.syncMode !== 'api' || !apiConfiguration.adLeadsEndpoint) return;
+    const canReadAdLeads = Boolean(userSession.authToken) && ['admin', 'moderator', 'developer'].includes(userSession.role);
+    if (!canReadAdLeads) return;
+    let cancelled = false;
+
+    fetch(apiConfiguration.adLeadsEndpoint, {
+      headers: {
+        ...getAuthHeaders(),
+      },
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { adLeads?: AdLead[] } | null) => {
+        if (cancelled || !Array.isArray(data?.adLeads)) return;
+        setAdLeads(data.adLeads.map(normalizeStoredAdLead));
+      })
+      .catch(() => {
+        // Keep local in-memory ad leads if the managed endpoint is unavailable.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [apiConfiguration.adLeadsEndpoint, apiConfiguration.syncMode, userSession.authToken, userSession.role]);
+
+  useEffect(() => {
+    if (!apiConfiguration.scalableHomepageConfigEndpoint) return;
+    let cancelled = false;
+
+    fetch(apiConfiguration.scalableHomepageConfigEndpoint)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { config?: Partial<ScalableHomepageConfigState> } | null) => {
+        if (cancelled) {
+          scalableHomepageConfigLoadedRef.current = true;
+          setScalableHomepageConfigReady(true);
+          return;
+        }
+        if (!data?.config) {
+          scalableHomepageConfigLoadedRef.current = true;
+          setScalableHomepageConfigReady(true);
+          return;
+        }
+        setScalableHomepageConfig(normalizeScalableHomepageConfigState(data.config));
+        scalableHomepageConfigLoadedRef.current = true;
+        setScalableHomepageConfigReady(true);
+      })
+      .catch(() => {
+        // Keep empty scalable config state as fallback during rollout.
+        scalableHomepageConfigLoadedRef.current = true;
+        setScalableHomepageConfigReady(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [apiConfiguration.scalableHomepageConfigEndpoint]);
 
   // Track the business IDs for which the current user has performed OTP verification to unlock contact details
   const [viewedBusinessIds, setViewedBusinessIds] = useState<string[]>(() => {
@@ -1105,11 +1919,24 @@ export default function App() {
     return saved ? JSON.parse(saved) : ['s1']; // Pre-authorize s1 for quick visual overview
   });
 
+  const [savedBusinessIds, setSavedBusinessIds] = useState<string[]>(() => {
+    const saved = localStorage.getItem('yp_saved_business_ids');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const [buyerActivityEvents, setBuyerActivityEvents] = useState<BuyerActivityEvent[]>(() => {
+    const saved = localStorage.getItem('yp_buyer_activity_events');
+    return saved ? JSON.parse(saved) : [];
+  });
+
   const [communityItems, setCommunityItems] = useState<CommunityItem[]>(() => {
+    if (!shouldBootstrapManagedStateFromLocal) {
+      return [];
+    }
     const saved = localStorage.getItem('yp_community');
     return saved
       ? JSON.parse(saved).map(normalizeStoredCommunityItem)
-      : INITIAL_COMMUNITY_ITEMS.map(normalizeStoredCommunityItem);
+      : [];
   });
 
   const [crmContacts, setCrmContacts] = useState<CRMContact[]>(() => {
@@ -1118,8 +1945,11 @@ export default function App() {
   });
 
   const [coupons, setCoupons] = useState<MarketingCoupon[]>(() => {
+    if (!shouldBootstrapManagedStateFromLocal) {
+      return [];
+    }
     const saved = localStorage.getItem('yp_coupons');
-    return saved ? JSON.parse(saved).map(normalizeStoredCoupon) : INITIAL_COUPONS.map(normalizeStoredCoupon);
+    return saved ? JSON.parse(saved).map(normalizeStoredCoupon) : [];
   });
 
   const [auditLogs, setAuditLogs] = useState<AuditEvent[]>(() => {
@@ -1151,6 +1981,7 @@ export default function App() {
   });
 
   const homepageConfigLoadedRef = useRef(false);
+  const scalableHomepageConfigLoadedRef = useRef(false);
   const lastHomepageSyncSignatureRef = useRef('');
   const auditEventDedupRef = useRef<Map<string, number>>(new Map());
   const lastAutomatedAuditPostAtRef = useRef(0);
@@ -1166,9 +1997,87 @@ export default function App() {
     apiConfiguration: getPersistableApiConfiguration(apiConfiguration)
   });
 
+  const buildHomepageConfigPayloadWithOverrides = (
+    overrides: Partial<HomepageConfigState> = {}
+  ): HomepageConfigState => ({
+    ...buildHomepageConfigPayload(),
+    ...overrides,
+  });
+
+  const buildLocalityRoutingConfigPayload = (): LocalityRoutingConfigState => ({
+    localities,
+    subdomains,
+    pincodeMappings,
+    defaultLocalityId,
+    metadata: {
+      seededFromCode: false,
+      updatedAt: new Date().toISOString(),
+    },
+  });
+
   const getAuthHeaders = () => {
     const token = localStorage.getItem('yp_auth_token');
     return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
+  const getHomepageConfigEntityEndpoint = (entityPath?: string) => {
+    const baseEndpoint = String(apiConfiguration.homepageConfigEndpoint || '').replace(/\/+$/, '');
+    if (!baseEndpoint) {
+      throw new Error('Homepage config endpoint is not configured.');
+    }
+    if (!entityPath) return baseEndpoint;
+    return `${baseEndpoint}/${entityPath.replace(/^\/+/, '')}`;
+  };
+
+  const getHomepageLayoutSectionsEndpoint = (localityId: string, sectionId?: string, suffix?: string) => {
+    const base = getHomepageConfigEntityEndpoint(`layouts/${encodeURIComponent(localityId)}/sections`);
+    if (sectionId && suffix) return `${base}/${encodeURIComponent(sectionId)}/${suffix.replace(/^\/+/, '')}`;
+    if (sectionId) return `${base}/${encodeURIComponent(sectionId)}`;
+    if (suffix) return `${base}/${suffix.replace(/^\/+/, '')}`;
+    return base;
+  };
+
+  const getHomepageLayoutEndpoint = (localityId: string) => (
+    getHomepageConfigEntityEndpoint(`layouts/${encodeURIComponent(localityId)}`)
+  );
+
+  const getHomepageLayoutsEndpoint = () => (
+    getHomepageConfigEntityEndpoint('layouts')
+  );
+
+  const getHomepageApiConfigurationEndpoint = () => (
+    getHomepageConfigEntityEndpoint('api-configuration')
+  );
+
+  const getHomepageConfigCollectionEndpoint = (collectionPath: string, entityId?: string) => {
+    const normalizedCollectionPath = collectionPath.replace(/^\/+|\/+$/g, '');
+    return entityId
+      ? getHomepageConfigEntityEndpoint(`${normalizedCollectionPath}/${encodeURIComponent(entityId)}`)
+      : getHomepageConfigEntityEndpoint(normalizedCollectionPath);
+  };
+
+  const setHomepageConfigSyncSignatureForOverrides = (overrides: Partial<HomepageConfigState>) => {
+    lastHomepageSyncSignatureRef.current = JSON.stringify(buildHomepageConfigPayloadWithOverrides(overrides));
+  };
+
+  const persistHomepageConfigCollectionMutation = async (
+    collectionPath: string,
+    method: 'POST' | 'PUT' | 'DELETE',
+    requestBody: Record<string, unknown> = {}
+  ) => {
+    const response = await fetch(getHomepageConfigEntityEndpoint(collectionPath), {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify(requestBody),
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null) as { error?: string } | null;
+      throw new Error(payload?.error || 'Failed to persist homepage config collection');
+    }
+    return response.json().catch(() => null);
   };
 
   const getOrCreateDeviceId = () => {
@@ -1192,6 +2101,26 @@ export default function App() {
       },
       body: JSON.stringify({ config: payload })
     });
+  };
+
+  const persistLocalityRoutingConfigToServer = async (nextPayload?: LocalityRoutingConfigState) => {
+    if (!apiConfiguration.localityRoutingConfigEndpoint) {
+      throw new Error('Locality routing config endpoint is not configured.');
+    }
+    const payload = normalizeLocalityRoutingConfigState(nextPayload || buildLocalityRoutingConfigPayload());
+    const response = await fetch(apiConfiguration.localityRoutingConfigEndpoint, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify({ config: payload }),
+    });
+    if (!response.ok) {
+      throw new Error('Failed to save locality routing config');
+    }
+    const data = await response.json().catch(() => null);
+    return normalizeLocalityRoutingConfigState(data?.config || payload);
   };
 
   const persistBusinessesToServer = (nextBusinesses: Business[]) => {
@@ -1225,7 +2154,7 @@ export default function App() {
       .then((data: { businesses?: Business[] } | null) => {
         if (cancelled || !Array.isArray(data?.businesses)) return;
         if (data.businesses.length === 0) {
-          if (apiConfiguration.syncMode === 'api' && apiConfiguration.autoSyncBusinesses) {
+          if (businesses.length > 0 && apiConfiguration.syncMode === 'api' && apiConfiguration.autoSyncBusinesses) {
             persistBusinessesToServer(businesses);
           }
           return;
@@ -1246,32 +2175,49 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [apiConfiguration.autoSyncBusinesses, apiConfiguration.businessesEndpoint, apiConfiguration.syncMode]);
+  }, [apiConfiguration.autoSyncBusinesses, apiConfiguration.businessesEndpoint, apiConfiguration.syncMode, businesses]);
 
   // Push state to localStorage on any updates
+  const mirrorLocalityRoutingLocally = apiConfiguration.syncMode !== 'api';
+
   useEffect(() => {
+    if (!mirrorLocalityRoutingLocally) return;
     localStorage.setItem('yp_localities', JSON.stringify(localities));
-  }, [localities]);
+  }, [localities, mirrorLocalityRoutingLocally]);
 
   useEffect(() => {
+    if (!mirrorLocalityRoutingLocally) return;
     localStorage.setItem('yp_pincode_mappings', JSON.stringify(pincodeMappings));
-  }, [pincodeMappings]);
+  }, [pincodeMappings, mirrorLocalityRoutingLocally]);
 
   useEffect(() => {
+    if (!mirrorLocalityRoutingLocally) return;
     localStorage.setItem('yp_default_locality_id', defaultLocalityId);
-  }, [defaultLocalityId]);
+  }, [defaultLocalityId, mirrorLocalityRoutingLocally]);
+
+  const mirrorBusinessesLocally = apiConfiguration.syncMode !== 'api';
 
   useEffect(() => {
+    if (mirrorLocalityRoutingLocally) return;
+    localStorage.removeItem('yp_localities');
+    localStorage.removeItem('yp_subdomains');
+    localStorage.removeItem('yp_pincode_mappings');
+    localStorage.removeItem('yp_default_locality_id');
+  }, [mirrorLocalityRoutingLocally]);
+
+  useEffect(() => {
+    if (!mirrorBusinessesLocally) return;
     localStorage.setItem('yp_businesses', JSON.stringify(businesses));
-  }, [businesses]);
+  }, [businesses, mirrorBusinessesLocally]);
 
   useEffect(() => {
     localStorage.setItem('yp_reviews', JSON.stringify(reviews));
   }, [reviews]);
 
   useEffect(() => {
+    if (!mirrorLocalityRoutingLocally) return;
     localStorage.setItem('yp_subdomains', JSON.stringify(subdomains));
-  }, [subdomains]);
+  }, [subdomains, mirrorLocalityRoutingLocally]);
 
   useEffect(() => {
     localStorage.setItem('yp_user_session', JSON.stringify(userSession));
@@ -1280,6 +2226,14 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('yp_viewed_bizs', JSON.stringify(viewedBusinessIds));
   }, [viewedBusinessIds]);
+
+  useEffect(() => {
+    localStorage.setItem('yp_saved_business_ids', JSON.stringify(savedBusinessIds));
+  }, [savedBusinessIds]);
+
+  useEffect(() => {
+    localStorage.setItem('yp_buyer_activity_events', JSON.stringify(buyerActivityEvents));
+  }, [buyerActivityEvents]);
 
   const mirrorHomepageStateLocally = apiConfiguration.syncMode !== 'api';
 
@@ -1330,36 +2284,6 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('yp_audit_logs', JSON.stringify(auditLogs));
   }, [auditLogs]);
-
-  useEffect(() => {
-    if (!homepageConfigLoadedRef.current) return;
-    if (apiConfiguration.syncMode !== 'api' || !apiConfiguration.autoSyncHomepage) return;
-
-    const payload = buildHomepageConfigPayload();
-    const signature = JSON.stringify(payload);
-    if (signature === lastHomepageSyncSignatureRef.current) return;
-
-    lastHomepageSyncSignatureRef.current = signature;
-    persistHomepageConfigToServer(payload)
-      .then((response) => {
-        if (!response.ok) throw new Error('Failed to sync homepage config');
-        setApiConfiguration((prev) => ({
-          ...prev,
-          lastHomepageSyncAt: new Date().toISOString()
-        }));
-      })
-      .catch(() => {
-        lastHomepageSyncSignatureRef.current = '';
-      });
-  }, [
-    apiConfiguration,
-    heroBanners,
-    listingAds,
-    coupons,
-    homepageLayouts,
-    localityCategoryLinks,
-    communityItems
-  ]);
 
   useEffect(() => {
     logAuditEvent('data_entry', 'Active locality changed', `Locality switched to: ${activeLocalityId}`);
@@ -1597,7 +2521,7 @@ export default function App() {
 
     // Persist audit events server-side for public deployment traceability.
     // This is best-effort and should never block UX interactions.
-    fetch(apiConfiguration.auditEventsEndpoint, {
+  fetch(apiConfiguration.auditEventsEndpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1609,9 +2533,40 @@ export default function App() {
     });
   };
 
+  const appendBuyerActivityEvent = (event: Omit<BuyerActivityEvent, 'id' | 'createdAt'>) => {
+    setBuyerActivityEvents((prev) => [
+      {
+        id: `buyer_evt_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+        createdAt: new Date().toISOString(),
+        ...event,
+      },
+      ...prev,
+    ].slice(0, 50));
+  };
+
+  const handleToggleSavedBusiness = (businessId: string) => {
+    const business = businesses.find((item) => item.id === businessId);
+    const businessName = business?.name || 'Listing';
+    const businessCategory = business?.sourceSubcategoryLabel || business?.sourceCategoryLabel || 'local category';
+    const wasSaved = savedBusinessIds.includes(businessId);
+
+    setSavedBusinessIds((prev) => (
+      wasSaved
+        ? prev.filter((id) => id !== businessId)
+        : [...prev, businessId]
+    ));
+
+    appendBuyerActivityEvent({
+      actionType: wasSaved ? 'unsaved_listing' : 'saved_listing',
+      businessId,
+      title: wasSaved ? 'Removed saved listing' : 'Saved listing',
+      detail: `${businessName} in ${businessCategory}`,
+    });
+  };
+
   // Actions
   const handleAddCommunityItem = (item: Omit<CommunityItem, 'id' | 'createdAt' | 'likes'>) => {
-    const fresh: CommunityItem = {
+    const fresh: CommunityItem = normalizeStoredCommunityItem({
       ...item,
       id: `comm_${Date.now()}`,
       createdAt: new Date().toISOString(),
@@ -1624,18 +2579,46 @@ export default function App() {
       ),
       publishAt: item.publishAt || new Date().toISOString(),
       expireAt: item.expireAt || undefined
-    };
-    setCommunityItems(prev => [fresh, ...prev]);
+    });
+    const nextCommunityItems = [fresh, ...communityItems];
+    if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
+      setHomepageConfigSyncSignatureForOverrides({ communityItems: nextCommunityItems });
+    }
+    setCommunityItems(nextCommunityItems);
+    if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
+      void persistHomepageConfigCollectionMutation('community-items', 'POST', { communityItem: fresh }).catch(() => {
+        lastHomepageSyncSignatureRef.current = '';
+      });
+    }
     logAuditEvent('data_entry', `Created community board discussion: "${item.title}"`, `Category type: ${item.type} | Region shard: ${item.localityId}`);
   };
 
   const handleUpdateCommunityItem = (item: CommunityItem) => {
-    setCommunityItems((prev) => prev.map((existing) => (existing.id === item.id ? normalizeStoredCommunityItem(item) : existing)));
+    const normalizedItem = normalizeStoredCommunityItem(item);
+    const nextCommunityItems = communityItems.map((existing) => (existing.id === item.id ? normalizedItem : existing));
+    if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
+      setHomepageConfigSyncSignatureForOverrides({ communityItems: nextCommunityItems });
+    }
+    setCommunityItems(nextCommunityItems);
+    if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
+      void persistHomepageConfigCollectionMutation(`community-items/${encodeURIComponent(item.id)}`, 'PUT', { communityItem: normalizedItem }).catch(() => {
+        lastHomepageSyncSignatureRef.current = '';
+      });
+    }
     logAuditEvent('data_entry', `Updated locality update`, `Update ID: ${item.id} | Locality: ${item.localityId}`);
   };
 
   const handleDeleteCommunityItem = (itemId: string) => {
-    setCommunityItems((prev) => prev.filter((item) => item.id !== itemId));
+    const nextCommunityItems = communityItems.filter((item) => item.id !== itemId);
+    if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
+      setHomepageConfigSyncSignatureForOverrides({ communityItems: nextCommunityItems });
+    }
+    setCommunityItems(nextCommunityItems);
+    if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
+      void persistHomepageConfigCollectionMutation(`community-items/${encodeURIComponent(itemId)}`, 'DELETE').catch(() => {
+        lastHomepageSyncSignatureRef.current = '';
+      });
+    }
     logAuditEvent('data_entry', `Deleted locality update`, `Update ID: ${itemId}`);
   };
 
@@ -1658,8 +2641,46 @@ export default function App() {
       id: `cpn_${Date.now()}`,
       usageCount: 0
     });
-    setCoupons(prev => [fresh, ...prev]);
+    const nextCoupons = [fresh, ...coupons];
+    if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
+      setHomepageConfigSyncSignatureForOverrides({ coupons: nextCoupons });
+    }
+    setCoupons(nextCoupons);
+    if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
+      void persistHomepageConfigCollectionMutation('coupons', 'POST', { coupon: fresh }).catch(() => {
+        lastHomepageSyncSignatureRef.current = '';
+      });
+    }
     logAuditEvent('data_entry', `Launched promotional listing coupon code: "${coupon.code}"`, `Discount: ${coupon.discount} | Business ID: ${coupon.businessId}`);
+  };
+
+  const handleUpdateCoupon = (coupon: MarketingCoupon) => {
+    const normalizedCoupon = normalizeStoredCoupon(coupon);
+    const nextCoupons = coupons.map((existing) => (existing.id === coupon.id ? normalizedCoupon : existing));
+    if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
+      setHomepageConfigSyncSignatureForOverrides({ coupons: nextCoupons });
+    }
+    setCoupons(nextCoupons);
+    if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
+      void persistHomepageConfigCollectionMutation(`coupons/${encodeURIComponent(coupon.id)}`, 'PUT', { coupon: normalizedCoupon }).catch(() => {
+        lastHomepageSyncSignatureRef.current = '';
+      });
+    }
+    logAuditEvent('data_entry', `Updated promotional listing coupon code`, `Coupon ID: ${coupon.id} | Business ID: ${coupon.businessId}`);
+  };
+
+  const handleDeleteCoupon = (couponId: string) => {
+    const nextCoupons = coupons.filter((coupon) => coupon.id !== couponId);
+    if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
+      setHomepageConfigSyncSignatureForOverrides({ coupons: nextCoupons });
+    }
+    setCoupons(nextCoupons);
+    if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
+      void persistHomepageConfigCollectionMutation(`coupons/${encodeURIComponent(couponId)}`, 'DELETE').catch(() => {
+        lastHomepageSyncSignatureRef.current = '';
+      });
+    }
+    logAuditEvent('data_entry', `Deleted promotional listing coupon code`, `Coupon ID: ${couponId}`);
   };
 
   const handleCreateListingAd = (adInput: Omit<ListingAd, 'id'>) => {
@@ -1667,18 +2688,57 @@ export default function App() {
       ...adInput,
       id: `ad_${Date.now()}`
     });
-    setListingAds((prev) => [freshAd, ...prev]);
+    const nextListingAds = [freshAd, ...listingAds];
+    if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
+      setHomepageConfigSyncSignatureForOverrides({ listingAds: nextListingAds });
+    }
+    setListingAds(nextListingAds);
+    if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
+      void persistHomepageConfigCollectionMutation('listing-ads', 'POST', { listingAd: freshAd }).catch(() => {
+        lastHomepageSyncSignatureRef.current = '';
+      });
+    }
     logAuditEvent('data_entry', `Created listing ad banner`, `Ad: "${adInput.title}" | Action: ${adInput.actionType}`);
   };
 
   const handleUpdateListingAd = (ad: ListingAd) => {
-    setListingAds((prev) => prev.map((existing) => (existing.id === ad.id ? normalizeStoredListingAd(ad) : existing)));
+    const normalizedAd = normalizeStoredListingAd(ad);
+    const nextListingAds = listingAds.map((existing) => (existing.id === ad.id ? normalizedAd : existing));
+    if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
+      setHomepageConfigSyncSignatureForOverrides({ listingAds: nextListingAds });
+    }
+    setListingAds(nextListingAds);
+    if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
+      void persistHomepageConfigCollectionMutation(`listing-ads/${encodeURIComponent(ad.id)}`, 'PUT', { listingAd: normalizedAd }).catch(() => {
+        lastHomepageSyncSignatureRef.current = '';
+      });
+    }
     logAuditEvent('data_entry', `Updated listing ad banner`, `Ad ID: ${ad.id}`);
   };
 
   const handleDeleteListingAd = (adId: string) => {
-    setListingAds((prev) => prev.filter((ad) => ad.id !== adId));
-    setAdLeads((prev) => prev.filter((lead) => lead.adId !== adId));
+    const nextListingAds = listingAds.filter((ad) => ad.id !== adId);
+    const nextAdLeads = adLeads.filter((lead) => lead.adId !== adId);
+    if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
+      setHomepageConfigSyncSignatureForOverrides({ listingAds: nextListingAds });
+    }
+    setListingAds(nextListingAds);
+    setAdLeads(nextAdLeads);
+    if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
+      void persistHomepageConfigCollectionMutation(`listing-ads/${encodeURIComponent(adId)}`, 'DELETE').catch(() => {
+        lastHomepageSyncSignatureRef.current = '';
+      });
+    }
+    if (apiConfiguration.syncMode === 'api' && apiConfiguration.adLeadsEndpoint) {
+      void fetch(`${apiConfiguration.adLeadsEndpoint.replace(/\/+$/, '')}/by-ad/${encodeURIComponent(adId)}`, {
+        method: 'DELETE',
+        headers: {
+          ...getAuthHeaders(),
+        },
+      }).catch(() => {
+        // Keep local state intact even if best-effort ad lead cleanup fails.
+      });
+    }
     logAuditEvent('data_entry', `Deleted listing ad banner`, `Ad ID: ${adId}`);
   };
 
@@ -1687,117 +2747,370 @@ export default function App() {
       ...bannerInput,
       id: `hero_${Date.now()}`
     });
-    setHeroBanners((prev) => [freshBanner, ...prev]);
+    const nextHeroBanners = [freshBanner, ...heroBanners];
+    if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
+      setHomepageConfigSyncSignatureForOverrides({ heroBanners: nextHeroBanners });
+    }
+    setHeroBanners(nextHeroBanners);
+    if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
+      void persistHomepageConfigCollectionMutation('hero-banners', 'POST', { banner: freshBanner }).catch(() => {
+        lastHomepageSyncSignatureRef.current = '';
+      });
+    }
     logAuditEvent('data_entry', `Created hero banner`, `Locality: ${bannerInput.localityId}`);
   };
 
   const handleUpdateHeroBanner = (banner: HeroBanner) => {
-    setHeroBanners((prev) => prev.map((existing) => (existing.id === banner.id ? normalizeStoredHeroBanner(banner) : existing)));
+    const normalizedBanner = normalizeStoredHeroBanner(banner);
+    const nextHeroBanners = heroBanners.map((existing) => (existing.id === banner.id ? normalizedBanner : existing));
+    if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
+      setHomepageConfigSyncSignatureForOverrides({ heroBanners: nextHeroBanners });
+    }
+    setHeroBanners(nextHeroBanners);
+    if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
+      void persistHomepageConfigCollectionMutation(`hero-banners/${encodeURIComponent(banner.id)}`, 'PUT', { banner: normalizedBanner }).catch(() => {
+        lastHomepageSyncSignatureRef.current = '';
+      });
+    }
     logAuditEvent('data_entry', `Updated hero banner`, `Hero ID: ${banner.id}`);
   };
 
   const handleDeleteHeroBanner = (bannerId: string) => {
-    setHeroBanners((prev) => prev.filter((banner) => banner.id !== bannerId));
+    const nextHeroBanners = heroBanners.filter((banner) => banner.id !== bannerId);
+    if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
+      setHomepageConfigSyncSignatureForOverrides({ heroBanners: nextHeroBanners });
+    }
+    setHeroBanners(nextHeroBanners);
+    if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
+      void persistHomepageConfigCollectionMutation(`hero-banners/${encodeURIComponent(bannerId)}`, 'DELETE').catch(() => {
+        lastHomepageSyncSignatureRef.current = '';
+      });
+    }
     logAuditEvent('data_entry', `Deleted hero banner`, `Hero ID: ${bannerId}`);
   };
 
-  const mutateHomepageLayout = (
+  const buildHomepageLayoutDraft = (
     localityId: string,
-    mutator: (layout: HomepageLayout) => HomepageLayout
+    layoutsOverride: HomepageLayout[] = homepageLayouts
+  ): HomepageLayout => {
+    const locality = localities.find((entry) => entry.id === localityId) || localities[0] || normalizeStoredLocality((DEFAULT_LOCALITIES as Locality[])[0]);
+    return layoutsOverride.find((layout) => layout.localityId === localityId)
+      || buildDefaultHomepageLayout(locality, homepageDefaultsConfig.sectionTemplates);
+  };
+
+  const mergeHomepageLayoutIntoCollection = (
+    layout: HomepageLayout,
+    layoutsOverride: HomepageLayout[] = homepageLayouts
   ) => {
-    setHomepageLayouts((prev) => {
-      const locality = localities.find((entry) => entry.id === localityId) || localities[0];
-      const existingLayout = prev.find((layout) => layout.localityId === localityId) || buildDefaultHomepageLayout(locality);
-      const nextLayout = {
-        ...mutator(existingLayout),
-        updatedAt: new Date().toISOString()
-      };
-      const filtered = prev.filter((layout) => layout.localityId !== localityId);
-      return [...filtered, normalizeHomepageLayout(nextLayout, localities)];
-    });
+    const normalizedLayout = normalizeHomepageLayout(layout, localities, homepageDefaultsConfig.sectionTemplates);
+    const filtered = layoutsOverride.filter((existing) => existing.localityId !== normalizedLayout.localityId);
+    return [...filtered, normalizedLayout];
+  };
+
+  const replaceHomepageLayoutInState = (layout: HomepageLayout) => {
+    setHomepageLayouts((prev) => mergeHomepageLayoutIntoCollection(layout, prev));
+  };
+
+  const persistHomepageLayoutSectionMutation = async (
+    localityId: string,
+    options: {
+      method: 'POST' | 'PUT' | 'DELETE';
+      layout: HomepageLayout;
+      section?: HomepageSection;
+      sections?: HomepageSection[];
+      sectionId?: string;
+      suffix?: string;
+    }
+  ) => {
+    const response = await fetch(
+      getHomepageLayoutSectionsEndpoint(localityId, options.sectionId, options.suffix),
+      {
+        method: options.method,
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(),
+        },
+        body: JSON.stringify({
+          layout: options.layout,
+          ...(options.section ? { section: options.section } : {}),
+          ...(options.sections ? { sections: options.sections } : {}),
+        }),
+      }
+    );
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null) as { error?: string } | null;
+      throw new Error(payload?.error || 'Failed to persist homepage layout section');
+    }
+    const payload = await response.json().catch(() => null) as { layout?: HomepageLayout } | null;
+    if (payload?.layout) {
+      replaceHomepageLayoutInState(payload.layout);
+    }
+    return payload;
+  };
+
+  const persistHomepageLayoutMutation = async (
+    localityId: string,
+    method: 'PUT' | 'DELETE',
+    layout?: HomepageLayout
+  ) => {
+    const response = await fetch(
+      getHomepageLayoutEndpoint(localityId),
+      {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(),
+        },
+        ...(layout ? { body: JSON.stringify({ layout }) } : {}),
+      }
+    );
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null) as { error?: string } | null;
+      throw new Error(payload?.error || 'Failed to persist homepage layout');
+    }
+    const payload = await response.json().catch(() => null) as { layout?: HomepageLayout } | null;
+    if (payload?.layout) {
+      replaceHomepageLayoutInState(payload.layout);
+    }
+    return payload;
+  };
+
+  const persistHomepageLayoutCollectionMutation = async (layouts: HomepageLayout[]) => {
+    const response = await fetch(
+      getHomepageLayoutsEndpoint(),
+      {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(),
+        },
+        body: JSON.stringify({ layouts }),
+      }
+    );
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null) as { error?: string } | null;
+      throw new Error(payload?.error || 'Failed to persist homepage layouts');
+    }
+    const payload = await response.json().catch(() => null) as { layouts?: HomepageLayout[] } | null;
+    if (Array.isArray(payload?.layouts)) {
+      setHomepageLayouts(ensureHomepageLayouts(payload.layouts, localities, homepageDefaultsConfig.sectionTemplates));
+    }
+    return payload;
+  };
+
+  const persistHomepageApiConfigurationMutation = async (nextConfiguration: ApiConfiguration) => {
+    const response = await fetch(
+      getHomepageApiConfigurationEndpoint(),
+      {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(),
+        },
+        body: JSON.stringify({
+          apiConfiguration: getPersistableApiConfiguration(nextConfiguration),
+        }),
+      }
+    );
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null) as { error?: string } | null;
+      throw new Error(payload?.error || 'Failed to persist homepage API configuration');
+    }
+    return response.json().catch(() => null) as Promise<{ apiConfiguration?: ApiConfiguration } | null>;
   };
 
   const handleCreateHomepageSection = (
     localityId: string,
     sectionInput: Omit<HomepageSection, 'id' | 'sortOrder'>
   ) => {
-    mutateHomepageLayout(localityId, (layout) => {
-      const nextSection = normalizeHomepageSection(
-        {
-          ...sectionInput,
-          id: `home_section_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
-          sortOrder: (layout.sections[layout.sections.length - 1]?.sortOrder || 0) + 10
-        } as HomepageSection,
-        localityId,
-        layout.sections.length
+    const baseLayout = buildHomepageLayoutDraft(localityId);
+    const nextSection = normalizeHomepageSection(
+      {
+        ...sectionInput,
+        id: `home_section_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+        sortOrder: (baseLayout.sections[baseLayout.sections.length - 1]?.sortOrder || 0) + 10
+      } as HomepageSection,
+      localityId,
+      baseLayout.sections.length
+    );
+    const nextLayout = {
+      ...baseLayout,
+      sections: reindexHomepageSections([...baseLayout.sections, nextSection]),
+      updatedAt: new Date().toISOString(),
+    };
+    if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
+      lastHomepageSyncSignatureRef.current = JSON.stringify(
+        buildHomepageConfigPayloadWithOverrides({
+          homepageLayouts: mergeHomepageLayoutIntoCollection(nextLayout),
+        })
       );
-      return {
-        ...layout,
-        sections: reindexHomepageSections([...layout.sections, nextSection])
-      };
-    });
+    }
+    replaceHomepageLayoutInState(nextLayout);
+    if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
+      void persistHomepageLayoutSectionMutation(localityId, {
+        method: 'POST',
+        layout: baseLayout,
+        section: nextSection,
+      }).catch(() => {
+        lastHomepageSyncSignatureRef.current = '';
+        // Keep local state intact even if best-effort homepage layout section sync fails.
+      });
+    }
     logAuditEvent('data_entry', 'Created homepage section', `Locality: ${localityId} | Type: ${sectionInput.sectionType}`);
   };
 
   const handleUpdateHomepageSection = (localityId: string, section: HomepageSection) => {
-    mutateHomepageLayout(localityId, (layout) => ({
-      ...layout,
+    const baseLayout = buildHomepageLayoutDraft(localityId);
+    const normalizedSection = normalizeHomepageSection(section, localityId, 0);
+    const nextLayout = {
+      ...baseLayout,
       sections: reindexHomepageSections(
-        layout.sections.map((existing) => (existing.id === section.id ? normalizeHomepageSection(section, localityId, 0) : existing))
-      )
-    }));
+        baseLayout.sections.map((existing) => (existing.id === section.id ? normalizedSection : existing))
+      ),
+      updatedAt: new Date().toISOString(),
+    };
+    if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
+      lastHomepageSyncSignatureRef.current = JSON.stringify(
+        buildHomepageConfigPayloadWithOverrides({
+          homepageLayouts: mergeHomepageLayoutIntoCollection(nextLayout),
+        })
+      );
+    }
+    replaceHomepageLayoutInState(nextLayout);
+    if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
+      void persistHomepageLayoutSectionMutation(localityId, {
+        method: 'PUT',
+        layout: baseLayout,
+        sectionId: section.id,
+        section: normalizedSection,
+      }).catch(() => {
+        lastHomepageSyncSignatureRef.current = '';
+        // Keep local state intact even if best-effort homepage layout section sync fails.
+      });
+    }
     logAuditEvent('data_entry', 'Updated homepage section', `Locality: ${localityId} | Section ID: ${section.id}`);
   };
 
   const handleDeleteHomepageSection = (localityId: string, sectionId: string) => {
-    mutateHomepageLayout(localityId, (layout) => ({
-      ...layout,
-      sections: reindexHomepageSections(layout.sections.filter((section) => section.id !== sectionId))
-    }));
+    const baseLayout = buildHomepageLayoutDraft(localityId);
+    const nextLayout = {
+      ...baseLayout,
+      sections: reindexHomepageSections(baseLayout.sections.filter((section) => section.id !== sectionId)),
+      updatedAt: new Date().toISOString(),
+    };
+    if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
+      lastHomepageSyncSignatureRef.current = JSON.stringify(
+        buildHomepageConfigPayloadWithOverrides({
+          homepageLayouts: mergeHomepageLayoutIntoCollection(nextLayout),
+        })
+      );
+    }
+    replaceHomepageLayoutInState(nextLayout);
+    if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
+      void persistHomepageLayoutSectionMutation(localityId, {
+        method: 'DELETE',
+        layout: baseLayout,
+        sectionId,
+      }).catch(() => {
+        lastHomepageSyncSignatureRef.current = '';
+        // Keep local state intact even if best-effort homepage layout section sync fails.
+      });
+    }
     logAuditEvent('data_entry', 'Deleted homepage section', `Locality: ${localityId} | Section ID: ${sectionId}`);
   };
 
   const handleDuplicateHomepageSection = (localityId: string, sectionId: string) => {
-    mutateHomepageLayout(localityId, (layout) => {
-      const target = layout.sections.find((section) => section.id === sectionId);
-      if (!target) return layout;
-      const duplicate = normalizeHomepageSection(
-        {
-          ...target,
-          id: `home_section_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
-          title: `${target.title} Copy`,
-          sortOrder: target.sortOrder + 1
-        },
-        localityId,
-        layout.sections.length
+    const baseLayout = buildHomepageLayoutDraft(localityId);
+    const target = baseLayout.sections.find((section) => section.id === sectionId);
+    if (!target) return;
+    const duplicate = normalizeHomepageSection(
+      {
+        ...target,
+        id: `home_section_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+        title: `${target.title} Copy`,
+        sortOrder: target.sortOrder + 1
+      },
+      localityId,
+      baseLayout.sections.length
+    );
+    const nextLayout = {
+      ...baseLayout,
+      sections: reindexHomepageSections([...baseLayout.sections, duplicate]),
+      updatedAt: new Date().toISOString(),
+    };
+    if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
+      lastHomepageSyncSignatureRef.current = JSON.stringify(
+        buildHomepageConfigPayloadWithOverrides({
+          homepageLayouts: mergeHomepageLayoutIntoCollection(nextLayout),
+        })
       );
-      return {
-        ...layout,
-        sections: reindexHomepageSections([...layout.sections, duplicate])
-      };
-    });
+    }
+    replaceHomepageLayoutInState(nextLayout);
+    if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
+      void persistHomepageLayoutSectionMutation(localityId, {
+        method: 'POST',
+        layout: baseLayout,
+        sectionId,
+        suffix: 'duplicate',
+      }).catch(() => {
+        lastHomepageSyncSignatureRef.current = '';
+        // Keep local state intact even if best-effort homepage layout section sync fails.
+      });
+    }
     logAuditEvent('data_entry', 'Duplicated homepage section', `Locality: ${localityId} | Section ID: ${sectionId}`);
   };
 
   const handleMoveHomepageSection = (localityId: string, sectionId: string, direction: 'up' | 'down') => {
-    mutateHomepageLayout(localityId, (layout) => {
-      const sorted = reindexHomepageSections(layout.sections);
-      const index = sorted.findIndex((section) => section.id === sectionId);
-      if (index === -1) return layout;
-      const nextIndex = direction === 'up' ? index - 1 : index + 1;
-      if (nextIndex < 0 || nextIndex >= sorted.length) return layout;
-      const nextSections = [...sorted];
-      [nextSections[index], nextSections[nextIndex]] = [nextSections[nextIndex], nextSections[index]];
-      return {
-        ...layout,
-        sections: reindexHomepageSections(nextSections)
-      };
-    });
+    const baseLayout = buildHomepageLayoutDraft(localityId);
+    const sorted = reindexHomepageSections(baseLayout.sections);
+    const index = sorted.findIndex((section) => section.id === sectionId);
+    if (index === -1) return;
+    const nextIndex = direction === 'up' ? index - 1 : index + 1;
+    if (nextIndex < 0 || nextIndex >= sorted.length) return;
+    const nextSections = [...sorted];
+    [nextSections[index], nextSections[nextIndex]] = [nextSections[nextIndex], nextSections[index]];
+    const reorderedSections = reindexHomepageSections(nextSections);
+    const nextLayout = {
+      ...baseLayout,
+      sections: reorderedSections,
+      updatedAt: new Date().toISOString(),
+    };
+    if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
+      lastHomepageSyncSignatureRef.current = JSON.stringify(
+        buildHomepageConfigPayloadWithOverrides({
+          homepageLayouts: mergeHomepageLayoutIntoCollection(nextLayout),
+        })
+      );
+    }
+    replaceHomepageLayoutInState(nextLayout);
+    if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
+      void persistHomepageLayoutSectionMutation(localityId, {
+        method: 'PUT',
+        layout: baseLayout,
+        sections: reorderedSections,
+        suffix: 'reorder',
+      }).catch(() => {
+        lastHomepageSyncSignatureRef.current = '';
+        // Keep local state intact even if best-effort homepage layout section sync fails.
+      });
+    }
     logAuditEvent('data_entry', 'Reordered homepage section', `Locality: ${localityId} | Section ID: ${sectionId} | Direction: ${direction}`);
   };
 
   const handleUpdateApiConfiguration = (nextConfiguration: ApiConfiguration) => {
-    setApiConfiguration(normalizeApiConfiguration(nextConfiguration));
+    const normalizedConfiguration = normalizeApiConfiguration(nextConfiguration);
+    setApiConfiguration(normalizedConfiguration);
+    if (normalizedConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
+      void persistHomepageApiConfigurationMutation(normalizedConfiguration)
+        .then((payload) => {
+          if (payload?.apiConfiguration) {
+            setApiConfiguration(normalizeApiConfiguration(payload.apiConfiguration));
+          }
+        })
+        .catch(() => {
+          // Keep local state intact even if best-effort homepage API configuration sync fails.
+        });
+    }
     lastHomepageSyncSignatureRef.current = '';
     logAuditEvent(
       'data_entry',
@@ -1806,16 +3119,831 @@ export default function App() {
     );
   };
 
+  const syncLocalityRoutingConfigInBackground = (
+    mutator: (config: LocalityRoutingConfigState) => LocalityRoutingConfigState,
+  ) => {
+    const nextConfig = normalizeLocalityRoutingConfigState(mutator(buildLocalityRoutingConfigPayload()));
+    setLocalities(nextConfig.localities);
+    setSubdomains(nextConfig.subdomains);
+    setPincodeMappings(nextConfig.pincodeMappings);
+    setDefaultLocalityId(nextConfig.defaultLocalityId);
+
+    const canWriteLocalityRouting = Boolean(userSession.authToken) && ['admin', 'moderator', 'developer'].includes(userSession.role);
+    if (apiConfiguration.syncMode === 'api' && apiConfiguration.localityRoutingConfigEndpoint && canWriteLocalityRouting) {
+      void persistLocalityRoutingConfigToServer(nextConfig).catch(() => {
+        // Keep local state intact even if best-effort locality routing sync fails.
+      });
+    }
+  };
+
+  const handleSaveBusinessTaxonomy = async (nextTaxonomy: BusinessTaxonomyState) => {
+    const normalized = normalizeBusinessTaxonomyState(nextTaxonomy);
+    setBusinessTaxonomyCatalog(normalized.categories, normalized.subcategories);
+    setBusinessTaxonomy(normalized);
+    setBusinesses((prev) => prev.map(normalizeStoredBusiness));
+
+    if (apiConfiguration.taxonomyConfigEndpoint && apiConfiguration.syncMode === 'api') {
+      const token = localStorage.getItem('yp_auth_token');
+      const response = await fetch(apiConfiguration.taxonomyConfigEndpoint, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ taxonomy: normalized }),
+      });
+      if (!response.ok) {
+        throw new Error('Failed to save business taxonomy');
+      }
+      const payload = await response.json().catch(() => null);
+      const saved = normalizeBusinessTaxonomyState(payload?.taxonomy || normalized);
+      setBusinessTaxonomyCatalog(saved.categories, saved.subcategories);
+      setBusinessTaxonomy(saved);
+      setBusinesses((prev) => prev.map(normalizeStoredBusiness));
+    }
+
+    logAuditEvent(
+      'data_entry',
+      'Saved master business taxonomy',
+      `Categories: ${normalized.categories.length} | Subcategories: ${normalized.subcategories.length}`
+    );
+    return normalized;
+  };
+
+  const handleSaveGeographyConfig = async (nextConfig: GeographyConfigState) => {
+    const normalized = normalizeGeographyConfigState(nextConfig);
+    const validationErrors = validateGeographyConfigForOperations(normalized, businesses, pincodeMappings);
+    if (validationErrors.length > 0) {
+      throw new Error(validationErrors.join(' '));
+    }
+
+    if (apiConfiguration.geographyConfigEndpoint && apiConfiguration.syncMode === 'api') {
+      const token = localStorage.getItem('yp_auth_token');
+      const response = await fetch(apiConfiguration.geographyConfigEndpoint, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ config: normalized }),
+      });
+      if (!response.ok) {
+        throw new Error('Failed to save geography config');
+      }
+      const payload = await response.json().catch(() => null);
+      const saved = normalizeGeographyConfigState(payload?.config || normalized);
+      const savedValidationErrors = validateGeographyConfigForOperations(saved, businesses, pincodeMappings);
+      if (savedValidationErrors.length > 0) {
+        throw new Error(savedValidationErrors.join(' '));
+      }
+      setGeographyConfig(saved);
+      setGeographyCatalog(saved.states, saved.cities, saved.areas);
+      setBusinesses((prev) => prev.map(normalizeStoredBusiness));
+      logAuditEvent(
+        'data_entry',
+        'Saved managed geography configuration',
+        `States: ${saved.states.length} | Cities: ${saved.cities.length} | Areas: ${saved.areas.length}`
+      );
+      return saved;
+    }
+
+    setGeographyConfig(normalized);
+    setGeographyCatalog(normalized.states, normalized.cities, normalized.areas);
+    setBusinesses((prev) => prev.map(normalizeStoredBusiness));
+    logAuditEvent(
+      'data_entry',
+      'Saved managed geography configuration',
+      `States: ${normalized.states.length} | Cities: ${normalized.cities.length} | Areas: ${normalized.areas.length}`
+    );
+    return normalized;
+  };
+
+  const handleSaveHomepageDefaultsConfig = async (nextConfig: HomepageDefaultsConfigState) => {
+    const normalized = normalizeHomepageDefaultsConfigState(nextConfig);
+
+    if (apiConfiguration.homepageDefaultsConfigEndpoint && apiConfiguration.syncMode === 'api') {
+      const token = localStorage.getItem('yp_auth_token');
+      const response = await fetch(apiConfiguration.homepageDefaultsConfigEndpoint, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ config: normalized }),
+      });
+      if (!response.ok) {
+        throw new Error('Failed to save homepage defaults config');
+      }
+      const payload = await response.json().catch(() => null);
+      const saved = normalizeHomepageDefaultsConfigState(payload?.config || normalized);
+      setHomepageDefaultsConfig(saved);
+      setHomepageDefaultsRuntimeCatalog(saved);
+      setHeroBanners((prev) => prev.map(normalizeStoredHeroBanner));
+      logAuditEvent(
+        'data_entry',
+        'Saved homepage defaults configuration',
+        `Section templates: ${saved.sectionTemplates.length} | Fallback ads: ${saved.fallbackListingAds.length} | Hero stat templates: ${saved.heroStatTemplates.length}`
+      );
+      return saved;
+    }
+
+    setHomepageDefaultsConfig(normalized);
+    setHomepageDefaultsRuntimeCatalog(normalized);
+    setHeroBanners((prev) => prev.map(normalizeStoredHeroBanner));
+    logAuditEvent(
+      'data_entry',
+      'Saved homepage defaults configuration',
+      `Section templates: ${normalized.sectionTemplates.length} | Fallback ads: ${normalized.fallbackListingAds.length} | Hero stat templates: ${normalized.heroStatTemplates.length}`
+    );
+    return normalized;
+  };
+
+  const handleSaveSeoDiscoveryConfig = async (nextConfig: SeoDiscoveryConfigState) => {
+    const normalized = normalizeSeoDiscoveryConfigState(nextConfig);
+    setSeoDiscoveryConfig(normalized);
+
+    if (apiConfiguration.seoDiscoveryConfigEndpoint && apiConfiguration.syncMode === 'api') {
+      const token = localStorage.getItem('yp_auth_token');
+      const response = await fetch(apiConfiguration.seoDiscoveryConfigEndpoint, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ config: normalized }),
+      });
+      if (!response.ok) {
+        throw new Error('Failed to save SEO discovery config');
+      }
+      const payload = await response.json().catch(() => null);
+      const saved = normalizeSeoDiscoveryConfigState(payload?.config || normalized);
+      setSeoDiscoveryConfig(saved);
+    }
+
+    logAuditEvent(
+      'data_entry',
+      'Saved SEO discovery configuration',
+      `Route intents: ${normalized.routeIntents.length} | Localities: ${normalized.localityMetadata.length} | Top listing groups: ${normalized.topListings.length}`
+    );
+    return normalized;
+  };
+
+  const handleSaveScalableHomepageConfig = async (nextConfiguration: ScalableHomepageConfigState) => {
+    if (!apiConfiguration.scalableHomepageConfigEndpoint) {
+      throw new Error('Scalable homepage config endpoint is not configured.');
+    }
+
+    const token = localStorage.getItem('yp_auth_token');
+    const response = await fetch(apiConfiguration.scalableHomepageConfigEndpoint, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      },
+      body: JSON.stringify({ config: nextConfiguration })
+    });
+    if (!response.ok) {
+      throw new Error('Failed to save scalable homepage config');
+    }
+
+    const payload = await response.json().catch(() => null);
+    const normalized = normalizeScalableHomepageConfigState(payload?.config || nextConfiguration);
+    setScalableHomepageConfig(normalized);
+    logAuditEvent(
+      'data_entry',
+      'Saved scalable homepage configuration',
+      `Templates: ${normalized.templates.length} | Campaigns: ${normalized.campaigns.length} | Snapshots: ${normalized.publishedSnapshots.length}`
+    );
+    return normalized;
+  };
+
+  const getScalableHomepageEntityEndpoint = (entityPath: string, entityId?: string) => {
+    const baseEndpoint = String(apiConfiguration.scalableHomepageConfigEndpoint || '').replace(/\/+$/, '');
+    if (!baseEndpoint) {
+      throw new Error('Scalable homepage config endpoint is not configured.');
+    }
+    const normalizedEntityPath = entityPath.replace(/^\/+|\/+$/g, '');
+    return entityId
+      ? `${baseEndpoint}/${normalizedEntityPath}/${encodeURIComponent(entityId)}`
+      : `${baseEndpoint}/${normalizedEntityPath}`;
+  };
+
+  const getScalableHomepageSnapshotsEndpoint = (snapshotId?: string) => (
+    getScalableHomepageEntityEndpoint('snapshots', snapshotId)
+  );
+
+  const getScalableLegacyLayoutSyncEndpoint = () => (
+    getScalableHomepageEntityEndpoint('sync-legacy-layouts')
+  );
+
+  const getScalableLegacyCampaignSyncEndpoint = () => (
+    getScalableHomepageEntityEndpoint('sync-legacy-campaigns')
+  );
+
+  const getScalableTemplateSectionsEndpoint = (templateId: string, sectionId?: string, suffix?: string) => {
+    const base = getScalableHomepageEntityEndpoint(`templates/${encodeURIComponent(templateId)}/sections`);
+    if (sectionId && suffix) return `${base}/${encodeURIComponent(sectionId)}/${suffix.replace(/^\/+/, '')}`;
+    if (sectionId) return `${base}/${encodeURIComponent(sectionId)}`;
+    if (suffix) return `${base}/${suffix.replace(/^\/+/, '')}`;
+    return base;
+  };
+
+  const handleSaveScalableTemplate = async (template: ScalableHomepageTemplate) => {
+    const token = localStorage.getItem('yp_auth_token');
+    const response = await fetch(
+      template.id ? getScalableHomepageEntityEndpoint('templates', template.id) : getScalableHomepageEntityEndpoint('templates'),
+      {
+        method: template.id ? 'PUT' : 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ template })
+      }
+    );
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null) as { error?: string } | null;
+      throw new Error(payload?.error || 'Failed to save scalable template');
+    }
+
+    const payload = await response.json().catch(() => null);
+    const normalized = normalizeScalableHomepageConfigState(payload?.config || scalableHomepageConfig || null);
+    setScalableHomepageConfig(normalized);
+    logAuditEvent(
+      'data_entry',
+      template.id ? 'Updated scalable homepage template' : 'Created scalable homepage template',
+      `Template: ${template.name} | Scope: ${template.templateScope} | Localities: ${(template.localityIds || []).join(', ') || 'all'}`
+    );
+    return payload?.template as ScalableHomepageTemplate | undefined;
+  };
+
+  const handleDeleteScalableTemplate = async (templateId: string) => {
+    const token = localStorage.getItem('yp_auth_token');
+    const response = await fetch(getScalableHomepageEntityEndpoint('templates', templateId), {
+      method: 'DELETE',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      },
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null) as { error?: string } | null;
+      throw new Error(payload?.error || 'Failed to delete scalable template');
+    }
+
+    const payload = await response.json().catch(() => null);
+    const normalized = normalizeScalableHomepageConfigState(payload?.config || scalableHomepageConfig || null);
+    setScalableHomepageConfig(normalized);
+    logAuditEvent(
+      'data_entry',
+      'Deleted scalable homepage template',
+      `Template ID: ${templateId} | Cascaded assignments: ${Array.isArray(payload?.deletedAssignmentIds) ? payload.deletedAssignmentIds.length : 0}`
+    );
+    return payload;
+  };
+
+  const handleSaveScalableAssignment = async (assignment: ScalableHomepageAssignment) => {
+    const token = localStorage.getItem('yp_auth_token');
+    const response = await fetch(
+      assignment.id ? getScalableHomepageEntityEndpoint('assignments', assignment.id) : getScalableHomepageEntityEndpoint('assignments'),
+      {
+        method: assignment.id ? 'PUT' : 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ assignment })
+      }
+    );
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null) as { error?: string } | null;
+      throw new Error(payload?.error || 'Failed to save scalable assignment');
+    }
+
+    const payload = await response.json().catch(() => null);
+    const normalized = normalizeScalableHomepageConfigState(payload?.config || scalableHomepageConfig || null);
+    setScalableHomepageConfig(normalized);
+    logAuditEvent(
+      'data_entry',
+      assignment.id ? 'Updated scalable homepage assignment' : 'Created scalable homepage assignment',
+      `Assignment: ${assignment.localityId} -> ${assignment.templateId}`
+    );
+    return payload?.assignment as ScalableHomepageAssignment | undefined;
+  };
+
+  const handleDeleteScalableAssignment = async (assignmentId: string) => {
+    const token = localStorage.getItem('yp_auth_token');
+    const response = await fetch(getScalableHomepageEntityEndpoint('assignments', assignmentId), {
+      method: 'DELETE',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      },
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null) as { error?: string } | null;
+      throw new Error(payload?.error || 'Failed to delete scalable assignment');
+    }
+
+    const payload = await response.json().catch(() => null);
+    const normalized = normalizeScalableHomepageConfigState(payload?.config || scalableHomepageConfig || null);
+    setScalableHomepageConfig(normalized);
+    logAuditEvent(
+      'data_entry',
+      'Deleted scalable homepage assignment',
+      `Assignment ID: ${assignmentId}`
+    );
+    return payload;
+  };
+
+  const handleSaveScalableCampaign = async (campaign: ScalableCampaign) => {
+    const token = localStorage.getItem('yp_auth_token');
+    const response = await fetch(
+      campaign.id ? getScalableHomepageEntityEndpoint('campaigns', campaign.id) : getScalableHomepageEntityEndpoint('campaigns'),
+      {
+        method: campaign.id ? 'PUT' : 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ campaign })
+      }
+    );
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null) as { error?: string } | null;
+      throw new Error(payload?.error || 'Failed to save scalable campaign');
+    }
+
+    const payload = await response.json().catch(() => null);
+    const normalized = normalizeScalableHomepageConfigState(payload?.config || scalableHomepageConfig || null);
+    setScalableHomepageConfig(normalized);
+    logAuditEvent(
+      'data_entry',
+      campaign.id ? 'Updated scalable homepage campaign' : 'Created scalable homepage campaign',
+      `Campaign: ${campaign.name} | Type: ${campaign.campaignType}`
+    );
+    return payload?.campaign as ScalableCampaign | undefined;
+  };
+
+  const handleDeleteScalableCampaign = async (campaignId: string) => {
+    const token = localStorage.getItem('yp_auth_token');
+    const response = await fetch(getScalableHomepageEntityEndpoint('campaigns', campaignId), {
+      method: 'DELETE',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      },
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null) as { error?: string } | null;
+      throw new Error(payload?.error || 'Failed to delete scalable campaign');
+    }
+
+    const payload = await response.json().catch(() => null);
+    const normalized = normalizeScalableHomepageConfigState(payload?.config || scalableHomepageConfig || null);
+    setScalableHomepageConfig(normalized);
+    logAuditEvent(
+      'data_entry',
+      'Deleted scalable homepage campaign',
+      `Campaign ID: ${campaignId}`
+    );
+    return payload;
+  };
+
+  const handleRefreshScalablePublishedSnapshots = async () => {
+    const response = await fetch(getScalableHomepageSnapshotsEndpoint());
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null) as { error?: string } | null;
+      throw new Error(payload?.error || 'Failed to refresh scalable homepage snapshots');
+    }
+
+    const payload = await response.json().catch(() => null) as { snapshots?: PublishedHomepageSnapshot[] } | null;
+    if (Array.isArray(payload?.snapshots)) {
+      replacePublishedHomepageSnapshots(payload.snapshots);
+    }
+    logAuditEvent(
+      'data_entry',
+      'Refreshed scalable homepage snapshots',
+      `Snapshots: ${Array.isArray(payload?.snapshots) ? payload.snapshots.length : 0}`
+    );
+    return payload;
+  };
+
+  const handleCreateScalableTemplateSection = async (templateId: string, section: HomepageSection) => {
+    const token = localStorage.getItem('yp_auth_token');
+    const response = await fetch(getScalableTemplateSectionsEndpoint(templateId), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      },
+      body: JSON.stringify({ section }),
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null) as { error?: string } | null;
+      throw new Error(payload?.error || 'Failed to create scalable template section');
+    }
+    const payload = await response.json().catch(() => null);
+    const normalized = normalizeScalableHomepageConfigState(payload?.config || scalableHomepageConfig || null);
+    setScalableHomepageConfig(normalized);
+    logAuditEvent('data_entry', 'Created scalable template section', `Template: ${templateId} | Section: ${section.id}`);
+    return payload;
+  };
+
+  const handleUpdateScalableTemplateSection = async (templateId: string, sectionId: string, section: HomepageSection) => {
+    const token = localStorage.getItem('yp_auth_token');
+    const response = await fetch(getScalableTemplateSectionsEndpoint(templateId, sectionId), {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      },
+      body: JSON.stringify({ section }),
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null) as { error?: string } | null;
+      throw new Error(payload?.error || 'Failed to update scalable template section');
+    }
+    const payload = await response.json().catch(() => null);
+    const normalized = normalizeScalableHomepageConfigState(payload?.config || scalableHomepageConfig || null);
+    setScalableHomepageConfig(normalized);
+    logAuditEvent('data_entry', 'Updated scalable template section', `Template: ${templateId} | Section: ${sectionId}`);
+    return payload;
+  };
+
+  const handleReorderScalableTemplateSections = async (templateId: string, sections: HomepageSection[]) => {
+    const token = localStorage.getItem('yp_auth_token');
+    const response = await fetch(getScalableTemplateSectionsEndpoint(templateId, undefined, 'reorder'), {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      },
+      body: JSON.stringify({ sections }),
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null) as { error?: string } | null;
+      throw new Error(payload?.error || 'Failed to reorder scalable template sections');
+    }
+    const payload = await response.json().catch(() => null);
+    const normalized = normalizeScalableHomepageConfigState(payload?.config || scalableHomepageConfig || null);
+    setScalableHomepageConfig(normalized);
+    logAuditEvent('data_entry', 'Reordered scalable template sections', `Template: ${templateId} | Sections: ${sections.length}`);
+    return payload;
+  };
+
+  const handleDuplicateScalableTemplateSection = async (templateId: string, sectionId: string) => {
+    const token = localStorage.getItem('yp_auth_token');
+    const response = await fetch(getScalableTemplateSectionsEndpoint(templateId, sectionId, 'duplicate'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      },
+      body: JSON.stringify({}),
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null) as { error?: string } | null;
+      throw new Error(payload?.error || 'Failed to duplicate scalable template section');
+    }
+    const payload = await response.json().catch(() => null);
+    const normalized = normalizeScalableHomepageConfigState(payload?.config || scalableHomepageConfig || null);
+    setScalableHomepageConfig(normalized);
+    logAuditEvent('data_entry', 'Duplicated scalable template section', `Template: ${templateId} | Source section: ${sectionId}`);
+    return payload;
+  };
+
+  const handleDeleteScalableTemplateSection = async (templateId: string, sectionId: string) => {
+    const token = localStorage.getItem('yp_auth_token');
+    const response = await fetch(getScalableTemplateSectionsEndpoint(templateId, sectionId), {
+      method: 'DELETE',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      },
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null) as { error?: string } | null;
+      throw new Error(payload?.error || 'Failed to delete scalable template section');
+    }
+    const payload = await response.json().catch(() => null);
+    const normalized = normalizeScalableHomepageConfigState(payload?.config || scalableHomepageConfig || null);
+    setScalableHomepageConfig(normalized);
+    logAuditEvent('data_entry', 'Deleted scalable template section', `Template: ${templateId} | Section: ${sectionId}`);
+    return payload;
+  };
+
+  const handleSyncScalableTemplateSectionsFromLocality = async (templateId: string, localityId: string) => {
+    const token = localStorage.getItem('yp_auth_token');
+    const response = await fetch(getScalableTemplateSectionsEndpoint(templateId, undefined, 'sync-locality'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      },
+      body: JSON.stringify({ localityId }),
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null) as { error?: string } | null;
+      throw new Error(payload?.error || 'Failed to sync scalable template sections from locality');
+    }
+    const payload = await response.json().catch(() => null);
+    const normalized = normalizeScalableHomepageConfigState(payload?.config || scalableHomepageConfig || null);
+    setScalableHomepageConfig(normalized);
+    logAuditEvent('data_entry', 'Synced scalable template sections from locality', `Template: ${templateId} | Locality: ${localityId}`);
+    return payload;
+  };
+
+  const handleSyncScalableLegacyLayouts = async (localityIds?: string[]) => {
+    const token = localStorage.getItem('yp_auth_token');
+    const response = await fetch(getScalableLegacyLayoutSyncEndpoint(), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      },
+      body: JSON.stringify({ localityIds: localityIds && localityIds.length > 0 ? localityIds : undefined }),
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null) as { error?: string } | null;
+      throw new Error(payload?.error || 'Failed to sync scalable legacy layouts');
+    }
+    const payload = await response.json().catch(() => null);
+    const normalized = normalizeScalableHomepageConfigState(payload?.config || scalableHomepageConfig || null);
+    setScalableHomepageConfig(normalized);
+    logAuditEvent('data_entry', 'Synced scalable legacy layouts', `Localities: ${(localityIds && localityIds.length > 0 ? localityIds : []).join(', ') || 'all'}`);
+    return payload;
+  };
+
+  const handleSyncScalableLegacyCampaigns = async (
+    sourceTags: ScalableLegacyCampaignSourceTag[],
+    localityIds?: string[]
+  ) => {
+    const token = localStorage.getItem('yp_auth_token');
+    const response = await fetch(getScalableLegacyCampaignSyncEndpoint(), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      },
+      body: JSON.stringify({
+        sourceTags,
+        localityIds: localityIds && localityIds.length > 0 ? localityIds : undefined,
+      }),
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null) as { error?: string } | null;
+      throw new Error(payload?.error || 'Failed to sync scalable legacy campaigns');
+    }
+    const payload = await response.json().catch(() => null);
+    const normalized = normalizeScalableHomepageConfigState(payload?.config || scalableHomepageConfig || null);
+    setScalableHomepageConfig(normalized);
+    logAuditEvent(
+      'data_entry',
+      'Synced scalable legacy campaigns',
+      `Sources: ${sourceTags.join(', ')} | Localities: ${(localityIds && localityIds.length > 0 ? localityIds : []).join(', ') || 'all'}`
+    );
+    return payload;
+  };
+
+  const handleDeleteScalablePublishedSnapshot = async (snapshotId: string) => {
+    const token = localStorage.getItem('yp_auth_token');
+    const response = await fetch(getScalableHomepageSnapshotsEndpoint(snapshotId), {
+      method: 'DELETE',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      },
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null) as { error?: string } | null;
+      throw new Error(payload?.error || 'Failed to delete scalable homepage snapshot');
+    }
+
+    const payload = await response.json().catch(() => null) as { publishedSnapshots?: PublishedHomepageSnapshot[] } | null;
+    if (Array.isArray(payload?.publishedSnapshots)) {
+      replacePublishedHomepageSnapshots(payload.publishedSnapshots);
+    }
+    logAuditEvent(
+      'data_entry',
+      'Deleted scalable homepage snapshot',
+      `Snapshot ID: ${snapshotId}`
+    );
+    return payload;
+  };
+
+  const handleReseedScalableHomepageConfig = async (force = false) => {
+    if (!apiConfiguration.scalableHomepageConfigEndpoint) {
+      throw new Error('Scalable homepage config endpoint is not configured.');
+    }
+
+    const token = localStorage.getItem('yp_auth_token');
+    const response = await fetch(`${apiConfiguration.scalableHomepageConfigEndpoint}/reseed-legacy`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      },
+      body: JSON.stringify({ force })
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null) as { error?: string; ownership?: ScalableLegacyOwnershipSummary } | null;
+      const ownershipSummary = payload?.ownership
+        ? ` Detached templates: ${payload.ownership.detachedTemplates}; detached assignments: ${payload.ownership.detachedAssignments}; detached campaigns: ${payload.ownership.detachedCampaigns}.`
+        : '';
+      throw new Error((payload?.error || 'Failed to reseed scalable homepage config') + ownershipSummary);
+    }
+
+    const payload = await response.json().catch(() => null);
+    const normalized = normalizeScalableHomepageConfigState(payload?.config || null);
+    setScalableHomepageConfig(normalized);
+    logAuditEvent(
+      'data_entry',
+      'Reseeded scalable homepage configuration',
+      `Templates: ${normalized.templates.length} | Campaigns: ${normalized.campaigns.length}`
+    );
+    return payload;
+  };
+
+  const replacePublishedHomepageSnapshots = (snapshots: PublishedHomepageSnapshot[]) => {
+    setScalableHomepageConfig((previous) => {
+      const baseState = normalizeScalableHomepageConfigState(previous || null);
+      return normalizeScalableHomepageConfigState({
+        ...baseState,
+        publishedSnapshots: snapshots,
+        metadata: {
+          ...baseState.metadata,
+          updatedAt: new Date().toISOString(),
+        },
+      });
+    });
+  };
+
+  const handlePublishResolvedHomepages = async (publishRequest?: string[] | ResolvedHomepagePublishRequest) => {
+    if (!apiConfiguration.publishResolvedHomepageEndpoint) {
+      throw new Error('Resolved homepage publish endpoint is not configured.');
+    }
+
+    const requestBody = Array.isArray(publishRequest)
+      ? {
+          localityIds: publishRequest.length > 0 ? publishRequest : localities.map((locality) => locality.id)
+        }
+      : {
+          ...(publishRequest || {}),
+          localityIds: publishRequest?.localityIds && publishRequest.localityIds.length > 0
+            ? publishRequest.localityIds
+            : publishRequest?.contexts?.length
+              ? undefined
+              : localities.map((locality) => locality.id),
+        };
+
+    const token = localStorage.getItem('yp_auth_token');
+    const response = await fetch(apiConfiguration.publishResolvedHomepageEndpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      },
+      body: JSON.stringify(requestBody)
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to publish resolved homepages');
+    }
+
+    const payload = await response.json().catch(() => null) as { publishedSnapshots?: PublishedHomepageSnapshot[] } | null;
+    if (Array.isArray(payload?.publishedSnapshots)) {
+      replacePublishedHomepageSnapshots(payload.publishedSnapshots);
+    }
+
+    logAuditEvent(
+      'data_entry',
+      'Published resolved homepage snapshots',
+      Array.isArray(publishRequest)
+        ? `Localities: ${(publishRequest.length > 0 ? publishRequest : localities.map((locality) => locality.id)).join(', ')}`
+        : publishRequest?.contexts?.length
+          ? `Contexts: ${publishRequest.contexts.map((context) => `${context.localityId}/${context.categoryId || 'all'}/${context.subcategoryId || 'all'}/${context.pincode || 'all'}/${context.placementKey || 'default'}/${context.device || 'all'}/${context.pageType || 'homepage'}`).join(', ')}`
+          : `Localities: ${((publishRequest?.localityIds && publishRequest.localityIds.length > 0 ? publishRequest.localityIds : localities.map((locality) => locality.id))).join(', ')}`
+    );
+    return payload;
+  };
+
+  const handleDeleteResolvedHomepageSnapshots = async (deleteRequest?: ResolvedHomepageSnapshotDeleteRequest) => {
+    if (!apiConfiguration.resolvedHomepageEndpoint) {
+      throw new Error('Resolved homepage endpoint is not configured.');
+    }
+
+    const token = localStorage.getItem('yp_auth_token');
+    const response = await fetch(`${apiConfiguration.resolvedHomepageEndpoint}/snapshots/delete`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      },
+      body: JSON.stringify(deleteRequest || {})
+    });
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      throw new Error(payload?.error || 'Failed to delete resolved homepage snapshots');
+    }
+
+    const payload = await response.json().catch(() => null) as { publishedSnapshots?: PublishedHomepageSnapshot[] } | null;
+    if (Array.isArray(payload?.publishedSnapshots)) {
+      replacePublishedHomepageSnapshots(payload.publishedSnapshots);
+    }
+
+    logAuditEvent(
+      'data_entry',
+      'Deleted resolved homepage snapshots',
+      deleteRequest?.snapshotIds?.length
+        ? `Snapshot IDs: ${deleteRequest.snapshotIds.join(', ')}`
+        : deleteRequest?.contexts?.length
+          ? `Contexts: ${deleteRequest.contexts.map((context) => `${context.localityId}/${context.categoryId || 'all'}/${context.subcategoryId || 'all'}/${context.pincode || 'all'}/${context.placementKey || 'default'}/${context.device || 'all'}/${context.pageType || 'homepage'}`).join(', ')}`
+          : 'Scoped delete request executed.'
+    );
+    return payload;
+  };
+
+  const refreshResolvedHomepageArtifactsInBackground = (localityIds?: string[]) => {
+    if (apiConfiguration.syncMode !== 'api') return;
+    if (!apiConfiguration.scalableHomepageConfigEndpoint && !apiConfiguration.publishResolvedHomepageEndpoint) {
+      return;
+    }
+    const scopedLocalityIds = localityIds && localityIds.length > 0
+      ? localityIds
+      : localities.map((locality) => locality.id);
+
+    Promise.resolve()
+      .then(async () => {
+        const canReseedFromLegacy = !scalableHomepageConfigLoadedRef.current
+          || shouldAllowLegacyScalableReseed(normalizeScalableHomepageConfigState(scalableHomepageConfig));
+        if (apiConfiguration.scalableHomepageConfigEndpoint && canReseedFromLegacy) {
+          await handleReseedScalableHomepageConfig();
+        }
+        if (apiConfiguration.publishResolvedHomepageEndpoint) {
+          await handlePublishResolvedHomepages(scopedLocalityIds);
+        }
+      })
+      .catch(() => {
+        // Keep legacy homepage config saved even if resolver refresh/publish is temporarily unavailable.
+      });
+  };
+
+  const syncScalableConfigInBackground = (
+    mutator: (config: ScalableHomepageConfigState) => ScalableHomepageConfigState,
+    publishLocalityIds: string[] = []
+  ) => {
+    if (!scalableHomepageConfigLoadedRef.current) return;
+    const canWriteScalableCms = Boolean(userSession.authToken) && ['admin', 'moderator', 'developer'].includes(userSession.role);
+    if (!canWriteScalableCms) return;
+    const nextConfig = mutator(normalizeScalableHomepageConfigState(scalableHomepageConfig));
+    setScalableHomepageConfig(nextConfig);
+    if (apiConfiguration.syncMode === 'api' && apiConfiguration.scalableHomepageConfigEndpoint) {
+      void handleSaveScalableHomepageConfig(nextConfig)
+        .then(() => {
+          const scopedLocalityIds = Array.from(new Set(publishLocalityIds.filter(Boolean)));
+          if (scopedLocalityIds.length === 0 || !apiConfiguration.publishResolvedHomepageEndpoint) return;
+          return handlePublishResolvedHomepages(scopedLocalityIds);
+        })
+        .catch(() => {
+          // Keep local state intact even if best-effort scalable sync fails.
+      });
+    }
+  };
+
+  const syncScalableLegacyCampaignSourceInBackground = (
+    sourceTag: ScalableLegacyCampaignSourceTag,
+    publishLocalityIds: string[] = []
+  ) => {
+    if (apiConfiguration.syncMode !== 'api' || !apiConfiguration.scalableHomepageConfigEndpoint) {
+      return false;
+    }
+    if (!scalableHomepageConfigLoadedRef.current) {
+      return true;
+    }
+    const canWriteScalableCms = Boolean(userSession.authToken) && ['admin', 'moderator', 'developer'].includes(userSession.role);
+    if (!canWriteScalableCms) {
+      return true;
+    }
+    const scopedLocalityIds: string[] = Array.from(new Set<string>(publishLocalityIds.filter(Boolean)));
+    void handleSyncScalableLegacyCampaigns([sourceTag], scopedLocalityIds)
+      .then(() => {
+        if (scopedLocalityIds.length === 0 || !apiConfiguration.publishResolvedHomepageEndpoint) return;
+        return handlePublishResolvedHomepages(scopedLocalityIds);
+      })
+      .catch(() => {
+        // Keep local state intact even if best-effort scalable sync fails.
+      });
+    return true;
+  };
+
   const handleManualHomepageConfigSync = () => {
     const payload = buildHomepageConfigPayload();
     persistHomepageConfigToServer(payload)
-      .then((response) => {
+      .then(async (response) => {
         if (!response.ok) throw new Error('Failed to sync homepage config');
         lastHomepageSyncSignatureRef.current = JSON.stringify(payload);
         setApiConfiguration((prev) => ({
           ...prev,
           lastHomepageSyncAt: new Date().toISOString()
         }));
+        refreshResolvedHomepageArtifactsInBackground(localities.map((locality) => locality.id));
         logAuditEvent('data_entry', 'Manually synced homepage config', `Endpoint: ${apiConfiguration.homepageConfigEndpoint}`);
       })
       .catch(() => {
@@ -1823,13 +3951,260 @@ export default function App() {
       });
   };
 
+  useEffect(() => {
+    if (!scalableHomepageConfigReady) return;
+    if (apiConfiguration.syncMode !== 'api' || !apiConfiguration.scalableHomepageConfigEndpoint) {
+      syncScalableConfigInBackground(
+        (config) => syncScalableAssignmentsFromLayouts(syncScalableTemplatesFromLayouts(config, homepageLayouts), homepageLayouts),
+        homepageLayouts.map((layout) => layout.localityId)
+      );
+      return;
+    }
+    const canWriteScalableCms = Boolean(userSession.authToken) && ['admin', 'moderator', 'developer'].includes(userSession.role);
+    if (!canWriteScalableCms) return;
+    const scopedLocalityIds: string[] = Array.from(new Set<string>(
+      homepageLayouts
+        .map((layout) => String(layout.localityId || '').trim())
+        .filter((localityId): localityId is string => localityId.length > 0)
+    ));
+    void handleSyncScalableLegacyLayouts(scopedLocalityIds)
+      .then(() => {
+        if (scopedLocalityIds.length === 0 || !apiConfiguration.publishResolvedHomepageEndpoint) return;
+        return handlePublishResolvedHomepages(scopedLocalityIds);
+      })
+      .catch(() => {
+        // Keep local state intact even if best-effort scalable sync fails.
+      });
+  }, [homepageLayouts, scalableHomepageConfigReady, userSession.authToken, userSession.role]);
+
+  useEffect(() => {
+    if (!scalableHomepageConfigReady) return;
+    if (syncScalableLegacyCampaignSourceInBackground('legacy_hero_banner', heroBanners.map((banner) => banner.localityId))) {
+      return;
+    }
+    const nextCampaigns: ScalableCampaign[] = heroBanners.map((banner) => ({
+      id: `hero_${banner.id}`,
+      name: banner.title || `Hero Banner ${banner.id}`,
+      campaignType: 'hero_banner',
+      status: banner.isActive ? 'active' : 'inactive',
+      priority: 100,
+      isFallback: true,
+      startDate: banner.startDate || undefined,
+      endDate: banner.endDate || undefined,
+      deviceTarget: 'all',
+      placementKeys: [],
+      targets: {
+        localityIds: [banner.localityId],
+        categoryIds: [],
+        subcategoryIds: [],
+        pincodes: banner.pincodes || [],
+        devices: ['all'],
+        pageTypes: ['homepage'],
+        placementKeys: [],
+      },
+      payload: banner as unknown as Record<string, unknown>,
+      metadata: {
+        source: 'legacy_hero_banner',
+      },
+      updatedAt: new Date().toISOString(),
+    }));
+    syncScalableConfigInBackground(
+      (config) => syncScalableCampaignCollection(config, 'hero_banner', nextCampaigns, 'legacy_hero_banner'),
+      heroBanners.map((banner) => banner.localityId)
+    );
+  }, [heroBanners, scalableHomepageConfigReady, userSession.authToken, userSession.role]);
+
+  useEffect(() => {
+    if (!scalableHomepageConfigReady) return;
+    const listingAdLocalityIds = listingAds.flatMap((ad) => ad.localityIds || []);
+    if (syncScalableLegacyCampaignSourceInBackground('legacy_listing_ad', listingAdLocalityIds)) {
+      return;
+    }
+    const nextCampaigns: ScalableCampaign[] = listingAds.map((ad) => ({
+      id: `ad_${ad.id}`,
+      name: ad.title || `Listing Ad ${ad.id}`,
+      campaignType: 'listing_ad',
+      status: ad.isActive ? 'active' : 'inactive',
+      priority: 100,
+      isFallback: true,
+      startDate: ad.startDate || undefined,
+      endDate: ad.endDate || undefined,
+      deviceTarget: ad.deviceTarget || 'all',
+      placementKeys: ad.placementKey ? [ad.placementKey] : [],
+      targets: {
+        localityIds: ad.localityIds || [],
+        categoryIds: ad.categoryIds || [],
+        subcategoryIds: [],
+        pincodes: ad.pincodes || [],
+        devices: [ad.deviceTarget || 'all'],
+        pageTypes: ['homepage', 'listing_results'],
+        placementKeys: ad.placementKey ? [ad.placementKey] : [],
+      },
+      payload: ad as unknown as Record<string, unknown>,
+      metadata: {
+        source: 'legacy_listing_ad',
+      },
+      updatedAt: new Date().toISOString(),
+    }));
+    syncScalableConfigInBackground(
+      (config) => syncScalableCampaignCollection(config, 'listing_ad', nextCampaigns, 'legacy_listing_ad'),
+      listingAdLocalityIds
+    );
+  }, [listingAds, scalableHomepageConfigReady, userSession.authToken, userSession.role]);
+
+  useEffect(() => {
+    if (!scalableHomepageConfigReady) return;
+    const couponLocalityIds = coupons.flatMap((coupon) => {
+      if (Array.isArray(coupon.localityIds) && coupon.localityIds.length > 0) {
+        return coupon.localityIds;
+      }
+      const relatedBusiness = businesses.find((business) => business.id === coupon.businessId);
+      return relatedBusiness?.localityId ? [relatedBusiness.localityId] : [];
+    });
+    if (syncScalableLegacyCampaignSourceInBackground('legacy_coupon', couponLocalityIds)) {
+      return;
+    }
+    const nextCampaigns: ScalableCampaign[] = coupons.map((coupon) => {
+      const relatedBusiness = businesses.find((business) => business.id === coupon.businessId);
+      return {
+        id: `offer_${coupon.id}`,
+        name: coupon.title || coupon.code || `Offer ${coupon.id}`,
+        campaignType: 'offer',
+        status: coupon.isActive === false ? 'inactive' : 'active',
+        priority: 100,
+        isFallback: true,
+        startDate: coupon.startDate || undefined,
+        endDate: coupon.endDate || coupon.expiryDate || undefined,
+        deviceTarget: 'all',
+        placementKeys: [],
+        targets: {
+          localityIds: coupon.localityIds && coupon.localityIds.length > 0
+            ? coupon.localityIds
+            : (relatedBusiness ? [relatedBusiness.localityId] : []),
+          categoryIds: coupon.categoryIds || (relatedBusiness?.categoryId ? [relatedBusiness.categoryId] : []),
+          subcategoryIds: relatedBusiness?.subcategoryId ? [relatedBusiness.subcategoryId] : [],
+          pincodes: coupon.pincodes || (relatedBusiness?.pincode ? [relatedBusiness.pincode] : []),
+          devices: ['all'],
+          pageTypes: ['homepage', 'listing_results'],
+          placementKeys: [],
+        },
+        payload: coupon as unknown as Record<string, unknown>,
+        metadata: {
+          source: 'legacy_coupon',
+        },
+        updatedAt: new Date().toISOString(),
+      };
+    });
+    syncScalableConfigInBackground(
+      (config) => syncScalableCampaignCollection(config, 'offer', nextCampaigns, 'legacy_coupon'),
+      nextCampaigns.flatMap((campaign) => campaign.targets.localityIds || [])
+    );
+  }, [coupons, businesses, scalableHomepageConfigReady, userSession.authToken, userSession.role]);
+
+  useEffect(() => {
+    if (!scalableHomepageConfigReady) return;
+    if (syncScalableLegacyCampaignSourceInBackground('legacy_community_item', communityItems.map((item) => item.localityId))) {
+      return;
+    }
+    const nextCampaigns: ScalableCampaign[] = communityItems.map((item) => ({
+      id: `content_${item.id}`,
+      name: item.title || `Content Block ${item.id}`,
+      campaignType: 'content_block',
+      status: item.status === 'archived'
+        ? 'archived'
+        : item.status === 'draft'
+          ? 'draft'
+          : 'active',
+      priority: item.isSponsored ? 120 : 100,
+      isFallback: true,
+      startDate: item.publishAt ? item.publishAt.slice(0, 10) : item.createdAt.slice(0, 10),
+      endDate: item.expireAt ? item.expireAt.slice(0, 10) : undefined,
+      deviceTarget: 'all',
+      placementKeys: [],
+      targets: {
+        localityIds: [item.localityId],
+        categoryIds: [],
+        subcategoryIds: [],
+        pincodes: [],
+        devices: ['all'],
+        pageTypes: ['homepage'],
+        placementKeys: [],
+      },
+      payload: item as unknown as Record<string, unknown>,
+      metadata: {
+        source: 'legacy_community_item',
+      },
+      updatedAt: new Date().toISOString(),
+    }));
+    syncScalableConfigInBackground(
+      (config) => syncScalableCampaignCollection(config, 'content_block', nextCampaigns, 'legacy_community_item'),
+      communityItems.map((item) => item.localityId)
+    );
+  }, [communityItems, scalableHomepageConfigReady, userSession.authToken, userSession.role]);
+
+  useEffect(() => {
+    if (!scalableHomepageConfigReady) return;
+    const sponsoredLocalityIds = businesses
+      .filter((business) => business.isSponsored)
+      .map((business) => business.localityId);
+    if (syncScalableLegacyCampaignSourceInBackground('legacy_business_sponsorship', sponsoredLocalityIds)) {
+      return;
+    }
+    const nextCampaigns: ScalableCampaign[] = businesses
+      .filter((business) => business.isSponsored)
+      .map((business) => ({
+        id: `sponsored_${business.id}`,
+        name: business.name || `Sponsored Listing ${business.id}`,
+        campaignType: 'sponsored_listing',
+        status: business.status === 'approved' ? 'active' : 'inactive',
+        priority: Number.isFinite(Number(business.cpcBudget)) ? Math.round(Number(business.cpcBudget)) : 100,
+        isFallback: true,
+        deviceTarget: 'all',
+        placementKeys: [],
+        targets: {
+          localityIds: [business.localityId],
+          categoryIds: business.categoryId ? [business.categoryId] : [],
+          subcategoryIds: business.subcategoryId ? [business.subcategoryId] : [],
+          pincodes: business.pincode ? [business.pincode] : [],
+          devices: ['all'],
+          pageTypes: ['homepage', 'listing_results'],
+          placementKeys: [],
+        },
+        maxItems: 1,
+        payload: {
+          businessIds: [business.id],
+          sellerBusinessId: business.id,
+          businessName: business.name,
+        },
+        metadata: {
+          source: 'legacy_business_sponsorship',
+        },
+        updatedAt: new Date().toISOString(),
+      }));
+    syncScalableConfigInBackground(
+      (config) => syncScalableCampaignCollection(config, 'sponsored_listing', nextCampaigns, 'legacy_business_sponsorship'),
+      nextCampaigns.flatMap((campaign) => campaign.targets.localityIds || [])
+    );
+  }, [businesses, scalableHomepageConfigReady, userSession.authToken, userSession.role]);
+
   const handleSubmitAdLead = (leadInput: Omit<AdLead, 'id' | 'createdAt'>) => {
-    const freshLead: AdLead = {
+    const freshLead: AdLead = normalizeStoredAdLead({
       ...leadInput,
       id: `lead_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
       createdAt: new Date().toISOString()
-    };
+    });
     setAdLeads((prev) => [freshLead, ...prev]);
+    if (apiConfiguration.syncMode === 'api' && apiConfiguration.adLeadsEndpoint) {
+      void fetch(apiConfiguration.adLeadsEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ adLead: freshLead }),
+      }).catch(() => {
+        // Keep local state intact even if best-effort ad lead sync fails.
+      });
+    }
 
     if (leadInput.sellerBusinessId) {
       setCrmContacts((prev) => {
@@ -1858,7 +4233,16 @@ export default function App() {
       ...payload,
       id: `lc_${Date.now()}_${Math.floor(Math.random() * 1000)}`
     };
-    setLocalityCategoryLinks((prev) => [linkRecord, ...prev]);
+    const nextLocalityCategoryLinks = [linkRecord, ...localityCategoryLinks];
+    if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
+      setHomepageConfigSyncSignatureForOverrides({ localityCategoryLinks: nextLocalityCategoryLinks });
+    }
+    setLocalityCategoryLinks(nextLocalityCategoryLinks);
+    if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
+      void persistHomepageConfigCollectionMutation('locality-category-links', 'POST', { localityCategoryLink: linkRecord }).catch(() => {
+        lastHomepageSyncSignatureRef.current = '';
+      });
+    }
     logAuditEvent(
       'data_entry',
       'Created locality-category URL mapping',
@@ -1867,7 +4251,16 @@ export default function App() {
   };
 
   const handleDeleteLocalityCategoryLink = (id: string) => {
-    setLocalityCategoryLinks((prev) => prev.filter((row) => row.id !== id));
+    const nextLocalityCategoryLinks = localityCategoryLinks.filter((row) => row.id !== id);
+    if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
+      setHomepageConfigSyncSignatureForOverrides({ localityCategoryLinks: nextLocalityCategoryLinks });
+    }
+    setLocalityCategoryLinks(nextLocalityCategoryLinks);
+    if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
+      void persistHomepageConfigCollectionMutation(`locality-category-links/${encodeURIComponent(id)}`, 'DELETE').catch(() => {
+        lastHomepageSyncSignatureRef.current = '';
+      });
+    }
     logAuditEvent('data_entry', 'Deleted locality-category URL mapping', `Mapping ID: ${id}`);
   };
 
@@ -1925,20 +4318,59 @@ export default function App() {
       createdAt: new Date().toISOString()
     };
 
-    setLocalities(prev => [...prev, newLoc]);
-    setSubdomains(prev => [...prev, newSub]);
-    setHomepageLayouts(prev => [...prev, buildDefaultHomepageLayout(newLoc)]);
+    syncLocalityRoutingConfigInBackground((config) => ({
+      ...config,
+      localities: [...config.localities, newLoc],
+      subdomains: [...config.subdomains, newSub],
+      metadata: {
+        ...config.metadata,
+        seededFromCode: false,
+        updatedAt: new Date().toISOString(),
+      },
+    }));
+    const nextLayout = buildDefaultHomepageLayout(newLoc, homepageDefaultsConfig.sectionTemplates);
+    const nextLayouts = [...homepageLayouts.filter((layout) => layout.localityId !== id), nextLayout];
+    if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
+      setHomepageConfigSyncSignatureForOverrides({ homepageLayouts: nextLayouts });
+    }
+    setHomepageLayouts(nextLayouts);
+    if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
+      void persistHomepageLayoutMutation(id, 'PUT', nextLayout).catch(() => {
+        lastHomepageSyncSignatureRef.current = '';
+      });
+    }
     logAuditEvent('data_entry', `Provisioned new municipal zone shard database and SSL routing: "${name}"`, `Virtual host bound to: ${subdomain}`);
   };
 
   const handleDeleteLocality = (locId: string) => {
     const target = localities.find(l => l.id === locId);
-    setLocalities(prev => prev.filter(l => l.id !== locId));
-    setSubdomains(prev => prev.filter(s => s.localityId !== locId));
-    setHomepageLayouts(prev => prev.filter((layout) => layout.localityId !== locId));
+    const remaining = localities.filter(l => l.id !== locId);
+    syncLocalityRoutingConfigInBackground((config) => ({
+      ...config,
+      localities: config.localities.filter((locality) => locality.id !== locId),
+      subdomains: config.subdomains.filter((subdomain) => subdomain.localityId !== locId),
+      pincodeMappings: config.pincodeMappings.filter((mapping) => mapping.localityId !== locId),
+      defaultLocalityId: config.defaultLocalityId === locId
+        ? (remaining[0]?.id || DEFAULT_LOCALITY_ID)
+        : config.defaultLocalityId,
+      metadata: {
+        ...config.metadata,
+        seededFromCode: false,
+        updatedAt: new Date().toISOString(),
+      },
+    }));
+    const nextLayouts = homepageLayouts.filter((layout) => layout.localityId !== locId);
+    if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
+      setHomepageConfigSyncSignatureForOverrides({ homepageLayouts: nextLayouts });
+    }
+    setHomepageLayouts(nextLayouts);
+    if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
+      void persistHomepageLayoutMutation(locId, 'DELETE').catch(() => {
+        lastHomepageSyncSignatureRef.current = '';
+      });
+    }
     // Re-route if deleting current active locality
     if (activeLocalityId === locId) {
-      const remaining = localities.filter(l => l.id !== locId);
       if (remaining.length > 0) {
         setActiveLocalityId(remaining[0].id);
       }
@@ -1994,6 +4426,13 @@ export default function App() {
 
     const nextReviews = [...reviews, newReview];
     setReviews(nextReviews);
+    const reviewedBusiness = businesses.find((business) => business.id === businessId);
+    appendBuyerActivityEvent({
+      actionType: 'review_submitted',
+      businessId,
+      title: 'Submitted verified review',
+      detail: `${reviewedBusiness?.name || 'Business'} • ${rating}★`,
+    });
 
     // Recalculate average rating & reviewCount for this business
     setBusinesses(prevBizs => {
@@ -2043,6 +4482,12 @@ export default function App() {
 
       setViewedBusinessIds((prev) => (prev.includes(businessId) ? prev : [...prev, businessId]));
       const b = businesses.find((x) => x.id === businessId);
+      appendBuyerActivityEvent({
+        actionType: 'contact_unlock',
+        businessId,
+        title: 'Unlocked business contact',
+        detail: b?.name || businessId,
+      });
       logAuditEvent('contact_view', `Unlocked business contact coordinates (OTP Verified)`, `Revealed contact for "${b?.name || businessId}" | Listing ID: ${businessId}`);
       return true;
     } catch (err) {
@@ -2060,6 +4505,8 @@ export default function App() {
       localStorage.removeItem('yp_reviews');
       localStorage.removeItem('yp_user_session');
       localStorage.removeItem('yp_viewed_bizs');
+      localStorage.removeItem('yp_saved_business_ids');
+      localStorage.removeItem('yp_buyer_activity_events');
       localStorage.removeItem('yp_community');
       localStorage.removeItem('yp_crm');
       localStorage.removeItem('yp_coupons');
@@ -2076,39 +4523,40 @@ export default function App() {
       localStorage.removeItem('yp_homepage_layouts');
       localStorage.removeItem('yp_api_configuration');
       
-      setLocalities(INITIAL_LOCALITIES);
-      setBusinesses(INITIAL_BUSINESSES.map(normalizeStoredBusiness));
+      const resetLocalities = (DEFAULT_LOCALITIES as Locality[]).map(normalizeStoredLocality);
+      setLocalities(resetLocalities);
+      setBusinesses([]);
       setReviews(INITIAL_REVIEWS);
-      setCommunityItems(INITIAL_COMMUNITY_ITEMS);
+      setViewedBusinessIds([]);
+      setSavedBusinessIds([]);
+      setBuyerActivityEvents([]);
+      setCommunityItems([]);
       setCrmContacts(INITIAL_CRM_CONTACTS);
-      setCoupons(INITIAL_COUPONS.map(normalizeStoredCoupon));
+      setCoupons([]);
       setListingAds([]);
       setAdLeads([]);
-      const resetHeroBanners: HeroBanner[] = INITIAL_LOCALITIES.map((locality) => ({
+      const heroBannerDraftDefaults = getRuntimeHeroBannerDraftDefaults();
+      const resetHeroEndDate = new Date();
+      resetHeroEndDate.setDate(resetHeroEndDate.getDate() + heroBannerDraftDefaults.durationDays);
+      const resetHeroBanners: HeroBanner[] = (DEFAULT_LOCALITIES as Locality[]).map((locality) => ({
         id: `hero_${locality.id}`,
         localityId: locality.id,
         title: `Hyper Local Directory for ${locality.name.split(',')[0]}`,
         subtitle: `${locality.description} verified reviews, location-grabbing utilities, and dynamic approval tracking.`,
         imageUrl: (locality.carouselImages && locality.carouselImages[0]) || locality.coverImage,
         startDate: new Date().toISOString().slice(0, 10),
-        endDate: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().slice(0, 10),
-        ctaLabel: 'Explore Businesses',
-        ctaType: 'search_category',
-        ctaTarget: 'all',
+        endDate: resetHeroEndDate.toISOString().slice(0, 10),
+        ctaLabel: heroBannerDraftDefaults.ctaLabel,
+        ctaType: heroBannerDraftDefaults.ctaType,
+        ctaTarget: heroBannerDraftDefaults.ctaTarget,
         isActive: true
       }));
       setHeroBanners(resetHeroBanners.map(normalizeStoredHeroBanner));
       setLocalityCategoryLinks([]);
-      setHomepageLayouts(INITIAL_LOCALITIES.map((locality) => buildDefaultHomepageLayout(locality)));
+      setHomepageLayouts(resetLocalities.map((locality) => buildDefaultHomepageLayout(locality, homepageDefaultsConfig.sectionTemplates)));
       setApiConfiguration(DEFAULT_API_CONFIGURATION);
       lastHomepageSyncSignatureRef.current = '';
-      setSubdomains(INITIAL_LOCALITIES.map(l => ({
-        domain: l.subdomain,
-        localityId: l.id,
-        sslEnabled: true,
-        dnsStatus: 'active' as const,
-        createdAt: new Date().toISOString()
-      })));
+      setSubdomains((buildDefaultSubdomainMappings(DEFAULT_LOCALITIES) as SubdomainMapping[]).map(normalizeStoredSubdomain));
       setViewedBusinessIds(['s1']);
       setUserSession({
         role: 'buyer',
@@ -2116,14 +4564,78 @@ export default function App() {
         userPhone: '+91 80011 22334',
         isAuthenticated: true
       });
-      setActiveLocalityId('roadpali');
+      setActiveLocalityId(DEFAULT_LOCALITY_ID);
       setSavedPincode(null);
       setShowPincodeModal(true);
-      setDefaultLocalityId('roadpali');
-      setPincodeMappings(DEFAULT_PINCODE_MAPPINGS);
+      setDefaultLocalityId(DEFAULT_LOCALITY_ID);
+      setPincodeMappings((DEFAULT_PINCODE_MAPPINGS as PincodeRoutingMapping[]).map(normalizeStoredPincodeMapping));
       setUrlCategoryFilter(null);
       setUrlSubcategoryFilter(null);
       setUrlFilterNonce(0);
+
+      if (apiConfiguration.syncMode === 'api') {
+        void fetch(apiConfiguration.businessesEndpoint)
+          .then((response) => (response.ok ? response.json() : null))
+          .then((data: { businesses?: Business[] } | null) => {
+            if (Array.isArray(data?.businesses) && data.businesses.length > 0) {
+              setBusinesses(data.businesses.map(normalizeStoredBusiness));
+            }
+          })
+          .catch(() => {});
+
+        void Promise.all([
+          fetch(getHomepageApiConfigurationEndpoint()).then((response) => (response.ok ? response.json() : null)),
+          fetch(getHomepageLayoutsEndpoint()).then((response) => (response.ok ? response.json() : null)),
+          fetch(getHomepageConfigCollectionEndpoint('hero-banners')).then((response) => (response.ok ? response.json() : null)),
+          fetch(getHomepageConfigCollectionEndpoint('listing-ads')).then((response) => (response.ok ? response.json() : null)),
+          fetch(getHomepageConfigCollectionEndpoint('coupons')).then((response) => (response.ok ? response.json() : null)),
+          fetch(getHomepageConfigCollectionEndpoint('community-items')).then((response) => (response.ok ? response.json() : null)),
+          fetch(getHomepageConfigCollectionEndpoint('locality-category-links')).then((response) => (response.ok ? response.json() : null)),
+        ])
+          .then(([
+            apiConfigurationData,
+            layoutsData,
+            heroBannersData,
+            listingAdsData,
+            couponsData,
+            communityItemsData,
+            localityCategoryLinksData,
+          ]) => {
+            const normalizedConfig = normalizeHomepageConfigState({
+              apiConfiguration: apiConfigurationData?.apiConfiguration || {},
+              homepageLayouts: layoutsData?.layouts || [],
+              heroBanners: heroBannersData?.heroBanners || [],
+              listingAds: listingAdsData?.listingAds || [],
+              coupons: couponsData?.coupons || [],
+              communityItems: communityItemsData?.communityItems || [],
+              localityCategoryLinks: localityCategoryLinksData?.localityCategoryLinks || [],
+            }, resetLocalities, homepageDefaultsConfig.sectionTemplates);
+            setHeroBanners(normalizedConfig.heroBanners.map(normalizeStoredHeroBanner));
+            setListingAds(normalizedConfig.listingAds.map(normalizeStoredListingAd));
+            setCoupons(normalizedConfig.coupons.map(normalizeStoredCoupon));
+            setHomepageLayouts(normalizedConfig.homepageLayouts);
+            setLocalityCategoryLinks(normalizedConfig.localityCategoryLinks);
+            setCommunityItems(normalizedConfig.communityItems.map(normalizeStoredCommunityItem));
+            setApiConfiguration((prev) => normalizeApiConfiguration({
+              ...prev,
+              ...normalizedConfig.apiConfiguration,
+            }));
+          })
+          .catch(() => fetch(apiConfiguration.homepageConfigEndpoint)
+            .then((response) => (response.ok ? response.json() : null))
+            .then((data: { config?: Partial<HomepageConfigState> } | null) => {
+              if (!data?.config) return;
+              const normalizedConfig = normalizeHomepageConfigState(data.config, resetLocalities, homepageDefaultsConfig.sectionTemplates);
+              setHeroBanners(normalizedConfig.heroBanners.map(normalizeStoredHeroBanner));
+              setListingAds(normalizedConfig.listingAds.map(normalizeStoredListingAd));
+              setCoupons(normalizedConfig.coupons.map(normalizeStoredCoupon));
+              setHomepageLayouts(normalizedConfig.homepageLayouts);
+              setLocalityCategoryLinks(normalizedConfig.localityCategoryLinks);
+              setCommunityItems(normalizedConfig.communityItems.map(normalizeStoredCommunityItem));
+            }))
+          .catch(() => {});
+      }
+
       alert("Application storage cleared & restored to Roadpali metrics!");
     }
   };
@@ -2149,20 +4661,44 @@ export default function App() {
   };
 
   const handleAddPincodeMapping = (pincode: string, localityId: string) => {
-    setPincodeMappings(prev => {
-      const filtered = prev.filter(m => m.pincode !== pincode);
-      return [...filtered, { pincode, localityId }];
-    });
+    syncLocalityRoutingConfigInBackground((config) => ({
+      ...config,
+      pincodeMappings: [
+        ...config.pincodeMappings.filter((mapping) => mapping.pincode !== pincode),
+        { pincode, localityId },
+      ],
+      metadata: {
+        ...config.metadata,
+        seededFromCode: false,
+        updatedAt: new Date().toISOString(),
+      },
+    }));
     logAuditEvent('data_entry', `Added dynamic route mapping`, `Bind Postal: "${pincode}" -> Regional Node: "${localityId}"`);
   };
 
   const handleDeletePincodeMapping = (pincode: string) => {
-    setPincodeMappings(prev => prev.filter(m => m.pincode !== pincode));
+    syncLocalityRoutingConfigInBackground((config) => ({
+      ...config,
+      pincodeMappings: config.pincodeMappings.filter((mapping) => mapping.pincode !== pincode),
+      metadata: {
+        ...config.metadata,
+        seededFromCode: false,
+        updatedAt: new Date().toISOString(),
+      },
+    }));
     logAuditEvent('data_entry', `Deleted route mapping`, `De-registered routing for Pincode: "${pincode}"`);
   };
 
   const handleChangeDefaultLocalityId = (localityId: string) => {
-    setDefaultLocalityId(localityId);
+    syncLocalityRoutingConfigInBackground((config) => ({
+      ...config,
+      defaultLocalityId: localityId,
+      metadata: {
+        ...config.metadata,
+        seededFromCode: false,
+        updatedAt: new Date().toISOString(),
+      },
+    }));
     logAuditEvent('data_entry', `Default fallback page adjusted`, `Root Fallback set to: "${localityId}"`);
   };
 
@@ -2494,11 +5030,11 @@ export default function App() {
   };
 
   const seoFooterLinks = useMemo(() => (
-    SEO_ROUTE_INTENTS.map((intent) => ({
+    seoDiscoveryConfig.routeIntents.map((intent) => ({
       ...intent,
       label: `${intent.labelPrefix} in ${activeLocalityName}`,
     }))
-  ), [activeLocalityName]);
+  ), [activeLocalityName, seoDiscoveryConfig.routeIntents]);
 
   const buildSeoHref = (categoryId: string, q: string) => buildSeoPath(
     activeLocality?.id || 'roadpali',
@@ -3156,7 +5692,7 @@ export default function App() {
           <WebPortal 
             localities={localities}
             businesses={businesses}
-            categories={INITIAL_CATEGORIES}
+            categories={portalCategories}
             reviews={reviews}
             activeLocalityId={activeLocalityId}
             pincodeMappings={pincodeMappings}
@@ -3172,6 +5708,9 @@ export default function App() {
             userSession={userSession}
             onUserSessionChange={setUserSession}
             viewedBusinessIds={viewedBusinessIds}
+            savedBusinessIds={savedBusinessIds}
+            onToggleSavedBusiness={handleToggleSavedBusiness}
+            buyerActivityEvents={buyerActivityEvents}
             onUnlockBusinessContact={handleRegisterContactView}
             onSubmitApplication={handleSubmitApplication}
             onUpdateBusiness={handleUpdateBusiness}
@@ -3180,6 +5719,8 @@ export default function App() {
             adLeads={adLeads}
             heroBanners={heroBanners}
             homepageLayouts={homepageLayouts}
+            homepageDefaultsConfig={homepageDefaultsConfig}
+            apiConfiguration={apiConfiguration}
             onSubmitAdLead={handleSubmitAdLead}
             urlCategoryFilter={urlCategoryFilter}
             urlSubcategoryFilter={urlSubcategoryFilter}
@@ -3201,7 +5742,7 @@ export default function App() {
             <AndroidSimulator 
               localities={localities}
               businesses={businesses}
-              categories={INITIAL_CATEGORIES}
+              categories={portalCategories}
               reviews={reviews}
               activeLocalityId={activeLocalityId}
               onLocalityChange={setActiveLocalityId}
@@ -3245,6 +5786,8 @@ export default function App() {
               onDeleteHeroBanner={handleDeleteHeroBanner}
               coupons={coupons}
               onAddCoupon={handleAddCoupon}
+              onUpdateCoupon={handleUpdateCoupon}
+              onDeleteCoupon={handleDeleteCoupon}
               communityItems={communityItems}
               onAddCommunityItem={handleAddCommunityItem}
               onUpdateCommunityItem={handleUpdateCommunityItem}
@@ -3257,8 +5800,34 @@ export default function App() {
               onMoveHomepageSection={handleMoveHomepageSection}
               adLeads={adLeads}
               apiConfiguration={apiConfiguration}
+              geographyConfig={geographyConfig}
+              onSaveGeographyConfig={handleSaveGeographyConfig}
+              homepageDefaultsConfig={homepageDefaultsConfig}
+              onSaveHomepageDefaultsConfig={handleSaveHomepageDefaultsConfig}
               onUpdateApiConfiguration={handleUpdateApiConfiguration}
+              businessTaxonomy={businessTaxonomy}
+              onSaveBusinessTaxonomy={handleSaveBusinessTaxonomy}
+              seoDiscoveryConfig={seoDiscoveryConfig}
+              onSaveSeoDiscoveryConfig={handleSaveSeoDiscoveryConfig}
               onSyncHomepageConfig={handleManualHomepageConfigSync}
+              scalableHomepageConfig={scalableHomepageConfig}
+              onSaveScalableTemplate={handleSaveScalableTemplate}
+              onDeleteScalableTemplate={handleDeleteScalableTemplate}
+              onCreateScalableTemplateSection={handleCreateScalableTemplateSection}
+              onUpdateScalableTemplateSection={handleUpdateScalableTemplateSection}
+              onReorderScalableTemplateSections={handleReorderScalableTemplateSections}
+              onDuplicateScalableTemplateSection={handleDuplicateScalableTemplateSection}
+              onDeleteScalableTemplateSection={handleDeleteScalableTemplateSection}
+              onSyncScalableTemplateSectionsFromLocality={handleSyncScalableTemplateSectionsFromLocality}
+              onSaveScalableAssignment={handleSaveScalableAssignment}
+              onDeleteScalableAssignment={handleDeleteScalableAssignment}
+              onSaveScalableCampaign={handleSaveScalableCampaign}
+              onDeleteScalableCampaign={handleDeleteScalableCampaign}
+              onRefreshScalablePublishedSnapshots={handleRefreshScalablePublishedSnapshots}
+              onDeleteScalablePublishedSnapshot={handleDeleteScalablePublishedSnapshot}
+              onReseedScalableHomepageConfig={handleReseedScalableHomepageConfig}
+              onPublishResolvedHomepages={handlePublishResolvedHomepages}
+              onDeleteResolvedHomepageSnapshots={handleDeleteResolvedHomepageSnapshots}
               localityCategoryLinks={localityCategoryLinks}
               onCreateLocalityCategoryLink={handleCreateLocalityCategoryLink}
               onDeleteLocalityCategoryLink={handleDeleteLocalityCategoryLink}
@@ -3454,7 +6023,7 @@ export default function App() {
       <AuthModal
         isOpen={showAuthModal}
         onClose={() => setShowAuthModal(false)}
-        onAuthSuccess={({ token, name, phone, email, role, userType }) => {
+        onAuthSuccess={({ token, name, phone, email, role, userType, sellerBusinessId }) => {
           localStorage.setItem('yp_auth_token', token);
           setUserSession({
             role: role as UserRole,
@@ -3462,6 +6031,7 @@ export default function App() {
             userName: `${name} (${userType})`,
             userPhone: phone,
             email,
+            sellerBusinessId,
             authToken: token,
             isAuthenticated: true,
           });

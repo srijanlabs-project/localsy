@@ -1,12 +1,20 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { 
   CheckCircle, XCircle, Plus, Info, Globe, AlertCircle, 
   Trash2, PlusCircle, Check, Database, Eye, Server, RefreshCw, MapPin, Copy, ChevronUp, ChevronDown
 } from 'lucide-react';
-import { Locality, Business, SubdomainMapping, UserSession, AuditEvent, ListingAd, HeroBanner, HeroBannerStat, AdLead, MarketingCoupon, HomepageLayout, HomepageSection, HomepageSectionType, ApiConfiguration, CommunityItem } from '../types';
-import { MASTER_AREAS } from '../data';
+import { Locality, Business, SubdomainMapping, UserSession, AuditEvent, ListingAd, HeroBanner, HeroBannerStat, AdLead, MarketingCoupon, HomepageLayout, HomepageSection, HomepageSectionType, ApiConfiguration, CommunityItem, ScalableHomepageConfigState, ScalableHomepageTemplate, ScalableHomepageAssignment, ScalableCampaign, ScalableCampaignType, ResolvedHomepagePayload, BusinessTaxonomyState, SeoDiscoveryConfigState, GeographyConfigState, HomepageDefaultsConfigState, ResolvedHomepagePublishRequest, ResolvedHomepagePublishContext, ResolvedHomepageSnapshotDeleteRequest, ScalableLegacyOwnershipSummary } from '../types';
+import { MASTER_AREAS } from '../geographyMaster';
 import { getBusinessImageUrl, getCategoryFallbackImage, hasUploadedBusinessImage } from '../utils/businessImage';
 import { getMediaProxyUrl } from '../utils/mediaUrl';
+import BusinessTaxonomyManager from './BusinessTaxonomyManager';
+import GeographyConfigManager from './GeographyConfigManager';
+import HomepageDefaultsManager from './HomepageDefaultsManager';
+import SeoDiscoveryManager from './SeoDiscoveryManager';
+import {
+  DEFAULT_HERO_BANNER_DRAFT_DEFAULTS,
+  DEFAULT_HERO_STAT_TEMPLATES,
+} from '../../shared/homepageDefaultsSeed.js';
 import {
   BUSINESS_CATEGORIES,
   BUSINESS_SUBCATEGORIES,
@@ -66,20 +74,48 @@ interface AdminConsoleProps {
   onDeleteHeroBanner?: (bannerId: string) => void;
   coupons?: MarketingCoupon[];
   onAddCoupon?: (coupon: Omit<MarketingCoupon, 'id' | 'usageCount'>) => void;
+  onUpdateCoupon?: (coupon: MarketingCoupon) => Promise<unknown> | void;
+  onDeleteCoupon?: (couponId: string) => Promise<unknown> | void;
   communityItems?: CommunityItem[];
   onAddCommunityItem?: (item: Omit<CommunityItem, 'id' | 'createdAt' | 'likes'>) => void;
   onUpdateCommunityItem?: (item: CommunityItem) => void;
   onDeleteCommunityItem?: (itemId: string) => void;
   homepageLayouts?: HomepageLayout[];
-  onCreateHomepageSection?: (localityId: string, section: Omit<HomepageSection, 'id' | 'sortOrder'>) => void;
-  onUpdateHomepageSection?: (localityId: string, section: HomepageSection) => void;
-  onDeleteHomepageSection?: (localityId: string, sectionId: string) => void;
-  onDuplicateHomepageSection?: (localityId: string, sectionId: string) => void;
-  onMoveHomepageSection?: (localityId: string, sectionId: string, direction: 'up' | 'down') => void;
+  onCreateHomepageSection?: (localityId: string, section: Omit<HomepageSection, 'id' | 'sortOrder'>) => Promise<unknown> | void;
+  onUpdateHomepageSection?: (localityId: string, section: HomepageSection) => Promise<unknown> | void;
+  onDeleteHomepageSection?: (localityId: string, sectionId: string) => Promise<unknown> | void;
+  onDuplicateHomepageSection?: (localityId: string, sectionId: string) => Promise<unknown> | void;
+  onMoveHomepageSection?: (localityId: string, sectionId: string, direction: 'up' | 'down') => Promise<unknown> | void;
   adLeads?: AdLead[];
   apiConfiguration?: ApiConfiguration;
   onUpdateApiConfiguration?: (config: ApiConfiguration) => void;
+  geographyConfig?: GeographyConfigState;
+  onSaveGeographyConfig?: (config: GeographyConfigState) => Promise<GeographyConfigState> | void;
+  homepageDefaultsConfig?: HomepageDefaultsConfigState;
+  onSaveHomepageDefaultsConfig?: (config: HomepageDefaultsConfigState) => Promise<HomepageDefaultsConfigState> | void;
+  businessTaxonomy?: BusinessTaxonomyState;
+  onSaveBusinessTaxonomy?: (taxonomy: BusinessTaxonomyState) => Promise<BusinessTaxonomyState> | void;
+  seoDiscoveryConfig?: SeoDiscoveryConfigState;
+  onSaveSeoDiscoveryConfig?: (config: SeoDiscoveryConfigState) => Promise<SeoDiscoveryConfigState> | void;
   onSyncHomepageConfig?: () => void;
+  scalableHomepageConfig?: ScalableHomepageConfigState;
+  onSaveScalableTemplate?: (template: ScalableHomepageTemplate) => Promise<ScalableHomepageTemplate | void> | void;
+  onDeleteScalableTemplate?: (templateId: string) => Promise<unknown> | void;
+  onCreateScalableTemplateSection?: (templateId: string, section: HomepageSection) => Promise<unknown> | void;
+  onUpdateScalableTemplateSection?: (templateId: string, sectionId: string, section: HomepageSection) => Promise<unknown> | void;
+  onReorderScalableTemplateSections?: (templateId: string, sections: HomepageSection[]) => Promise<unknown> | void;
+  onDuplicateScalableTemplateSection?: (templateId: string, sectionId: string) => Promise<unknown> | void;
+  onDeleteScalableTemplateSection?: (templateId: string, sectionId: string) => Promise<unknown> | void;
+  onSyncScalableTemplateSectionsFromLocality?: (templateId: string, localityId: string) => Promise<unknown> | void;
+  onSaveScalableAssignment?: (assignment: ScalableHomepageAssignment) => Promise<ScalableHomepageAssignment | void> | void;
+  onDeleteScalableAssignment?: (assignmentId: string) => Promise<unknown> | void;
+  onSaveScalableCampaign?: (campaign: ScalableCampaign) => Promise<ScalableCampaign | void> | void;
+  onDeleteScalableCampaign?: (campaignId: string) => Promise<unknown> | void;
+  onRefreshScalablePublishedSnapshots?: () => Promise<unknown> | void;
+  onDeleteScalablePublishedSnapshot?: (snapshotId: string) => Promise<unknown> | void;
+  onReseedScalableHomepageConfig?: (force?: boolean) => Promise<{ summary?: { templates?: number; assignments?: number; campaigns?: number }; ownership?: ScalableLegacyOwnershipSummary; forced?: boolean } | void> | void;
+  onPublishResolvedHomepages?: (publishRequest?: string[] | ResolvedHomepagePublishRequest) => Promise<{ publishedCount?: number; totalSnapshots?: number } | void> | void;
+  onDeleteResolvedHomepageSnapshots?: (deleteRequest?: ResolvedHomepageSnapshotDeleteRequest) => Promise<{ deletedCount?: number; remainingSnapshots?: number } | void> | void;
   localityCategoryLinks?: LocalityCategoryLink[];
   onCreateLocalityCategoryLink?: (payload: Omit<LocalityCategoryLink, 'id'>) => void;
   onDeleteLocalityCategoryLink?: (id: string) => void;
@@ -139,12 +175,6 @@ type HeroStatDraft = {
   pincodes: string;
 };
 
-const DEFAULT_HERO_STAT_DRAFTS: HeroStatDraft[] = [
-  { enabled: true, label: 'Happy Users', value: '15K+', localityIds: '', pincodes: '' },
-  { enabled: true, label: 'Verified Businesses', value: '3K+', localityIds: '', pincodes: '' },
-  { enabled: true, label: 'Average Rating', value: '4.8', localityIds: '', pincodes: '' }
-];
-
 const slugifyForPath = (value: string) => value
   .toLowerCase()
   .trim()
@@ -165,6 +195,63 @@ const splitTagSource = (value: string) => (
     .map((entry) => entry.trim())
     .filter(Boolean)
 );
+
+const getFutureDateIso = (durationDays: number) => {
+  const target = new Date();
+  target.setDate(target.getDate() + Math.max(1, durationDays));
+  return target.toISOString().slice(0, 10);
+};
+
+const buildHeroStatDraftsFromTemplates = (heroStatTemplates?: HeroBannerStat[]): HeroStatDraft[] => {
+  const templates = Array.isArray(heroStatTemplates) && heroStatTemplates.length > 0
+    ? heroStatTemplates
+    : (DEFAULT_HERO_STAT_TEMPLATES as HeroBannerStat[]);
+  return templates.map((stat) => ({
+    enabled: stat.enabled ?? true,
+    label: String(stat.label || '').trim(),
+    value: String(stat.value || '').trim(),
+    localityIds: (stat.localityIds || []).join(', '),
+    pincodes: (stat.pincodes || []).join(', '),
+  }));
+};
+
+const getScalableEntityMetadataSource = (metadata?: Record<string, unknown>) => String(metadata?.source || metadata?.updatedFrom || '').trim();
+
+const isScalableEntityDetachedFromLegacySync = (metadata?: Record<string, unknown>) => Boolean(metadata?.detachedFromLegacySync);
+
+const isLegacyManagedScalableEntity = (metadata?: Record<string, unknown>) => (
+  getScalableEntityMetadataSource(metadata).startsWith('legacy_') && !isScalableEntityDetachedFromLegacySync(metadata)
+);
+
+const getScalableEntityOwnershipPresentation = (metadata?: Record<string, unknown>) => {
+  const source = getScalableEntityMetadataSource(metadata);
+  if (isScalableEntityDetachedFromLegacySync(metadata)) {
+    return {
+      label: 'Detached',
+      detail: source || 'protected from legacy sync',
+      className: 'border-amber-200 bg-amber-50 text-amber-800',
+    };
+  }
+  if (source.startsWith('legacy_')) {
+    return {
+      label: 'Legacy Sync',
+      detail: source.replace(/^legacy_/, '') || 'legacy-managed',
+      className: 'border-sky-200 bg-sky-50 text-sky-800',
+    };
+  }
+  return {
+    label: 'Scalable Owned',
+    detail: source || 'admin-managed',
+    className: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+  };
+};
+
+const getHeroBannerDraftDefaults = (config?: HomepageDefaultsConfigState) => ({
+  ctaLabel: String(config?.heroBannerDraftDefaults?.ctaLabel || DEFAULT_HERO_BANNER_DRAFT_DEFAULTS.ctaLabel).trim() || DEFAULT_HERO_BANNER_DRAFT_DEFAULTS.ctaLabel,
+  ctaType: config?.heroBannerDraftDefaults?.ctaType || DEFAULT_HERO_BANNER_DRAFT_DEFAULTS.ctaType,
+  ctaTarget: String(config?.heroBannerDraftDefaults?.ctaTarget || DEFAULT_HERO_BANNER_DRAFT_DEFAULTS.ctaTarget).trim() || DEFAULT_HERO_BANNER_DRAFT_DEFAULTS.ctaTarget,
+  durationDays: Math.max(1, Number(config?.heroBannerDraftDefaults?.durationDays || DEFAULT_HERO_BANNER_DRAFT_DEFAULTS.durationDays)),
+});
 
 const buildListingTags = (...sources: Array<string | string[] | undefined>) => {
   const seen = new Set<string>();
@@ -474,6 +561,8 @@ export default function AdminConsole({
   onDeleteHeroBanner,
   coupons = [],
   onAddCoupon,
+  onUpdateCoupon,
+  onDeleteCoupon,
   communityItems = [],
   onAddCommunityItem,
   onUpdateCommunityItem,
@@ -487,7 +576,33 @@ export default function AdminConsole({
   adLeads = [],
   apiConfiguration,
   onUpdateApiConfiguration,
+  geographyConfig,
+  onSaveGeographyConfig,
+  homepageDefaultsConfig,
+  onSaveHomepageDefaultsConfig,
+  businessTaxonomy,
+  onSaveBusinessTaxonomy,
+  seoDiscoveryConfig,
+  onSaveSeoDiscoveryConfig,
   onSyncHomepageConfig,
+  scalableHomepageConfig,
+  onSaveScalableTemplate,
+  onDeleteScalableTemplate,
+  onCreateScalableTemplateSection,
+  onUpdateScalableTemplateSection,
+  onReorderScalableTemplateSections,
+  onDuplicateScalableTemplateSection,
+  onDeleteScalableTemplateSection,
+  onSyncScalableTemplateSectionsFromLocality,
+  onSaveScalableAssignment,
+  onDeleteScalableAssignment,
+  onSaveScalableCampaign,
+  onDeleteScalableCampaign,
+  onRefreshScalablePublishedSnapshots,
+  onDeleteScalablePublishedSnapshot,
+  onReseedScalableHomepageConfig,
+  onPublishResolvedHomepages,
+  onDeleteResolvedHomepageSnapshots,
   localityCategoryLinks = [],
   onCreateLocalityCategoryLink,
   onDeleteLocalityCategoryLink
@@ -517,6 +632,8 @@ export default function AdminConsole({
   const [backendEditMode, setBackendEditMode] = useState(false);
   const [uploadedTab, setUploadedTab] = useState<'active' | 'deactivated' | 'pending'>('active');
   const [uploadedPage, setUploadedPage] = useState(1);
+  const initialHeroBannerDraftDefaults = getHeroBannerDraftDefaults(homepageDefaultsConfig);
+  const initialHeroStatDrafts = buildHeroStatDraftsFromTemplates(homepageDefaultsConfig?.heroStatTemplates);
 
   const [adTitle, setAdTitle] = useState('');
   const [adDescription, setAdDescription] = useState('');
@@ -551,12 +668,20 @@ export default function AdminConsole({
   const [heroEditId, setHeroEditId] = useState<string | null>(null);
   const [heroFormError, setHeroFormError] = useState('');
   const [heroStartDate, setHeroStartDate] = useState(new Date().toISOString().slice(0, 10));
-  const [heroEndDate, setHeroEndDate] = useState(new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().slice(0, 10));
-  const [heroCtaLabel, setHeroCtaLabel] = useState('Explore Businesses');
-  const [heroCtaType, setHeroCtaType] = useState<NonNullable<HeroBanner['ctaType']>>('search_category');
-  const [heroCtaTarget, setHeroCtaTarget] = useState('all');
+  const [heroEndDate, setHeroEndDate] = useState(getFutureDateIso(initialHeroBannerDraftDefaults.durationDays));
+  const [heroCtaLabel, setHeroCtaLabel] = useState(initialHeroBannerDraftDefaults.ctaLabel);
+  const [heroCtaType, setHeroCtaType] = useState<NonNullable<HeroBanner['ctaType']>>(initialHeroBannerDraftDefaults.ctaType);
+  const [heroCtaTarget, setHeroCtaTarget] = useState(initialHeroBannerDraftDefaults.ctaTarget);
   const [heroPincodes, setHeroPincodes] = useState('');
-  const [heroStatsDraft, setHeroStatsDraft] = useState<HeroStatDraft[]>(() => DEFAULT_HERO_STAT_DRAFTS.map((stat) => ({ ...stat })));
+  const [heroStatsDraft, setHeroStatsDraft] = useState<HeroStatDraft[]>(() => initialHeroStatDrafts.map((stat) => ({ ...stat })));
+  const managedHeroBannerDraftDefaults = useMemo(
+    () => getHeroBannerDraftDefaults(homepageDefaultsConfig),
+    [homepageDefaultsConfig]
+  );
+  const managedHeroStatDraftDefaults = useMemo(
+    () => buildHeroStatDraftsFromTemplates(homepageDefaultsConfig?.heroStatTemplates),
+    [homepageDefaultsConfig]
+  );
 
   const [couponBusinessId, setCouponBusinessId] = useState('');
   const [couponTitle, setCouponTitle] = useState('');
@@ -567,6 +692,7 @@ export default function AdminConsole({
   const [couponEndDate, setCouponEndDate] = useState(new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().slice(0, 10));
   const [couponLocalityId, setCouponLocalityId] = useState(localities[0]?.id || 'roadpali');
   const [couponPincodes, setCouponPincodes] = useState('');
+  const [couponEditId, setCouponEditId] = useState<string | null>(null);
 
   const [homepageLocalityId, setHomepageLocalityId] = useState(localities[0]?.id || 'roadpali');
   const [newSectionLocalityIds, setNewSectionLocalityIds] = useState<string[]>([localities[0]?.id || 'roadpali']);
@@ -597,10 +723,165 @@ export default function AdminConsole({
   const [apiConfigDraft, setApiConfigDraft] = useState<ApiConfiguration>(() => apiConfiguration || {
     syncMode: 'api',
     homepageConfigEndpoint: '/api/homepage-config',
+    adLeadsEndpoint: '/api/ad-leads',
+    homepageDefaultsConfigEndpoint: '/api/homepage-defaults-config',
+    localityRoutingConfigEndpoint: '/api/locality-routing-config',
+    geographyConfigEndpoint: '/api/geography-config',
+    taxonomyConfigEndpoint: '/api/business-taxonomy',
+    seoDiscoveryConfigEndpoint: '/api/seo-discovery-config',
+    scalableHomepageConfigEndpoint: '/api/scalable-homepage-config',
+    resolvedHomepageEndpoint: '/api/resolved-homepage',
+    publishResolvedHomepageEndpoint: '/api/resolved-homepage/publish',
     businessesEndpoint: '/api/businesses',
     auditEventsEndpoint: '/api/audit-events',
     autoSyncHomepage: true,
     autoSyncBusinesses: true
+  });
+  const [templateDraft, setTemplateDraft] = useState<{
+    id: string;
+    name: string;
+    templateScope: ScalableHomepageTemplate['templateScope'];
+    localityIds: string;
+    status: ScalableHomepageTemplate['status'];
+    priority: string;
+    isFallback: boolean;
+  }>({
+    id: '',
+    name: '',
+    templateScope: 'locality',
+    localityIds: '',
+    status: 'active',
+    priority: '100',
+    isFallback: false,
+  });
+  const [assignmentDraft, setAssignmentDraft] = useState<{
+    id: string;
+    localityId: string;
+    templateId: string;
+    categoryId: string;
+    subcategoryId: string;
+    pincode: string;
+    status: ScalableHomepageAssignment['status'];
+    priority: string;
+    isFallback: boolean;
+  }>({
+    id: '',
+    localityId: localities[0]?.id || 'roadpali',
+    templateId: '',
+    categoryId: '',
+    subcategoryId: '',
+    pincode: '',
+    status: 'active',
+    priority: '100',
+    isFallback: false,
+  });
+  const [campaignDraft, setCampaignDraft] = useState<{
+    id: string;
+    name: string;
+    campaignType: ScalableCampaignType;
+    status: ScalableCampaign['status'];
+    priority: string;
+    startDate: string;
+    endDate: string;
+    deviceTarget: NonNullable<ListingAd['deviceTarget']>;
+    placementKeys: string;
+    localityIds: string;
+    categoryIds: string;
+    subcategoryIds: string;
+    pincodes: string;
+    payloadTitle: string;
+    payloadSubtitle: string;
+    payloadDescription: string;
+    payloadImageUrl: string;
+    payloadBadge: string;
+    payloadCtaLabel: string;
+    payloadCtaText: string;
+    payloadTargetUrl: string;
+    payloadTargetBusinessId: string;
+    payloadBusinessIds: string;
+    payloadCode: string;
+    payloadDiscount: string;
+    payloadAuthorName: string;
+    payloadContent: string;
+    payloadBackgroundColor: string;
+    payloadActionType: 'landing_page' | 'landing_listing' | 'lead_form' | 'search_category';
+    payloadText: string;
+    isFallback: boolean;
+  }>({
+    id: '',
+    name: '',
+    campaignType: 'hero_banner',
+    status: 'active',
+    priority: '100',
+    startDate: '',
+    endDate: '',
+    deviceTarget: 'all',
+    placementKeys: '',
+    localityIds: '',
+    categoryIds: '',
+    subcategoryIds: '',
+    pincodes: '',
+    payloadTitle: '',
+    payloadSubtitle: '',
+    payloadDescription: '',
+    payloadImageUrl: '',
+    payloadBadge: '',
+    payloadCtaLabel: '',
+    payloadCtaText: '',
+    payloadTargetUrl: '',
+    payloadTargetBusinessId: '',
+    payloadBusinessIds: '',
+    payloadCode: '',
+    payloadDiscount: '',
+    payloadAuthorName: '',
+    payloadContent: '',
+    payloadBackgroundColor: '#1d4ed8',
+    payloadActionType: 'landing_page',
+    payloadText: '{}',
+    isFallback: false,
+  });
+  const [resolvedPreviewDraft, setResolvedPreviewDraft] = useState<{
+    localityId: string;
+    categoryId: string;
+    subcategoryId: string;
+    pincode: string;
+    device: 'all' | 'mobile' | 'desktop';
+    pageType: 'homepage' | 'listing_results';
+    placementKey: string;
+    date: string;
+    usePublished: boolean;
+  }>({
+    localityId: localities[0]?.id || 'roadpali',
+    categoryId: '',
+    subcategoryId: '',
+    pincode: '',
+    device: 'all',
+    pageType: 'homepage',
+    placementKey: '',
+    date: new Date().toISOString().slice(0, 10),
+    usePublished: true,
+  });
+  const [resolvedPreviewResult, setResolvedPreviewResult] = useState<{
+    source: 'published_snapshot' | 'live_resolver' | 'legacy_fallback';
+    payload: ResolvedHomepagePayload;
+  } | null>(null);
+  const [resolvedPreviewLoading, setResolvedPreviewLoading] = useState(false);
+  const [publishScopeDraft, setPublishScopeDraft] = useState<{
+    localityIds: string;
+    categoryIds: string;
+    subcategoryIds: string;
+    pincodes: string;
+    placementKeys: string;
+    deviceTargets: string;
+    pageTypes: string;
+  }>({
+    localityIds: localities[0]?.id || 'roadpali',
+    categoryIds: '',
+    subcategoryIds: '',
+    pincodes: '',
+    placementKeys: '',
+    deviceTargets: 'all',
+    pageTypes: 'homepage',
   });
 
   const [linkLocalityId, setLinkLocalityId] = useState(localities[0]?.id || 'roadpali');
@@ -712,6 +993,32 @@ export default function AdminConsole({
   const getListingAdFolder = () => `homepage-banners/listing-ads/${slugifyForPath(adPlacementKey || 'homepage_inline_primary')}`;
   const getCommunityItemFolder = (localityId: string, type: CommunityItem['type']) => `homepage-content/community/${slugifyForPath(localityId || 'global')}/${slugifyForPath(type || 'post')}`;
 
+  const resetCouponForm = () => {
+    setCouponBusinessId('');
+    setCouponTitle('');
+    setCouponCode('');
+    setCouponDiscount('');
+    setCouponDescription('');
+    setCouponStartDate(new Date().toISOString().slice(0, 10));
+    setCouponEndDate(new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().slice(0, 10));
+    setCouponLocalityId(localities[0]?.id || 'roadpali');
+    setCouponPincodes('');
+    setCouponEditId(null);
+  };
+
+  const beginEditCoupon = (coupon: MarketingCoupon) => {
+    setCouponEditId(coupon.id);
+    setCouponBusinessId(coupon.businessId);
+    setCouponTitle(coupon.title || '');
+    setCouponCode(coupon.code);
+    setCouponDiscount(coupon.discount);
+    setCouponDescription(coupon.description);
+    setCouponStartDate(coupon.startDate || new Date().toISOString().slice(0, 10));
+    setCouponEndDate(coupon.endDate || coupon.expiryDate || new Date().toISOString().slice(0, 10));
+    setCouponLocalityId(coupon.localityIds?.[0] || localities[0]?.id || 'roadpali');
+    setCouponPincodes((coupon.pincodes || []).join(', '));
+  };
+
   const resetListingAdForm = () => {
     setAdTitle('');
     setAdDescription('');
@@ -767,12 +1074,12 @@ export default function AdminConsole({
     setHeroEditId(null);
     setHeroFormError('');
     setHeroStartDate(new Date().toISOString().slice(0, 10));
-    setHeroEndDate(new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().slice(0, 10));
-    setHeroCtaLabel('Explore Businesses');
-    setHeroCtaType('search_category');
-    setHeroCtaTarget('all');
+    setHeroEndDate(getFutureDateIso(managedHeroBannerDraftDefaults.durationDays));
+    setHeroCtaLabel(managedHeroBannerDraftDefaults.ctaLabel);
+    setHeroCtaType(managedHeroBannerDraftDefaults.ctaType);
+    setHeroCtaTarget(managedHeroBannerDraftDefaults.ctaTarget);
     setHeroPincodes('');
-    setHeroStatsDraft(DEFAULT_HERO_STAT_DRAFTS.map((stat) => ({ ...stat })));
+    setHeroStatsDraft(managedHeroStatDraftDefaults.map((stat) => ({ ...stat })));
   };
 
   const beginEditHeroBanner = (hero: HeroBanner) => {
@@ -784,11 +1091,11 @@ export default function AdminConsole({
     setHeroImageFile(null);
     setHeroStartDate(hero.startDate);
     setHeroEndDate(hero.endDate);
-    setHeroCtaLabel(hero.ctaLabel || 'Explore Businesses');
-    setHeroCtaType(hero.ctaType || 'search_category');
-    setHeroCtaTarget(hero.ctaTarget || 'all');
+    setHeroCtaLabel(hero.ctaLabel || managedHeroBannerDraftDefaults.ctaLabel);
+    setHeroCtaType(hero.ctaType || managedHeroBannerDraftDefaults.ctaType);
+    setHeroCtaTarget(hero.ctaTarget || managedHeroBannerDraftDefaults.ctaTarget);
     setHeroPincodes((hero.pincodes || []).join(', '));
-    setHeroStatsDraft(DEFAULT_HERO_STAT_DRAFTS.map((fallback, index) => {
+    setHeroStatsDraft(managedHeroStatDraftDefaults.map((fallback, index) => {
       const stat = hero.heroStats?.[index];
       return {
         enabled: stat?.enabled ?? fallback.enabled,
@@ -825,12 +1132,111 @@ export default function AdminConsole({
     setApiConfigDraft(apiConfiguration);
   }, [apiConfiguration]);
 
+  useEffect(() => {
+    if (!homepageLocalityId) return;
+    setTemplateDraft((prev) => prev.id ? prev : ({
+      ...prev,
+      localityIds: prev.localityIds || homepageLocalityId,
+    }));
+    setAssignmentDraft((prev) => prev.id ? prev : ({
+      ...prev,
+      localityId: prev.localityId || homepageLocalityId,
+      templateId: prev.templateId || scalableHomepageConfig?.templates[0]?.id || '',
+    }));
+    setCampaignDraft((prev) => prev.id ? prev : ({
+      ...prev,
+      localityIds: prev.localityIds || homepageLocalityId,
+    }));
+    setResolvedPreviewDraft((prev) => ({
+      ...prev,
+      localityId: prev.localityId || homepageLocalityId,
+    }));
+    setPublishScopeDraft((prev) => ({
+      ...prev,
+      localityIds: prev.localityIds || homepageLocalityId,
+    }));
+  }, [homepageLocalityId, scalableHomepageConfig?.templates]);
+
   const parsePincodeList = (raw: string) => (
     raw
       .split(/[\s,]+/)
       .map((entry) => entry.replace(/\D/g, '').trim())
       .filter((entry, index, items) => entry.length === 6 && items.indexOf(entry) === index)
   );
+  const parseIdList = (raw: string) => (
+    raw
+      .split(/[\n,]+/)
+      .map((entry) => entry.trim())
+      .filter((entry, index, items) => entry.length > 0 && items.indexOf(entry) === index)
+  );
+  const createAdminId = (prefix: string) => `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
+  const pruneEmptyPayload = (value: Record<string, unknown>) => (
+    Object.fromEntries(
+      Object.entries(value).filter(([, entry]) => {
+        if (entry === undefined || entry === null || entry === '') return false;
+        if (Array.isArray(entry) && entry.length === 0) return false;
+        return true;
+      })
+    )
+  );
+  const buildPublishContextsFromDraft = (draft = publishScopeDraft): ResolvedHomepagePublishContext[] => {
+    const localityIds = parseIdList(draft.localityIds);
+    const categoryIds = parseIdList(draft.categoryIds);
+    const subcategoryIds = parseIdList(draft.subcategoryIds);
+    const pincodes = parsePincodeList(draft.pincodes);
+    const placementKeys = parseIdList(draft.placementKeys);
+    const deviceTargets = parseIdList(draft.deviceTargets).filter((device): device is 'all' | 'mobile' | 'desktop' => ['all', 'mobile', 'desktop'].includes(device));
+    const pageTypes = parseIdList(draft.pageTypes);
+
+    const scopedSubcategoryEntries = subcategoryIds
+      .map((subcategoryId) => BUSINESS_SUBCATEGORIES.find((subcategory) => subcategory.id === subcategoryId))
+      .filter(Boolean)
+      .filter((subcategory) => categoryIds.length === 0 || categoryIds.includes(subcategory!.categoryId))
+      .map((subcategory) => ({
+        categoryId: subcategory!.categoryId,
+        subcategoryId: subcategory!.id,
+      }));
+
+    const unscopedCategoryEntries = categoryIds
+      .filter((categoryId) => !scopedSubcategoryEntries.some((entry) => entry.categoryId === categoryId))
+      .map((categoryId) => ({
+        categoryId,
+        subcategoryId: '',
+      }));
+
+    const categoryContextEntries = [
+      ...unscopedCategoryEntries,
+      ...scopedSubcategoryEntries,
+    ];
+
+    const normalizedCategoryEntries = categoryContextEntries.length > 0
+      ? categoryContextEntries
+      : [{ categoryId: '', subcategoryId: '' }];
+    const normalizedPincodes = pincodes.length > 0 ? pincodes : [''];
+    const normalizedPlacementKeys = placementKeys.length > 0 ? placementKeys : [''];
+    const normalizedDevices: Array<'all' | 'mobile' | 'desktop'> = deviceTargets.length > 0 ? deviceTargets : ['all'];
+    const normalizedPageTypes = pageTypes.length > 0 ? pageTypes : ['homepage'];
+
+    return localityIds.flatMap((localityId) => (
+      normalizedCategoryEntries.flatMap((categoryEntry) => (
+        normalizedPincodes.flatMap((pincode) => (
+          normalizedPlacementKeys.flatMap((placementKey) => (
+            normalizedDevices.flatMap((device) => (
+              normalizedPageTypes.map((pageType) => ({
+                localityId,
+                categoryId: categoryEntry.categoryId || undefined,
+                subcategoryId: categoryEntry.subcategoryId || undefined,
+                pincode: pincode || undefined,
+                placementKey: placementKey || undefined,
+                device,
+                pageType,
+              }))
+            ))
+          ))
+        ))
+      ))
+    ));
+  };
 
   const homepageSectionLabels: Record<HomepageSectionType, string> = {
     hero_banner: 'Hero Banner',
@@ -862,6 +1268,96 @@ export default function AdminConsole({
 
   const selectedHomepageLayout = homepageLayouts.find((layout) => layout.localityId === homepageLocalityId);
   const homepageSections = [...(selectedHomepageLayout?.sections || [])].sort((a, b) => a.sortOrder - b.sortOrder);
+  const selectedScalableTemplate = scalableHomepageConfig?.templates.find((template) => template.id === templateDraft.id) || null;
+  const selectedScalableTemplateSections = [...(selectedScalableTemplate?.sections || [])].sort((a, b) => a.sortOrder - b.sortOrder);
+  const scalableTemplateCount = scalableHomepageConfig?.templates.length || 0;
+  const scalableAssignmentCount = scalableHomepageConfig?.assignments.length || 0;
+  const scalableCampaignCount = scalableHomepageConfig?.campaigns.length || 0;
+  const scalableSnapshotCount = scalableHomepageConfig?.publishedSnapshots.length || 0;
+  const scalableLegacyOwnershipSummary: ScalableLegacyOwnershipSummary = {
+    legacyManagedTemplates: (scalableHomepageConfig?.templates || []).filter((template) => String(template.metadata?.source || '').startsWith('legacy_') && !template.metadata?.detachedFromLegacySync).length,
+    detachedTemplates: (scalableHomepageConfig?.templates || []).filter((template) => Boolean(template.metadata?.detachedFromLegacySync)).length,
+    legacyManagedAssignments: (scalableHomepageConfig?.assignments || []).filter((assignment) => String(assignment.metadata?.source || '').startsWith('legacy_') && !assignment.metadata?.detachedFromLegacySync).length,
+    detachedAssignments: (scalableHomepageConfig?.assignments || []).filter((assignment) => Boolean(assignment.metadata?.detachedFromLegacySync)).length,
+    legacyManagedCampaigns: (scalableHomepageConfig?.campaigns || []).filter((campaign) => String(campaign.metadata?.source || '').startsWith('legacy_') && !campaign.metadata?.detachedFromLegacySync).length,
+    detachedCampaigns: (scalableHomepageConfig?.campaigns || []).filter((campaign) => Boolean(campaign.metadata?.detachedFromLegacySync)).length,
+  };
+  const recentPublishedSnapshots = [...(scalableHomepageConfig?.publishedSnapshots || [])]
+    .sort((left, right) => Date.parse(right.publishedAt || right.updatedAt || '') - Date.parse(left.publishedAt || left.updatedAt || ''))
+    .slice(0, 12);
+  const sortedScalableTemplates = [...(scalableHomepageConfig?.templates || [])].sort((a, b) => b.priority - a.priority);
+  const sortedScalableAssignments = [...(scalableHomepageConfig?.assignments || [])].sort((a, b) => b.priority - a.priority);
+  const sortedScalableCampaigns = [...(scalableHomepageConfig?.campaigns || [])].sort((a, b) => b.priority - a.priority);
+  const localitySelectionOptions = localities.map((locality) => ({
+    id: locality.id,
+    label: locality.name,
+    meta: locality.slug,
+  }));
+  const localityNameById = new Map(localities.map((locality) => [locality.id, locality.name]));
+  const templateNameById = new Map(sortedScalableTemplates.map((template) => [template.id, template.name]));
+  const formatLocalityLabel = (localityId: string) => localityNameById.get(localityId) || localityId;
+  const templateSelectionOptions = sortedScalableTemplates.map((template) => ({
+    id: template.id,
+    label: template.name,
+    meta: `${template.templateScope} • priority ${template.priority}`,
+  }));
+  const categorySelectionOptions = BUSINESS_CATEGORIES.map((category) => ({
+    id: category.id,
+    label: category.name,
+  }));
+  const subcategorySelectionOptions = BUSINESS_SUBCATEGORIES
+    .filter((subcategory) => {
+      const scopedCategoryIds = parseIdList(campaignDraft.categoryIds);
+      return scopedCategoryIds.length === 0 || scopedCategoryIds.includes(subcategory.categoryId);
+    })
+    .map((subcategory) => ({
+      id: subcategory.id,
+      label: subcategory.name,
+      meta: getCategoryById(subcategory.categoryId)?.name || subcategory.categoryId,
+    }));
+  const publishSubcategorySelectionOptions = BUSINESS_SUBCATEGORIES
+    .filter((subcategory) => {
+      const scopedCategoryIds = parseIdList(publishScopeDraft.categoryIds);
+      return scopedCategoryIds.length === 0 || scopedCategoryIds.includes(subcategory.categoryId);
+    })
+    .map((subcategory) => ({
+      id: subcategory.id,
+      label: subcategory.name,
+      meta: getCategoryById(subcategory.categoryId)?.name || subcategory.categoryId,
+    }));
+  const placementKeySelectionOptions = Array.from(new Set([
+    'homepage_inline_primary',
+    'homepage_sidebar_top',
+    'homepage_sidebar_food',
+    'homepage_sidebar_clinic',
+    'homepage_sidebar_marketing',
+    ...(listingAds || []).map((ad) => String(ad.placementKey || '').trim()),
+    ...((homepageDefaultsConfig?.fallbackListingAds || []).map((ad) => String(ad.placementKey || '').trim())),
+    ...(homepageSections || []).map((section) => String(section.placementKey || '').trim()),
+    ...sortedScalableCampaigns.flatMap((campaign) => campaign.placementKeys || []),
+  ].filter(Boolean))).sort().map((placementKey) => ({
+    id: placementKey,
+    label: placementKey,
+  }));
+  const pincodeSelectionOptions = Array.from(new Set([
+    ...pincodeMappings.map((mapping) => String(mapping.pincode || '').trim()),
+    ...MASTER_AREAS.map((area) => String(area.pincode || '').trim()),
+    ...businesses.map((business) => String(business.pincode || '').trim()),
+  ].filter((entry) => entry.length === 6))).sort().map((pincode) => ({
+    id: pincode,
+    label: pincode,
+  }));
+  const deviceSelectionOptions: OrderedSelectionOption[] = [
+    { id: 'all', label: 'All devices' },
+    { id: 'desktop', label: 'Desktop' },
+    { id: 'mobile', label: 'Mobile' },
+  ];
+  const pageTypeSelectionOptions: OrderedSelectionOption[] = [
+    { id: 'homepage', label: 'Homepage' },
+    { id: 'listing_results', label: 'Listing results' },
+  ];
+  const publishScopeContexts = buildPublishContextsFromDraft();
+  const publishScopeCombinationCount = publishScopeContexts.length;
   const filteredBusinesses = businesses.filter((business) => {
     if (adminLocalityFilter !== 'all' && business.localityId !== adminLocalityFilter) return false;
     if (adminCategoryFilter !== 'all' && business.categoryId !== adminCategoryFilter) return false;
@@ -878,6 +1374,13 @@ export default function AdminConsole({
     }
     return true;
   });
+  const approvedBusinessSelectionOptions = filteredBusinesses
+    .filter((business) => business.status === 'approved')
+    .map((business) => ({
+      id: business.id,
+      label: business.name,
+      meta: `${getCategoryById(business.categoryId)?.name || business.categoryId} • ${localities.find((locality) => locality.id === business.localityId)?.name || business.localityId}`,
+    }));
   const filteredCoupons = coupons.filter((coupon) => {
     const business = businesses.find((entry) => entry.id === coupon.businessId);
     if (adminLocalityFilter !== 'all' && !(coupon.localityIds || []).includes(adminLocalityFilter) && business?.localityId !== adminLocalityFilter) return false;
@@ -1435,7 +1938,7 @@ export default function AdminConsole({
           enabled: stat.enabled,
           label: stat.label.trim(),
           value: stat.value.trim(),
-          localityIds: parsePincodeList(stat.localityIds),
+          localityIds: parseIdList(stat.localityIds),
           pincodes: parsePincodeList(stat.pincodes)
         })),
         isActive: true
@@ -1464,7 +1967,7 @@ export default function AdminConsole({
       return;
     }
 
-    onAddCoupon?.({
+    const couponPayload = {
       businessId: couponBusinessId,
       title: couponTitle.trim(),
       code: couponCode.trim(),
@@ -1479,14 +1982,21 @@ export default function AdminConsole({
       badgeText: couponDiscount.trim(),
       ctaText: 'Claim Offer',
       targetBusinessId: couponBusinessId
-    });
+    };
 
-    setCouponTitle('');
-    setCouponCode('');
-    setCouponDiscount('');
-    setCouponDescription('');
-    setCouponPincodes('');
-    triggerNotification('Offer created successfully.');
+    if (couponEditId) {
+      onUpdateCoupon?.({
+        ...couponPayload,
+        id: couponEditId,
+        usageCount: coupons.find((coupon) => coupon.id === couponEditId)?.usageCount || 0,
+      });
+      triggerNotification('Offer updated successfully.');
+    } else {
+      onAddCoupon?.(couponPayload);
+      triggerNotification('Offer created successfully.');
+    }
+
+    resetCouponForm();
   };
 
   const handleCreateHomepageSectionSubmit = (e: React.FormEvent) => {
@@ -1496,36 +2006,418 @@ export default function AdminConsole({
       return;
     }
 
-    onCreateHomepageSection?.(homepageLocalityId, {
-      sectionType: newSectionType,
-      title: newSectionTitle.trim(),
-      subtitle: newSectionSubtitle.trim() || undefined,
-      status: 'active',
-      visible: true,
-      startDate: newSectionStartDate || undefined,
-      endDate: newSectionEndDate || undefined,
-      localityIds: newSectionLocalityIds.length > 0 ? newSectionLocalityIds : [homepageLocalityId],
-      pincodes: parsePincodeList(newSectionPincodes),
-      categoryId: ['business_shelf', 'text_business_strip'].includes(newSectionType) ? newSectionCategoryId : undefined,
-      categoryIds: ['category_grid', 'emergency_grid'].includes(newSectionType) ? newSectionCategoryIds : undefined,
-      subcategoryId: ['business_shelf', 'text_business_strip'].includes(newSectionType) ? (newSectionSubcategoryId || undefined) : undefined,
-      placementKey: newSectionType === 'promo_banner' ? newSectionPlacementKey.trim() || 'homepage_inline_primary' : undefined,
-      maxItems: Number(newSectionMaxItems) > 0 ? Number(newSectionMaxItems) : undefined,
-      visibleSlots: Number(newSectionVisibleSlots) > 0 ? Number(newSectionVisibleSlots) : undefined,
-      desktopCardCount: Number(newSectionDesktopCardCount) > 0 ? Number(newSectionDesktopCardCount) : undefined,
-      mobileCardCount: Number(newSectionMobileCardCount) > 0 ? Number(newSectionMobileCardCount) : undefined,
-      mobileDisplayMode: ['business_shelf', 'text_business_strip', 'featured_businesses', 'verified_business_grid'].includes(newSectionType) ? newSectionMobileDisplayMode : undefined,
-      ctaLabel: newSectionCtaLabel.trim() || undefined,
-      ctaType: newSectionCtaType || 'none',
-      ctaTarget: newSectionCtaTarget.trim() || undefined,
-      backgroundColor: newSectionBackgroundColor || undefined,
-      showViewAll: newSectionShowViewAll,
-      listingSourceMode: ['business_shelf', 'text_business_strip', 'featured_businesses', 'verified_business_grid'].includes(newSectionType) ? (newSectionListingSourceMode || 'auto') : undefined,
-      pinnedBusinessIds: newSectionListingSourceMode === 'manual' ? newSectionPinnedBusinessIds : undefined,
-      autoRotate: newSectionAutoRotate,
-      rotationIntervalSec: Number(newSectionRotationIntervalSec) > 0 ? Number(newSectionRotationIntervalSec) : 3
-    });
+    onCreateHomepageSection?.(homepageLocalityId, buildHomepageSectionDraftPayload());
 
+    resetHomepageSectionDraftForm();
+    triggerNotification('Homepage section added.');
+  };
+
+  const handleSaveApiConfiguration = (e: React.FormEvent) => {
+    e.preventDefault();
+    onUpdateApiConfiguration?.(apiConfigDraft);
+    triggerNotification('API configuration saved.');
+  };
+
+  const handlePublishResolvedHomepages = async (publishRequest?: string[] | ResolvedHomepagePublishRequest) => {
+    if (!onPublishResolvedHomepages) {
+      triggerNotification('Resolved homepage publish callback is not configured.');
+      return;
+    }
+
+    try {
+      const result = await onPublishResolvedHomepages(publishRequest);
+      const publishedCount = typeof result === 'object' && result && 'publishedCount' in result
+        ? result.publishedCount
+        : undefined;
+      triggerNotification(
+        publishedCount
+          ? `Published ${publishedCount} resolved homepage snapshot(s).`
+          : 'Resolved homepage publish completed.'
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to publish resolved homepages.';
+      triggerNotification(message);
+    }
+  };
+
+  const handlePublishPreviewContext = async () => {
+    await handlePublishResolvedHomepages({
+      contexts: [{
+        localityId: resolvedPreviewDraft.localityId,
+        categoryId: resolvedPreviewDraft.categoryId || undefined,
+        subcategoryId: resolvedPreviewDraft.subcategoryId || undefined,
+        pincode: resolvedPreviewDraft.pincode || undefined,
+        placementKey: resolvedPreviewDraft.placementKey || undefined,
+        device: resolvedPreviewDraft.device,
+        pageType: resolvedPreviewDraft.pageType,
+      }]
+    });
+  };
+
+  const handlePublishScopedContexts = async () => {
+    const localityIds = parseIdList(publishScopeDraft.localityIds);
+    if (localityIds.length === 0) {
+      triggerNotification('Select at least one locality before publishing a scoped snapshot set.');
+      return;
+    }
+
+    if (publishScopeContexts.length === 0) {
+      triggerNotification('No publish contexts were generated from the selected scope.');
+      return;
+    }
+
+    await handlePublishResolvedHomepages({
+      contexts: publishScopeContexts,
+    });
+  };
+
+  const handleDeleteResolvedHomepageSnapshotSet = async (deleteRequest?: ResolvedHomepageSnapshotDeleteRequest) => {
+    if (!onDeleteResolvedHomepageSnapshots) {
+      triggerNotification('Resolved homepage snapshot delete callback is not configured.');
+      return;
+    }
+
+    try {
+      const result = await onDeleteResolvedHomepageSnapshots(deleteRequest);
+      const deletedCount = typeof result === 'object' && result && 'deletedCount' in result
+        ? result.deletedCount
+        : undefined;
+      triggerNotification(
+        deletedCount
+          ? `Deleted ${deletedCount} resolved homepage snapshot(s).`
+          : 'Resolved homepage snapshot delete completed.'
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to delete resolved homepage snapshots.';
+      triggerNotification(message);
+    }
+  };
+
+  const handleDeleteScopedSnapshots = async () => {
+    if (publishScopeContexts.length === 0) {
+      triggerNotification('No snapshot contexts are generated from the current scope.');
+      return;
+    }
+    if (!confirm(`Delete ${publishScopeContexts.length} published snapshot context(s) from the current scope?`)) {
+      return;
+    }
+    await handleDeleteResolvedHomepageSnapshotSet({
+      contexts: publishScopeContexts,
+    });
+  };
+
+  const handleDeleteSingleSnapshot = async (snapshotId: string) => {
+    if (!snapshotId) return;
+    if (!confirm('Delete this published snapshot?')) {
+      return;
+    }
+    if (onDeleteScalablePublishedSnapshot) {
+      try {
+        await onDeleteScalablePublishedSnapshot(snapshotId);
+        triggerNotification('Snapshot deleted.');
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to delete published snapshot.';
+        triggerNotification(message);
+      }
+      return;
+    }
+    await handleDeleteResolvedHomepageSnapshotSet({
+      snapshotIds: [snapshotId],
+    });
+  };
+
+  const handleRefreshPublishedSnapshots = async () => {
+    if (!onRefreshScalablePublishedSnapshots) {
+      triggerNotification('Snapshot refresh callback is not configured.');
+      return;
+    }
+
+    try {
+      await onRefreshScalablePublishedSnapshots();
+      triggerNotification('Published snapshots refreshed.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to refresh published snapshots.';
+      triggerNotification(message);
+    }
+  };
+
+  const handleReseedScalableHomepageConfig = async (force = false) => {
+    if (!onReseedScalableHomepageConfig) {
+      triggerNotification('Scalable CMS reseed callback is not configured.');
+      return;
+    }
+
+    try {
+      const result = await onReseedScalableHomepageConfig(force);
+      const summary = typeof result === 'object' && result && 'summary' in result ? result.summary : undefined;
+      triggerNotification(
+        summary
+          ? `${force ? 'Force reseeded' : 'Reseeded'} scalable CMS: ${summary.templates || 0} templates, ${summary.campaigns || 0} campaigns.`
+          : 'Scalable CMS reseeded from current homepage data.'
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to reseed scalable homepage config.';
+      triggerNotification(message);
+    }
+  };
+
+  const persistScalableTemplateEntity = async (
+    nextTemplate: ScalableHomepageTemplate,
+    successMessage: string,
+    publishLocalityIds?: string[]
+  ) => {
+    if (!onSaveScalableTemplate) {
+      triggerNotification('Scalable template save callback is not configured.');
+      return;
+    }
+    try {
+      await onSaveScalableTemplate(nextTemplate);
+      if (publishLocalityIds && publishLocalityIds.length > 0 && onPublishResolvedHomepages) {
+        await onPublishResolvedHomepages(publishLocalityIds);
+      }
+      triggerNotification(successMessage);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to save scalable template.';
+      triggerNotification(message);
+    }
+  };
+
+  const deleteScalableTemplateEntity = async (
+    templateId: string,
+    successMessage: string,
+    publishLocalityIds?: string[]
+  ) => {
+    if (!onDeleteScalableTemplate) {
+      triggerNotification('Scalable template delete callback is not configured.');
+      return;
+    }
+    try {
+      await onDeleteScalableTemplate(templateId);
+      if (publishLocalityIds && publishLocalityIds.length > 0 && onPublishResolvedHomepages) {
+        await onPublishResolvedHomepages(publishLocalityIds);
+      }
+      triggerNotification(successMessage);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to delete scalable template.';
+      triggerNotification(message);
+    }
+  };
+
+  const persistScalableAssignmentEntity = async (
+    nextAssignment: ScalableHomepageAssignment,
+    successMessage: string,
+    publishLocalityIds?: string[]
+  ) => {
+    if (!onSaveScalableAssignment) {
+      triggerNotification('Scalable assignment save callback is not configured.');
+      return;
+    }
+    try {
+      await onSaveScalableAssignment(nextAssignment);
+      if (publishLocalityIds && publishLocalityIds.length > 0 && onPublishResolvedHomepages) {
+        await onPublishResolvedHomepages(publishLocalityIds);
+      }
+      triggerNotification(successMessage);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to save scalable assignment.';
+      triggerNotification(message);
+    }
+  };
+
+  const deleteScalableAssignmentEntity = async (
+    assignmentId: string,
+    successMessage: string,
+    publishLocalityIds?: string[]
+  ) => {
+    if (!onDeleteScalableAssignment) {
+      triggerNotification('Scalable assignment delete callback is not configured.');
+      return;
+    }
+    try {
+      await onDeleteScalableAssignment(assignmentId);
+      if (publishLocalityIds && publishLocalityIds.length > 0 && onPublishResolvedHomepages) {
+        await onPublishResolvedHomepages(publishLocalityIds);
+      }
+      triggerNotification(successMessage);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to delete scalable assignment.';
+      triggerNotification(message);
+    }
+  };
+
+  const persistScalableCampaignEntity = async (
+    nextCampaign: ScalableCampaign,
+    successMessage: string,
+    publishLocalityIds?: string[]
+  ) => {
+    if (!onSaveScalableCampaign) {
+      triggerNotification('Scalable campaign save callback is not configured.');
+      return;
+    }
+    try {
+      await onSaveScalableCampaign(nextCampaign);
+      if (publishLocalityIds && publishLocalityIds.length > 0 && onPublishResolvedHomepages) {
+        await onPublishResolvedHomepages(publishLocalityIds);
+      }
+      triggerNotification(successMessage);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to save scalable campaign.';
+      triggerNotification(message);
+    }
+  };
+
+  const deleteScalableCampaignEntity = async (
+    campaignId: string,
+    successMessage: string,
+    publishLocalityIds?: string[]
+  ) => {
+    if (!onDeleteScalableCampaign) {
+      triggerNotification('Scalable campaign delete callback is not configured.');
+      return;
+    }
+    try {
+      await onDeleteScalableCampaign(campaignId);
+      if (publishLocalityIds && publishLocalityIds.length > 0 && onPublishResolvedHomepages) {
+        await onPublishResolvedHomepages(publishLocalityIds);
+      }
+      triggerNotification(successMessage);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to delete scalable campaign.';
+      triggerNotification(message);
+    }
+  };
+
+  const resetTemplateDraft = () => {
+    setTemplateDraft({
+      id: '',
+      name: '',
+      templateScope: 'locality',
+      localityIds: homepageLocalityId || localities[0]?.id || 'roadpali',
+      status: 'active',
+      priority: '100',
+      isFallback: false,
+    });
+  };
+
+  const beginEditTemplate = (template: ScalableHomepageTemplate) => {
+    setTemplateDraft({
+      id: template.id,
+      name: template.name,
+      templateScope: template.templateScope,
+      localityIds: (template.localityIds || []).join(', '),
+      status: template.status,
+      priority: String(template.priority),
+      isFallback: template.isFallback,
+    });
+  };
+
+  const handleSaveTemplateDraft = async () => {
+    if (!scalableHomepageConfig) {
+      triggerNotification('Scalable CMS state is not loaded yet.');
+      return;
+    }
+    if (!templateDraft.name.trim()) {
+      triggerNotification('Template name is required.');
+      return;
+    }
+
+    const nextTemplate: ScalableHomepageTemplate = {
+      id: templateDraft.id || createAdminId('tpl'),
+      name: templateDraft.name.trim(),
+      templateScope: templateDraft.templateScope,
+      localityIds: parseIdList(templateDraft.localityIds),
+      status: templateDraft.status,
+      priority: Number(templateDraft.priority) || 100,
+      isFallback: templateDraft.isFallback,
+      sections: scalableHomepageConfig.templates.find((template) => template.id === templateDraft.id)?.sections || [],
+      metadata: {
+        ...(scalableHomepageConfig.templates.find((template) => template.id === templateDraft.id)?.metadata || {}),
+        updatedFrom: 'admin_console',
+        detachedFromLegacySync: true,
+      },
+      updatedAt: new Date().toISOString(),
+    };
+
+    await persistScalableTemplateEntity(
+      nextTemplate,
+      templateDraft.id ? 'Template updated and published.' : 'Template created and published.',
+      nextTemplate.localityIds.length > 0 ? nextTemplate.localityIds : [homepageLocalityId]
+    );
+    resetTemplateDraft();
+  };
+
+  const handleSyncTemplateSectionsFromLocality = async () => {
+    if (!scalableHomepageConfig || !templateDraft.id) {
+      triggerNotification('Select an existing template before syncing sections.');
+      return;
+    }
+    const targetTemplate = scalableHomepageConfig.templates.find((template) => template.id === templateDraft.id);
+    if (!targetTemplate) {
+      triggerNotification('Template not found.');
+      return;
+    }
+    if (onSyncScalableTemplateSectionsFromLocality) {
+      try {
+        await onSyncScalableTemplateSectionsFromLocality(targetTemplate.id, homepageLocalityId);
+        if (onPublishResolvedHomepages) {
+          await onPublishResolvedHomepages([homepageLocalityId]);
+        }
+        triggerNotification(`Template sections synced and published from ${homepageLocalityId}.`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to sync template sections from locality.';
+        triggerNotification(message);
+      }
+      return;
+    }
+    const sourceLayout = homepageLayouts.find((layout) => layout.localityId === homepageLocalityId);
+    if (!sourceLayout) {
+      triggerNotification('No homepage layout found for the selected locality.');
+      return;
+    }
+
+    await persistScalableTemplateEntity({
+      ...targetTemplate,
+      sections: sourceLayout.sections,
+      updatedAt: new Date().toISOString(),
+      metadata: {
+        ...(targetTemplate.metadata || {}),
+        lastSectionSyncLocalityId: homepageLocalityId,
+        detachedFromLegacySync: false,
+      },
+    }, `Template sections synced and published from ${homepageLocalityId}.`, [homepageLocalityId]);
+  };
+
+  const buildHomepageSectionDraftPayload = (): Omit<HomepageSection, 'id' | 'sortOrder'> => ({
+    sectionType: newSectionType,
+    title: newSectionTitle.trim(),
+    subtitle: newSectionSubtitle.trim() || undefined,
+    status: 'active',
+    visible: true,
+    startDate: newSectionStartDate || undefined,
+    endDate: newSectionEndDate || undefined,
+    localityIds: newSectionLocalityIds.length > 0 ? newSectionLocalityIds : [homepageLocalityId],
+    pincodes: parsePincodeList(newSectionPincodes),
+    categoryId: ['business_shelf', 'text_business_strip'].includes(newSectionType) ? newSectionCategoryId : undefined,
+    categoryIds: ['category_grid', 'emergency_grid'].includes(newSectionType) ? newSectionCategoryIds : undefined,
+    subcategoryId: ['business_shelf', 'text_business_strip'].includes(newSectionType) ? (newSectionSubcategoryId || undefined) : undefined,
+    placementKey: newSectionType === 'promo_banner' ? newSectionPlacementKey.trim() || 'homepage_inline_primary' : undefined,
+    maxItems: Number(newSectionMaxItems) > 0 ? Number(newSectionMaxItems) : undefined,
+    visibleSlots: Number(newSectionVisibleSlots) > 0 ? Number(newSectionVisibleSlots) : undefined,
+    desktopCardCount: Number(newSectionDesktopCardCount) > 0 ? Number(newSectionDesktopCardCount) : undefined,
+    mobileCardCount: Number(newSectionMobileCardCount) > 0 ? Number(newSectionMobileCardCount) : undefined,
+    mobileDisplayMode: ['business_shelf', 'text_business_strip', 'featured_businesses', 'verified_business_grid'].includes(newSectionType) ? newSectionMobileDisplayMode : undefined,
+    ctaLabel: newSectionCtaLabel.trim() || undefined,
+    ctaType: newSectionCtaType || 'none',
+    ctaTarget: newSectionCtaTarget.trim() || undefined,
+    backgroundColor: newSectionBackgroundColor || undefined,
+    showViewAll: newSectionShowViewAll,
+    listingSourceMode: ['business_shelf', 'text_business_strip', 'featured_businesses', 'verified_business_grid'].includes(newSectionType) ? (newSectionListingSourceMode || 'auto') : undefined,
+    pinnedBusinessIds: newSectionListingSourceMode === 'manual' ? newSectionPinnedBusinessIds : undefined,
+    autoRotate: newSectionAutoRotate,
+    rotationIntervalSec: Number(newSectionRotationIntervalSec) > 0 ? Number(newSectionRotationIntervalSec) : 3
+  });
+
+  const resetHomepageSectionDraftForm = () => {
     setNewSectionSubtitle('');
     setNewSectionLocalityIds([homepageLocalityId]);
     setNewSectionPincodes('');
@@ -1544,13 +2436,625 @@ export default function AdminConsole({
     setNewSectionPinnedBusinessIds([]);
     setNewSectionAutoRotate(true);
     setNewSectionRotationIntervalSec('3');
-    triggerNotification('Homepage section added.');
   };
 
-  const handleSaveApiConfiguration = (e: React.FormEvent) => {
-    e.preventDefault();
-    onUpdateApiConfiguration?.(apiConfigDraft);
-    triggerNotification('API configuration saved.');
+  const handleCreateScalableTemplateSection = async () => {
+    if (!scalableHomepageConfig || !selectedScalableTemplate) {
+      triggerNotification('Select a scalable template before adding sections to it.');
+      return;
+    }
+    if (!newSectionTitle.trim()) {
+      triggerNotification('Section title is required before adding to a template.');
+      return;
+    }
+
+    const nextSection: HomepageSection = {
+      ...buildHomepageSectionDraftPayload(),
+      id: `tpl_section_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      sortOrder: (selectedScalableTemplate.sections.length + 1) * 10,
+    };
+    if (onCreateScalableTemplateSection) {
+      try {
+        await onCreateScalableTemplateSection(selectedScalableTemplate.id, nextSection);
+        if (selectedScalableTemplate.localityIds.length > 0 && onPublishResolvedHomepages) {
+          await onPublishResolvedHomepages(selectedScalableTemplate.localityIds);
+        }
+        triggerNotification('Template section created and published.');
+        resetHomepageSectionDraftForm();
+        return;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to create scalable template section.';
+        triggerNotification(message);
+        return;
+      }
+    }
+    await persistScalableTemplateEntity({
+      ...selectedScalableTemplate,
+      sections: [...selectedScalableTemplate.sections, nextSection],
+      updatedAt: new Date().toISOString(),
+      metadata: {
+        ...(selectedScalableTemplate.metadata || {}),
+        updatedFrom: 'admin_console',
+        detachedFromLegacySync: true,
+      },
+    }, 'Template section created and published.', selectedScalableTemplate.localityIds.length > 0 ? selectedScalableTemplate.localityIds : [homepageLocalityId]);
+    resetHomepageSectionDraftForm();
+  };
+
+  const handleDeleteTemplate = async (templateId: string) => {
+    if (!scalableHomepageConfig) {
+      triggerNotification('Scalable CMS state is not loaded yet.');
+      return;
+    }
+    const template = scalableHomepageConfig.templates.find((entry) => entry.id === templateId);
+    await deleteScalableTemplateEntity(templateId, 'Template deleted and published.', template?.localityIds.length ? template.localityIds : [homepageLocalityId]);
+    if (templateDraft.id === templateId) resetTemplateDraft();
+  };
+
+  const handleDetachTemplateFromLegacySync = async (template: ScalableHomepageTemplate) => {
+    if (!scalableHomepageConfig) {
+      triggerNotification('Scalable CMS state is not loaded yet.');
+      return;
+    }
+    if (!isLegacyManagedScalableEntity(template.metadata)) {
+      triggerNotification('This template is already detached or scalable-owned.');
+      return;
+    }
+    const detachedAt = new Date().toISOString();
+    await persistScalableTemplateEntity({
+      ...template,
+      metadata: {
+        ...(template.metadata || {}),
+        updatedFrom: 'admin_console',
+        detachedFromLegacySync: true,
+        detachedAt,
+        detachedReason: 'manual_admin_detach',
+      },
+      updatedAt: detachedAt,
+    }, `Template "${template.name}" detached from legacy sync.`, template.localityIds.length > 0 ? template.localityIds : [homepageLocalityId]);
+  };
+
+  const updateScalableTemplateSection = async (section: HomepageSection, patch: Partial<HomepageSection>) => {
+    if (!scalableHomepageConfig || !selectedScalableTemplate) {
+      triggerNotification('Select a scalable template before editing sections.');
+      return;
+    }
+    const nextSection = { ...section, ...patch };
+    if (onUpdateScalableTemplateSection) {
+      try {
+        await onUpdateScalableTemplateSection(selectedScalableTemplate.id, section.id, nextSection);
+        if (selectedScalableTemplate.localityIds.length > 0 && onPublishResolvedHomepages) {
+          await onPublishResolvedHomepages(selectedScalableTemplate.localityIds);
+        }
+        triggerNotification('Template section updated and published.');
+        return;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to update scalable template section.';
+        triggerNotification(message);
+        return;
+      }
+    }
+    await persistScalableTemplateEntity({
+      ...selectedScalableTemplate,
+      sections: selectedScalableTemplate.sections.map((entry) => entry.id === section.id ? nextSection : entry),
+      updatedAt: new Date().toISOString(),
+      metadata: {
+        ...(selectedScalableTemplate.metadata || {}),
+        updatedFrom: 'admin_console',
+        detachedFromLegacySync: true,
+      },
+    }, 'Template section updated and published.', selectedScalableTemplate.localityIds.length > 0 ? selectedScalableTemplate.localityIds : [homepageLocalityId]);
+  };
+
+  const handleMoveScalableTemplateSection = async (sectionId: string, direction: 'up' | 'down') => {
+    if (!scalableHomepageConfig || !selectedScalableTemplate) {
+      triggerNotification('Select a scalable template before reordering sections.');
+      return;
+    }
+    const orderedSections = [...selectedScalableTemplate.sections].sort((a, b) => a.sortOrder - b.sortOrder);
+    const currentIndex = orderedSections.findIndex((section) => section.id === sectionId);
+    if (currentIndex < 0) return;
+    const nextIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+    if (nextIndex < 0 || nextIndex >= orderedSections.length) return;
+    [orderedSections[currentIndex], orderedSections[nextIndex]] = [orderedSections[nextIndex], orderedSections[currentIndex]];
+    const normalizedSections = orderedSections.map((section, index) => ({ ...section, sortOrder: (index + 1) * 10 }));
+    if (onReorderScalableTemplateSections) {
+      try {
+        await onReorderScalableTemplateSections(selectedScalableTemplate.id, normalizedSections);
+        if (selectedScalableTemplate.localityIds.length > 0 && onPublishResolvedHomepages) {
+          await onPublishResolvedHomepages(selectedScalableTemplate.localityIds);
+        }
+        triggerNotification('Template section reordered and published.');
+        return;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to reorder scalable template sections.';
+        triggerNotification(message);
+        return;
+      }
+    }
+    await persistScalableTemplateEntity({
+      ...selectedScalableTemplate,
+      sections: normalizedSections,
+      updatedAt: new Date().toISOString(),
+      metadata: {
+        ...(selectedScalableTemplate.metadata || {}),
+        updatedFrom: 'admin_console',
+        detachedFromLegacySync: true,
+      },
+    }, 'Template section reordered and published.', selectedScalableTemplate.localityIds.length > 0 ? selectedScalableTemplate.localityIds : [homepageLocalityId]);
+  };
+
+  const handleDuplicateScalableTemplateSection = async (sectionId: string) => {
+    if (!scalableHomepageConfig || !selectedScalableTemplate) {
+      triggerNotification('Select a scalable template before duplicating sections.');
+      return;
+    }
+    const sourceSection = selectedScalableTemplate.sections.find((section) => section.id === sectionId);
+    if (!sourceSection) return;
+    if (onDuplicateScalableTemplateSection) {
+      try {
+        await onDuplicateScalableTemplateSection(selectedScalableTemplate.id, sectionId);
+        if (selectedScalableTemplate.localityIds.length > 0 && onPublishResolvedHomepages) {
+          await onPublishResolvedHomepages(selectedScalableTemplate.localityIds);
+        }
+        triggerNotification('Template section duplicated and published.');
+        return;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to duplicate scalable template section.';
+        triggerNotification(message);
+        return;
+      }
+    }
+    const nextSection: HomepageSection = {
+      ...sourceSection,
+      id: `tpl_section_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      title: `${sourceSection.title} Copy`,
+      sortOrder: (selectedScalableTemplate.sections.length + 1) * 10,
+    };
+    await persistScalableTemplateEntity({
+      ...selectedScalableTemplate,
+      sections: [...selectedScalableTemplate.sections, nextSection],
+      updatedAt: new Date().toISOString(),
+      metadata: {
+        ...(selectedScalableTemplate.metadata || {}),
+        updatedFrom: 'admin_console',
+        detachedFromLegacySync: true,
+      },
+    }, 'Template section duplicated and published.', selectedScalableTemplate.localityIds.length > 0 ? selectedScalableTemplate.localityIds : [homepageLocalityId]);
+  };
+
+  const handleDeleteScalableTemplateSection = async (sectionId: string) => {
+    if (!scalableHomepageConfig || !selectedScalableTemplate) {
+      triggerNotification('Select a scalable template before deleting sections.');
+      return;
+    }
+    if (onDeleteScalableTemplateSection) {
+      try {
+        await onDeleteScalableTemplateSection(selectedScalableTemplate.id, sectionId);
+        if (selectedScalableTemplate.localityIds.length > 0 && onPublishResolvedHomepages) {
+          await onPublishResolvedHomepages(selectedScalableTemplate.localityIds);
+        }
+        triggerNotification('Template section deleted and published.');
+        return;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to delete scalable template section.';
+        triggerNotification(message);
+        return;
+      }
+    }
+    await persistScalableTemplateEntity({
+      ...selectedScalableTemplate,
+      sections: selectedScalableTemplate.sections.filter((section) => section.id !== sectionId),
+      updatedAt: new Date().toISOString(),
+      metadata: {
+        ...(selectedScalableTemplate.metadata || {}),
+        updatedFrom: 'admin_console',
+        detachedFromLegacySync: true,
+      },
+    }, 'Template section deleted and published.', selectedScalableTemplate.localityIds.length > 0 ? selectedScalableTemplate.localityIds : [homepageLocalityId]);
+  };
+
+  const resetAssignmentDraft = () => {
+    setAssignmentDraft({
+      id: '',
+      localityId: homepageLocalityId || localities[0]?.id || 'roadpali',
+      templateId: scalableHomepageConfig?.templates[0]?.id || '',
+      categoryId: '',
+      subcategoryId: '',
+      pincode: '',
+      status: 'active',
+      priority: '100',
+      isFallback: false,
+    });
+  };
+
+  const beginEditAssignment = (assignment: ScalableHomepageAssignment) => {
+    setAssignmentDraft({
+      id: assignment.id,
+      localityId: assignment.localityId,
+      templateId: assignment.templateId,
+      categoryId: assignment.categoryId || '',
+      subcategoryId: assignment.subcategoryId || '',
+      pincode: assignment.pincode || '',
+      status: assignment.status,
+      priority: String(assignment.priority),
+      isFallback: assignment.isFallback,
+    });
+  };
+
+  const handleSaveAssignmentDraft = async () => {
+    if (!scalableHomepageConfig) {
+      triggerNotification('Scalable CMS state is not loaded yet.');
+      return;
+    }
+    if (!assignmentDraft.localityId || !assignmentDraft.templateId) {
+      triggerNotification('Assignment needs a locality and template.');
+      return;
+    }
+
+    const nextAssignment: ScalableHomepageAssignment = {
+      id: assignmentDraft.id || createAdminId('assign'),
+      localityId: assignmentDraft.localityId,
+      templateId: assignmentDraft.templateId,
+      categoryId: assignmentDraft.categoryId || undefined,
+      subcategoryId: assignmentDraft.subcategoryId || undefined,
+      pincode: assignmentDraft.pincode || undefined,
+      status: assignmentDraft.status,
+      priority: Number(assignmentDraft.priority) || 100,
+      isFallback: assignmentDraft.isFallback,
+      metadata: {
+        ...(scalableHomepageConfig.assignments.find((assignment) => assignment.id === assignmentDraft.id)?.metadata || {}),
+        updatedFrom: 'admin_console',
+        detachedFromLegacySync: true,
+      },
+      updatedAt: new Date().toISOString(),
+    };
+
+    await persistScalableAssignmentEntity(
+      nextAssignment,
+      assignmentDraft.id ? 'Assignment updated and published.' : 'Assignment created and published.',
+      [nextAssignment.localityId]
+    );
+    resetAssignmentDraft();
+  };
+
+  const handleDeleteAssignment = async (assignmentId: string) => {
+    if (!scalableHomepageConfig) {
+      triggerNotification('Scalable CMS state is not loaded yet.');
+      return;
+    }
+    const assignment = scalableHomepageConfig.assignments.find((entry) => entry.id === assignmentId);
+    await deleteScalableAssignmentEntity(assignmentId, 'Assignment deleted and published.', [assignment?.localityId || homepageLocalityId]);
+    if (assignmentDraft.id === assignmentId) resetAssignmentDraft();
+  };
+
+  const handleDetachAssignmentFromLegacySync = async (assignment: ScalableHomepageAssignment) => {
+    if (!scalableHomepageConfig) {
+      triggerNotification('Scalable CMS state is not loaded yet.');
+      return;
+    }
+    if (!isLegacyManagedScalableEntity(assignment.metadata)) {
+      triggerNotification('This assignment is already detached or scalable-owned.');
+      return;
+    }
+    const detachedAt = new Date().toISOString();
+    await persistScalableAssignmentEntity({
+      ...assignment,
+      metadata: {
+        ...(assignment.metadata || {}),
+        updatedFrom: 'admin_console',
+        detachedFromLegacySync: true,
+        detachedAt,
+        detachedReason: 'manual_admin_detach',
+      },
+      updatedAt: detachedAt,
+    }, `Assignment for ${formatLocalityLabel(assignment.localityId)} detached from legacy sync.`, [assignment.localityId]);
+  };
+
+  const resetCampaignDraft = () => {
+    setCampaignDraft({
+      id: '',
+      name: '',
+      campaignType: 'hero_banner',
+      status: 'active',
+      priority: '100',
+      startDate: '',
+      endDate: '',
+      deviceTarget: 'all',
+      placementKeys: '',
+      localityIds: homepageLocalityId || localities[0]?.id || 'roadpali',
+      categoryIds: '',
+      subcategoryIds: '',
+      pincodes: '',
+      payloadTitle: '',
+      payloadSubtitle: '',
+      payloadDescription: '',
+      payloadImageUrl: '',
+      payloadBadge: '',
+      payloadCtaLabel: '',
+      payloadCtaText: '',
+      payloadTargetUrl: '',
+      payloadTargetBusinessId: '',
+      payloadBusinessIds: '',
+      payloadCode: '',
+      payloadDiscount: '',
+      payloadAuthorName: '',
+      payloadContent: '',
+      payloadBackgroundColor: '#1d4ed8',
+      payloadActionType: 'landing_page',
+      payloadText: '{}',
+      isFallback: false,
+    });
+  };
+
+  const beginEditCampaign = (campaign: ScalableCampaign) => {
+    const payload = (campaign.payload || {}) as Record<string, unknown>;
+    setCampaignDraft({
+      id: campaign.id,
+      name: campaign.name,
+      campaignType: campaign.campaignType,
+      status: campaign.status,
+      priority: String(campaign.priority),
+      startDate: campaign.startDate || '',
+      endDate: campaign.endDate || '',
+      deviceTarget: campaign.deviceTarget || 'all',
+      placementKeys: (campaign.placementKeys || []).join(', '),
+      localityIds: (campaign.targets.localityIds || []).join(', '),
+      categoryIds: (campaign.targets.categoryIds || []).join(', '),
+      subcategoryIds: (campaign.targets.subcategoryIds || []).join(', '),
+      pincodes: (campaign.targets.pincodes || []).join(', '),
+      payloadTitle: String(payload.title || ''),
+      payloadSubtitle: String(payload.subtitle || ''),
+      payloadDescription: String(payload.description || ''),
+      payloadImageUrl: String(payload.imageUrl || payload.image || ''),
+      payloadBadge: String(payload.badge || payload.badgeText || ''),
+      payloadCtaLabel: String(payload.ctaLabel || ''),
+      payloadCtaText: String(payload.ctaText || ''),
+      payloadTargetUrl: String(payload.targetUrl || payload.ctaTarget || ''),
+      payloadTargetBusinessId: String(payload.targetBusinessId || ''),
+      payloadBusinessIds: Array.isArray(payload.businessIds) ? payload.businessIds.join(', ') : '',
+      payloadCode: String(payload.code || ''),
+      payloadDiscount: String(payload.discount || ''),
+      payloadAuthorName: String(payload.authorName || ''),
+      payloadContent: String(payload.content || ''),
+      payloadBackgroundColor: String(payload.backgroundColor || '#1d4ed8'),
+      payloadActionType: ['landing_page', 'landing_listing', 'lead_form', 'search_category'].includes(String(payload.actionType || payload.ctaType || ''))
+        ? String(payload.actionType || payload.ctaType) as 'landing_page' | 'landing_listing' | 'lead_form' | 'search_category'
+        : 'landing_page',
+      payloadText: JSON.stringify(campaign.payload || {}, null, 2),
+      isFallback: campaign.isFallback,
+    });
+  };
+
+  const handleSaveCampaignDraft = async () => {
+    if (!scalableHomepageConfig) {
+      triggerNotification('Scalable CMS state is not loaded yet.');
+      return;
+    }
+    if (!campaignDraft.name.trim()) {
+      triggerNotification('Campaign name is required.');
+      return;
+    }
+
+    let parsedPayload: Record<string, unknown>;
+    try {
+      parsedPayload = JSON.parse(campaignDraft.payloadText || '{}');
+    } catch {
+      triggerNotification('Campaign payload must be valid JSON.');
+      return;
+    }
+
+    const localityIds = parseIdList(campaignDraft.localityIds);
+    const categoryIds = parseIdList(campaignDraft.categoryIds);
+    const subcategoryIds = parseIdList(campaignDraft.subcategoryIds);
+    const pincodes = parsePincodeList(campaignDraft.pincodes);
+    const placementKeys = parseIdList(campaignDraft.placementKeys);
+    const businessIds = parseIdList(campaignDraft.payloadBusinessIds);
+
+    const guidedPayload = (() => {
+      if (campaignDraft.campaignType === 'hero_banner') {
+        return pruneEmptyPayload({
+          id: campaignDraft.id || undefined,
+          localityId: localityIds[0] || '',
+          title: campaignDraft.payloadTitle || campaignDraft.name,
+          subtitle: campaignDraft.payloadSubtitle,
+          imageUrl: campaignDraft.payloadImageUrl,
+          startDate: campaignDraft.startDate || undefined,
+          endDate: campaignDraft.endDate || undefined,
+          ctaLabel: campaignDraft.payloadCtaLabel || 'Explore Businesses',
+          ctaType: campaignDraft.payloadActionType,
+          ctaTarget: campaignDraft.payloadTargetUrl || 'all',
+          pincodes,
+          isActive: campaignDraft.status === 'active',
+        });
+      }
+      if (campaignDraft.campaignType === 'listing_ad') {
+        return pruneEmptyPayload({
+          id: campaignDraft.id || undefined,
+          title: campaignDraft.payloadTitle || campaignDraft.name,
+          description: campaignDraft.payloadDescription,
+          badge: campaignDraft.payloadBadge || 'Sponsored',
+          ctaText: campaignDraft.payloadCtaText || 'Know More',
+          backgroundColor: campaignDraft.payloadBackgroundColor || '#1d4ed8',
+          imageUrl: campaignDraft.payloadImageUrl || undefined,
+          startDate: campaignDraft.startDate || undefined,
+          endDate: campaignDraft.endDate || undefined,
+          actionType: campaignDraft.payloadActionType === 'search_category' ? 'landing_page' : campaignDraft.payloadActionType,
+          targetUrl: campaignDraft.payloadActionType === 'landing_page' ? campaignDraft.payloadTargetUrl || undefined : undefined,
+          targetBusinessId: campaignDraft.payloadActionType === 'landing_listing' ? campaignDraft.payloadTargetBusinessId || undefined : undefined,
+          localityIds,
+          pincodes,
+          categoryIds,
+          placementKey: placementKeys[0] || undefined,
+          deviceTarget: campaignDraft.deviceTarget,
+          isActive: campaignDraft.status === 'active',
+        });
+      }
+      if (campaignDraft.campaignType === 'offer') {
+        return pruneEmptyPayload({
+          id: campaignDraft.id || undefined,
+          businessId: campaignDraft.payloadTargetBusinessId || '',
+          title: campaignDraft.payloadTitle || campaignDraft.name,
+          code: campaignDraft.payloadCode,
+          discount: campaignDraft.payloadDiscount,
+          description: campaignDraft.payloadDescription,
+          startDate: campaignDraft.startDate || undefined,
+          expiryDate: campaignDraft.endDate || undefined,
+          endDate: campaignDraft.endDate || undefined,
+          usageCount: 0,
+          isActive: campaignDraft.status === 'active',
+          localityIds,
+          pincodes,
+          categoryIds,
+          badgeText: campaignDraft.payloadDiscount || undefined,
+          ctaText: campaignDraft.payloadCtaText || 'Claim Offer',
+          targetBusinessId: campaignDraft.payloadTargetBusinessId || undefined,
+        });
+      }
+      if (campaignDraft.campaignType === 'sponsored_listing') {
+        return pruneEmptyPayload({
+          businessIds,
+          sellerBusinessId: businessIds[0] || undefined,
+          title: campaignDraft.payloadTitle || campaignDraft.name,
+          description: campaignDraft.payloadDescription,
+        });
+      }
+      return pruneEmptyPayload({
+        id: campaignDraft.id || undefined,
+        localityId: localityIds[0] || '',
+        title: campaignDraft.payloadTitle || campaignDraft.name,
+        content: campaignDraft.payloadContent || campaignDraft.payloadDescription,
+        authorName: campaignDraft.payloadAuthorName || 'Localisy Team',
+        type: 'post',
+        createdAt: new Date().toISOString(),
+        likes: 0,
+        image: campaignDraft.payloadImageUrl || undefined,
+        status: campaignDraft.status === 'draft' ? 'draft' : campaignDraft.status === 'archived' ? 'archived' : 'published',
+        publishAt: campaignDraft.startDate ? new Date(campaignDraft.startDate).toISOString() : new Date().toISOString(),
+        expireAt: campaignDraft.endDate ? new Date(campaignDraft.endDate).toISOString() : undefined,
+      });
+    })();
+
+    const nextPayload = pruneEmptyPayload({
+      ...parsedPayload,
+      ...guidedPayload,
+    });
+
+    const nextCampaign: ScalableCampaign = {
+      id: campaignDraft.id || createAdminId('campaign'),
+      name: campaignDraft.name.trim(),
+      campaignType: campaignDraft.campaignType,
+      status: campaignDraft.status,
+      priority: Number(campaignDraft.priority) || 100,
+      isFallback: campaignDraft.isFallback,
+      startDate: campaignDraft.startDate || undefined,
+      endDate: campaignDraft.endDate || undefined,
+      deviceTarget: campaignDraft.deviceTarget,
+      placementKeys,
+      targets: {
+        localityIds,
+        categoryIds,
+        subcategoryIds,
+        pincodes,
+        devices: [campaignDraft.deviceTarget],
+        pageTypes: ['homepage', 'listing_results'],
+        placementKeys,
+      },
+      payload: nextPayload,
+      metadata: {
+        ...(scalableHomepageConfig.campaigns.find((campaign) => campaign.id === campaignDraft.id)?.metadata || {}),
+        updatedFrom: 'admin_console',
+        detachedFromLegacySync: true,
+      },
+      updatedAt: new Date().toISOString(),
+    };
+
+    await persistScalableCampaignEntity(
+      nextCampaign,
+      campaignDraft.id ? 'Campaign updated and published.' : 'Campaign created and published.',
+      localityIds.length > 0 ? localityIds : [homepageLocalityId]
+    );
+    resetCampaignDraft();
+  };
+
+  const handleDeleteCampaign = async (campaignId: string) => {
+    if (!scalableHomepageConfig) {
+      triggerNotification('Scalable CMS state is not loaded yet.');
+      return;
+    }
+    const campaign = scalableHomepageConfig.campaigns.find((entry) => entry.id === campaignId);
+    await deleteScalableCampaignEntity(
+      campaignId,
+      'Campaign deleted and published.',
+      campaign?.targets.localityIds && campaign.targets.localityIds.length > 0 ? campaign.targets.localityIds : [homepageLocalityId]
+    );
+    if (campaignDraft.id === campaignId) resetCampaignDraft();
+  };
+
+  const handleDetachCampaignFromLegacySync = async (campaign: ScalableCampaign) => {
+    if (!scalableHomepageConfig) {
+      triggerNotification('Scalable CMS state is not loaded yet.');
+      return;
+    }
+    if (!isLegacyManagedScalableEntity(campaign.metadata)) {
+      triggerNotification('This campaign is already detached or scalable-owned.');
+      return;
+    }
+    const detachedAt = new Date().toISOString();
+    await persistScalableCampaignEntity({
+      ...campaign,
+      metadata: {
+        ...(campaign.metadata || {}),
+        updatedFrom: 'admin_console',
+        detachedFromLegacySync: true,
+        detachedAt,
+        detachedReason: 'manual_admin_detach',
+      },
+      updatedAt: detachedAt,
+    }, `Campaign "${campaign.name}" detached from legacy sync.`, campaign.targets.localityIds && campaign.targets.localityIds.length > 0 ? campaign.targets.localityIds : [homepageLocalityId]);
+  };
+
+  const handleLoadResolvedPreview = async () => {
+    if (!apiConfigDraft.resolvedHomepageEndpoint) {
+      triggerNotification('Resolved homepage endpoint is not configured.');
+      return;
+    }
+    if (!resolvedPreviewDraft.localityId) {
+      triggerNotification('Select a locality for preview.');
+      return;
+    }
+
+    setResolvedPreviewLoading(true);
+    try {
+      const params = new URLSearchParams({
+        localityId: resolvedPreviewDraft.localityId,
+        device: resolvedPreviewDraft.device,
+        pageType: resolvedPreviewDraft.pageType,
+        date: resolvedPreviewDraft.date || new Date().toISOString().slice(0, 10),
+        usePublished: resolvedPreviewDraft.usePublished ? 'true' : 'false',
+      });
+      if (resolvedPreviewDraft.categoryId) params.set('categoryId', resolvedPreviewDraft.categoryId);
+      if (resolvedPreviewDraft.subcategoryId) params.set('subcategoryId', resolvedPreviewDraft.subcategoryId);
+      if (resolvedPreviewDraft.pincode) params.set('pincode', resolvedPreviewDraft.pincode);
+      if (resolvedPreviewDraft.placementKey.trim()) params.set('placementKey', resolvedPreviewDraft.placementKey.trim());
+
+      const response = await fetch(`${apiConfigDraft.resolvedHomepageEndpoint}?${params.toString()}`);
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.payload) {
+        throw new Error(payload?.error || 'Failed to load resolved homepage preview.');
+      }
+
+      setResolvedPreviewResult({
+        source: payload.source || 'live_resolver',
+        payload: payload.payload,
+      });
+      triggerNotification(`Loaded ${payload.source || 'resolved'} homepage preview.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to load resolved homepage preview.';
+      triggerNotification(message);
+    } finally {
+      setResolvedPreviewLoading(false);
+    }
   };
 
   const handleCreateCommunityItemSubmit = async (e: React.FormEvent) => {
@@ -1667,6 +3171,251 @@ export default function AdminConsole({
       ...patch
     });
   };
+
+  const renderEditableHomepageSectionCard = (
+    section: HomepageSection,
+    index: number,
+    handlers: {
+      onMoveUp: () => void;
+      onMoveDown: () => void;
+      onDuplicate: () => void;
+      onDelete: () => void;
+      onUpdate: (patch: Partial<HomepageSection>) => void | Promise<void>;
+    }
+  ) => (
+    <div key={section.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-full bg-white border border-slate-200 px-2 py-0.5 text-[10px] font-mono text-slate-500">#{index + 1}</span>
+          <span className="rounded-full bg-indigo-50 border border-indigo-100 px-2 py-0.5 text-[10px] font-bold text-indigo-700">
+            {homepageSectionLabels[section.sectionType]}
+          </span>
+        </div>
+        <div className="flex items-center gap-1">
+          <button type="button" onClick={handlers.onMoveUp} className="rounded border border-slate-200 bg-white p-1.5 text-slate-600"><ChevronUp className="h-3.5 w-3.5" /></button>
+          <button type="button" onClick={handlers.onMoveDown} className="rounded border border-slate-200 bg-white p-1.5 text-slate-600"><ChevronDown className="h-3.5 w-3.5" /></button>
+          <button type="button" onClick={handlers.onDuplicate} className="rounded border border-slate-200 bg-white p-1.5 text-slate-600"><Copy className="h-3.5 w-3.5" /></button>
+          <button type="button" onClick={handlers.onDelete} className="rounded border border-rose-200 bg-rose-50 p-1.5 text-rose-700"><Trash2 className="h-3.5 w-3.5" /></button>
+        </div>
+      </div>
+      <input
+        value={section.title}
+        onChange={(e) => { void handlers.onUpdate({ title: e.target.value }); }}
+        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold"
+      />
+      <textarea
+        value={section.subtitle || ''}
+        onChange={(e) => { void handlers.onUpdate({ subtitle: e.target.value }); }}
+        rows={2}
+        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs"
+      />
+      <div className="grid grid-cols-2 gap-2">
+        <select
+          value={section.status}
+          onChange={(e) => { void handlers.onUpdate({ status: e.target.value as HomepageSection['status'] }); }}
+          className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+        >
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
+        </select>
+        <select
+          value={section.visible ? 'visible' : 'hidden'}
+          onChange={(e) => { void handlers.onUpdate({ visible: e.target.value === 'visible' }); }}
+          className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+        >
+          <option value="visible">Visible</option>
+          <option value="hidden">Hidden</option>
+        </select>
+        <input
+          type="date"
+          value={section.startDate || ''}
+          onChange={(e) => { void handlers.onUpdate({ startDate: e.target.value || undefined }); }}
+          className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+        />
+        <input
+          type="date"
+          value={section.endDate || ''}
+          onChange={(e) => { void handlers.onUpdate({ endDate: e.target.value || undefined }); }}
+          className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+        />
+        <input
+          value={String(section.maxItems || '')}
+          onChange={(e) => { void handlers.onUpdate({ maxItems: Number(e.target.value.replace(/\D/g, '')) || undefined }); }}
+          placeholder="Max items"
+          className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+        />
+        <input
+          value={String(section.visibleSlots || '')}
+          onChange={(e) => { void handlers.onUpdate({ visibleSlots: Number(e.target.value.replace(/\D/g, '')) || undefined }); }}
+          placeholder="Visible slots"
+          className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+        />
+        <input
+          value={String(section.desktopCardCount || '')}
+          onChange={(e) => { void handlers.onUpdate({ desktopCardCount: Number(e.target.value.replace(/\D/g, '')) || undefined }); }}
+          placeholder="Desktop cards"
+          className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+        />
+        <input
+          value={String(section.mobileCardCount || '')}
+          onChange={(e) => { void handlers.onUpdate({ mobileCardCount: Number(e.target.value.replace(/\D/g, '')) || undefined }); }}
+          placeholder="Mobile cards"
+          className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+        />
+        <input
+          value={section.pincodes?.join(', ') || ''}
+          onChange={(e) => { void handlers.onUpdate({ pincodes: parsePincodeList(e.target.value) }); }}
+          placeholder="Pincodes"
+          className="rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono"
+        />
+        <input
+          value={String(section.rotationIntervalSec || 3)}
+          onChange={(e) => { void handlers.onUpdate({ rotationIntervalSec: Number(e.target.value.replace(/\D/g, '')) || 3 }); }}
+          placeholder="Rotate seconds"
+          className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+        />
+      </div>
+      {['business_shelf', 'text_business_strip', 'featured_businesses', 'verified_business_grid'].includes(section.sectionType) && (
+        <select
+          value={section.mobileDisplayMode || 'carousel'}
+          onChange={(e) => { void handlers.onUpdate({ mobileDisplayMode: e.target.value as NonNullable<HomepageSection['mobileDisplayMode']> }); }}
+          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2"
+        >
+          <option value="carousel">Mobile Carousel</option>
+          <option value="stack">Mobile Stack</option>
+        </select>
+      )}
+      {['business_shelf', 'text_business_strip'].includes(section.sectionType) && (
+        <div className="grid grid-cols-2 gap-2">
+          <select
+            value={section.categoryId || ''}
+            onChange={(e) => { void handlers.onUpdate({ categoryId: e.target.value, subcategoryId: '' }); }}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+          >
+            {BUSINESS_CATEGORIES.map((category) => (
+              <option key={category.id} value={category.id}>{category.name}</option>
+            ))}
+          </select>
+          <select
+            value={section.subcategoryId || ''}
+            onChange={(e) => { void handlers.onUpdate({ subcategoryId: e.target.value || undefined }); }}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+          >
+            <option value="">All subcategories</option>
+            {getSubcategoriesForCategory(section.categoryId || BUSINESS_CATEGORIES[0]?.id || '').map((subcategory) => (
+              <option key={subcategory.id} value={subcategory.id}>{subcategory.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
+      {['category_grid', 'emergency_grid'].includes(section.sectionType) && (
+        <OrderedCategoryPicker
+          label="Configured categories"
+          selectedIds={section.categoryIds || []}
+          onChange={(nextIds) => { void handlers.onUpdate({ categoryIds: nextIds }); }}
+          helperText="Reorder the selected categories here to control the exact row order on the homepage."
+        />
+      )}
+      {section.sectionType === 'promo_banner' && (
+        <input
+          value={section.placementKey || ''}
+          onChange={(e) => { void handlers.onUpdate({ placementKey: e.target.value }); }}
+          placeholder="Placement key"
+          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2"
+        />
+      )}
+      <div className="grid grid-cols-2 gap-2">
+        <div className="col-span-2">
+          <OrderedSelectionPicker
+            label="Target localities"
+            selectedIds={section.localityIds || []}
+            options={localities.map((locality) => ({
+              id: locality.id,
+              label: locality.name,
+              meta: locality.slug || locality.id
+            }))}
+            onChange={(nextIds) => { void handlers.onUpdate({ localityIds: nextIds }); }}
+            helperText="Select a locality and click Add. Remove all selected localities to make this section unrestricted."
+            emptyText="No locality targeting selected. This section can show for any locality context that loads this layout."
+          />
+        </div>
+        {['business_shelf', 'text_business_strip', 'featured_businesses', 'verified_business_grid'].includes(section.sectionType) && (
+          <select
+            value={section.listingSourceMode || 'auto'}
+            onChange={(e) => { void handlers.onUpdate({ listingSourceMode: e.target.value as HomepageSection['listingSourceMode'] }); }}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+          >
+            <option value="auto">Auto listings</option>
+            <option value="manual">Manual pinned listings</option>
+          </select>
+        )}
+        <select
+          value={section.ctaType || 'none'}
+          onChange={(e) => { void handlers.onUpdate({ ctaType: e.target.value as HomepageSection['ctaType'] }); }}
+          className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+        >
+          <option value="none">No CTA</option>
+          <option value="landing_page">Landing Page</option>
+          <option value="landing_listing">Landing Listing</option>
+          <option value="lead_form">Lead Form</option>
+          <option value="search_category">Search Category</option>
+        </select>
+        <input
+          value={section.ctaLabel || ''}
+          onChange={(e) => { void handlers.onUpdate({ ctaLabel: e.target.value }); }}
+          placeholder="CTA label"
+          className="rounded-lg border border-slate-200 bg-white px-3 py-2"
+        />
+        <input
+          value={section.ctaTarget || ''}
+          onChange={(e) => { void handlers.onUpdate({ ctaTarget: e.target.value }); }}
+          placeholder="CTA target"
+          className="col-span-2 rounded-lg border border-slate-200 bg-white px-3 py-2"
+        />
+      </div>
+      {section.listingSourceMode === 'manual' && ['business_shelf', 'text_business_strip', 'featured_businesses', 'verified_business_grid'].includes(section.sectionType) && (
+        <OrderedSelectionPicker
+          label="Pinned listings"
+          selectedIds={section.pinnedBusinessIds || []}
+          options={filteredBusinesses.filter((business) => business.status === 'approved').map((business) => ({
+            id: business.id,
+            label: business.name,
+            meta: `${getCategoryById(business.categoryId)?.name || business.categoryId} | ${business.pincode || 'No PIN'}`
+          }))}
+          onChange={(nextIds) => { void handlers.onUpdate({ pinnedBusinessIds: nextIds }); }}
+          helperText="Select a listing and click Add. The selected order is used for manual homepage sections."
+          emptyText="No listings pinned yet."
+        />
+      )}
+      <div className="flex items-center justify-between gap-2">
+        <label className="inline-flex items-center gap-2 text-slate-700">
+          <input
+            type="checkbox"
+            checked={section.showViewAll ?? true}
+            onChange={(e) => { void handlers.onUpdate({ showViewAll: e.target.checked }); }}
+          />
+          <span>Show View All</span>
+        </label>
+        <label className="inline-flex items-center gap-2 text-slate-700">
+          <input
+            type="checkbox"
+            checked={section.autoRotate ?? true}
+            onChange={(e) => { void handlers.onUpdate({ autoRotate: e.target.checked }); }}
+          />
+          <span>Auto rotate</span>
+        </label>
+        <div className="flex items-center gap-2">
+          <span className="text-slate-500">Background</span>
+          <input
+            type="color"
+            value={section.backgroundColor || '#ffffff'}
+            onChange={(e) => { void handlers.onUpdate({ backgroundColor: e.target.value }); }}
+            className="h-8 w-12 rounded border border-slate-200 bg-white"
+          />
+        </div>
+      </div>
+    </div>
+  );
 
   const handleCreateLocalityCategoryLinkSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -3143,246 +4892,29 @@ export default function AdminConsole({
                   />
                 </div>
               </div>
-              <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-lg">
-                Add Homepage Section
-              </button>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-lg">
+                  Add Homepage Section
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleCreateScalableTemplateSection()}
+                  disabled={!selectedScalableTemplate}
+                  className="w-full rounded-lg border border-emerald-200 bg-white py-2 font-bold text-emerald-800 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Add To Active Template
+                </button>
+              </div>
             </form>
 
             <div className="space-y-3 max-h-[36rem] overflow-y-auto pr-1">
-              {filteredHomepageSections.map((section, index) => (
-                <div key={section.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="rounded-full bg-white border border-slate-200 px-2 py-0.5 text-[10px] font-mono text-slate-500">#{index + 1}</span>
-                      <span className="rounded-full bg-indigo-50 border border-indigo-100 px-2 py-0.5 text-[10px] font-bold text-indigo-700">
-                        {homepageSectionLabels[section.sectionType]}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <button type="button" onClick={() => onMoveHomepageSection?.(homepageLocalityId, section.id, 'up')} className="rounded border border-slate-200 bg-white p-1.5 text-slate-600"><ChevronUp className="h-3.5 w-3.5" /></button>
-                      <button type="button" onClick={() => onMoveHomepageSection?.(homepageLocalityId, section.id, 'down')} className="rounded border border-slate-200 bg-white p-1.5 text-slate-600"><ChevronDown className="h-3.5 w-3.5" /></button>
-                      <button type="button" onClick={() => onDuplicateHomepageSection?.(homepageLocalityId, section.id)} className="rounded border border-slate-200 bg-white p-1.5 text-slate-600"><Copy className="h-3.5 w-3.5" /></button>
-                      <button type="button" onClick={() => onDeleteHomepageSection?.(homepageLocalityId, section.id)} className="rounded border border-rose-200 bg-rose-50 p-1.5 text-rose-700"><Trash2 className="h-3.5 w-3.5" /></button>
-                    </div>
-                  </div>
-                  <input
-                    value={section.title}
-                    onChange={(e) => updateHomepageSection(section, { title: e.target.value })}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold"
-                  />
-                  <textarea
-                    value={section.subtitle || ''}
-                    onChange={(e) => updateHomepageSection(section, { subtitle: e.target.value })}
-                    rows={2}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs"
-                  />
-                  <div className="grid grid-cols-2 gap-2">
-                    <select
-                      value={section.status}
-                      onChange={(e) => updateHomepageSection(section, { status: e.target.value as HomepageSection['status'] })}
-                      className="rounded-lg border border-slate-200 bg-white px-3 py-2"
-                    >
-                      <option value="active">Active</option>
-                      <option value="inactive">Inactive</option>
-                    </select>
-                    <select
-                      value={section.visible ? 'visible' : 'hidden'}
-                      onChange={(e) => updateHomepageSection(section, { visible: e.target.value === 'visible' })}
-                      className="rounded-lg border border-slate-200 bg-white px-3 py-2"
-                    >
-                      <option value="visible">Visible</option>
-                      <option value="hidden">Hidden</option>
-                    </select>
-                    <input
-                      type="date"
-                      value={section.startDate || ''}
-                      onChange={(e) => updateHomepageSection(section, { startDate: e.target.value || undefined })}
-                      className="rounded-lg border border-slate-200 bg-white px-3 py-2"
-                    />
-                    <input
-                      type="date"
-                      value={section.endDate || ''}
-                      onChange={(e) => updateHomepageSection(section, { endDate: e.target.value || undefined })}
-                      className="rounded-lg border border-slate-200 bg-white px-3 py-2"
-                    />
-                    <input
-                      value={String(section.maxItems || '')}
-                      onChange={(e) => updateHomepageSection(section, { maxItems: Number(e.target.value.replace(/\D/g, '')) || undefined })}
-                      placeholder="Max items"
-                      className="rounded-lg border border-slate-200 bg-white px-3 py-2"
-                    />
-                    <input
-                      value={String(section.visibleSlots || '')}
-                      onChange={(e) => updateHomepageSection(section, { visibleSlots: Number(e.target.value.replace(/\D/g, '')) || undefined })}
-                      placeholder="Visible slots"
-                      className="rounded-lg border border-slate-200 bg-white px-3 py-2"
-                    />
-                    <input
-                      value={String(section.desktopCardCount || '')}
-                      onChange={(e) => updateHomepageSection(section, { desktopCardCount: Number(e.target.value.replace(/\D/g, '')) || undefined })}
-                      placeholder="Desktop cards"
-                      className="rounded-lg border border-slate-200 bg-white px-3 py-2"
-                    />
-                    <input
-                      value={String(section.mobileCardCount || '')}
-                      onChange={(e) => updateHomepageSection(section, { mobileCardCount: Number(e.target.value.replace(/\D/g, '')) || undefined })}
-                      placeholder="Mobile cards"
-                      className="rounded-lg border border-slate-200 bg-white px-3 py-2"
-                    />
-                    <input
-                      value={section.pincodes?.join(', ') || ''}
-                      onChange={(e) => updateHomepageSection(section, { pincodes: parsePincodeList(e.target.value) })}
-                      placeholder="Pincodes"
-                      className="rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono"
-                    />
-                    <input
-                      value={String(section.rotationIntervalSec || 3)}
-                      onChange={(e) => updateHomepageSection(section, { rotationIntervalSec: Number(e.target.value.replace(/\D/g, '')) || 3 })}
-                      placeholder="Rotate seconds"
-                      className="rounded-lg border border-slate-200 bg-white px-3 py-2"
-                    />
-                  </div>
-                  {['business_shelf', 'text_business_strip', 'featured_businesses', 'verified_business_grid'].includes(section.sectionType) && (
-                    <select
-                      value={section.mobileDisplayMode || 'carousel'}
-                      onChange={(e) => updateHomepageSection(section, { mobileDisplayMode: e.target.value as NonNullable<HomepageSection['mobileDisplayMode']> })}
-                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2"
-                    >
-                      <option value="carousel">Mobile Carousel</option>
-                      <option value="stack">Mobile Stack</option>
-                    </select>
-                  )}
-                  {['business_shelf', 'text_business_strip'].includes(section.sectionType) && (
-                    <div className="grid grid-cols-2 gap-2">
-                      <select
-                        value={section.categoryId || ''}
-                        onChange={(e) => updateHomepageSection(section, { categoryId: e.target.value, subcategoryId: '' })}
-                        className="rounded-lg border border-slate-200 bg-white px-3 py-2"
-                      >
-                        {BUSINESS_CATEGORIES.map((category) => (
-                          <option key={category.id} value={category.id}>{category.name}</option>
-                        ))}
-                      </select>
-                      <select
-                        value={section.subcategoryId || ''}
-                        onChange={(e) => updateHomepageSection(section, { subcategoryId: e.target.value || undefined })}
-                        className="rounded-lg border border-slate-200 bg-white px-3 py-2"
-                      >
-                        <option value="">All subcategories</option>
-                        {getSubcategoriesForCategory(section.categoryId || BUSINESS_CATEGORIES[0]?.id || '').map((subcategory) => (
-                          <option key={subcategory.id} value={subcategory.id}>{subcategory.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-                  {['category_grid', 'emergency_grid'].includes(section.sectionType) && (
-                    <OrderedCategoryPicker
-                      label="Configured categories"
-                      selectedIds={section.categoryIds || []}
-                      onChange={(nextIds) => updateHomepageSection(section, { categoryIds: nextIds })}
-                      helperText="Reorder the selected categories here to control the exact row order on the homepage."
-                    />
-                  )}
-                  {section.sectionType === 'promo_banner' && (
-                    <input
-                      value={section.placementKey || ''}
-                      onChange={(e) => updateHomepageSection(section, { placementKey: e.target.value })}
-                      placeholder="Placement key"
-                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2"
-                    />
-                  )}
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="col-span-2">
-                      <OrderedSelectionPicker
-                        label="Target localities"
-                        selectedIds={section.localityIds || []}
-                        options={localities.map((locality) => ({
-                          id: locality.id,
-                          label: locality.name,
-                          meta: locality.slug || locality.id
-                        }))}
-                        onChange={(nextIds) => updateHomepageSection(section, { localityIds: nextIds })}
-                        helperText="Select a locality and click Add. Remove all selected localities to make this section unrestricted."
-                        emptyText="No locality targeting selected. This section can show for any locality context that loads this layout."
-                      />
-                    </div>
-                    {['business_shelf', 'text_business_strip', 'featured_businesses', 'verified_business_grid'].includes(section.sectionType) && (
-                      <select
-                        value={section.listingSourceMode || 'auto'}
-                        onChange={(e) => updateHomepageSection(section, { listingSourceMode: e.target.value as HomepageSection['listingSourceMode'] })}
-                        className="rounded-lg border border-slate-200 bg-white px-3 py-2"
-                      >
-                        <option value="auto">Auto listings</option>
-                        <option value="manual">Manual pinned listings</option>
-                      </select>
-                    )}
-                    <select
-                      value={section.ctaType || 'none'}
-                      onChange={(e) => updateHomepageSection(section, { ctaType: e.target.value as HomepageSection['ctaType'] })}
-                      className="rounded-lg border border-slate-200 bg-white px-3 py-2"
-                    >
-                      <option value="none">No CTA</option>
-                      <option value="landing_page">Landing Page</option>
-                      <option value="landing_listing">Landing Listing</option>
-                      <option value="lead_form">Lead Form</option>
-                      <option value="search_category">Search Category</option>
-                    </select>
-                    <input
-                      value={section.ctaLabel || ''}
-                      onChange={(e) => updateHomepageSection(section, { ctaLabel: e.target.value })}
-                      placeholder="CTA label"
-                      className="rounded-lg border border-slate-200 bg-white px-3 py-2"
-                    />
-                    <input
-                      value={section.ctaTarget || ''}
-                      onChange={(e) => updateHomepageSection(section, { ctaTarget: e.target.value })}
-                      placeholder="CTA target"
-                      className="col-span-2 rounded-lg border border-slate-200 bg-white px-3 py-2"
-                    />
-                  </div>
-                  {section.listingSourceMode === 'manual' && ['business_shelf', 'text_business_strip', 'featured_businesses', 'verified_business_grid'].includes(section.sectionType) && (
-                    <OrderedSelectionPicker
-                      label="Pinned listings"
-                      selectedIds={section.pinnedBusinessIds || []}
-                      options={filteredBusinesses.filter((business) => business.status === 'approved').map((business) => ({
-                        id: business.id,
-                        label: business.name,
-                        meta: `${getCategoryById(business.categoryId)?.name || business.categoryId} | ${business.pincode || 'No PIN'}`
-                      }))}
-                      onChange={(nextIds) => updateHomepageSection(section, { pinnedBusinessIds: nextIds })}
-                      helperText="Select a listing and click Add. The selected order is used for manual homepage sections."
-                      emptyText="No listings pinned yet."
-                    />
-                  )}
-                  <div className="flex items-center justify-between gap-2">
-                    <label className="inline-flex items-center gap-2 text-slate-700">
-                      <input
-                        type="checkbox"
-                        checked={section.showViewAll ?? true}
-                        onChange={(e) => updateHomepageSection(section, { showViewAll: e.target.checked })}
-                      />
-                      <span>Show View All</span>
-                    </label>
-                    <label className="inline-flex items-center gap-2 text-slate-700">
-                      <input
-                        type="checkbox"
-                        checked={section.autoRotate ?? true}
-                        onChange={(e) => updateHomepageSection(section, { autoRotate: e.target.checked })}
-                      />
-                      <span>Auto rotate</span>
-                    </label>
-                    <div className="flex items-center gap-2">
-                      <span className="text-slate-500">Background</span>
-                      <input
-                        type="color"
-                        value={section.backgroundColor || '#ffffff'}
-                        onChange={(e) => updateHomepageSection(section, { backgroundColor: e.target.value })}
-                        className="h-8 w-12 rounded border border-slate-200 bg-white"
-                      />
-                    </div>
-                  </div>
-                </div>
-              ))}
+              {filteredHomepageSections.map((section, index) => renderEditableHomepageSectionCard(section, index, {
+                onMoveUp: () => onMoveHomepageSection?.(homepageLocalityId, section.id, 'up'),
+                onMoveDown: () => onMoveHomepageSection?.(homepageLocalityId, section.id, 'down'),
+                onDuplicate: () => onDuplicateHomepageSection?.(homepageLocalityId, section.id),
+                onDelete: () => onDeleteHomepageSection?.(homepageLocalityId, section.id),
+                onUpdate: (patch) => updateHomepageSection(section, patch),
+              }))}
               {filteredHomepageSections.length === 0 && (
                 <div className="text-xs text-slate-400">No homepage sections configured yet for this locality.</div>
               )}
@@ -3429,6 +4961,88 @@ export default function AdminConsole({
               <input
                 value={apiConfigDraft.homepageConfigEndpoint}
                 onChange={(e) => setApiConfigDraft((prev) => ({ ...prev, homepageConfigEndpoint: e.target.value }))}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono"
+              />
+            </label>
+
+            <label className="block space-y-1">
+              <span className="font-semibold text-slate-700">Ad leads endpoint</span>
+              <input
+                value={apiConfigDraft.adLeadsEndpoint || ''}
+                onChange={(e) => setApiConfigDraft((prev) => ({ ...prev, adLeadsEndpoint: e.target.value }))}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono"
+              />
+            </label>
+
+            <label className="block space-y-1">
+              <span className="font-semibold text-slate-700">Homepage defaults endpoint</span>
+              <input
+                value={apiConfigDraft.homepageDefaultsConfigEndpoint || ''}
+                onChange={(e) => setApiConfigDraft((prev) => ({ ...prev, homepageDefaultsConfigEndpoint: e.target.value }))}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono"
+              />
+            </label>
+
+            <label className="block space-y-1">
+              <span className="font-semibold text-slate-700">Locality routing endpoint</span>
+              <input
+                value={apiConfigDraft.localityRoutingConfigEndpoint || ''}
+                onChange={(e) => setApiConfigDraft((prev) => ({ ...prev, localityRoutingConfigEndpoint: e.target.value }))}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono"
+              />
+            </label>
+
+            <label className="block space-y-1">
+              <span className="font-semibold text-slate-700">Geography endpoint</span>
+              <input
+                value={apiConfigDraft.geographyConfigEndpoint || ''}
+                onChange={(e) => setApiConfigDraft((prev) => ({ ...prev, geographyConfigEndpoint: e.target.value }))}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono"
+              />
+            </label>
+
+            <label className="block space-y-1">
+              <span className="font-semibold text-slate-700">Taxonomy endpoint</span>
+              <input
+                value={apiConfigDraft.taxonomyConfigEndpoint || ''}
+                onChange={(e) => setApiConfigDraft((prev) => ({ ...prev, taxonomyConfigEndpoint: e.target.value }))}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono"
+              />
+            </label>
+
+            <label className="block space-y-1">
+              <span className="font-semibold text-slate-700">SEO discovery endpoint</span>
+              <input
+                value={apiConfigDraft.seoDiscoveryConfigEndpoint || ''}
+                onChange={(e) => setApiConfigDraft((prev) => ({ ...prev, seoDiscoveryConfigEndpoint: e.target.value }))}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono"
+              />
+            </label>
+
+            <div className="grid grid-cols-2 gap-2">
+              <label className="space-y-1">
+                <span className="font-semibold text-slate-700">Scalable CMS endpoint</span>
+                <input
+                  value={apiConfigDraft.scalableHomepageConfigEndpoint || ''}
+                  onChange={(e) => setApiConfigDraft((prev) => ({ ...prev, scalableHomepageConfigEndpoint: e.target.value }))}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono"
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="font-semibold text-slate-700">Resolved homepage endpoint</span>
+                <input
+                  value={apiConfigDraft.resolvedHomepageEndpoint || ''}
+                  onChange={(e) => setApiConfigDraft((prev) => ({ ...prev, resolvedHomepageEndpoint: e.target.value }))}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono"
+                />
+              </label>
+            </div>
+
+            <label className="block space-y-1">
+              <span className="font-semibold text-slate-700">Publish snapshots endpoint</span>
+              <input
+                value={apiConfigDraft.publishResolvedHomepageEndpoint || ''}
+                onChange={(e) => setApiConfigDraft((prev) => ({ ...prev, publishResolvedHomepageEndpoint: e.target.value }))}
                 className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono"
               />
             </label>
@@ -3489,6 +5103,1101 @@ export default function AdminConsole({
               </button>
             </div>
           </form>
+
+          {businessTaxonomy && (
+            <BusinessTaxonomyManager
+              taxonomy={businessTaxonomy}
+              onSave={onSaveBusinessTaxonomy}
+            />
+          )}
+
+          {geographyConfig && (
+            <GeographyConfigManager
+              config={geographyConfig}
+              onSave={onSaveGeographyConfig}
+            />
+          )}
+
+          {homepageDefaultsConfig && (
+            <HomepageDefaultsManager
+              config={homepageDefaultsConfig}
+              onSave={onSaveHomepageDefaultsConfig}
+            />
+          )}
+
+          {seoDiscoveryConfig && (
+            <SeoDiscoveryManager
+              config={seoDiscoveryConfig}
+              localities={localities}
+              onSave={onSaveSeoDiscoveryConfig}
+            />
+          )}
+
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="font-bold text-emerald-950">Scalable Homepage CMS</div>
+                <div className="mt-1 text-[11px] text-emerald-800">
+                  Track templates, targeting assignments, campaigns, and published locality snapshots.
+                </div>
+              </div>
+              <span className="rounded-lg border border-emerald-200 bg-white px-2.5 py-1 text-[10px] font-mono text-emerald-800">
+                {scalableSnapshotCount} snapshots
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+              <div className="rounded-lg border border-emerald-100 bg-white px-3 py-2">
+                <div className="text-[10px] uppercase tracking-wide text-slate-500">Templates</div>
+                <div className="mt-1 text-lg font-extrabold text-slate-950">{scalableTemplateCount}</div>
+              </div>
+              <div className="rounded-lg border border-emerald-100 bg-white px-3 py-2">
+                <div className="text-[10px] uppercase tracking-wide text-slate-500">Assignments</div>
+                <div className="mt-1 text-lg font-extrabold text-slate-950">{scalableAssignmentCount}</div>
+              </div>
+              <div className="rounded-lg border border-emerald-100 bg-white px-3 py-2">
+                <div className="text-[10px] uppercase tracking-wide text-slate-500">Campaigns</div>
+                <div className="mt-1 text-lg font-extrabold text-slate-950">{scalableCampaignCount}</div>
+              </div>
+              <div className="rounded-lg border border-emerald-100 bg-white px-3 py-2">
+                <div className="text-[10px] uppercase tracking-wide text-slate-500">Snapshots</div>
+                <div className="mt-1 text-lg font-extrabold text-slate-950">{scalableSnapshotCount}</div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
+              <div className="rounded-lg border border-amber-100 bg-white px-3 py-2">
+                <div className="text-[10px] uppercase tracking-wide text-slate-500">Legacy Templates</div>
+                <div className="mt-1 text-lg font-extrabold text-slate-950">{scalableLegacyOwnershipSummary.legacyManagedTemplates}</div>
+                <div className="text-[10px] text-slate-500">Detached: {scalableLegacyOwnershipSummary.detachedTemplates}</div>
+              </div>
+              <div className="rounded-lg border border-amber-100 bg-white px-3 py-2">
+                <div className="text-[10px] uppercase tracking-wide text-slate-500">Legacy Assignments</div>
+                <div className="mt-1 text-lg font-extrabold text-slate-950">{scalableLegacyOwnershipSummary.legacyManagedAssignments}</div>
+                <div className="text-[10px] text-slate-500">Detached: {scalableLegacyOwnershipSummary.detachedAssignments}</div>
+              </div>
+              <div className="rounded-lg border border-amber-100 bg-white px-3 py-2">
+                <div className="text-[10px] uppercase tracking-wide text-slate-500">Legacy Campaigns</div>
+                <div className="mt-1 text-lg font-extrabold text-slate-950">{scalableLegacyOwnershipSummary.legacyManagedCampaigns}</div>
+                <div className="text-[10px] text-slate-500">Detached: {scalableLegacyOwnershipSummary.detachedCampaigns}</div>
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => { void handleReseedScalableHomepageConfig(false); }}
+                className="flex-1 rounded-lg border border-emerald-200 bg-white py-2 font-bold text-emerald-800 hover:bg-emerald-100"
+              >
+                Safe Reseed From Legacy
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!confirm('Force reseed from legacy data? This can overwrite scalable-authored state that was detached from legacy sync.')) return;
+                  void handleReseedScalableHomepageConfig(true);
+                }}
+                className="flex-1 rounded-lg border border-rose-200 bg-rose-50 py-2 font-bold text-rose-700 hover:bg-rose-100"
+              >
+                Force Legacy Reseed
+              </button>
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => handlePublishResolvedHomepages([homepageLocalityId])}
+                className="flex-1 rounded-lg bg-emerald-600 py-2 font-bold text-white hover:bg-emerald-700"
+              >
+                Publish Selected Locality
+              </button>
+              <button
+                type="button"
+                onClick={() => handlePublishResolvedHomepages(localities.map((locality) => locality.id))}
+                className="flex-1 rounded-lg border border-emerald-200 bg-white py-2 font-bold text-emerald-800 hover:bg-emerald-100"
+              >
+                Publish All Localities
+              </button>
+            </div>
+
+            <div className="rounded-xl border border-emerald-100 bg-white p-3 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <div className="text-xs font-bold text-slate-900">Bulk Publish Scope</div>
+                  <div className="text-[10px] text-slate-500">Build a structured publish set for locality, category, subcategory, pincode, placement, device, and page-type rollout.</div>
+                </div>
+                <span className="rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px] font-mono text-emerald-800">
+                  {publishScopeCombinationCount} contexts
+                </span>
+              </div>
+              <OrderedSelectionPicker
+                label="Publish localities"
+                selectedIds={parseIdList(publishScopeDraft.localityIds)}
+                options={localitySelectionOptions}
+                onChange={(nextIds) => setPublishScopeDraft((prev) => ({ ...prev, localityIds: nextIds.join(', ') }))}
+                helperText="Choose the localities that should receive published snapshots in this batch."
+                emptyText="No localities selected yet."
+              />
+              <OrderedCategoryPicker
+                label="Publish categories"
+                selectedIds={parseIdList(publishScopeDraft.categoryIds)}
+                onChange={(nextIds) => setPublishScopeDraft((prev) => ({
+                  ...prev,
+                  categoryIds: nextIds.join(', '),
+                  subcategoryIds: parseIdList(prev.subcategoryIds)
+                    .filter((subcategoryId) => {
+                      const subcategory = getSubcategoryById(subcategoryId);
+                      return subcategory ? nextIds.includes(subcategory.categoryId) : false;
+                    })
+                    .join(', '),
+                }))}
+                helperText="Optional category scopes for publishing. Leave empty to publish locality-wide snapshots."
+              />
+              <OrderedSelectionPicker
+                label="Publish subcategories"
+                selectedIds={parseIdList(publishScopeDraft.subcategoryIds)}
+                options={publishSubcategorySelectionOptions}
+                onChange={(nextIds) => setPublishScopeDraft((prev) => ({ ...prev, subcategoryIds: nextIds.join(', ') }))}
+                helperText="Optional subcategory scopes. These stay aligned to their parent categories during context generation."
+                emptyText="No subcategories selected. Category-only or locality-only snapshots will be published."
+              />
+              <div className="grid gap-3 md:grid-cols-2">
+                <OrderedSelectionPicker
+                  label="Publish pincodes"
+                  selectedIds={parsePincodeList(publishScopeDraft.pincodes)}
+                  options={pincodeSelectionOptions}
+                  onChange={(nextIds) => setPublishScopeDraft((prev) => ({ ...prev, pincodes: nextIds.join(', ') }))}
+                  helperText="Optional pincode-specific publishes."
+                  emptyText="No pincodes selected. Snapshot contexts will not be pincode-scoped."
+                />
+                <OrderedSelectionPicker
+                  label="Publish placements"
+                  selectedIds={parseIdList(publishScopeDraft.placementKeys)}
+                  options={placementKeySelectionOptions}
+                  onChange={(nextIds) => setPublishScopeDraft((prev) => ({ ...prev, placementKeys: nextIds.join(', ') }))}
+                  helperText="Optional placement-aware snapshot publishes."
+                  emptyText="No placement keys selected. Default placement context will be used."
+                />
+                <OrderedSelectionPicker
+                  label="Publish devices"
+                  selectedIds={parseIdList(publishScopeDraft.deviceTargets)}
+                  options={deviceSelectionOptions}
+                  onChange={(nextIds) => setPublishScopeDraft((prev) => ({ ...prev, deviceTargets: nextIds.join(', ') }))}
+                  helperText="Choose which device targets should get snapshots."
+                  emptyText="No devices selected. The publish flow will fall back to all devices."
+                />
+                <OrderedSelectionPicker
+                  label="Publish page types"
+                  selectedIds={parseIdList(publishScopeDraft.pageTypes)}
+                  options={pageTypeSelectionOptions}
+                  onChange={(nextIds) => setPublishScopeDraft((prev) => ({ ...prev, pageTypes: nextIds.join(', ') }))}
+                  helperText="Choose which page types should be published in this batch."
+                  emptyText="No page types selected. The publish flow will default to homepage."
+                />
+              </div>
+              <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-[10px] text-emerald-900">
+                {publishScopeCombinationCount > 0
+                  ? `Ready to publish ${publishScopeCombinationCount} context${publishScopeCombinationCount === 1 ? '' : 's'} across the selected scope.`
+                  : 'No valid publish contexts are currently generated from this scope.'}
+              </div>
+              <button
+                type="button"
+                onClick={() => { void handlePublishScopedContexts(); }}
+                className="w-full rounded-lg border border-emerald-200 bg-white py-2 font-bold text-emerald-800 hover:bg-emerald-100"
+              >
+                Publish Scoped Snapshot Set
+              </button>
+              <button
+                type="button"
+                onClick={() => { void handleDeleteScopedSnapshots(); }}
+                className="w-full rounded-lg border border-rose-200 bg-rose-50 py-2 font-bold text-rose-700 hover:bg-rose-100"
+              >
+                Delete Scoped Snapshot Set
+              </button>
+            </div>
+
+            <div className="rounded-xl border border-emerald-100 bg-white p-3 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <div className="text-xs font-bold text-slate-900">Published Snapshots</div>
+                  <div className="text-[10px] text-slate-500">Recent resolved payloads saved by the publish workflow.</div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {onRefreshScalablePublishedSnapshots && (
+                    <button
+                      type="button"
+                      onClick={() => { void handleRefreshPublishedSnapshots(); }}
+                      className="rounded-lg border border-emerald-200 bg-white px-2 py-1 text-[10px] font-bold text-emerald-800 hover:bg-emerald-50"
+                    >
+                      Refresh
+                    </button>
+                  )}
+                  <span className="rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px] font-mono text-emerald-800">
+                    {recentPublishedSnapshots.length} recent
+                  </span>
+                </div>
+              </div>
+              {recentPublishedSnapshots.length > 0 ? (
+                <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                  {recentPublishedSnapshots.map((snapshot) => (
+                    <div key={snapshot.id} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-[11px] text-slate-700">
+                      <div className="flex flex-wrap items-center gap-1">
+                        <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 font-mono text-[10px] text-slate-700">
+                          {snapshot.localityId}
+                        </span>
+                        <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 font-mono text-[10px] text-slate-700">
+                          {snapshot.deviceTarget}
+                        </span>
+                        <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 font-mono text-[10px] text-slate-700">
+                          {snapshot.pageType}
+                        </span>
+                      </div>
+                      <div className="mt-2 font-semibold text-slate-900">
+                        {snapshot.payload.template?.name || 'No template'}
+                      </div>
+                      <div className="mt-1 text-[10px] text-slate-500">
+                        {snapshot.categoryId || 'all'} / {snapshot.subcategoryId || 'all'} / {snapshot.pincode || 'all'} / {snapshot.placementKey || 'default'}
+                      </div>
+                      <div className="mt-2 grid grid-cols-3 gap-2 text-center">
+                        <div className="rounded border border-slate-200 bg-white px-2 py-1">
+                          <div className="text-[9px] uppercase tracking-wide text-slate-500">Sections</div>
+                          <div className="font-bold text-slate-900">{snapshot.payload.sections.length}</div>
+                        </div>
+                        <div className="rounded border border-slate-200 bg-white px-2 py-1">
+                          <div className="text-[9px] uppercase tracking-wide text-slate-500">Ads</div>
+                          <div className="font-bold text-slate-900">{snapshot.payload.listingAds.length}</div>
+                        </div>
+                        <div className="rounded border border-slate-200 bg-white px-2 py-1">
+                          <div className="text-[9px] uppercase tracking-wide text-slate-500">Sponsored</div>
+                          <div className="font-bold text-slate-900">{snapshot.payload.sponsoredListings.length}</div>
+                        </div>
+                      </div>
+                      <div className="mt-2 text-[10px] text-slate-500">
+                        Published {String(snapshot.publishedAt || snapshot.updatedAt || '').replace('T', ' ').slice(0, 16)}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => { void handleDeleteSingleSnapshot(snapshot.id); }}
+                        className="mt-2 w-full rounded border border-rose-200 bg-rose-50 px-3 py-2 text-[10px] font-bold text-rose-700 hover:bg-rose-100"
+                      >
+                        Delete Snapshot
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-[11px] text-slate-500">
+                  No published snapshots yet. Publish a locality to persist and inspect resolved payloads.
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-emerald-100 bg-white p-3 space-y-3">
+              <div>
+                <div className="text-xs font-bold text-slate-900">Resolved Homepage Preview</div>
+                <div className="text-[10px] text-slate-500">Preview the final locality-aware payload returned by the resolver or published snapshot layer.</div>
+              </div>
+              <div className="grid gap-2 md:grid-cols-2">
+                <select
+                  value={resolvedPreviewDraft.localityId}
+                  onChange={(e) => setResolvedPreviewDraft((prev) => ({ ...prev, localityId: e.target.value }))}
+                  className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px]"
+                >
+                  {localities.map((locality) => (
+                    <option key={locality.id} value={locality.id}>{locality.name}</option>
+                  ))}
+                </select>
+                <select
+                  value={resolvedPreviewDraft.device}
+                  onChange={(e) => setResolvedPreviewDraft((prev) => ({ ...prev, device: e.target.value as 'all' | 'mobile' | 'desktop' }))}
+                  className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px]"
+                >
+                  <option value="all">All devices</option>
+                  <option value="desktop">Desktop</option>
+                  <option value="mobile">Mobile</option>
+                </select>
+                <select
+                  value={resolvedPreviewDraft.pageType}
+                  onChange={(e) => setResolvedPreviewDraft((prev) => ({ ...prev, pageType: e.target.value as 'homepage' | 'listing_results' }))}
+                  className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px]"
+                >
+                  <option value="homepage">Homepage</option>
+                  <option value="listing_results">Listing results</option>
+                </select>
+                <input
+                  type="date"
+                  value={resolvedPreviewDraft.date}
+                  onChange={(e) => setResolvedPreviewDraft((prev) => ({ ...prev, date: e.target.value }))}
+                  className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px]"
+                />
+                <select
+                  value={resolvedPreviewDraft.categoryId}
+                  onChange={(e) => setResolvedPreviewDraft((prev) => ({ ...prev, categoryId: e.target.value, subcategoryId: '' }))}
+                  className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px]"
+                >
+                  <option value="">All categories</option>
+                  {BUSINESS_CATEGORIES.map((category) => (
+                    <option key={category.id} value={category.id}>{category.name}</option>
+                  ))}
+                </select>
+                <select
+                  value={resolvedPreviewDraft.subcategoryId}
+                  onChange={(e) => setResolvedPreviewDraft((prev) => ({ ...prev, subcategoryId: e.target.value }))}
+                  className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px]"
+                >
+                  <option value="">All subcategories</option>
+                  {getSubcategoriesForCategory(resolvedPreviewDraft.categoryId || BUSINESS_CATEGORIES[0]?.id || '').map((subcategory) => (
+                    <option key={subcategory.id} value={subcategory.id}>{subcategory.name}</option>
+                  ))}
+                </select>
+                <input
+                  value={resolvedPreviewDraft.pincode}
+                  onChange={(e) => setResolvedPreviewDraft((prev) => ({ ...prev, pincode: e.target.value.replace(/\D/g, '').slice(0, 6) }))}
+                  placeholder="Pincode"
+                  className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-mono"
+                />
+                <input
+                  value={resolvedPreviewDraft.placementKey}
+                  onChange={(e) => setResolvedPreviewDraft((prev) => ({ ...prev, placementKey: e.target.value }))}
+                  placeholder="Placement key (optional)"
+                  className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-mono"
+                />
+                <label className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={resolvedPreviewDraft.usePublished}
+                    onChange={(e) => setResolvedPreviewDraft((prev) => ({ ...prev, usePublished: e.target.checked }))}
+                  />
+                  <span>Use published snapshots</span>
+                </label>
+              </div>
+              <button
+                type="button"
+                onClick={handleLoadResolvedPreview}
+                disabled={resolvedPreviewLoading}
+                className="w-full rounded-lg bg-emerald-600 py-2 font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
+              >
+                {resolvedPreviewLoading ? 'Loading preview...' : 'Load Resolved Preview'}
+              </button>
+              <button
+                type="button"
+                onClick={() => { void handlePublishPreviewContext(); }}
+                className="w-full rounded-lg border border-emerald-200 bg-white py-2 font-bold text-emerald-800 hover:bg-emerald-100"
+              >
+                Publish This Preview Context
+              </button>
+              {resolvedPreviewResult && (
+                <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-3 text-[11px] text-slate-700 space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-full border border-emerald-200 bg-white px-2 py-0.5 font-mono text-emerald-800">
+                      {resolvedPreviewResult.source}
+                    </span>
+                    <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 font-mono text-slate-600">
+                      {resolvedPreviewResult.payload.template?.name || 'No template'}
+                    </span>
+                    <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 font-mono text-slate-600">
+                      {resolvedPreviewResult.payload.context.pageType}
+                    </span>
+                    <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 font-mono text-slate-600">
+                      {resolvedPreviewResult.payload.context.date}
+                    </span>
+                  </div>
+                  <div className="rounded-lg border border-emerald-100 bg-white px-3 py-2 text-[10px] font-mono text-slate-600">
+                    {[
+                      `locality=${resolvedPreviewResult.payload.context.localityId}`,
+                      `category=${resolvedPreviewResult.payload.context.categoryId || 'all'}`,
+                      `subcategory=${resolvedPreviewResult.payload.context.subcategoryId || 'all'}`,
+                      `pincode=${resolvedPreviewResult.payload.context.pincode || 'all'}`,
+                      `device=${resolvedPreviewResult.payload.context.device}`,
+                      `placement=${resolvedPreviewResult.payload.context.placementKey || 'default'}`,
+                    ].join(' | ')}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
+                    <div className="rounded-lg border border-emerald-100 bg-white px-3 py-2">
+                      <div className="text-[10px] uppercase tracking-wide text-slate-500">Sections</div>
+                      <div className="mt-1 font-extrabold text-slate-950">{resolvedPreviewResult.payload.sections.length}</div>
+                    </div>
+                    <div className="rounded-lg border border-emerald-100 bg-white px-3 py-2">
+                      <div className="text-[10px] uppercase tracking-wide text-slate-500">Hero Banners</div>
+                      <div className="mt-1 font-extrabold text-slate-950">{resolvedPreviewResult.payload.heroBanners.length}</div>
+                    </div>
+                    <div className="rounded-lg border border-emerald-100 bg-white px-3 py-2">
+                      <div className="text-[10px] uppercase tracking-wide text-slate-500">Ads</div>
+                      <div className="mt-1 font-extrabold text-slate-950">{resolvedPreviewResult.payload.listingAds.length}</div>
+                    </div>
+                    <div className="rounded-lg border border-emerald-100 bg-white px-3 py-2">
+                      <div className="text-[10px] uppercase tracking-wide text-slate-500">Sponsored</div>
+                      <div className="mt-1 font-extrabold text-slate-950">{resolvedPreviewResult.payload.sponsoredListings.length}</div>
+                    </div>
+                    <div className="rounded-lg border border-emerald-100 bg-white px-3 py-2">
+                      <div className="text-[10px] uppercase tracking-wide text-slate-500">Offers</div>
+                      <div className="mt-1 font-extrabold text-slate-950">{resolvedPreviewResult.payload.offers.length}</div>
+                    </div>
+                    <div className="rounded-lg border border-emerald-100 bg-white px-3 py-2">
+                      <div className="text-[10px] uppercase tracking-wide text-slate-500">Content</div>
+                      <div className="mt-1 font-extrabold text-slate-950">{resolvedPreviewResult.payload.contentBlocks.length}</div>
+                    </div>
+                    <div className="rounded-lg border border-emerald-100 bg-white px-3 py-2">
+                      <div className="text-[10px] uppercase tracking-wide text-slate-500">Section Pools</div>
+                      <div className="mt-1 font-extrabold text-slate-950">{Object.keys(resolvedPreviewResult.payload.sectionBusinessIdsBySection || {}).length}</div>
+                    </div>
+                  </div>
+                  <div className="grid gap-2 md:grid-cols-2">
+                    <div className="rounded-lg border border-emerald-100 bg-white px-3 py-2">
+                      <div className="text-[10px] uppercase tracking-wide text-slate-500">Section Titles</div>
+                      <div className="mt-1 text-[11px] text-slate-700">
+                        {resolvedPreviewResult.payload.sections.length > 0
+                          ? resolvedPreviewResult.payload.sections.slice(0, 8).map((section) => section.title).join(', ')
+                          : 'No sections'}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-emerald-100 bg-white px-3 py-2">
+                      <div className="text-[10px] uppercase tracking-wide text-slate-500">Hero Titles</div>
+                      <div className="mt-1 text-[11px] text-slate-700">
+                        {resolvedPreviewResult.payload.heroBanners.length > 0
+                          ? resolvedPreviewResult.payload.heroBanners.slice(0, 5).map((hero) => hero.title).join(', ')
+                          : 'No hero banners'}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-emerald-100 bg-white px-3 py-2">
+                      <div className="text-[10px] uppercase tracking-wide text-slate-500">Ad Titles</div>
+                      <div className="mt-1 text-[11px] text-slate-700">
+                        {resolvedPreviewResult.payload.listingAds.length > 0
+                          ? resolvedPreviewResult.payload.listingAds.slice(0, 5).map((ad) => ad.title).join(', ')
+                          : 'No ads'}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-emerald-100 bg-white px-3 py-2">
+                      <div className="text-[10px] uppercase tracking-wide text-slate-500">Sponsored Listings</div>
+                      <div className="mt-1 text-[11px] text-slate-700">
+                        {resolvedPreviewResult.payload.sponsoredListings.length > 0
+                          ? resolvedPreviewResult.payload.sponsoredListings.slice(0, 5).map((business) => business.name).join(', ')
+                          : 'No sponsored listings'}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-emerald-100 bg-white px-3 py-2">
+                      <div className="text-[10px] uppercase tracking-wide text-slate-500">Offers</div>
+                      <div className="mt-1 text-[11px] text-slate-700">
+                        {resolvedPreviewResult.payload.offers.length > 0
+                          ? resolvedPreviewResult.payload.offers.slice(0, 5).map((offer) => offer.title || offer.code).join(', ')
+                          : 'No offers'}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-emerald-100 bg-white px-3 py-2">
+                      <div className="text-[10px] uppercase tracking-wide text-slate-500">Content Blocks</div>
+                      <div className="mt-1 text-[11px] text-slate-700">
+                        {resolvedPreviewResult.payload.contentBlocks.length > 0
+                          ? resolvedPreviewResult.payload.contentBlocks.slice(0, 5).map((item) => item.title).join(', ')
+                          : 'No content blocks'}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-emerald-100 bg-white px-3 py-2 md:col-span-2">
+                      <div className="text-[10px] uppercase tracking-wide text-slate-500">Section Inventory</div>
+                      <div className="mt-1 text-[11px] text-slate-700">
+                        {resolvedPreviewResult.payload.sections.length > 0
+                          ? resolvedPreviewResult.payload.sections.slice(0, 8).map((section) => {
+                              const inventoryCount = (resolvedPreviewResult.payload.sectionBusinessIdsBySection?.[section.id] || []).length;
+                              return `${section.title}: ${inventoryCount}`;
+                            }).join(' | ')
+                          : 'No sections'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="grid gap-4 xl:grid-cols-3">
+              <div className="rounded-xl border border-emerald-100 bg-white p-3 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <div className="text-xs font-bold text-slate-900">Templates</div>
+                    <div className="text-[10px] text-slate-500">Reusable homepage structures assigned by locality and context.</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={resetTemplateDraft}
+                    className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-bold text-slate-700"
+                  >
+                    New
+                  </button>
+                </div>
+                <div className="space-y-2 text-[11px]">
+                  <input
+                    value={templateDraft.name}
+                    onChange={(e) => setTemplateDraft((prev) => ({ ...prev, name: e.target.value }))}
+                    placeholder="Template name"
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <select
+                      value={templateDraft.templateScope}
+                      onChange={(e) => setTemplateDraft((prev) => ({ ...prev, templateScope: e.target.value as ScalableHomepageTemplate['templateScope'] }))}
+                      className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+                    >
+                      <option value="global">Global</option>
+                      <option value="city">City</option>
+                      <option value="locality">Locality</option>
+                    </select>
+                    <input
+                      value={templateDraft.priority}
+                      onChange={(e) => setTemplateDraft((prev) => ({ ...prev, priority: e.target.value }))}
+                      placeholder="Priority"
+                      className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+                    />
+                  </div>
+                  <OrderedSelectionPicker
+                    label="Template localities"
+                    selectedIds={parseIdList(templateDraft.localityIds)}
+                    options={localitySelectionOptions}
+                    onChange={(nextIds) => setTemplateDraft((prev) => ({ ...prev, localityIds: nextIds.join(', ') }))}
+                    helperText="Choose where this template can resolve directly before assignment-level overrides are applied."
+                    emptyText="No locality restrictions selected. Global templates can stay broad, but locality/city templates should normally pick at least one locality."
+                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <select
+                      value={templateDraft.status}
+                      onChange={(e) => setTemplateDraft((prev) => ({ ...prev, status: e.target.value as ScalableHomepageTemplate['status'] }))}
+                      className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+                    >
+                      <option value="draft">Draft</option>
+                      <option value="active">Active</option>
+                      <option value="inactive">Inactive</option>
+                      <option value="archived">Archived</option>
+                    </select>
+                    <label className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={templateDraft.isFallback}
+                        onChange={(e) => setTemplateDraft((prev) => ({ ...prev, isFallback: e.target.checked }))}
+                      />
+                      <span>Fallback</span>
+                    </label>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={handleSaveTemplateDraft}
+                      className="flex-1 rounded-lg bg-emerald-600 py-2 font-bold text-white hover:bg-emerald-700"
+                    >
+                      {templateDraft.id ? 'Update Template' : 'Create Template'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSyncTemplateSectionsFromLocality}
+                      disabled={!templateDraft.id}
+                      className="flex-1 rounded-lg border border-emerald-200 bg-white py-2 font-bold text-emerald-800 disabled:opacity-40"
+                    >
+                      Sync Sections
+                    </button>
+                  </div>
+                  {selectedScalableTemplate && (
+                    <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-[10px] text-emerald-900">
+                      Active template selected. Use the homepage section form below to add a section directly into this scalable template, or edit its sections in the template section editor.
+                    </div>
+                  )}
+                </div>
+                <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
+                  {sortedScalableTemplates.slice(0, 20).map((template) => (
+                    <div key={template.id} className="rounded-lg border border-slate-200 bg-slate-50 p-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="truncate font-semibold text-slate-800">{template.name}</div>
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${getScalableEntityOwnershipPresentation(template.metadata).className}`}>
+                              {getScalableEntityOwnershipPresentation(template.metadata).label}
+                            </span>
+                            <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] text-slate-600">{template.status}</span>
+                            {template.isFallback && <span className="rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-700">Fallback</span>}
+                          </div>
+                          <div className="text-[10px] text-slate-500">{template.templateScope} • priority {template.priority} • {template.sections.length} sections</div>
+                          <div className="text-[10px] text-slate-500">Source: {getScalableEntityOwnershipPresentation(template.metadata).detail}</div>
+                          {template.localityIds.length > 0 && (
+                            <div className="text-[10px] text-slate-500">
+                              Localities: {template.localityIds.slice(0, 3).map((localityId) => formatLocalityLabel(localityId)).join(', ')}{template.localityIds.length > 3 ? ` +${template.localityIds.length - 3} more` : ''}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap justify-end gap-1">
+                          {isLegacyManagedScalableEntity(template.metadata) && (
+                            <button type="button" onClick={() => { void handleDetachTemplateFromLegacySync(template); }} className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] font-bold text-amber-800">Detach</button>
+                          )}
+                          <button type="button" onClick={() => beginEditTemplate(template)} className="rounded border border-indigo-200 bg-white px-2 py-1 text-[10px] font-bold text-indigo-700">Edit</button>
+                          <button type="button" onClick={() => handleDeleteTemplate(template.id)} className="rounded border border-rose-200 bg-rose-50 px-2 py-1 text-[10px] font-bold text-rose-700">Delete</button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {selectedScalableTemplate && (
+                  <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-3 space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <div className="text-xs font-bold text-slate-900">Template Sections</div>
+                        <div className="text-[10px] text-slate-500">Direct section authoring for the selected scalable template.</div>
+                      </div>
+                      <span className="rounded-lg border border-emerald-200 bg-white px-2 py-1 text-[10px] font-mono text-emerald-800">
+                        {selectedScalableTemplateSections.length} sections
+                      </span>
+                    </div>
+                    <div className="max-h-[28rem] space-y-3 overflow-y-auto pr-1">
+                      {selectedScalableTemplateSections.map((section, index) => renderEditableHomepageSectionCard(section, index, {
+                        onMoveUp: () => { void handleMoveScalableTemplateSection(section.id, 'up'); },
+                        onMoveDown: () => { void handleMoveScalableTemplateSection(section.id, 'down'); },
+                        onDuplicate: () => { void handleDuplicateScalableTemplateSection(section.id); },
+                        onDelete: () => { void handleDeleteScalableTemplateSection(section.id); },
+                        onUpdate: (patch) => updateScalableTemplateSection(section, patch),
+                      }))}
+                      {selectedScalableTemplateSections.length === 0 && (
+                        <div className="text-xs text-slate-400">No sections authored directly on this template yet.</div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-xl border border-emerald-100 bg-white p-3 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <div className="text-xs font-bold text-slate-900">Assignments</div>
+                    <div className="text-[10px] text-slate-500">Map templates to locality, category, subcategory, and pincode context.</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={resetAssignmentDraft}
+                    className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-bold text-slate-700"
+                  >
+                    New
+                  </button>
+                </div>
+                <div className="space-y-2 text-[11px]">
+                  <select
+                    value={assignmentDraft.localityId}
+                    onChange={(e) => setAssignmentDraft((prev) => ({ ...prev, localityId: e.target.value }))}
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+                  >
+                    {localities.map((locality) => (
+                      <option key={locality.id} value={locality.id}>{locality.name}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={assignmentDraft.templateId}
+                    onChange={(e) => setAssignmentDraft((prev) => ({ ...prev, templateId: e.target.value }))}
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+                  >
+                    <option value="">Select template</option>
+                    {sortedScalableTemplates.map((template) => (
+                      <option key={template.id} value={template.id}>{template.name}</option>
+                    ))}
+                  </select>
+                  <div className="grid grid-cols-2 gap-2">
+                    <select
+                      value={assignmentDraft.categoryId}
+                      onChange={(e) => setAssignmentDraft((prev) => ({ ...prev, categoryId: e.target.value, subcategoryId: '' }))}
+                      className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+                    >
+                      <option value="">All categories</option>
+                      {BUSINESS_CATEGORIES.map((category) => (
+                        <option key={category.id} value={category.id}>{category.name}</option>
+                      ))}
+                    </select>
+                    <select
+                      value={assignmentDraft.subcategoryId}
+                      onChange={(e) => setAssignmentDraft((prev) => ({ ...prev, subcategoryId: e.target.value }))}
+                      className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+                    >
+                      <option value="">All subcategories</option>
+                      {getSubcategoriesForCategory(assignmentDraft.categoryId || BUSINESS_CATEGORIES[0]?.id || '').map((subcategory) => (
+                        <option key={subcategory.id} value={subcategory.id}>{subcategory.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      value={assignmentDraft.pincode}
+                      onChange={(e) => setAssignmentDraft((prev) => ({ ...prev, pincode: e.target.value.replace(/\D/g, '').slice(0, 6) }))}
+                      placeholder="Pincode"
+                      className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 font-mono"
+                    />
+                    <input
+                      value={assignmentDraft.priority}
+                      onChange={(e) => setAssignmentDraft((prev) => ({ ...prev, priority: e.target.value }))}
+                      placeholder="Priority"
+                      className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <select
+                      value={assignmentDraft.status}
+                      onChange={(e) => setAssignmentDraft((prev) => ({ ...prev, status: e.target.value as ScalableHomepageAssignment['status'] }))}
+                      className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+                    >
+                      <option value="draft">Draft</option>
+                      <option value="active">Active</option>
+                      <option value="inactive">Inactive</option>
+                      <option value="archived">Archived</option>
+                    </select>
+                    <label className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={assignmentDraft.isFallback}
+                        onChange={(e) => setAssignmentDraft((prev) => ({ ...prev, isFallback: e.target.checked }))}
+                      />
+                      <span>Fallback</span>
+                    </label>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleSaveAssignmentDraft}
+                    className="w-full rounded-lg bg-emerald-600 py-2 font-bold text-white hover:bg-emerald-700"
+                  >
+                    {assignmentDraft.id ? 'Update Assignment' : 'Create Assignment'}
+                  </button>
+                </div>
+                <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
+                  {sortedScalableAssignments.slice(0, 20).map((assignment) => (
+                    <div key={assignment.id} className="rounded-lg border border-slate-200 bg-slate-50 p-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="text-[10px] text-slate-500">{formatLocalityLabel(assignment.localityId)} mapped to {templateNameById.get(assignment.templateId) || assignment.templateId}</div>
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${getScalableEntityOwnershipPresentation(assignment.metadata).className}`}>
+                              {getScalableEntityOwnershipPresentation(assignment.metadata).label}
+                            </span>
+                            <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] text-slate-600">{assignment.status}</span>
+                            {assignment.isFallback && <span className="rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-700">Fallback</span>}
+                          </div>
+                          <div className="truncate font-semibold text-slate-800">{assignment.localityId} → {assignment.templateId}</div>
+                          <div className="text-[10px] text-slate-500">{assignment.categoryId || 'all'} / {assignment.subcategoryId || 'all'} / {assignment.pincode || 'all'} • priority {assignment.priority}</div>
+                          <div className="text-[10px] text-slate-500">Source: {getScalableEntityOwnershipPresentation(assignment.metadata).detail}</div>
+                        </div>
+                        <div className="flex flex-wrap justify-end gap-1">
+                          {isLegacyManagedScalableEntity(assignment.metadata) && (
+                            <button type="button" onClick={() => { void handleDetachAssignmentFromLegacySync(assignment); }} className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] font-bold text-amber-800">Detach</button>
+                          )}
+                          <button type="button" onClick={() => beginEditAssignment(assignment)} className="rounded border border-indigo-200 bg-white px-2 py-1 text-[10px] font-bold text-indigo-700">Edit</button>
+                          <button type="button" onClick={() => handleDeleteAssignment(assignment.id)} className="rounded border border-rose-200 bg-rose-50 px-2 py-1 text-[10px] font-bold text-rose-700">Delete</button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-emerald-100 bg-white p-3 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <div className="text-xs font-bold text-slate-900">Campaigns</div>
+                    <div className="text-[10px] text-slate-500">Manage hero, ads, offers, sponsored listings, and content targeting.</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={resetCampaignDraft}
+                    className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-bold text-slate-700"
+                  >
+                    New
+                  </button>
+                </div>
+                <div className="space-y-2 text-[11px]">
+                  <input
+                    value={campaignDraft.name}
+                    onChange={(e) => setCampaignDraft((prev) => ({ ...prev, name: e.target.value }))}
+                    placeholder="Campaign name"
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <select
+                      value={campaignDraft.campaignType}
+                      onChange={(e) => setCampaignDraft((prev) => ({ ...prev, campaignType: e.target.value as ScalableCampaignType }))}
+                      className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+                    >
+                      <option value="hero_banner">Hero banner</option>
+                      <option value="listing_ad">Listing ad</option>
+                      <option value="sponsored_listing">Sponsored listing</option>
+                      <option value="offer">Offer</option>
+                      <option value="content_block">Content block</option>
+                    </select>
+                    <input
+                      value={campaignDraft.priority}
+                      onChange={(e) => setCampaignDraft((prev) => ({ ...prev, priority: e.target.value }))}
+                      placeholder="Priority"
+                      className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input type="date" value={campaignDraft.startDate} onChange={(e) => setCampaignDraft((prev) => ({ ...prev, startDate: e.target.value }))} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2" />
+                    <input type="date" value={campaignDraft.endDate} onChange={(e) => setCampaignDraft((prev) => ({ ...prev, endDate: e.target.value }))} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <select
+                      value={campaignDraft.status}
+                      onChange={(e) => setCampaignDraft((prev) => ({ ...prev, status: e.target.value as ScalableCampaign['status'] }))}
+                      className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+                    >
+                      <option value="draft">Draft</option>
+                      <option value="active">Active</option>
+                      <option value="inactive">Inactive</option>
+                      <option value="archived">Archived</option>
+                    </select>
+                    <select
+                      value={campaignDraft.deviceTarget}
+                      onChange={(e) => setCampaignDraft((prev) => ({ ...prev, deviceTarget: e.target.value as NonNullable<ListingAd['deviceTarget']> }))}
+                      className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+                    >
+                      <option value="all">All devices</option>
+                      <option value="desktop">Desktop</option>
+                      <option value="mobile">Mobile</option>
+                    </select>
+                  </div>
+                  <OrderedSelectionPicker
+                    label="Placement keys"
+                    selectedIds={parseIdList(campaignDraft.placementKeys)}
+                    options={placementKeySelectionOptions}
+                    onChange={(nextIds) => setCampaignDraft((prev) => ({ ...prev, placementKeys: nextIds.join(', ') }))}
+                    helperText="Limit the campaign to one or more resolver placement keys when needed."
+                    emptyText="No placement keys selected. The campaign can resolve anywhere else the targeting rules match."
+                  />
+                  <OrderedSelectionPicker
+                    label="Target localities"
+                    selectedIds={parseIdList(campaignDraft.localityIds)}
+                    options={localitySelectionOptions}
+                    onChange={(nextIds) => setCampaignDraft((prev) => ({ ...prev, localityIds: nextIds.join(', ') }))}
+                    helperText="Pick the localities this campaign should serve."
+                    emptyText="No locality restrictions selected yet."
+                  />
+                  <OrderedCategoryPicker
+                    label="Target categories"
+                    selectedIds={parseIdList(campaignDraft.categoryIds)}
+                    onChange={(nextIds) => setCampaignDraft((prev) => ({
+                      ...prev,
+                      categoryIds: nextIds.join(', '),
+                      subcategoryIds: parseIdList(prev.subcategoryIds)
+                        .filter((subcategoryId) => {
+                          const subcategory = getSubcategoryById(subcategoryId);
+                          return subcategory ? nextIds.includes(subcategory.categoryId) : false;
+                        })
+                        .join(', '),
+                    }))}
+                    helperText="Category targeting can be broad or ordered. Any selected subcategory must belong to one of these categories."
+                  />
+                  <OrderedSelectionPicker
+                    label="Target subcategories"
+                    selectedIds={parseIdList(campaignDraft.subcategoryIds)}
+                    options={subcategorySelectionOptions}
+                    onChange={(nextIds) => setCampaignDraft((prev) => ({ ...prev, subcategoryIds: nextIds.join(', ') }))}
+                    helperText="Refine campaign delivery to specific subcategories within the selected category scope."
+                    emptyText="No subcategories selected. The campaign will apply at the category or locality level instead."
+                  />
+                  <input value={campaignDraft.pincodes} onChange={(e) => setCampaignDraft((prev) => ({ ...prev, pincodes: e.target.value }))} placeholder="Pincodes" className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 font-mono" />
+                  <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-3 space-y-2">
+                    <div className="text-[10px] font-bold uppercase tracking-wide text-emerald-800">Guided Payload Fields</div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <input
+                        value={campaignDraft.payloadTitle}
+                        onChange={(e) => setCampaignDraft((prev) => ({ ...prev, payloadTitle: e.target.value }))}
+                        placeholder="Payload title"
+                        className="rounded-lg border border-emerald-100 bg-white px-3 py-2"
+                      />
+                      <input
+                        value={campaignDraft.payloadImageUrl}
+                        onChange={(e) => setCampaignDraft((prev) => ({ ...prev, payloadImageUrl: e.target.value }))}
+                        placeholder="Image URL"
+                        className="rounded-lg border border-emerald-100 bg-white px-3 py-2"
+                      />
+                    </div>
+                    {(campaignDraft.campaignType === 'hero_banner' || campaignDraft.campaignType === 'listing_ad' || campaignDraft.campaignType === 'offer') && (
+                      <textarea
+                        value={campaignDraft.payloadDescription}
+                        onChange={(e) => setCampaignDraft((prev) => ({ ...prev, payloadDescription: e.target.value }))}
+                        placeholder={campaignDraft.campaignType === 'hero_banner' ? 'Hero subtitle/summary' : 'Description'}
+                        rows={2}
+                        className="w-full rounded-lg border border-emerald-100 bg-white px-3 py-2"
+                      />
+                    )}
+                    {campaignDraft.campaignType === 'hero_banner' && (
+                      <div className="grid grid-cols-2 gap-2">
+                        <input
+                          value={campaignDraft.payloadSubtitle}
+                          onChange={(e) => setCampaignDraft((prev) => ({ ...prev, payloadSubtitle: e.target.value }))}
+                          placeholder="Hero subtitle"
+                          className="rounded-lg border border-emerald-100 bg-white px-3 py-2"
+                        />
+                        <input
+                          value={campaignDraft.payloadCtaLabel}
+                          onChange={(e) => setCampaignDraft((prev) => ({ ...prev, payloadCtaLabel: e.target.value }))}
+                          placeholder="CTA label"
+                          className="rounded-lg border border-emerald-100 bg-white px-3 py-2"
+                        />
+                      </div>
+                    )}
+                    {(campaignDraft.campaignType === 'hero_banner' || campaignDraft.campaignType === 'listing_ad') && (
+                      <div className="grid grid-cols-2 gap-2">
+                        <select
+                          value={campaignDraft.payloadActionType}
+                          onChange={(e) => setCampaignDraft((prev) => ({ ...prev, payloadActionType: e.target.value as 'landing_page' | 'landing_listing' | 'lead_form' | 'search_category' }))}
+                          className="rounded-lg border border-emerald-100 bg-white px-3 py-2"
+                        >
+                          <option value="landing_page">Landing Page</option>
+                          <option value="landing_listing">Landing Listing</option>
+                          <option value="lead_form">Lead Form</option>
+                          {campaignDraft.campaignType === 'hero_banner' && <option value="search_category">Search Category</option>}
+                        </select>
+                        <input
+                          value={campaignDraft.payloadTargetUrl}
+                          onChange={(e) => setCampaignDraft((prev) => ({ ...prev, payloadTargetUrl: e.target.value }))}
+                          placeholder="CTA / target URL"
+                          className="rounded-lg border border-emerald-100 bg-white px-3 py-2"
+                        />
+                      </div>
+                    )}
+                    {campaignDraft.campaignType === 'listing_ad' && (
+                      <div className="grid grid-cols-2 gap-2">
+                        <input
+                          value={campaignDraft.payloadBadge}
+                          onChange={(e) => setCampaignDraft((prev) => ({ ...prev, payloadBadge: e.target.value }))}
+                          placeholder="Badge"
+                          className="rounded-lg border border-emerald-100 bg-white px-3 py-2"
+                        />
+                        <input
+                          value={campaignDraft.payloadCtaText}
+                          onChange={(e) => setCampaignDraft((prev) => ({ ...prev, payloadCtaText: e.target.value }))}
+                          placeholder="CTA text"
+                          className="rounded-lg border border-emerald-100 bg-white px-3 py-2"
+                        />
+                        <input
+                          value={campaignDraft.payloadBackgroundColor}
+                          onChange={(e) => setCampaignDraft((prev) => ({ ...prev, payloadBackgroundColor: e.target.value }))}
+                          placeholder="Background color"
+                          className="rounded-lg border border-emerald-100 bg-white px-3 py-2 font-mono"
+                        />
+                        <input
+                          value={campaignDraft.payloadTargetBusinessId}
+                          onChange={(e) => setCampaignDraft((prev) => ({ ...prev, payloadTargetBusinessId: e.target.value }))}
+                          placeholder="Target business ID"
+                          className="rounded-lg border border-emerald-100 bg-white px-3 py-2 font-mono"
+                        />
+                      </div>
+                    )}
+                    {campaignDraft.campaignType === 'offer' && (
+                      <div className="grid grid-cols-2 gap-2">
+                        <input
+                          value={campaignDraft.payloadCode}
+                          onChange={(e) => setCampaignDraft((prev) => ({ ...prev, payloadCode: e.target.value }))}
+                          placeholder="Offer code"
+                          className="rounded-lg border border-emerald-100 bg-white px-3 py-2"
+                        />
+                        <input
+                          value={campaignDraft.payloadDiscount}
+                          onChange={(e) => setCampaignDraft((prev) => ({ ...prev, payloadDiscount: e.target.value }))}
+                          placeholder="Discount label"
+                          className="rounded-lg border border-emerald-100 bg-white px-3 py-2"
+                        />
+                        <input
+                          value={campaignDraft.payloadTargetBusinessId}
+                          onChange={(e) => setCampaignDraft((prev) => ({ ...prev, payloadTargetBusinessId: e.target.value }))}
+                          placeholder="Business ID"
+                          className="rounded-lg border border-emerald-100 bg-white px-3 py-2 font-mono"
+                        />
+                        <input
+                          value={campaignDraft.payloadCtaText}
+                          onChange={(e) => setCampaignDraft((prev) => ({ ...prev, payloadCtaText: e.target.value }))}
+                          placeholder="CTA text"
+                          className="rounded-lg border border-emerald-100 bg-white px-3 py-2"
+                        />
+                      </div>
+                    )}
+                    {campaignDraft.campaignType === 'sponsored_listing' && (
+                      <div className="space-y-2">
+                        <OrderedSelectionPicker
+                          label="Sponsored businesses"
+                          selectedIds={parseIdList(campaignDraft.payloadBusinessIds)}
+                          options={approvedBusinessSelectionOptions}
+                          onChange={(nextIds) => setCampaignDraft((prev) => ({ ...prev, payloadBusinessIds: nextIds.join(', ') }))}
+                          helperText="Choose the businesses to pin into this sponsored listing campaign."
+                          emptyText="No sponsored businesses selected yet."
+                        />
+                        <input
+                          value={campaignDraft.payloadDescription}
+                          onChange={(e) => setCampaignDraft((prev) => ({ ...prev, payloadDescription: e.target.value }))}
+                          placeholder="Description"
+                          className="rounded-lg border border-emerald-100 bg-white px-3 py-2"
+                        />
+                      </div>
+                    )}
+                    {campaignDraft.campaignType === 'content_block' && (
+                      <>
+                        <input
+                          value={campaignDraft.payloadAuthorName}
+                          onChange={(e) => setCampaignDraft((prev) => ({ ...prev, payloadAuthorName: e.target.value }))}
+                          placeholder="Author name"
+                          className="w-full rounded-lg border border-emerald-100 bg-white px-3 py-2"
+                        />
+                        <textarea
+                          value={campaignDraft.payloadContent}
+                          onChange={(e) => setCampaignDraft((prev) => ({ ...prev, payloadContent: e.target.value }))}
+                          placeholder="Content"
+                          rows={3}
+                          className="w-full rounded-lg border border-emerald-100 bg-white px-3 py-2"
+                        />
+                      </>
+                    )}
+                  </div>
+                  <textarea
+                    value={campaignDraft.payloadText}
+                    onChange={(e) => setCampaignDraft((prev) => ({ ...prev, payloadText: e.target.value }))}
+                    rows={7}
+                    placeholder="Campaign payload JSON"
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 font-mono"
+                  />
+                  <label className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={campaignDraft.isFallback}
+                      onChange={(e) => setCampaignDraft((prev) => ({ ...prev, isFallback: e.target.checked }))}
+                    />
+                    <span>Fallback campaign</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleSaveCampaignDraft}
+                    className="w-full rounded-lg bg-emerald-600 py-2 font-bold text-white hover:bg-emerald-700"
+                  >
+                    {campaignDraft.id ? 'Update Campaign' : 'Create Campaign'}
+                  </button>
+                </div>
+                <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
+                  {sortedScalableCampaigns.slice(0, 20).map((campaign) => (
+                    <div key={campaign.id} className="rounded-lg border border-slate-200 bg-slate-50 p-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="truncate font-semibold text-slate-800">{campaign.name}</div>
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${getScalableEntityOwnershipPresentation(campaign.metadata).className}`}>
+                              {getScalableEntityOwnershipPresentation(campaign.metadata).label}
+                            </span>
+                            <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] text-slate-600">{campaign.status}</span>
+                            {campaign.isFallback && <span className="rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-700">Fallback</span>}
+                          </div>
+                          <div className="text-[10px] text-slate-500">{campaign.campaignType} • {campaign.status} • priority {campaign.priority}</div>
+                          <div className="text-[10px] text-slate-500">Source: {getScalableEntityOwnershipPresentation(campaign.metadata).detail}</div>
+                          <div className="text-[10px] text-slate-500">
+                            Targets: {(campaign.targets.localityIds || []).slice(0, 2).map((localityId) => formatLocalityLabel(localityId)).join(', ') || 'all localities'}{(campaign.targets.localityIds || []).length > 2 ? ` +${(campaign.targets.localityIds || []).length - 2} more` : ''}{(campaign.placementKeys || []).length > 0 ? ` | placements: ${(campaign.placementKeys || []).slice(0, 2).join(', ')}${(campaign.placementKeys || []).length > 2 ? ` +${(campaign.placementKeys || []).length - 2}` : ''}` : ''}
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap justify-end gap-1">
+                          {isLegacyManagedScalableEntity(campaign.metadata) && (
+                            <button type="button" onClick={() => { void handleDetachCampaignFromLegacySync(campaign); }} className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] font-bold text-amber-800">Detach</button>
+                          )}
+                          <button type="button" onClick={() => beginEditCampaign(campaign)} className="rounded border border-indigo-200 bg-white px-2 py-1 text-[10px] font-bold text-indigo-700">Edit</button>
+                          <button type="button" onClick={() => handleDeleteCampaign(campaign.id)} className="rounded border border-rose-200 bg-rose-50 px-2 py-1 text-[10px] font-bold text-rose-700">Delete</button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
         </div>}
 
         {operationsSection === 'campaigns' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
@@ -3563,7 +6272,7 @@ export default function AdminConsole({
               />
             </div>
             <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-lg">
-              Create Offer
+              {couponEditId ? 'Update Offer' : 'Create Offer'}
             </button>
           </form>
           <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
@@ -3576,6 +6285,28 @@ export default function AdminConsole({
                 <span className="block text-[10px] text-slate-500 font-mono">
                   {(coupon.startDate || coupon.expiryDate)} {'->'} {(coupon.endDate || coupon.expiryDate)}
                 </span>
+                <div className="mt-2 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => beginEditCoupon(coupon)}
+                    className="rounded border border-indigo-200 bg-white px-2 py-1 text-[10px] font-bold text-indigo-700"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onDeleteCoupon?.(coupon.id);
+                      if (couponEditId === coupon.id) {
+                        resetCouponForm();
+                      }
+                      triggerNotification('Offer deleted successfully.');
+                    }}
+                    className="rounded border border-rose-200 bg-rose-50 px-2 py-1 text-[10px] font-bold text-rose-700"
+                  >
+                    Delete
+                  </button>
+                </div>
               </div>
             ))}
             {coupons.length === 0 && <div className="text-xs text-slate-400">No offers created yet.</div>}

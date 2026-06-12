@@ -11,10 +11,10 @@ import {
   Hospital, Siren, CirclePlus, Bookmark, ChefHat, Store, HeartPulse
 } from 'lucide-react';
 import { 
-  Locality, Business, Category, Review, UserSession,
-  CommunityItem, CRMContact, MarketingCoupon, ListingAd, AdLead, HeroBanner, HomepageLayout, HomepageSection
+  Locality, Business, Category, Review, UserSession, BuyerActivityEvent,
+  CommunityItem, CRMContact, MarketingCoupon, ListingAd, AdLead, HeroBanner, HomepageLayout, HomepageSection, ApiConfiguration, ResolvedHomepagePayload, HomepageDefaultsConfigState
 } from '../types';
-import { MASTER_STATES, MASTER_CITIES, MASTER_AREAS } from '../data';
+import { MASTER_STATES, MASTER_CITIES, MASTER_AREAS } from '../geographyMaster';
 import OtpVerificationModal from './OtpVerificationModal';
 import GoogleLocationPicker from './GoogleLocationPicker';
 import { getBusinessImageUrl, getCategoryFallbackImage, hasUploadedBusinessImage } from '../utils/businessImage';
@@ -27,6 +27,10 @@ import {
   getSubcategoryById,
   resolveDefaultSubcategoryId
 } from '../categoryMaster';
+import {
+  DEFAULT_FALLBACK_LISTING_AD_TEMPLATES,
+  DEFAULT_HOMEPAGE_SECTION_TEMPLATES,
+} from '../../shared/homepageDefaultsSeed.js';
 
 type PortalIcon = React.ComponentType<{ className?: string }>;
 
@@ -237,6 +241,9 @@ interface WebPortalProps {
   userSession: UserSession;
   onUserSessionChange: (sess: UserSession) => void;
   viewedBusinessIds: string[];
+  savedBusinessIds: string[];
+  onToggleSavedBusiness: (businessId: string) => void;
+  buyerActivityEvents: BuyerActivityEvent[];
   onUnlockBusinessContact: (payload: { businessId: string; viewerName?: string; viewerPhone?: string }) => Promise<boolean> | boolean;
   onSubmitApplication: (bizData: Omit<Business, 'id' | 'status' | 'createdAt' | 'rating' | 'reviewCount'>) => void;
   onUpdateBusiness: (b: Business) => void;
@@ -245,6 +252,8 @@ interface WebPortalProps {
   adLeads?: AdLead[];
   heroBanners?: HeroBanner[];
   homepageLayouts?: HomepageLayout[];
+  homepageDefaultsConfig?: HomepageDefaultsConfigState;
+  apiConfiguration?: ApiConfiguration;
   onSubmitAdLead?: (lead: Omit<AdLead, 'id' | 'createdAt'>) => void;
   urlCategoryFilter?: string | null;
   urlSubcategoryFilter?: string | null;
@@ -280,6 +289,9 @@ export default function WebPortal({
   userSession,
   onUserSessionChange,
   viewedBusinessIds,
+  savedBusinessIds,
+  onToggleSavedBusiness,
+  buyerActivityEvents,
   onUnlockBusinessContact,
   onSubmitApplication,
   onUpdateBusiness,
@@ -288,6 +300,8 @@ export default function WebPortal({
   adLeads = [],
   heroBanners = [],
   homepageLayouts = [],
+  homepageDefaultsConfig,
+  apiConfiguration,
   onSubmitAdLead,
   urlCategoryFilter = null,
   urlSubcategoryFilter = null,
@@ -435,6 +449,8 @@ export default function WebPortal({
   const [viewAllModal, setViewAllModal] = useState<ViewAllModalState | null>(null);
   const [isResultsPage, setIsResultsPage] = useState(false);
   const [isSearchInputFocused, setIsSearchInputFocused] = useState(false);
+  const [resolvedHomepagePayload, setResolvedHomepagePayload] = useState<ResolvedHomepagePayload | null>(null);
+  const [resolvedHomepageSource, setResolvedHomepageSource] = useState<'published_snapshot' | 'live_resolver' | 'legacy_fallback'>('legacy_fallback');
   const deferredSearchQuery = useDeferredValue(searchQuery);
 
   useEffect(() => {
@@ -533,7 +549,26 @@ export default function WebPortal({
     })
     .join(', ');
   const todayIso = new Date().toISOString().slice(0, 10);
-  const activeHeroBanners = heroBanners.filter((banner) => {
+  const cmsHeroBanners = resolvedHomepagePayload?.heroBanners && resolvedHomepagePayload.heroBanners.length > 0
+    ? resolvedHomepagePayload.heroBanners
+    : heroBanners;
+  const cmsListingAds = resolvedHomepagePayload?.listingAds && resolvedHomepagePayload.listingAds.length > 0
+    ? resolvedHomepagePayload.listingAds
+    : listingAds;
+  const cmsCoupons = resolvedHomepagePayload?.offers && resolvedHomepagePayload.offers.length > 0
+    ? resolvedHomepagePayload.offers
+    : coupons;
+  const cmsCommunityItems = resolvedHomepagePayload?.contentBlocks && resolvedHomepagePayload.contentBlocks.length > 0
+    ? resolvedHomepagePayload.contentBlocks
+    : communityItems;
+  const resolvedHomepageSections = resolvedHomepagePayload?.sections && resolvedHomepagePayload.sections.length > 0
+    ? resolvedHomepagePayload.sections
+    : [];
+  const resolvedSectionBusinessIdsBySection = resolvedHomepagePayload?.sectionBusinessIdsBySection || {};
+  const resolvedSponsoredBusinessIds = new Set(
+    (resolvedHomepagePayload?.sponsoredListings || []).map((business) => business.id)
+  );
+  const activeHeroBanners = cmsHeroBanners.filter((banner) => {
     if (!banner.isActive) return false;
     if (banner.localityId !== currentLocality.id) return false;
     if (banner.startDate > todayIso || banner.endDate < todayIso) return false;
@@ -549,6 +584,51 @@ export default function WebPortal({
     ? activeHeroBanners[carouselIndex % activeHeroBanners.length]
     : null;
   const currentLocalitySlug = currentLocality.slug || currentLocality.id;
+  const currentDeviceTarget: 'mobile' | 'desktop' = typeof window !== 'undefined' && window.innerWidth < 768 ? 'mobile' : 'desktop';
+
+  useEffect(() => {
+    if (!apiConfiguration?.resolvedHomepageEndpoint || !currentLocality?.id) {
+      setResolvedHomepagePayload(null);
+      setResolvedHomepageSource('legacy_fallback');
+      return;
+    }
+
+    let cancelled = false;
+    const params = new URLSearchParams({
+      localityId: currentLocality.id,
+      device: currentDeviceTarget,
+      pageType: isResultsPage ? 'listing_results' : 'homepage',
+    });
+    if (savedPincode) params.set('pincode', savedPincode);
+    if (selectedCategory && selectedCategory !== 'all') params.set('categoryId', selectedCategory);
+    if (selectedSubcategory && selectedSubcategory !== 'all') params.set('subcategoryId', selectedSubcategory);
+
+    fetch(`${apiConfiguration.resolvedHomepageEndpoint}?${params.toString()}`)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { payload?: ResolvedHomepagePayload; source?: 'published_snapshot' | 'live_resolver' } | null) => {
+        if (cancelled || !data?.payload) return;
+        setResolvedHomepagePayload(data.payload);
+        setResolvedHomepageSource(data.source || 'live_resolver');
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setResolvedHomepagePayload(null);
+        setResolvedHomepageSource('legacy_fallback');
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    apiConfiguration?.resolvedHomepageEndpoint,
+    currentLocality?.id,
+    currentDeviceTarget,
+    isResultsPage,
+    savedPincode,
+    selectedCategory,
+    selectedSubcategory,
+  ]);
+
   const buildCategoryRoutePath = (categoryId: string) => {
     if (categoryId === 'all') return `/${currentLocalitySlug}`;
     const seoSlug = SEO_INTENT_SLUG_BY_CATEGORY[categoryId] || slugifyForUrl(categoryId);
@@ -685,6 +765,12 @@ export default function WebPortal({
     setCrmPage(1);
     setMerchantLeadsPage(1);
   }, [activeSellerBizId]);
+
+  useEffect(() => {
+    if (userSession.role !== 'seller' || !userSession.sellerBusinessId) return;
+    if (activeSellerBizId === userSession.sellerBusinessId) return;
+    setActiveSellerBizId(userSession.sellerBusinessId);
+  }, [activeSellerBizId, userSession.role, userSession.sellerBusinessId]);
 
   useEffect(() => {
     setSellerWidgetLeadsPage(1);
@@ -951,6 +1037,8 @@ export default function WebPortal({
   const sortedBusinesses = [...filteredBusinesses].sort((a, b) => {
     if (sortBy === 'recommended') {
       // Sponsored/CPC bids, then featured status, then top rating
+      if (resolvedSponsoredBusinessIds.has(a.id) && !resolvedSponsoredBusinessIds.has(b.id)) return -1;
+      if (!resolvedSponsoredBusinessIds.has(a.id) && resolvedSponsoredBusinessIds.has(b.id)) return 1;
       if (a.isSponsored && !b.isSponsored) return -1;
       if (!a.isSponsored && b.isSponsored) return 1;
       if (a.featured && !b.featured) return -1;
@@ -972,6 +1060,8 @@ export default function WebPortal({
     return 0;
   });
   const homepageSortedBusinesses = [...approvedInLocality].sort((a, b) => {
+    if (resolvedSponsoredBusinessIds.has(a.id) && !resolvedSponsoredBusinessIds.has(b.id)) return -1;
+    if (!resolvedSponsoredBusinessIds.has(a.id) && resolvedSponsoredBusinessIds.has(b.id)) return 1;
     if (a.isSponsored && !b.isSponsored) return -1;
     if (!a.isSponsored && b.isSponsored) return 1;
     if (a.featured && !b.featured) return -1;
@@ -1007,7 +1097,6 @@ export default function WebPortal({
   // Separate sorted lists
   const featuredBusinesses = sortedBusinesses.filter(b => b.featured);
   const regularBusinesses = sortedBusinesses.filter(b => !b.featured);
-  const homepageFeaturedBusinesses = homepageSortedBusinesses.filter(b => b.featured);
   const FEATURED_PAGE_SIZE = 6;
   const REGULAR_PAGE_SIZE = 18;
   const COMMUNITY_PAGE_SIZE = 8;
@@ -1033,23 +1122,23 @@ export default function WebPortal({
     (safeSearchResultPage - 1) * REGULAR_PAGE_SIZE,
     safeSearchResultPage * REGULAR_PAGE_SIZE
   );
-  const searchSuggestions = useMemo<SearchSuggestion[]>(() => {
-    const categorySuggestions: SearchSuggestion[] = BUSINESS_CATEGORIES.map((category) => ({
+  const searchSuggestions: SearchSuggestion[] = [
+    ...BUSINESS_CATEGORIES.map((category) => ({
       id: `category-${category.id}`,
-      type: 'category',
+      type: 'category' as const,
       displayValue: category.name,
       queryValue: category.name,
       categoryId: category.id,
-    }));
-    const subcategorySuggestions: SearchSuggestion[] = BUSINESS_SUBCATEGORIES.map((subcategory) => ({
+    })),
+    ...BUSINESS_SUBCATEGORIES.map((subcategory) => ({
       id: `subcategory-${subcategory.id}`,
-      type: 'subcategory',
+      type: 'subcategory' as const,
       displayValue: subcategory.name,
       queryValue: subcategory.name,
       categoryId: subcategory.categoryId,
       subcategoryId: subcategory.id,
-    }));
-    const businessSuggestions: SearchSuggestion[] = approvedInLocality.map((business) => {
+    })),
+    ...approvedInLocality.map((business) => {
       const categoryLabel = getBusinessCategoryLabel(business);
       const subcategoryLabel = getBusinessSubcategoryLabel(business);
       const contextualLabel = subcategoryLabel && subcategoryLabel !== categoryLabel
@@ -1057,16 +1146,15 @@ export default function WebPortal({
         : `${business.name} in ${categoryLabel}`;
       return {
         id: `business-${business.id}`,
-        type: 'business',
+        type: 'business' as const,
         displayValue: contextualLabel,
         queryValue: business.name,
         categoryId: business.categoryId || undefined,
         subcategoryId: business.subcategoryId || undefined,
         businessId: business.id,
       };
-    });
-    return [...categorySuggestions, ...subcategorySuggestions, ...businessSuggestions];
-  }, [approvedInLocality]);
+    }),
+  ];
   const filteredSearchSuggestions = useMemo<SearchSuggestion[]>(() => {
     const normalizedQuery = searchQuery.trim().toLowerCase();
     if (!normalizedQuery) return [];
@@ -1093,8 +1181,8 @@ export default function WebPortal({
     searchQuery.trim().length > 0 &&
     filteredSearchSuggestions.length > 0
   );
-  const localityCommunityItems = communityItems
-    .filter((item) => item.localityId === activeLocalityId)
+  const localityCommunityItems = cmsCommunityItems
+    .filter((item) => selectedLocalityIds.includes(item.localityId))
     .filter((item) => {
       if (item.status === 'draft' || item.status === 'archived') return false;
       const publishAt = item.publishAt || item.createdAt;
@@ -1155,7 +1243,7 @@ export default function WebPortal({
     if (normalizedPincodes.length === 0) return true;
     return normalizedPincodes.some((pincode) => scopedPincodes.has(pincode) || (!!fallbackPincode && fallbackPincode === pincode));
   };
-  const activeListingAds = listingAds.filter((ad) => {
+  const activeListingAds = cmsListingAds.filter((ad) => {
     if (!ad.isActive) return false;
     if (!matchesDateWindow(ad.startDate, ad.endDate)) return false;
     return matchesTargeting(ad.localityIds, ad.pincodes);
@@ -1183,7 +1271,7 @@ export default function WebPortal({
   const getAdsForBusinessContext = (candidates: Business[], ads: ListingAd[]) => (
     ads.filter((ad) => adMatchesBusinessContext(ad, candidates))
   );
-  const activeCoupons = coupons.filter((coupon) => {
+  const activeCoupons = cmsCoupons.filter((coupon) => {
     const relatedBusiness = businesses.find((business) => business.id === coupon.businessId);
     if (coupon.isActive === false) return false;
     if (!matchesDateWindow(coupon.startDate, coupon.endDate || coupon.expiryDate)) return false;
@@ -1199,15 +1287,19 @@ export default function WebPortal({
     return homepageLayouts[0] || null;
   }, [homepageLayouts, currentLocality.id]);
   const activeHomepageSections = useMemo(() => {
-    const sections = activeHomepageLayout?.sections || [];
+    const sections = resolvedHomepageSections.length > 0
+      ? resolvedHomepageSections
+      : (activeHomepageLayout?.sections || []);
     return [...sections]
       .sort((a, b) => a.sortOrder - b.sortOrder)
       .filter((section) => section.status === 'active')
       .filter((section) => section.visible)
       .filter((section) => matchesDateWindow(section.startDate, section.endDate))
       .filter((section) => matchesTargeting(section.localityIds, section.pincodes));
-  }, [activeHomepageLayout, todayIso, activeLocalityId, savedPincode]);
-  const quickCategoryIds = ['food-restaurants', 'health-medical', 'home-services', 'beauty-wellness', 'shopping-retail', 'professional-services'];
+  }, [activeHomepageLayout, resolvedHomepageSections, todayIso, activeLocalityId, savedPincode]);
+  const quickCategoryIds = homepageDefaultsConfig?.searchShortcutCategoryIds?.length
+    ? homepageDefaultsConfig.searchShortcutCategoryIds
+    : ['food-restaurants', 'health-medical', 'home-services', 'beauty-wellness', 'shopping-retail', 'professional-services'];
   const iconToneByCategory: Record<string, { Icon: PortalIcon; iconClassName: string; bgClassName: string }> = {
     'food-restaurants': { Icon: Utensils, iconClassName: 'text-orange-500', bgClassName: 'bg-orange-50' },
     'health-medical': { Icon: BriefcaseMedical, iconClassName: 'text-blue-600', bgClassName: 'bg-blue-50' },
@@ -1236,25 +1328,40 @@ export default function WebPortal({
     'car-service': { Icon: Car, iconClassName: 'text-amber-500', bgClassName: 'bg-amber-50' },
     'wedding-planners': { Icon: CalendarDays, iconClassName: 'text-purple-600', bgClassName: 'bg-purple-50' }
   };
-  const heroQuickActions = [
-    { label: 'Restaurants', categoryId: 'food-restaurants', subcategoryId: 'restaurants', Icon: Utensils, iconClassName: 'text-orange-500', bgClassName: 'bg-orange-50' },
-    { label: 'Doctors', categoryId: 'health-medical', subcategoryId: 'clinics', Icon: BriefcaseMedical, iconClassName: 'text-blue-600', bgClassName: 'bg-blue-50' },
-    { label: 'Electricians', categoryId: 'home-services', subcategoryId: 'electricians', Icon: Zap, iconClassName: 'text-amber-500', bgClassName: 'bg-amber-50' },
-    { label: 'Home Bakers', categoryId: 'food-restaurants', subcategoryId: 'bakeries', Icon: CakeSlice, iconClassName: 'text-rose-500', bgClassName: 'bg-rose-50' },
-    { label: 'Plumbers', categoryId: 'home-services', subcategoryId: 'plumbers', Icon: Wrench, iconClassName: 'text-sky-600', bgClassName: 'bg-sky-50' },
-    { label: 'Maid Services', categoryId: 'home-services', subcategoryId: 'house-cleaning', Icon: Users, iconClassName: 'text-emerald-600', bgClassName: 'bg-emerald-50' }
-  ];
-  const emergencyServiceCards = [
-    { title: 'Police Station', description: 'Local law & safety', query: 'Police Station', Icon: ShieldAlert, iconClassName: 'text-indigo-600', bgClassName: 'bg-indigo-50' },
-    { title: 'Fire Station', description: 'Emergency response', query: 'Fire Station', Icon: Flame, iconClassName: 'text-red-500', bgClassName: 'bg-red-50' },
-    { title: 'Hospitals', description: 'Critical care nearby', query: 'Hospital', Icon: Hospital, iconClassName: 'text-blue-600', bgClassName: 'bg-blue-50' },
-    { title: 'Ambulance', description: 'Rapid transport', query: 'Ambulance', Icon: Ambulance, iconClassName: 'text-red-500', bgClassName: 'bg-red-50' },
-    { title: 'Electrician', description: 'Urgent power repairs', query: 'Electrician', Icon: Zap, iconClassName: 'text-amber-500', bgClassName: 'bg-amber-50' },
-    { title: 'Plumber', description: 'Leak & drainage help', query: 'Plumber', Icon: Wrench, iconClassName: 'text-sky-600', bgClassName: 'bg-sky-50' },
-    { title: 'Maid Service', description: 'Home support', query: 'Maid Service', Icon: User, iconClassName: 'text-violet-600', bgClassName: 'bg-violet-50' },
-    { title: 'Driver / Taxi', description: 'Travel support', query: 'Taxi', Icon: Car, iconClassName: 'text-orange-500', bgClassName: 'bg-orange-50' }
-  ];
+  const heroQuickActions = (homepageDefaultsConfig?.heroQuickActions?.length
+    ? homepageDefaultsConfig.heroQuickActions
+    : [
+        { label: 'Restaurants', categoryId: 'food-restaurants', subcategoryId: 'restaurants' },
+        { label: 'Doctors', categoryId: 'health-medical', subcategoryId: 'clinics' },
+        { label: 'Electricians', categoryId: 'home-services', subcategoryId: 'electricians' },
+        { label: 'Home Bakers', categoryId: 'food-restaurants', subcategoryId: 'bakeries' },
+        { label: 'Plumbers', categoryId: 'home-services', subcategoryId: 'plumbers' },
+        { label: 'Maid Services', categoryId: 'home-services', subcategoryId: 'house-cleaning' }
+      ])
+    .map((shortcut) => {
+      const subcategoryTone = shortcut.subcategoryId ? subcategoryToneById[shortcut.subcategoryId] : undefined;
+      const categoryTone = iconToneByCategory[shortcut.categoryId] || { Icon: Grid3X3, iconClassName: 'text-indigo-600', bgClassName: 'bg-indigo-50' };
+      const tone = subcategoryTone || categoryTone;
+      const categoryLabel = getCategoryById(shortcut.categoryId)?.name || shortcut.categoryId;
+      const subcategoryLabel = shortcut.subcategoryId ? (getSubcategoryById(shortcut.subcategoryId)?.name || shortcut.subcategoryId) : '';
+      return {
+        label: shortcut.label || subcategoryLabel || categoryLabel,
+        categoryId: shortcut.categoryId,
+        subcategoryId: shortcut.subcategoryId,
+        Icon: tone.Icon,
+        iconClassName: tone.iconClassName,
+        bgClassName: tone.bgClassName,
+      };
+    })
+    .filter((shortcut) => shortcut.categoryId);
   const getSectionBusinessPool = (section: HomepageSection) => {
+    const resolvedBusinessIds = resolvedSectionBusinessIdsBySection[section.id] || [];
+    if (resolvedBusinessIds.length > 0) {
+      return resolvedBusinessIds
+        .map((businessId) => homepageSortedBusinesses.find((business) => business.id === businessId))
+        .filter(Boolean) as Business[];
+    }
+
     const scopedBusinesses = homepageSortedBusinesses
       .filter((business) => business.status === 'approved')
       .filter((business) => !section.categoryId || business.categoryId === section.categoryId)
@@ -1264,6 +1371,14 @@ export default function WebPortal({
       return (section.pinnedBusinessIds || [])
         .map((businessId) => scopedBusinesses.find((business) => business.id === businessId))
         .filter(Boolean) as Business[];
+    }
+
+    if (section.sectionType === 'featured_businesses') {
+      return scopedBusinesses.filter((business) => business.featured);
+    }
+
+    if (section.sectionType === 'verified_business_grid') {
+      return scopedBusinesses.filter((business) => !business.featured);
     }
 
     return scopedBusinesses;
@@ -1354,6 +1469,33 @@ export default function WebPortal({
     );
   };
 
+  const activeSellerBusiness = businesses.find((business) => business.id === activeSellerBizId) || null;
+  const activeSellerCoupons = coupons.filter((coupon) => coupon.businessId === activeSellerBizId);
+  const activeSellerReviews = reviews.filter((review) => review.businessId === activeSellerBizId);
+  const buyerSavedBusinesses = savedBusinessIds
+    .map((businessId) => businesses.find((business) => business.id === businessId) || null)
+    .filter((business): business is Business => Boolean(business));
+  const buyerViewedBusinesses = viewedBusinessIds
+    .map((businessId) => businesses.find((business) => business.id === businessId) || null)
+    .filter((business): business is Business => Boolean(business));
+  const buyerSubmittedReviews = reviews
+    .filter((review) => (
+      (userSession.userPhone && review.userPhone === userSession.userPhone) ||
+      (userSession.userName && review.userName === userSession.userName)
+    ))
+    .slice()
+    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+  const buyerRecentActivity = buyerActivityEvents
+    .slice()
+    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+    .slice(0, 8);
+  const isSellerWorkspaceLocked = userSession.role === 'seller' && Boolean(userSession.sellerBusinessId);
+  const handleSaveBusinessClick = (biz: Business, event: React.MouseEvent) => {
+    event.stopPropagation();
+    onToggleSavedBusiness(biz.id);
+  };
+  const isBusinessSaved = (businessId: string) => savedBusinessIds.includes(businessId);
+
   const openBusinessDirections = (biz: Business, e: React.MouseEvent) => {
     e.stopPropagation();
     const destination = biz.gpsCoordinates
@@ -1440,11 +1582,15 @@ export default function WebPortal({
               </div>
               <button
                 type="button"
-                onClick={(e) => e.stopPropagation()}
-                className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500"
+                onClick={(e) => handleSaveBusinessClick(biz, e)}
+                className={`inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border transition ${
+                  isBusinessSaved(biz.id)
+                    ? 'border-rose-200 bg-rose-50 text-rose-600'
+                    : 'border-slate-200 bg-white text-slate-500'
+                }`}
                 title="Save business"
               >
-                <Heart className="h-4 w-4" />
+                <Heart className={`h-4 w-4 ${isBusinessSaved(biz.id) ? 'fill-current' : ''}`} />
               </button>
             </div>
 
@@ -1515,11 +1661,15 @@ export default function WebPortal({
             )}
             <button
               type="button"
-              onClick={(e) => e.stopPropagation()}
-              className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-slate-600 shadow-sm"
+              onClick={(e) => handleSaveBusinessClick(biz, e)}
+              className={`absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-full shadow-sm ${
+                isBusinessSaved(biz.id)
+                  ? 'bg-rose-50 text-rose-600'
+                  : 'bg-white/90 text-slate-600'
+              }`}
               title="Save business"
             >
-              <Heart className="h-4 w-4" />
+              <Heart className={`h-4 w-4 ${isBusinessSaved(biz.id) ? 'fill-current' : ''}`} />
             </button>
           </div>
         )}
@@ -1529,11 +1679,15 @@ export default function WebPortal({
             {!showImage && (
               <button
                 type="button"
-                onClick={(e) => e.stopPropagation()}
-                className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm"
+                onClick={(e) => handleSaveBusinessClick(biz, e)}
+                className={`inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border shadow-sm transition ${
+                  isBusinessSaved(biz.id)
+                    ? 'border-rose-200 bg-rose-50 text-rose-600'
+                    : 'border-slate-200 bg-white text-slate-600'
+                }`}
                 title="Save business"
               >
-                <Heart className="h-4 w-4" />
+                <Heart className={`h-4 w-4 ${isBusinessSaved(biz.id) ? 'fill-current' : ''}`} />
               </button>
             )}
           </div>
@@ -1646,11 +1800,15 @@ export default function WebPortal({
             )}
             <button
               type="button"
-              onClick={(e) => e.stopPropagation()}
-              className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-slate-600 shadow-sm backdrop-blur"
+              onClick={(e) => handleSaveBusinessClick(biz, e)}
+              className={`absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-full shadow-sm backdrop-blur ${
+                isBusinessSaved(biz.id)
+                  ? 'bg-rose-50 text-rose-600'
+                  : 'bg-white/90 text-slate-600'
+              }`}
               title="Save business"
             >
-              <Heart className="h-4 w-4" />
+              <Heart className={`h-4 w-4 ${isBusinessSaved(biz.id) ? 'fill-current' : ''}`} />
             </button>
           </div>
         )}
@@ -1681,11 +1839,15 @@ export default function WebPortal({
           {!showImage && (
             <button
               type="button"
-              onClick={(e) => e.stopPropagation()}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm"
+              onClick={(e) => handleSaveBusinessClick(biz, e)}
+              className={`inline-flex h-8 w-8 items-center justify-center rounded-full border shadow-sm transition ${
+                isBusinessSaved(biz.id)
+                  ? 'border-rose-200 bg-rose-50 text-rose-600'
+                  : 'border-slate-200 bg-white text-slate-600'
+              }`}
               title="Save business"
             >
-              <Heart className="h-4 w-4" />
+              <Heart className={`h-4 w-4 ${isBusinessSaved(biz.id) ? 'fill-current' : ''}`} />
             </button>
           )}
           {hasPhone ? (
@@ -2211,9 +2373,7 @@ export default function WebPortal({
     }
 
     if (section.sectionType === 'featured_businesses') {
-      const featuredPool = section.listingSourceMode === 'manual' && (section.pinnedBusinessIds || []).length > 0
-        ? getSectionBusinessPool(section)
-        : homepageFeaturedBusinesses;
+      const featuredPool = getSectionBusinessPool(section);
       const desktopCardCount = getDesktopCardCount(section, Math.min(3, sectionMaxItems));
       const mobileCardCount = getMobileCardCount(section, 2);
       const mobileDisplayMode = getMobileDisplayMode(section);
@@ -2466,7 +2626,7 @@ export default function WebPortal({
     }
 
     if (section.sectionType === 'verified_business_grid') {
-      const verifiedPool = getSectionBusinessPool(section).filter((business) => !business.featured);
+      const verifiedPool = getSectionBusinessPool(section);
       const desktopCardCount = getDesktopCardCount(section, Math.min(5, sectionMaxItems));
       const mobileCardCount = getMobileCardCount(section, 2);
       const mobileDisplayMode = getMobileDisplayMode(section);
@@ -2766,98 +2926,42 @@ export default function WebPortal({
     );
   };
 
-  const homepageSectionsToRender: HomepageSection[] = activeHomepageSections.length > 0 ? activeHomepageSections : [
-    { id: 'fallback-hero', sectionType: 'hero_banner' as const, title: 'Hero', status: 'active', visible: true, sortOrder: 10 },
-    { id: 'fallback-search', sectionType: 'search_discovery' as const, title: 'Search & Discover', status: 'active', visible: true, sortOrder: 20 },
-    { id: 'fallback-featured', sectionType: 'featured_businesses' as const, title: 'Featured Businesses', status: 'active', visible: true, sortOrder: 30, maxItems: 6 },
-    { id: 'fallback-verified', sectionType: 'verified_business_grid' as const, title: 'Verified Businesses Near You', status: 'active', visible: true, sortOrder: 40, maxItems: 9 }
-  ];
-  const fallbackSidebarAds: ListingAd[] = [
-    {
-      id: 'fallback_ad_growth',
-      title: 'Grow Your Business with Localisy',
-      description: 'Reach local customers every month.',
-      badge: 'Advertisement',
-      ctaText: 'Advertise Now',
-      backgroundColor: '#ede9fe',
-      imageUrl: 'https://images.unsplash.com/photo-1556740749-887f6717d7e4?auto=format&fit=crop&w=640&q=80',
-      startDate: todayIso,
-      endDate: todayIso,
-      actionType: 'lead_form',
-      localityIds: [currentLocality.id],
-      tags: ['business', 'advertise', 'marketing'],
-      placementKey: 'homepage_sidebar_top',
-      deviceTarget: 'all',
-      mobileRowPosition: 3,
-      isActive: true
-    },
-    {
-      id: 'fallback_ad_food',
-      title: 'Delicious food delivered fast!',
-      description: 'Up to 50% OFF on your first order.',
-      badge: 'Advertisement',
-      ctaText: 'Order Now',
-      backgroundColor: '#064e3b',
-      imageUrl: 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?auto=format&fit=crop&w=640&q=80',
-      startDate: todayIso,
-      endDate: todayIso,
-      actionType: 'landing_page',
-      targetUrl: buildCategoryRoutePath('food-restaurants'),
-      localityIds: [currentLocality.id],
-      categoryIds: ['food-restaurants'],
-      tags: ['food', 'restaurant', 'delivery'],
-      placementKey: 'homepage_sidebar_food',
-      deviceTarget: 'all',
-      mobileRowPosition: 3,
-      isActive: true
-    },
-    {
-      id: 'fallback_ad_clinic',
-      title: 'Radiance Skin & Hair Clinic',
-      description: '20% OFF on all services.',
-      badge: 'Advertisement',
-      ctaText: 'Book Now',
-      backgroundColor: '#fce7f3',
-      imageUrl: 'https://images.unsplash.com/photo-1515377905703-c4788e51af15?auto=format&fit=crop&w=640&q=80',
-      startDate: todayIso,
-      endDate: todayIso,
-      actionType: 'landing_page',
-      targetUrl: buildCategoryRoutePath('beauty-wellness'),
-      localityIds: [currentLocality.id],
-      categoryIds: ['beauty-wellness', 'health-medical'],
-      tags: ['clinic', 'beauty', 'salon', 'skin'],
-      placementKey: 'homepage_sidebar_clinic',
-      deviceTarget: 'all',
-      mobileRowPosition: 3,
-      isActive: true
-    },
-    {
-      id: 'fallback_ad_marketing',
-      title: 'Digital Marketing That Gets You More Customers',
-      description: 'SEO, social media and ads for local businesses.',
-      badge: 'Advertisement',
-      ctaText: 'Get Free Audit',
-      backgroundColor: '#eef2ff',
-      imageUrl: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=640&q=80',
-      startDate: todayIso,
-      endDate: todayIso,
-      actionType: 'lead_form',
-      localityIds: [currentLocality.id],
-      categoryIds: ['professional-services', 'digital-technology'],
-      tags: ['marketing', 'seo', 'social media'],
-      placementKey: 'homepage_sidebar_marketing',
-      deviceTarget: 'all',
-      mobileRowPosition: 3,
-      isActive: true
-    }
-  ];
-  const desktopSidebarAds = [...activeListingAds, ...fallbackSidebarAds]
+  const fallbackSectionTemplates = homepageDefaultsConfig?.sectionTemplates || (DEFAULT_HOMEPAGE_SECTION_TEMPLATES as HomepageSection[]);
+  const homepageSectionsToRender: HomepageSection[] = activeHomepageSections.length > 0 ? activeHomepageSections : fallbackSectionTemplates.map((section, index) => ({
+    ...section,
+    id: `fallback_${section.id || section.sectionType || index + 1}`,
+  }));
+  const shouldUseFallbackAds = resolvedHomepageSource === 'legacy_fallback' && activeListingAds.length === 0;
+  const fallbackSidebarAds: ListingAd[] = (homepageDefaultsConfig?.fallbackListingAds || (DEFAULT_FALLBACK_LISTING_AD_TEMPLATES as Array<Record<string, unknown>>)).map((ad, index) => ({
+    id: String(ad.id || `fallback_ad_${index + 1}`),
+    title: String(ad.title || 'Fallback Ad'),
+    description: String(ad.description || ''),
+    badge: String(ad.badge || 'Advertisement'),
+    ctaText: String(ad.ctaText || 'Learn More'),
+    backgroundColor: String(ad.backgroundColor || '#eef2ff'),
+    imageUrl: ad.imageUrl ? String(ad.imageUrl) : undefined,
+    startDate: todayIso,
+    endDate: todayIso,
+    actionType: (ad.actionType === 'lead_form' || ad.actionType === 'landing_listing' ? ad.actionType : 'landing_page') as ListingAd['actionType'],
+    targetUrl: ad.targetUrl
+      ? String(ad.targetUrl)
+      : (ad.targetCategoryId ? buildCategoryRoutePath(String(ad.targetCategoryId)) : undefined),
+    localityIds: [currentLocality.id],
+    categoryIds: Array.isArray(ad.categoryIds) ? ad.categoryIds.map((categoryId) => String(categoryId)) : [],
+    tags: Array.isArray(ad.tags) ? ad.tags.map((tag) => String(tag)) : [],
+    placementKey: ad.placementKey ? String(ad.placementKey) : undefined,
+    deviceTarget: ad.deviceTarget === 'desktop' || ad.deviceTarget === 'mobile' ? ad.deviceTarget : 'all',
+    mobileRowPosition: Number.isFinite(Number(ad.mobileRowPosition)) ? Number(ad.mobileRowPosition) : 3,
+    isActive: true
+  }));
+  const homepageAdInventory = shouldUseFallbackAds ? [...activeListingAds, ...fallbackSidebarAds] : activeListingAds;
+  const desktopSidebarAds = homepageAdInventory
     .filter((ad) => (ad.deviceTarget || 'all') !== 'mobile')
     .slice(0, 4);
-  const contextualListingAds = getAdsForBusinessContext(sortedBusinesses, [...activeListingAds, ...fallbackSidebarAds]);
+  const contextualListingAds = getAdsForBusinessContext(sortedBusinesses, homepageAdInventory);
   const desktopResultAds = contextualListingAds.filter((ad) => (ad.deviceTarget || 'all') !== 'mobile');
   const mobileResultAds = contextualListingAds.filter((ad) => (ad.deviceTarget || 'all') !== 'desktop');
-  const mobileInlineAds = [...activeListingAds, ...fallbackSidebarAds]
+  const mobileInlineAds = homepageAdInventory
     .filter((ad) => (ad.deviceTarget || 'all') !== 'desktop')
     .filter((ad) => (ad.mobileRowPosition || 0) > 0)
     .sort((a, b) => (a.mobileRowPosition || 0) - (b.mobileRowPosition || 0));
@@ -2965,7 +3069,7 @@ export default function WebPortal({
         renderedSections.push(
           <React.Fragment key={`mobile-ads-row-${row}`}>
             <MobileAdCarousel
-              ads={ads}
+              ads={ads as ListingAd[]}
               onAdClick={handleListingAdAction}
             />
           </React.Fragment>
@@ -4168,6 +4272,198 @@ export default function WebPortal({
       {/* RENDER TAB 3: DYNAMIC SME MERCHANT WORKSPACE & CRM */}
       {activePortalTab === 'merchant' && (
         <div className="space-y-6">
+          {userSession.role === 'buyer' ? (
+            <>
+              <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5 text-white shadow-sm">
+                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                  <div className="space-y-1">
+                    <div className="text-[10px] font-mono uppercase tracking-[0.24em] text-emerald-300">Buyer dashboard</div>
+                    <h3 className="text-xl font-extrabold">
+                      {userSession.userName || 'Anonymous Buyer'}
+                    </h3>
+                    <p className="max-w-2xl text-sm text-slate-300">
+                      Track saved listings, recently unlocked contacts, and your verified review activity from one place before UAT.
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-right">
+                    <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-slate-400">Account status</div>
+                    <div className="mt-1 text-sm font-semibold text-white">
+                      {userSession.isAuthenticated ? 'Verified user session active' : 'Guest mode with local saved history'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                {[
+                  { label: 'Saved listings', value: buyerSavedBusinesses.length, className: 'border-rose-200 bg-rose-50 text-rose-700' },
+                  { label: 'Contact unlocks', value: buyerViewedBusinesses.length, className: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
+                  { label: 'Verified actions', value: buyerRecentActivity.length, className: 'border-indigo-200 bg-indigo-50 text-indigo-700' },
+                  { label: 'Your reviews', value: buyerSubmittedReviews.length, className: 'border-amber-200 bg-amber-50 text-amber-700' },
+                ].map((stat) => (
+                  <div key={stat.label} className={`rounded-2xl border p-4 ${stat.className}`}>
+                    <div className="text-[11px] font-mono uppercase tracking-wide">{stat.label}</div>
+                    <div className="mt-2 text-2xl font-extrabold">{stat.value}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
+                  <div className="mb-4 flex items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                    <div>
+                      <h4 className="text-sm font-extrabold text-slate-900">Saved listings</h4>
+                      <p className="text-[11px] text-slate-500">Businesses the buyer marked for revisit.</p>
+                    </div>
+                    <span className="rounded-full bg-rose-50 px-2.5 py-1 text-[10px] font-bold text-rose-700">
+                      {buyerSavedBusinesses.length} saved
+                    </span>
+                  </div>
+                  {buyerSavedBusinesses.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+                      Tap the heart on any business card and it will appear here.
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                        {buyerSavedBusinesses.slice(0, 4).map((biz) => renderDesktopBusinessTile(biz))}
+                      </div>
+                      <div className="flex gap-3 overflow-x-auto md:hidden">
+                        {buyerSavedBusinesses.slice(0, 4).map((biz) => renderMobileBusinessCard(biz))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
+                  <div className="mb-4 flex items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                    <div>
+                      <h4 className="text-sm font-extrabold text-slate-900">Unlocked contacts</h4>
+                      <p className="text-[11px] text-slate-500">Businesses whose phone details were verified and viewed.</p>
+                    </div>
+                    <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700">
+                      {buyerViewedBusinesses.length} unlocked
+                    </span>
+                  </div>
+                  {buyerViewedBusinesses.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+                      Unlock a business contact with OTP verification to build this history.
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {buyerViewedBusinesses.slice(0, 6).map((biz) => (
+                        <button
+                          key={biz.id}
+                          type="button"
+                          onClick={() => openBusinessDetails(biz)}
+                          className="flex w-full items-center justify-between gap-3 rounded-xl border border-slate-200 px-4 py-3 text-left transition hover:border-emerald-300 hover:bg-emerald-50"
+                        >
+                          <div className="min-w-0">
+                            <div className="truncate font-semibold text-slate-900">{biz.name}</div>
+                            <div className="truncate text-xs text-slate-500">
+                              {getBusinessCategoryLabel(biz)} • {getBusinessAreaName(biz)}
+                            </div>
+                          </div>
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-bold text-emerald-700">
+                            <ShieldCheck className="h-3.5 w-3.5" />
+                            Verified
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
+                  <div className="mb-4 border-b border-slate-100 pb-3">
+                    <h4 className="text-sm font-extrabold text-slate-900">Recent buyer activity</h4>
+                    <p className="text-[11px] text-slate-500">Recent saved, review, and OTP-verified actions.</p>
+                  </div>
+                  {buyerRecentActivity.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+                      Buyer actions will start showing here as soon as you interact with listings.
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {buyerRecentActivity.map((event) => (
+                        <div key={event.id} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-slate-700 shadow-sm">
+                                {event.actionType === 'saved_listing' || event.actionType === 'unsaved_listing' ? (
+                                  <Bookmark className="h-4 w-4" />
+                                ) : event.actionType === 'contact_unlock' ? (
+                                  <ShieldCheck className="h-4 w-4" />
+                                ) : (
+                                  <Star className="h-4 w-4" />
+                                )}
+                              </span>
+                              <div className="min-w-0">
+                                <div className="truncate text-sm font-semibold text-slate-900">{event.title}</div>
+                                {event.detail && (
+                                  <div className="truncate text-xs text-slate-500">{event.detail}</div>
+                                )}
+                              </div>
+                            </div>
+                            <div className="whitespace-nowrap text-[10px] font-mono text-slate-400">
+                              {new Date(event.createdAt).toLocaleString()}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
+                  <div className="mb-4 flex items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                    <div>
+                      <h4 className="text-sm font-extrabold text-slate-900">Submitted reviews</h4>
+                      <p className="text-[11px] text-slate-500">Verified ratings submitted from this buyer account.</p>
+                    </div>
+                    <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-700">
+                      {buyerSubmittedReviews.length} reviews
+                    </span>
+                  </div>
+                  {buyerSubmittedReviews.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+                      Submit a verified review from any listing to see it reflected here.
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {buyerSubmittedReviews.slice(0, 5).map((review) => {
+                        const business = businesses.find((item) => item.id === review.businessId);
+                        return (
+                          <div key={review.id} className="rounded-xl border border-slate-200 px-4 py-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="truncate text-sm font-semibold text-slate-900">
+                                  {business?.name || review.businessId}
+                                </div>
+                                <div className="mt-1 flex items-center gap-1 text-xs font-semibold text-amber-600">
+                                  <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+                                  {review.rating.toFixed(1)}
+                                </div>
+                              </div>
+                              <div className="text-[10px] font-mono text-slate-400">
+                                {new Date(review.createdAt).toLocaleDateString()}
+                              </div>
+                            </div>
+                            {review.comment && (
+                              <p className="mt-2 text-sm text-slate-600">{review.comment}</p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
           {/* Active Workspace Switcher header */}
           <div className="bg-slate-900 text-white rounded-2xl p-5 border border-slate-800 flex flex-col md:flex-row items-center justify-between gap-4 shadow-sm">
             <div className="flex items-center gap-3">
@@ -4175,28 +4471,52 @@ export default function WebPortal({
                 💼 SME
               </div>
               <div>
-                <div className="text-[10px] uppercase font-mono tracking-wider text-amber-400 font-bold">Active Merchant Growth Desk Workspace:</div>
+                <div className="text-[10px] uppercase font-mono tracking-wider text-amber-400 font-bold">
+                  {isSellerWorkspaceLocked ? 'Seller Growth Desk Workspace:' : 'Active Merchant Growth Desk Workspace:'}
+                </div>
                 <h3 className="font-extrabold text-base text-white">
-                  {businesses.find(b => b.id === activeSellerBizId)?.name || 'Local SME Outlet'}
+                  {activeSellerBusiness?.name || 'Local SME Outlet'}
                 </h3>
               </div>
             </div>
 
             {/* SME selector dropdown to easily swap client context to inspect stats */}
-            <div className="flex items-center gap-1.5 bg-slate-955 p-1.5 rounded-xl border border-slate-800">
-              <span className="text-[10px] text-slate-400 font-mono px-1">Switch simulated workspace:</span>
-              <select
-                value={activeSellerBizId}
-                onChange={(e) => setActiveSellerBizId(e.target.value)}
-                className="bg-slate-900 text-xs text-white border border-slate-800 rounded px-2 py-1 font-sans focus:outline-none"
-              >
-                {businesses.map(b => (
-                  <option key={b.id} value={b.id}>
-                    {b.name} ({b.localityId})
-                  </option>
-                ))}
-              </select>
-            </div>
+            {isSellerWorkspaceLocked ? (
+              <div className="rounded-xl border border-emerald-400/20 bg-emerald-500/10 px-3 py-2 text-right">
+                <div className="text-[10px] font-mono uppercase tracking-[0.18em] text-emerald-300">Workspace lock</div>
+                <div className="text-xs font-semibold text-white">Mapped to your owned listing</div>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 bg-slate-955 p-1.5 rounded-xl border border-slate-800">
+                <span className="text-[10px] text-slate-400 font-mono px-1">Switch simulated workspace:</span>
+                <select
+                  value={activeSellerBizId}
+                  onChange={(e) => setActiveSellerBizId(e.target.value)}
+                  className="bg-slate-900 text-xs text-white border border-slate-800 rounded px-2 py-1 font-sans focus:outline-none"
+                >
+                  {businesses.map(b => (
+                    <option key={b.id} value={b.id}>
+                      {b.name} ({b.localityId})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+            {[
+              { label: 'Owned listing', value: activeSellerBusiness ? 1 : 0, className: 'border-indigo-200 bg-indigo-50 text-indigo-700' },
+              { label: 'CRM contacts', value: activeSellerContacts.length, className: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
+              { label: 'Ad leads', value: activeMerchantLeads.length, className: 'border-sky-200 bg-sky-50 text-sky-700' },
+              { label: 'Live offers', value: activeSellerCoupons.length, className: 'border-amber-200 bg-amber-50 text-amber-700' },
+              { label: 'Reviews', value: activeSellerReviews.length, className: 'border-violet-200 bg-violet-50 text-violet-700' },
+            ].map((stat) => (
+              <div key={stat.label} className={`rounded-2xl border p-4 ${stat.className}`}>
+                <div className="text-[11px] font-mono uppercase tracking-wide">{stat.label}</div>
+                <div className="mt-2 text-2xl font-extrabold">{stat.value}</div>
+              </div>
+            ))}
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -4563,6 +4883,8 @@ export default function WebPortal({
               </div>
             </div>
           </div>
+            </>
+          )}
         </div>
       )}
 
@@ -5447,7 +5769,7 @@ export default function WebPortal({
           </button>
           <button
             type="button"
-            onClick={() => setFilterVerifiedOnly((value) => !value)}
+            onClick={() => setActivePortalTab('merchant')}
             className="flex flex-col items-center gap-1"
           >
             <Bookmark className="h-5 w-5" />

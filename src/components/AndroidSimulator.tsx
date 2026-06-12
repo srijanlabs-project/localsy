@@ -4,7 +4,7 @@ import {
   PhoneCall, ArrowLeft, RefreshCw, Send, CheckCircle, ShieldAlert, Lock, Unlock, Star, MessageSquare
 } from 'lucide-react';
 import { Locality, Business, Category, Review, UserSession } from '../types';
-import { MASTER_STATES, MASTER_CITIES, MASTER_AREAS } from '../data';
+import { MASTER_STATES, MASTER_CITIES, MASTER_AREAS } from '../geographyMaster';
 import OtpVerificationModal from './OtpVerificationModal';
 import GoogleLocationPicker from './GoogleLocationPicker';
 import { getBusinessImageUrl, getCategoryFallbackImage, hasUploadedBusinessImage } from '../utils/businessImage';

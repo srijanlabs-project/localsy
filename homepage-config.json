@@ -1,0 +1,193 @@
+{
+  "heroBanners": [
+    {
+      "id": "hero_roadpali",
+      "localityId": "roadpali",
+      "title": "Hyper Local Directory for Roadpali",
+      "subtitle": "Explore verified family salons, trendy multi-cuisine dining hubs, and essential shops in the highly planned residential nodes of Roadpali. verified reviews, location-grabbing utilities, and dynamic approval tracking.",
+      "imageUrl": "https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=800&q=80",
+      "startDate": "2026-01-01",
+      "endDate": "2027-01-01",
+      "ctaLabel": "Explore Businesses",
+      "ctaType": "search_category",
+      "ctaTarget": "all",
+      "isActive": true
+    },
+    {
+      "id": "hero_kharghar",
+      "localityId": "kharghar",
+      "title": "Hyper Local Directory for Kharghar",
+      "subtitle": "Find premium cafes, sports courts, wellness lounges, and educational consulting services in the highly aesthetic node of Kharghar. verified reviews, location-grabbing utilities, and dynamic approval tracking.",
+      "imageUrl": "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=800&q=80",
+      "startDate": "2026-01-01",
+      "endDate": "2027-01-01",
+      "ctaLabel": "Explore Businesses",
+      "ctaType": "search_category",
+      "ctaTarget": "all",
+      "isActive": true
+    },
+    {
+      "id": "hero_kamothe",
+      "localityId": "kamothe",
+      "title": "Hyper Local Directory for Kamothe",
+      "subtitle": "Connect with local supermarkets, home appliances workshops, tuition centers, and dental clinics across Kamothe nodes. verified reviews, location-grabbing utilities, and dynamic approval tracking.",
+      "imageUrl": "https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=800&q=80",
+      "startDate": "2026-01-01",
+      "endDate": "2027-01-01",
+      "ctaLabel": "Explore Businesses",
+      "ctaType": "search_category",
+      "ctaTarget": "all",
+      "isActive": true
+    },
+    {
+      "id": "hero_panvel",
+      "localityId": "panvel",
+      "title": "Hyper Local Directory for Panvel",
+      "subtitle": "Explore the traditional commercial capital of Navi Mumbai with historical food courts, diagnostic healthcare clinics, and transport centers. verified reviews, location-grabbing utilities, and dynamic approval tracking.",
+      "imageUrl": "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=800&q=80",
+      "startDate": "2026-01-01",
+      "endDate": "2027-01-01",
+      "ctaLabel": "Explore Businesses",
+      "ctaType": "search_category",
+      "ctaTarget": "all",
+      "isActive": true
+    },
+    {
+      "id": "hero_taloja",
+      "localityId": "taloja",
+      "title": "Hyper Local Directory for Taloja",
+      "subtitle": "Discover massive tooling industries, hardware stores, professional technical consultants, and logistics solutions based in Taloja. verified reviews, location-grabbing utilities, and dynamic approval tracking.",
+      "imageUrl": "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=800&q=80",
+      "startDate": "2026-01-01",
+      "endDate": "2027-01-01",
+      "ctaLabel": "Explore Businesses",
+      "ctaType": "search_category",
+      "ctaTarget": "all",
+      "isActive": true
+    },
+    {
+      "id": "hero_kalamboli",
+      "localityId": "kalamboli",
+      "title": "Hyper Local Directory for Kalamboli",
+      "subtitle": "Connect with established spa academies, ladies dress boutiques, general medical stores, and trusted technical contractors across Kalamboli. verified reviews, location-grabbing utilities, and dynamic approval tracking.",
+      "imageUrl": "https://images.unsplash.com/photo-1521590832167-7bcbfaa6381f?auto=format&fit=crop&w=800&q=80",
+      "startDate": "2026-01-01",
+      "endDate": "2027-01-01",
+      "ctaLabel": "Explore Businesses",
+      "ctaType": "search_category",
+      "ctaTarget": "all",
+      "isActive": true
+    }
+  ],
+  "listingAds": [
+    {
+      "id": "ad_seed_1",
+      "title": "Roadpali Fiber Upgrade Drive",
+      "description": "Get high-speed broadband installation and starter plan offers this month.",
+      "badge": "Local ISP Sponsor",
+      "ctaText": "View Offer",
+      "backgroundColor": "#1d4ed8",
+      "imageUrl": "https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=640&q=80",
+      "startDate": "2026-01-01",
+      "endDate": "2026-12-31",
+      "actionType": "landing_page",
+      "targetUrl": "https://www.jio.com/fiber",
+      "localityIds": ["roadpali"],
+      "placementKey": "homepage_inline_primary",
+      "deviceTarget": "all",
+      "mobileRowPosition": 3,
+      "isActive": true
+    }
+  ],
+  "coupons": [
+    {
+      "id": "cpn1",
+      "businessId": "s1",
+      "code": "ELEMENTS20FEST",
+      "discount": "20% Off",
+      "description": "Get Flat 20% Off on Hair Spa treatments or global coloring.",
+      "expiryDate": "2026-06-30",
+      "usageCount": 22
+    },
+    {
+      "id": "cpn2",
+      "businessId": "s2",
+      "code": "MAJESTIC bridal",
+      "discount": "Rs 1000 Off",
+      "description": "Flat Rs 1000 discount voucher on complete bridal aesthetic packages.",
+      "expiryDate": "2026-06-15",
+      "usageCount": 15
+    }
+  ],
+  "homepageLayouts": [],
+  "localityCategoryLinks": [],
+  "communityItems": [
+    {
+      "id": "c1",
+      "type": "qa",
+      "title": "Any ladies-only beauty parlour open on Mondays in Kalamboli?",
+      "content": "All typical salons follow Monday weekly off schedules in Sector 11. Are there any custom professional options like Bliss Beauty or Kaya Parlour operating on Mondays? Thank you!",
+      "authorName": "Rutuja Sawant",
+      "authorPhone": "+91 91720 00192",
+      "createdAt": "2026-05-18T10:00:00Z",
+      "localityId": "kalamboli",
+      "likes": 9,
+      "answersCount": 2,
+      "answers": [
+        {
+          "id": "ca1",
+          "authorName": "Snehal Patil (Bliss Beauty)",
+          "content": "We at Bliss Beauty are open on Mondays! Please book a slot via phone to avoid cue waiting times.",
+          "createdAt": "2026-05-18T11:45:00Z"
+        },
+        {
+          "id": "ca2",
+          "authorName": "Ajay Mishra",
+          "content": "Cutz N Curlz is also open occasionally. You can verify through SMS check.",
+          "createdAt": "2026-05-18T12:15:00Z"
+        }
+      ]
+    },
+    {
+      "id": "c2",
+      "type": "deal",
+      "title": "Nail Art & Hair Highlighting Special: Flat 20% discount!",
+      "content": "Claim an exclusive 20% flat discount on premium hair botox treatments or hand nail gel styling this Friday at 5 Elements Family Salon. Activate OTP code to claim!",
+      "authorName": "Vikas Jaiswal (Proprietor)",
+      "createdAt": "2026-05-19T06:00:00Z",
+      "businessId": "s1",
+      "localityId": "roadpali",
+      "likes": 24,
+      "dealPromoCode": "ELEMENTS20FEST",
+      "isSponsored": true
+    },
+    {
+      "id": "c3",
+      "type": "event",
+      "title": "SME Hair Fashion Styling BootCamp & Academy Admissions",
+      "content": "Free 2-day bridal fashion live demonstration and styling workshop at Majestic Spa & Academy. High-quality certifications for junior beauticians.",
+      "authorName": "Priya Shinde (Majestic Director)",
+      "createdAt": "2026-05-19T14:00:00Z",
+      "businessId": "s2",
+      "localityId": "kalamboli",
+      "likes": 18,
+      "eventDate": "2026-05-25 11:00 AM"
+    }
+  ],
+  "apiConfiguration": {
+    "syncMode": "api",
+    "homepageConfigEndpoint": "/api/homepage-config",
+    "homepageDefaultsConfigEndpoint": "/api/homepage-defaults-config",
+    "localityRoutingConfigEndpoint": "/api/locality-routing-config",
+    "geographyConfigEndpoint": "/api/geography-config",
+    "taxonomyConfigEndpoint": "/api/business-taxonomy",
+    "seoDiscoveryConfigEndpoint": "/api/seo-discovery-config",
+    "scalableHomepageConfigEndpoint": "/api/scalable-homepage-config",
+    "resolvedHomepageEndpoint": "/api/resolved-homepage",
+    "publishResolvedHomepageEndpoint": "/api/resolved-homepage/publish",
+    "businessesEndpoint": "/api/businesses",
+    "auditEventsEndpoint": "/api/audit-events",
+    "autoSyncHomepage": true,
+    "autoSyncBusinesses": true
+  }
+}

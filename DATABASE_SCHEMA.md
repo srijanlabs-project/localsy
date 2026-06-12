@@ -257,3 +257,198 @@ AFTER INSERT OR UPDATE OR DELETE ON reviews
 FOR EACH ROW
 EXECUTE FUNCTION update_business_rating_cache();
 ```
+
+---
+
+## 4. Scalable Locality CMS Extensions
+
+The platform is now moving beyond a single JSON homepage configuration model. For 200-500+ localities with locality-aware banners, ads, sponsored listings, and dynamic content, the backend needs structured configuration and published payload support.
+
+```sql
+-- Locality routing source of truth
+CREATE TABLE platform_localities (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    slug TEXT NOT NULL,
+    subdomain TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'active',
+    cover_image TEXT NOT NULL DEFAULT '',
+    stats JSONB NOT NULL DEFAULT '{}'::jsonb,
+    carousel_images TEXT[] NOT NULL DEFAULT '{}',
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE platform_subdomains (
+    domain TEXT PRIMARY KEY,
+    locality_id TEXT NOT NULL REFERENCES platform_localities(id) ON DELETE CASCADE,
+    ssl_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    dns_status TEXT NOT NULL DEFAULT 'active',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE platform_pincode_mappings (
+    pincode TEXT PRIMARY KEY,
+    locality_id TEXT NOT NULL REFERENCES platform_localities(id) ON DELETE CASCADE,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Managed geography source of truth
+CREATE TABLE platform_states (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE platform_cities (
+    id TEXT PRIMARY KEY,
+    state_id TEXT NOT NULL REFERENCES platform_states(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE platform_areas (
+    id TEXT PRIMARY KEY,
+    city_id TEXT NOT NULL REFERENCES platform_cities(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    pincode TEXT NOT NULL,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- JSON-backed managed configuration keys currently stored in app_state
+-- `homepage_defaults_config`
+-- `seo_discovery_config`
+-- These remain API/DB managed, but are still persisted as versioned JSON blobs
+-- until they are promoted into fully normalized relational entities.
+
+-- Managed taxonomy source of truth
+CREATE TABLE business_categories (
+    id TEXT PRIMARY KEY,
+    legacy_id BIGINT NOT NULL,
+    name TEXT NOT NULL,
+    slug TEXT NOT NULL,
+    icon TEXT NOT NULL DEFAULT 'category_icon',
+    status TEXT NOT NULL DEFAULT 'active',
+    sort_order INT NOT NULL DEFAULT 1,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE business_subcategories (
+    id TEXT PRIMARY KEY,
+    legacy_id BIGINT NOT NULL,
+    parent_legacy_id BIGINT NOT NULL,
+    category_id TEXT NOT NULL REFERENCES business_categories(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    slug TEXT NOT NULL,
+    icon TEXT NOT NULL DEFAULT 'subcategory_icon',
+    status TEXT NOT NULL DEFAULT 'active',
+    sort_order INT NOT NULL DEFAULT 1,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Reusable homepage templates
+CREATE TABLE cms_templates (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    template_scope TEXT NOT NULL DEFAULT 'locality',
+    locality_ids TEXT[] NOT NULL DEFAULT '{}',
+    status TEXT NOT NULL DEFAULT 'active',
+    priority INT NOT NULL DEFAULT 100,
+    is_fallback BOOLEAN NOT NULL DEFAULT FALSE,
+    sections JSONB NOT NULL DEFAULT '[]'::jsonb,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Locality/category/pincode-level template assignment rules
+CREATE TABLE cms_template_assignments (
+    id TEXT PRIMARY KEY,
+    locality_id TEXT NOT NULL,
+    template_id TEXT NOT NULL REFERENCES cms_templates(id) ON DELETE CASCADE,
+    category_id TEXT,
+    subcategory_id TEXT,
+    pincode TEXT,
+    status TEXT NOT NULL DEFAULT 'active',
+    priority INT NOT NULL DEFAULT 100,
+    is_fallback BOOLEAN NOT NULL DEFAULT FALSE,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Targeted hero banners, ads, offers, content blocks, and sponsored listing campaigns
+CREATE TABLE cms_campaigns (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    campaign_type TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active',
+    priority INT NOT NULL DEFAULT 100,
+    is_fallback BOOLEAN NOT NULL DEFAULT FALSE,
+    start_date DATE,
+    end_date DATE,
+    device_target TEXT NOT NULL DEFAULT 'all',
+    placement_keys TEXT[] NOT NULL DEFAULT '{}',
+    targets JSONB NOT NULL DEFAULT '{}'::jsonb,
+    max_items INT,
+    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Published locality snapshots used for fast runtime delivery
+CREATE TABLE published_homepage_snapshots (
+    id TEXT PRIMARY KEY,
+    locality_id TEXT NOT NULL,
+    category_id TEXT,
+    subcategory_id TEXT,
+    pincode TEXT,
+    device_target TEXT NOT NULL DEFAULT 'all',
+    page_type TEXT NOT NULL DEFAULT 'homepage',
+    payload JSONB NOT NULL,
+    published_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_cms_template_assignments_locality
+    ON cms_template_assignments(locality_id);
+
+CREATE INDEX idx_cms_template_assignments_targeting
+    ON cms_template_assignments(locality_id, category_id, subcategory_id, pincode);
+
+CREATE INDEX idx_cms_campaigns_type_status
+    ON cms_campaigns(campaign_type, status, priority DESC);
+
+CREATE INDEX idx_published_homepage_snapshots_lookup
+    ON published_homepage_snapshots(locality_id, category_id, subcategory_id, pincode, device_target, page_type);
+
+CREATE INDEX idx_platform_subdomains_locality
+    ON platform_subdomains(locality_id);
+
+CREATE INDEX idx_platform_pincode_locality
+    ON platform_pincode_mappings(locality_id);
+
+CREATE INDEX idx_platform_cities_state
+    ON platform_cities(state_id);
+
+CREATE INDEX idx_platform_areas_city
+    ON platform_areas(city_id);
+
+CREATE INDEX idx_platform_areas_pincode
+    ON platform_areas(pincode);
+
+CREATE INDEX idx_business_subcategories_category
+    ON business_subcategories(category_id, sort_order);
+```
+
+### Runtime pattern
+
+1. Author templates, targeting rules, and campaigns in relational tables.
+2. Resolve the final homepage payload for a locality/category/device context on the backend.
+3. Publish the resolved output into `published_homepage_snapshots`.
+4. Serve published snapshots to frontend for fast reads and predictable overrides.

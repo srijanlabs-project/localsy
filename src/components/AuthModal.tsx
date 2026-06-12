@@ -12,6 +12,7 @@ interface AuthModalProps {
     email: string;
     role: string;
     userType: UserType;
+    sellerBusinessId?: string;
   }) => void;
 }
 
@@ -62,7 +63,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
     resetFlow(nextTab);
   };
 
-  const finalizeAuth = (payload: { token: string; user: { name: string; phone?: string; email: string; role: string; userType: UserType } }) => {
+  const finalizeAuth = (payload: { token: string; user: { name: string; phone?: string; email: string; role: string; userType: UserType; sellerBusinessId?: string } }) => {
     onAuthSuccess({
       token: payload.token,
       name: payload.user.name,
@@ -70,6 +71,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
       email: payload.user.email,
       role: payload.user.role,
       userType: payload.user.userType,
+      sellerBusinessId: payload.user.sellerBusinessId,
     });
     onClose();
   };
