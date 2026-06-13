@@ -18,7 +18,8 @@
     "qa:resolved-homepage": "node scripts/resolved-homepage-smoke.mjs",
     "qa:resolved-runtime": "node scripts/resolved-homepage-runtime-smoke.mjs",
     "qa:workflow": "node scripts/workflow-publish-smoke.mjs",
-    "release:check": "npm run lint && npm run build && node scripts/release-smoke.mjs",
+    "qa:uat": "npm run qa:access && npm run qa:public-writes && npm run qa:workflow && npm run qa:resolved-homepage && npm run qa:resolved-runtime && npm run lint && node --check server.js && npm run build",
+    "release:check": "npm run qa:uat && node scripts/release-smoke.mjs",
     "seo:submit-sitemaps": "node scripts/submit-search-console-sitemaps.mjs"
   },
   "dependencies": {

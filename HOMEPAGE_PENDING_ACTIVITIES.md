@@ -137,6 +137,9 @@ This file tracks the remaining homepage and admin work after the current round o
 - Added a repeatable resolved-homepage runtime smoke check for publish/read confidence.
   - `npm run qa:resolved-runtime` now boots the local server, publishes Roadpali resolved snapshots through the privileged API, reads them back through `/api/resolved-homepage`, and verifies published-snapshot selection for homepage and category-result contexts
   - the runtime smoke restores `users.json` and `scalable-cms-state.json` afterward so the workspace seed state stays clean between runs
+- Added a consolidated pre-UAT verification command.
+  - `npm run qa:uat` now runs access hardening, public-write protections, scalable workflow wiring, resolved-homepage static/runtime checks, TypeScript validation, `node --check server.js`, and the production build in one pass
+  - `npm run release:check` now reuses the same UAT gate before the release-specific smoke step
 - Added explicit resolver provenance for UAT verification.
   - `/api/resolved-homepage` now returns provenance details plus `X-Resolved-Homepage-Source`, `X-Resolved-Homepage-Strategy`, and snapshot/template ID headers when available
   - admin `Resolved Homepage Preview` now surfaces the same provenance so ops can validate whether a page came from a published snapshot or the live resolver and exactly which snapshot was selected

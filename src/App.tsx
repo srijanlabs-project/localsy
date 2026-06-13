@@ -958,6 +958,13 @@ const reindexHomepageSections = (sections: HomepageSection[]) => (
     }))
 );
 
+const applyHomepageSectionOrder = (sections: HomepageSection[]) => (
+  [...sections].map((section, index) => ({
+    ...section,
+    sortOrder: (index + 1) * 10,
+  }))
+);
+
 const instantiateHomepageTemplateSections = (
   locality: Locality,
   templates: HomepageSection[],
@@ -3091,7 +3098,7 @@ export default function App() {
     if (nextIndex < 0 || nextIndex >= sorted.length) return;
     const nextSections = [...sorted];
     [nextSections[index], nextSections[nextIndex]] = [nextSections[nextIndex], nextSections[index]];
-    const reorderedSections = reindexHomepageSections(nextSections);
+    const reorderedSections = applyHomepageSectionOrder(nextSections);
     const nextLayout = {
       ...baseLayout,
       sections: reorderedSections,

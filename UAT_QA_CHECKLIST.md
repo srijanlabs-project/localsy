@@ -85,6 +85,7 @@ This checklist is the pre-UAT execution pack for the scalable locality-aware hom
 - [ ] `npm run qa:resolved-homepage` passes before UAT publish sign-off.
 - [ ] `npm run qa:resolved-runtime` passes before UAT publish sign-off.
 - [ ] Resolved preview or network response clearly shows source/strategy/snapshot provenance during UAT publish verification.
+- [ ] `npm run qa:uat` passes as the consolidated pre-UAT gate.
 - [ ] Admin can create and edit hero banners.
 - [ ] Admin can create and edit offers.
 - [ ] Admin can create and edit listing ads.
