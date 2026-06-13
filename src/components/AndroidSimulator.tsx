@@ -20,7 +20,7 @@ interface AndroidSimulatorProps {
   userSession: UserSession;
   onUserSessionChange: (sess: UserSession) => void;
   viewedBusinessIds: string[];
-  onUnlockBusinessContact: (payload: { businessId: string; viewerName?: string; viewerPhone?: string }) => Promise<boolean> | boolean;
+  onUnlockBusinessContact: (payload: { businessId: string; viewerName?: string; viewerPhone?: string; unlockToken?: string }) => Promise<boolean> | boolean;
   onSubmitApplication: (bizData: Omit<Business, 'id' | 'status' | 'createdAt' | 'rating' | 'reviewCount'>) => void;
   onUpdateBusiness: (b: Business) => void;
   onAddReview: (bizId: string, userName: string, userPhone: string, rating: number, comment: string) => void;
@@ -73,6 +73,7 @@ export default function AndroidSimulator({
   // Verification dialog trigger state
   const [showOtpModal, setShowOtpModal] = useState(false);
   const [activeVerifyBizId, setActiveVerifyBizId] = useState<string | null>(null);
+  const [contactUnlockToken, setContactUnlockToken] = useState('');
 
   // Mobile ratings form states
   const [mRating, setMRating] = useState(5);
@@ -237,7 +238,8 @@ export default function AndroidSimulator({
     alert("Mobile review entry authorized and rating metrics generated!");
   };
 
-  const handleOtpSuccess = async (verifiedName: string, verifiedPhone: string) => {
+  const handleOtpSuccess = async (verifiedName: string, verifiedPhone: string, unlockToken?: string) => {
+    setContactUnlockToken(unlockToken || '');
     onUserSessionChange({
       role: userSession.role === 'buyer' ? 'buyer' : userSession.role,
       userName: `${verifiedName} (Verified Mobile)`,
@@ -250,6 +252,7 @@ export default function AndroidSimulator({
         businessId: activeVerifyBizId,
         viewerName: verifiedName,
         viewerPhone: verifiedPhone,
+        unlockToken,
       }));
       if (allowed === false) {
         return false;
@@ -267,6 +270,7 @@ export default function AndroidSimulator({
         businessId: bizId,
         viewerName: userSession.userName,
         viewerPhone: userSession.userPhone,
+        unlockToken: contactUnlockToken,
       })).then((allowed) => {
         if (allowed === false) {
           return;

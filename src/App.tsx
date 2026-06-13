@@ -1770,6 +1770,7 @@ export default function App() {
 
   useEffect(() => {
     if (homepageConfigLoadedRef.current || !homepageDefaultsConfigReady || !geographyConfigReady || !localityRoutingConfigReady || localities.length === 0) return;
+    const canReadPrivilegedHomepageConfig = Boolean(userSession.authToken) && ['admin', 'developer'].includes(userSession.role);
     let cancelled = false;
 
     Promise.all([
@@ -1821,32 +1822,43 @@ export default function App() {
         });
         homepageConfigLoadedRef.current = true;
       })
-      .catch(() => fetch(apiConfiguration.homepageConfigEndpoint)
-        .then((response) => (response.ok ? response.json() : null))
-        .then((data: { config?: Partial<HomepageConfigState> } | null) => {
-          if (cancelled || !data?.config) {
-            homepageConfigLoadedRef.current = true;
-            return;
-          }
-
-          const normalizedConfig = normalizeHomepageConfigState(data.config, localities, homepageDefaultsConfig.sectionTemplates);
-          setHeroBanners(normalizedConfig.heroBanners.map(normalizeStoredHeroBanner));
-          setListingAds(normalizedConfig.listingAds.map(normalizeStoredListingAd));
-          setCoupons(normalizedConfig.coupons.map(normalizeStoredCoupon));
-          setHomepageLayouts(normalizedConfig.homepageLayouts);
-          setLocalityCategoryLinks(normalizedConfig.localityCategoryLinks);
-          setCommunityItems(normalizedConfig.communityItems.map(normalizeStoredCommunityItem));
-          setApiConfiguration((prev) => normalizeApiConfiguration({
-            ...prev,
-            ...normalizedConfig.apiConfiguration,
-            lastHomepageSyncAt: normalizedConfig.apiConfiguration.lastHomepageSyncAt || prev.lastHomepageSyncAt
-          }));
-          lastHomepageSyncSignatureRef.current = JSON.stringify({
-            ...normalizedConfig,
-            apiConfiguration: getPersistableApiConfiguration(normalizedConfig.apiConfiguration)
-          });
+      .catch(() => {
+        if (!canReadPrivilegedHomepageConfig) {
           homepageConfigLoadedRef.current = true;
-        }))
+          return null;
+        }
+
+        return fetch(apiConfiguration.homepageConfigEndpoint, {
+          headers: {
+            ...getAuthHeaders(),
+          },
+        })
+          .then((response) => (response.ok ? response.json() : null))
+          .then((data: { config?: Partial<HomepageConfigState> } | null) => {
+            if (cancelled || !data?.config) {
+              homepageConfigLoadedRef.current = true;
+              return;
+            }
+
+            const normalizedConfig = normalizeHomepageConfigState(data.config, localities, homepageDefaultsConfig.sectionTemplates);
+            setHeroBanners(normalizedConfig.heroBanners.map(normalizeStoredHeroBanner));
+            setListingAds(normalizedConfig.listingAds.map(normalizeStoredListingAd));
+            setCoupons(normalizedConfig.coupons.map(normalizeStoredCoupon));
+            setHomepageLayouts(normalizedConfig.homepageLayouts);
+            setLocalityCategoryLinks(normalizedConfig.localityCategoryLinks);
+            setCommunityItems(normalizedConfig.communityItems.map(normalizeStoredCommunityItem));
+            setApiConfiguration((prev) => normalizeApiConfiguration({
+              ...prev,
+              ...normalizedConfig.apiConfiguration,
+              lastHomepageSyncAt: normalizedConfig.apiConfiguration.lastHomepageSyncAt || prev.lastHomepageSyncAt
+            }));
+            lastHomepageSyncSignatureRef.current = JSON.stringify({
+              ...normalizedConfig,
+              apiConfiguration: getPersistableApiConfiguration(normalizedConfig.apiConfiguration)
+            });
+            homepageConfigLoadedRef.current = true;
+          });
+      })
       .catch(() => {
         homepageConfigLoadedRef.current = true;
       });
@@ -1854,11 +1866,11 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [apiConfiguration.homepageConfigEndpoint, geographyConfigReady, homepageDefaultsConfig.sectionTemplates, homepageDefaultsConfigReady, localityRoutingConfigReady, localities]);
+  }, [apiConfiguration.homepageConfigEndpoint, geographyConfigReady, homepageDefaultsConfig.sectionTemplates, homepageDefaultsConfigReady, localityRoutingConfigReady, localities, userSession.authToken, userSession.role]);
 
   useEffect(() => {
     if (apiConfiguration.syncMode !== 'api' || !apiConfiguration.adLeadsEndpoint) return;
-    const canReadAdLeads = Boolean(userSession.authToken) && ['admin', 'moderator', 'developer'].includes(userSession.role);
+    const canReadAdLeads = Boolean(userSession.authToken) && ['admin', 'developer'].includes(userSession.role);
     if (!canReadAdLeads) return;
     let cancelled = false;
 
@@ -1883,9 +1895,19 @@ export default function App() {
 
   useEffect(() => {
     if (!apiConfiguration.scalableHomepageConfigEndpoint) return;
+    const canReadScalableHomepageConfig = Boolean(userSession.authToken) && ['admin', 'developer'].includes(userSession.role);
+    if (!canReadScalableHomepageConfig) {
+      scalableHomepageConfigLoadedRef.current = true;
+      setScalableHomepageConfigReady(true);
+      return;
+    }
     let cancelled = false;
 
-    fetch(apiConfiguration.scalableHomepageConfigEndpoint)
+    fetch(apiConfiguration.scalableHomepageConfigEndpoint, {
+      headers: {
+        ...getAuthHeaders(),
+      },
+    })
       .then((response) => (response.ok ? response.json() : null))
       .then((data: { config?: Partial<ScalableHomepageConfigState> } | null) => {
         if (cancelled) {
@@ -1911,7 +1933,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [apiConfiguration.scalableHomepageConfigEndpoint]);
+  }, [apiConfiguration.scalableHomepageConfigEndpoint, userSession.authToken, userSession.role]);
 
   // Track the business IDs for which the current user has performed OTP verification to unlock contact details
   const [viewedBusinessIds, setViewedBusinessIds] = useState<string[]>(() => {
@@ -3128,7 +3150,7 @@ export default function App() {
     setPincodeMappings(nextConfig.pincodeMappings);
     setDefaultLocalityId(nextConfig.defaultLocalityId);
 
-    const canWriteLocalityRouting = Boolean(userSession.authToken) && ['admin', 'moderator', 'developer'].includes(userSession.role);
+    const canWriteLocalityRouting = Boolean(userSession.authToken) && ['admin', 'developer'].includes(userSession.role);
     if (apiConfiguration.syncMode === 'api' && apiConfiguration.localityRoutingConfigEndpoint && canWriteLocalityRouting) {
       void persistLocalityRoutingConfigToServer(nextConfig).catch(() => {
         // Keep local state intact even if best-effort locality routing sync fails.
@@ -3508,7 +3530,11 @@ export default function App() {
   };
 
   const handleRefreshScalablePublishedSnapshots = async () => {
-    const response = await fetch(getScalableHomepageSnapshotsEndpoint());
+    const response = await fetch(getScalableHomepageSnapshotsEndpoint(), {
+      headers: {
+        ...getAuthHeaders(),
+      },
+    });
     if (!response.ok) {
       const payload = await response.json().catch(() => null) as { error?: string } | null;
       throw new Error(payload?.error || 'Failed to refresh scalable homepage snapshots');
@@ -3890,7 +3916,7 @@ export default function App() {
     publishLocalityIds: string[] = []
   ) => {
     if (!scalableHomepageConfigLoadedRef.current) return;
-    const canWriteScalableCms = Boolean(userSession.authToken) && ['admin', 'moderator', 'developer'].includes(userSession.role);
+    const canWriteScalableCms = Boolean(userSession.authToken) && ['admin', 'developer'].includes(userSession.role);
     if (!canWriteScalableCms) return;
     const nextConfig = mutator(normalizeScalableHomepageConfigState(scalableHomepageConfig));
     setScalableHomepageConfig(nextConfig);
@@ -3917,7 +3943,7 @@ export default function App() {
     if (!scalableHomepageConfigLoadedRef.current) {
       return true;
     }
-    const canWriteScalableCms = Boolean(userSession.authToken) && ['admin', 'moderator', 'developer'].includes(userSession.role);
+    const canWriteScalableCms = Boolean(userSession.authToken) && ['admin', 'developer'].includes(userSession.role);
     if (!canWriteScalableCms) {
       return true;
     }
@@ -3960,7 +3986,7 @@ export default function App() {
       );
       return;
     }
-    const canWriteScalableCms = Boolean(userSession.authToken) && ['admin', 'moderator', 'developer'].includes(userSession.role);
+    const canWriteScalableCms = Boolean(userSession.authToken) && ['admin', 'developer'].includes(userSession.role);
     if (!canWriteScalableCms) return;
     const scopedLocalityIds: string[] = Array.from(new Set<string>(
       homepageLayouts
@@ -4456,7 +4482,7 @@ export default function App() {
   };
 
   // Register that a user safely unlocked a verified listing via sliding Captcha and OTP validated
-  const handleRegisterContactView = async (payload: { businessId: string; viewerName?: string; viewerPhone?: string }) => {
+  const handleRegisterContactView = async (payload: { businessId: string; viewerName?: string; viewerPhone?: string; unlockToken?: string }) => {
     try {
       const businessId = payload.businessId;
       const deviceId = getOrCreateDeviceId();
@@ -4471,6 +4497,7 @@ export default function App() {
           viewerName: payload.viewerName || userSession.userName || 'Anonymous Explorer',
           viewerPhone: payload.viewerPhone || userSession.userPhone || '',
           deviceId,
+          unlockToken: payload.unlockToken || '',
         }),
       });
       const data = await response.json().catch(() => null);

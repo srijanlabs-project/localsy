@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { AreaMaster, CityMaster, GeographyConfigState, StateMaster } from '../types';
+import { downloadCsvTemplate, getTabularValue, readTabularFile, TabularRow } from '../utils/tabularImport';
 
 type GeographyConfigManagerProps = {
   config: GeographyConfigState;
@@ -31,6 +32,36 @@ const emptyAreaDraft = {
   pincode: '',
 };
 
+const resolveStateFromRow = (row: TabularRow, states: StateMaster[]) => {
+  const requestedId = getTabularValue(row, ['stateId', 'state id']);
+  if (requestedId) {
+    const directMatch = states.find((state) => state.id === requestedId);
+    if (directMatch) return directMatch;
+  }
+
+  const requestedName = getTabularValue(row, ['stateName', 'state']);
+  if (!requestedName) return null;
+  return states.find((state) => state.name.toLowerCase() === requestedName.toLowerCase()) || null;
+};
+
+const resolveCityFromRow = (row: TabularRow, cities: CityMaster[], states: StateMaster[]) => {
+  const requestedId = getTabularValue(row, ['cityId', 'city id']);
+  if (requestedId) {
+    const directMatch = cities.find((city) => city.id === requestedId);
+    if (directMatch) return directMatch;
+  }
+
+  const requestedName = getTabularValue(row, ['cityName', 'city']);
+  if (!requestedName) return null;
+  const state = resolveStateFromRow(row, states);
+  return (
+    cities.find((city) => (
+      city.name.toLowerCase() === requestedName.toLowerCase()
+      && (!state || city.stateId === state.id)
+    )) || null
+  );
+};
+
 export default function GeographyConfigManager({
   config,
   onSave,
@@ -44,6 +75,7 @@ export default function GeographyConfigManager({
   const [editingAreaId, setEditingAreaId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [statusText, setStatusText] = useState('');
+  const [isImporting, setIsImporting] = useState(false);
 
   useEffect(() => {
     setDraft(config);
@@ -172,6 +204,129 @@ export default function GeographyConfigManager({
     await persist(nextDraft, 'Area removed.');
   };
 
+  const importStates = async (file: File) => {
+    setIsImporting(true);
+    try {
+      const rows = await readTabularFile(file);
+      const nextDraft: GeographyConfigState = { ...draft, states: [...draft.states] };
+      let imported = 0;
+      let skipped = 0;
+
+      rows.forEach((row) => {
+        const name = getTabularValue(row, ['name', 'stateName', 'state']);
+        const id = slugify(getTabularValue(row, ['id', 'stateId', 'state id']) || name);
+        if (!name || !id) {
+          skipped += 1;
+          return;
+        }
+
+        const nextState: StateMaster = { id, name };
+        const existingIndex = nextDraft.states.findIndex((state) => state.id === id);
+        if (existingIndex >= 0) {
+          nextDraft.states[existingIndex] = nextState;
+        } else {
+          nextDraft.states.push(nextState);
+        }
+        imported += 1;
+      });
+
+      if (imported === 0) {
+        setStatusText('No valid state rows found in the uploaded file.');
+        return;
+      }
+
+      setDraft(nextDraft);
+      await persist(nextDraft, `Imported ${imported} states${skipped ? `, skipped ${skipped} rows.` : '.'}`);
+    } catch (error) {
+      setStatusText(error instanceof Error ? error.message : 'Failed to import state file.');
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const importCities = async (file: File) => {
+    setIsImporting(true);
+    try {
+      const rows = await readTabularFile(file);
+      const nextDraft: GeographyConfigState = { ...draft, cities: [...draft.cities] };
+      let imported = 0;
+      let skipped = 0;
+
+      rows.forEach((row) => {
+        const name = getTabularValue(row, ['name', 'cityName', 'city']);
+        const state = resolveStateFromRow(row, draft.states);
+        const id = slugify(getTabularValue(row, ['id', 'cityId', 'city id']) || name);
+        if (!name || !id || !state) {
+          skipped += 1;
+          return;
+        }
+
+        const nextCity: CityMaster = { id, stateId: state.id, name };
+        const existingIndex = nextDraft.cities.findIndex((city) => city.id === id);
+        if (existingIndex >= 0) {
+          nextDraft.cities[existingIndex] = nextCity;
+        } else {
+          nextDraft.cities.push(nextCity);
+        }
+        imported += 1;
+      });
+
+      if (imported === 0) {
+        setStatusText('No valid city rows found in the uploaded file.');
+        return;
+      }
+
+      setDraft(nextDraft);
+      await persist(nextDraft, `Imported ${imported} cities${skipped ? `, skipped ${skipped} rows.` : '.'}`);
+    } catch (error) {
+      setStatusText(error instanceof Error ? error.message : 'Failed to import city file.');
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const importAreas = async (file: File) => {
+    setIsImporting(true);
+    try {
+      const rows = await readTabularFile(file);
+      const nextDraft: GeographyConfigState = { ...draft, areas: [...draft.areas] };
+      let imported = 0;
+      let skipped = 0;
+
+      rows.forEach((row) => {
+        const name = getTabularValue(row, ['name', 'areaName', 'area', 'locality', 'subLocality', 'sub locality']);
+        const city = resolveCityFromRow(row, draft.cities, draft.states);
+        const pincode = getTabularValue(row, ['pincode', 'pin']).replace(/\D/g, '').slice(0, 6);
+        const id = slugify(getTabularValue(row, ['id', 'areaId', 'localityId', 'subLocalityId']) || `${name}-${pincode}`);
+        if (!name || !city || pincode.length !== 6 || !id) {
+          skipped += 1;
+          return;
+        }
+
+        const nextArea: AreaMaster = { id, cityId: city.id, name, pincode };
+        const existingIndex = nextDraft.areas.findIndex((area) => area.id === id);
+        if (existingIndex >= 0) {
+          nextDraft.areas[existingIndex] = nextArea;
+        } else {
+          nextDraft.areas.push(nextArea);
+        }
+        imported += 1;
+      });
+
+      if (imported === 0) {
+        setStatusText('No valid locality / sub-locality rows found in the uploaded file.');
+        return;
+      }
+
+      setDraft(nextDraft);
+      await persist(nextDraft, `Imported ${imported} localities / sub-localities${skipped ? `, skipped ${skipped} rows.` : '.'}`);
+    } catch (error) {
+      setStatusText(error instanceof Error ? error.message : 'Failed to import locality file.');
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -195,6 +350,108 @@ export default function GeographyConfigManager({
       )}
 
       <div className="grid gap-4 xl:grid-cols-3">
+        <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3 space-y-3">
+          <div>
+            <div className="text-xs font-bold text-slate-900">Excel Import: States</div>
+            <p className="mt-1 text-[11px] text-slate-500">
+              Upload state master rows as native `.xlsx` / `.xls` files or Excel-exported `.csv`, `.tsv`, and tab-separated text.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => downloadCsvTemplate('state-template.csv', ['id', 'name'], [['maharashtra', 'Maharashtra']])}
+              className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-700"
+            >
+              Download State Template
+            </button>
+            <label className="cursor-pointer rounded-md bg-indigo-600 px-3 py-1.5 text-[11px] font-bold text-white">
+              Upload States
+              <input
+                type="file"
+                accept=".xlsx,.xls,.csv,.tsv,.txt"
+                className="hidden"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) {
+                    void importStates(file);
+                  }
+                  event.currentTarget.value = '';
+                }}
+              />
+            </label>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3 space-y-3">
+          <div>
+            <div className="text-xs font-bold text-slate-900">Excel Import: Cities</div>
+            <p className="mt-1 text-[11px] text-slate-500">
+              Upload native Excel or exported flat files. Use `stateId` or `stateName` so city rows land under the right parent state.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => downloadCsvTemplate('city-template.csv', ['stateId', 'id', 'name'], [['maharashtra', 'navi-mumbai', 'Navi Mumbai']])}
+              className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-700"
+            >
+              Download City Template
+            </button>
+            <label className="cursor-pointer rounded-md bg-sky-600 px-3 py-1.5 text-[11px] font-bold text-white">
+              Upload Cities
+              <input
+                type="file"
+                accept=".xlsx,.xls,.csv,.tsv,.txt"
+                className="hidden"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) {
+                    void importCities(file);
+                  }
+                  event.currentTarget.value = '';
+                }}
+              />
+            </label>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3 space-y-3">
+          <div>
+            <div className="text-xs font-bold text-slate-900">Excel Import: Locality / Sub-locality</div>
+            <p className="mt-1 text-[11px] text-slate-500">
+              Current geography master stores locality and sub-locality rows as managed areas under a city with pincode.
+              Include `stateId` or `stateName`, `cityId` or `cityName`, plus `id`, `name`, and `pincode`.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => downloadCsvTemplate('locality-template.csv', ['stateId', 'stateName', 'cityId', 'cityName', 'id', 'name', 'pincode'], [['maharashtra', 'Maharashtra', 'navi-mumbai', 'Navi Mumbai', 'roadpali', 'Roadpali', '410218']])}
+              className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-700"
+            >
+              Download Locality Template
+            </button>
+            <label className="cursor-pointer rounded-md bg-emerald-600 px-3 py-1.5 text-[11px] font-bold text-white">
+              Upload Localities
+              <input
+                type="file"
+                accept=".xlsx,.xls,.csv,.tsv,.txt"
+                className="hidden"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) {
+                    void importAreas(file);
+                  }
+                  event.currentTarget.value = '';
+                }}
+              />
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-3">
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-3">
           <div className="flex items-center justify-between">
             <div className="text-xs font-bold text-slate-900">States</div>
@@ -204,7 +461,7 @@ export default function GeographyConfigManager({
           </div>
           <input value={stateDraft.name} onChange={(e) => setStateDraft((prev) => ({ ...prev, name: e.target.value }))} placeholder="State name" className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px]" />
           <input value={stateDraft.id} onChange={(e) => setStateDraft((prev) => ({ ...prev, id: e.target.value }))} placeholder="State ID" className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-mono" />
-          <button type="button" onClick={saveState} disabled={isSaving} className="rounded-lg bg-indigo-600 px-3 py-2 text-[11px] font-bold text-white disabled:opacity-50">
+          <button type="button" onClick={saveState} disabled={isSaving || isImporting} className="rounded-lg bg-indigo-600 px-3 py-2 text-[11px] font-bold text-white disabled:opacity-50">
             {editingStateId ? 'Update State' : 'Create State'}
           </button>
           <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
@@ -236,7 +493,7 @@ export default function GeographyConfigManager({
           </select>
           <input value={cityDraft.name} onChange={(e) => setCityDraft((prev) => ({ ...prev, name: e.target.value }))} placeholder="City name" className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px]" />
           <input value={cityDraft.id} onChange={(e) => setCityDraft((prev) => ({ ...prev, id: e.target.value }))} placeholder="City ID" className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-mono" />
-          <button type="button" onClick={saveCity} disabled={isSaving} className="rounded-lg bg-indigo-600 px-3 py-2 text-[11px] font-bold text-white disabled:opacity-50">
+          <button type="button" onClick={saveCity} disabled={isSaving || isImporting} className="rounded-lg bg-indigo-600 px-3 py-2 text-[11px] font-bold text-white disabled:opacity-50">
             {editingCityId ? 'Update City' : 'Create City'}
           </button>
           <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
@@ -272,7 +529,7 @@ export default function GeographyConfigManager({
           <input value={areaDraft.name} onChange={(e) => setAreaDraft((prev) => ({ ...prev, name: e.target.value }))} placeholder="Area name" className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px]" />
           <input value={areaDraft.id} onChange={(e) => setAreaDraft((prev) => ({ ...prev, id: e.target.value }))} placeholder="Area ID" className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-mono" />
           <input value={areaDraft.pincode} onChange={(e) => setAreaDraft((prev) => ({ ...prev, pincode: e.target.value.replace(/\D/g, '').slice(0, 6) }))} placeholder="Pincode" className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-mono" />
-          <button type="button" onClick={saveArea} disabled={isSaving} className="rounded-lg bg-indigo-600 px-3 py-2 text-[11px] font-bold text-white disabled:opacity-50">
+          <button type="button" onClick={saveArea} disabled={isSaving || isImporting} className="rounded-lg bg-indigo-600 px-3 py-2 text-[11px] font-bold text-white disabled:opacity-50">
             {editingAreaId ? 'Update Area' : 'Create Area'}
           </button>
           <div className="max-h-80 space-y-2 overflow-y-auto pr-1">

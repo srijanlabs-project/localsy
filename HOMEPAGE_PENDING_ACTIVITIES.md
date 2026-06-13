@@ -110,6 +110,61 @@ This file tracks the remaining homepage and admin work after the current round o
 - Hardened relational scalable CMS persistence.
   - scalable CMS table sync now uses transactional upserts plus scoped pruning instead of deleting and reinserting every CMS row on each save
   - table-backed scalable CMS reads now preserve mirrored metadata such as `seededFromLegacy`, keeping reseed/ownership guardrails accurate after relational loads
+- Tightened published homepage snapshot resolution for public reads.
+  - resolved homepage reads now fall back to the best matching published snapshot by locality/category/subcategory/pincode/placement/device/page-type specificity instead of only exact ID hits
+  - the public portal now clears stale resolved-homepage state if a context fetch fails instead of continuing to render the previous snapshot payload
+- Hardened scalable CMS access and public write protection.
+  - scalable CMS config and snapshot read endpoints now require privileged auth instead of being publicly readable
+  - browser-originated public/admin write requests now reject cross-origin origins, and public throttled responses include `Retry-After`
+- Reduced exposure of broad admin homepage configuration payloads.
+  - the full `/api/homepage-config` blob is now privileged-read only, while public runtime bootstrap stays on scoped/public endpoints
+  - admin fallback reads now send auth headers before using the full homepage config recovery path
+- Aligned admin UI visibility with the stricter privileged API model.
+  - limited internal roles now stay in the moderation-facing admin workspace instead of seeing advanced operations/CMS sections that require platform-admin or developer privileges
+  - bulk upload, taxonomy mapping, operations workspace, and advanced homepage CMS subsections are hidden until a privileged account is active
+- Aligned client-side background sync permissions with the stricter server model.
+  - moderator sessions no longer attempt privileged locality-routing, scalable CMS, or ad-lead admin fetches that the server would reject
+  - platform-admin and developer roles remain the only browser sessions that trigger privileged scalable/config sync flows
+- Added a repeatable access hardening smoke check.
+  - `npm run qa:access` now verifies privileged read/write gates and role-aware admin workspace guards from the current codebase
+  - this gives the pre-UAT access hardening stream a lightweight regression check alongside lint/build
+- Added a repeatable scalable homepage workflow smoke check.
+  - `npm run qa:workflow` now verifies the publish/delete/reseed/snapshot/template/assignment/campaign pipeline is still wired from server routes through app handlers into the admin console
+  - this gives the pre-UAT homepage/admin flow checklist a lightweight regression check alongside the access smoke, lint, and build steps
+- Added a repeatable resolved-homepage smoke check for UAT stability.
+  - `npm run qa:resolved-homepage` now verifies resolved-homepage route wiring, published-snapshot selection, authoritative portal use of resolved payloads, and managed Roadpali/Kalamboli launch content coverage
+  - this gives the pre-UAT resolver/read-path stream a lightweight regression check alongside `qa:workflow`, `qa:access`, lint, and build
+- Added a repeatable resolved-homepage runtime smoke check for publish/read confidence.
+  - `npm run qa:resolved-runtime` now boots the local server, publishes Roadpali resolved snapshots through the privileged API, reads them back through `/api/resolved-homepage`, and verifies published-snapshot selection for homepage and category-result contexts
+  - the runtime smoke restores `users.json` and `scalable-cms-state.json` afterward so the workspace seed state stays clean between runs
+- Added explicit resolver provenance for UAT verification.
+  - `/api/resolved-homepage` now returns provenance details plus `X-Resolved-Homepage-Source`, `X-Resolved-Homepage-Strategy`, and snapshot/template ID headers when available
+  - admin `Resolved Homepage Preview` now surfaces the same provenance so ops can validate whether a page came from a published snapshot or the live resolver and exactly which snapshot was selected
+- Split the remaining admin configuration and operations surfaces into focused subsections.
+  - platform config now has dedicated `API & Sync`, `Taxonomy`, `Geography Master`, `Homepage Defaults`, and `SEO` subtabs
+  - `Geography & Routing` now has dedicated `Locality Pages`, `Pincode Routing`, and `Category URLs` subtabs
+  - `Ads & Offers` now has dedicated `Offers`, `Ad Banners`, and `Lead Inbox` subtabs
+  - ops teams can switch one subsection at a time instead of scrolling through stacked long pages
+- Added native Excel-friendly admin imports for managed taxonomy and geography.
+  - business taxonomy now supports downloadable category/subcategory templates plus `.xlsx`, `.xls`, CSV, or tab-separated uploads
+  - geography config now supports downloadable state, city, and locality/sub-locality templates plus `.xlsx`, `.xls`, CSV, or tab-separated uploads
+  - import flows upsert existing IDs and create new records without code changes
+- Added inline subcategory creation from admin listing workflows.
+  - taxonomy mapping can create a missing subcategory without leaving the current listing
+  - listing status editing and backend listing edit modal can create and immediately select a new subcategory in context
+- Hardened public contact unlock writes with verified OTP grant enforcement.
+  - `/api/contact-unlock/verify-otp` now returns a short-lived unlock grant token after successful OTP verification
+  - `/api/contact-unlock/record-view` now requires that verified grant for anonymous contact unlock writes instead of trusting only the submitted phone number
+  - portal and simulator flows now carry the verified unlock grant through the contact-view write path
+- Tightened public-write challenge integrity and privileged auth registration writes.
+  - `/api/auth/register` now enforces the same trusted-origin browser write gate as other privileged mutation routes
+  - public registration OTP verify and contact unlock OTP verify now cross-check the signed challenge token against the persisted OTP challenge record before completing verification
+- Added a repeatable public-write hardening smoke check.
+  - `npm run qa:public-writes` now verifies throttle coverage on current public write routes plus the OTP-grant and trusted-origin protections on the highest-risk auth/contact flows
+  - this gives the pre-UAT abuse-protection stream a lightweight regression check alongside `qa:access`, `qa:workflow`, lint, and build
+- Seeded launch-ready managed content for the first UAT localities.
+  - `homepage-config.json` now contains curated Roadpali and Kalamboli hero banners, hero stats, active listing ads, locality-targeted offers, published updates, locality-category links, and explicit homepage layouts
+  - the seeded layouts use managed section records so the legacy-to-scalable sync path has real locality homepage structure to publish for UAT
 - Added entity-level scalable CMS mutation endpoints and admin wiring.
   - server now exposes dedicated create/update/delete routes for scalable templates, assignments, and campaigns
   - admin template, assignment, and campaign mutations now use entity-focused API calls instead of only sending the full scalable CMS config blob
@@ -194,9 +249,8 @@ This file tracks the remaining homepage and admin work after the current round o
 1. Security + access hardening.
    - verify route-level admin gating for remaining write endpoints
    - hide internal/admin-only UI from public users where still exposed
-   - add `Strict-Transport-Security`
-   - add `Content-Security-Policy`
-   - add basic abuse protection on public write flows
+   - verify `Strict-Transport-Security` and `Content-Security-Policy` in the deployed UAT environment
+   - extend abuse protection review beyond auth/contact/ad-lead/audit flows only if new public write surfaces are introduced
 2. Resolver/publish stability.
    - make sure homepage reads come from the intended resolved/scalable path for UAT localities
    - verify publish flow for locality/category/page variants
@@ -209,11 +263,13 @@ This file tracks the remaining homepage and admin work after the current round o
    - section combinations
    - empty-state handling
    - admin create/edit/publish flows
+   - execution checklist now captured in `UAT_QA_CHECKLIST.md`
 5. Launch content for selected UAT localities.
    - hero banners
    - offers
    - featured businesses
    - updates
+   - Roadpali and Kalamboli seed content is now present in managed config; remaining work is UAT review/tuning and any additional locality rollout content
 
 ### P0: Scalable Locality CMS Rebuild
 

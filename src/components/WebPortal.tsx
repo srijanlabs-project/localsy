@@ -244,7 +244,7 @@ interface WebPortalProps {
   savedBusinessIds: string[];
   onToggleSavedBusiness: (businessId: string) => void;
   buyerActivityEvents: BuyerActivityEvent[];
-  onUnlockBusinessContact: (payload: { businessId: string; viewerName?: string; viewerPhone?: string }) => Promise<boolean> | boolean;
+  onUnlockBusinessContact: (payload: { businessId: string; viewerName?: string; viewerPhone?: string; unlockToken?: string }) => Promise<boolean> | boolean;
   onSubmitApplication: (bizData: Omit<Business, 'id' | 'status' | 'createdAt' | 'rating' | 'reviewCount'>) => void;
   onUpdateBusiness: (b: Business) => void;
   onAddReview: (bizId: string, userName: string, userPhone: string, rating: number, comment: string) => void;
@@ -352,6 +352,7 @@ export default function WebPortal({
   // OTP modal visibility controls
   const [showOtpModal, setShowOtpModal] = useState(false);
   const [otpTargetBiz, setOtpTargetBiz] = useState<Business | null>(null);
+  const [contactUnlockToken, setContactUnlockToken] = useState('');
 
   // Application / Registration Form states
   const [name, setName] = useState('');
@@ -549,20 +550,21 @@ export default function WebPortal({
     })
     .join(', ');
   const todayIso = new Date().toISOString().slice(0, 10);
-  const cmsHeroBanners = resolvedHomepagePayload?.heroBanners && resolvedHomepagePayload.heroBanners.length > 0
-    ? resolvedHomepagePayload.heroBanners
+  const hasResolvedHomepagePayload = resolvedHomepagePayload !== null;
+  const cmsHeroBanners = hasResolvedHomepagePayload
+    ? (resolvedHomepagePayload?.heroBanners || [])
     : heroBanners;
-  const cmsListingAds = resolvedHomepagePayload?.listingAds && resolvedHomepagePayload.listingAds.length > 0
-    ? resolvedHomepagePayload.listingAds
+  const cmsListingAds = hasResolvedHomepagePayload
+    ? (resolvedHomepagePayload?.listingAds || [])
     : listingAds;
-  const cmsCoupons = resolvedHomepagePayload?.offers && resolvedHomepagePayload.offers.length > 0
-    ? resolvedHomepagePayload.offers
+  const cmsCoupons = hasResolvedHomepagePayload
+    ? (resolvedHomepagePayload?.offers || [])
     : coupons;
-  const cmsCommunityItems = resolvedHomepagePayload?.contentBlocks && resolvedHomepagePayload.contentBlocks.length > 0
-    ? resolvedHomepagePayload.contentBlocks
+  const cmsCommunityItems = hasResolvedHomepagePayload
+    ? (resolvedHomepagePayload?.contentBlocks || [])
     : communityItems;
-  const resolvedHomepageSections = resolvedHomepagePayload?.sections && resolvedHomepagePayload.sections.length > 0
-    ? resolvedHomepagePayload.sections
+  const resolvedHomepageSections = hasResolvedHomepagePayload
+    ? (resolvedHomepagePayload?.sections || [])
     : [];
   const resolvedSectionBusinessIdsBySection = resolvedHomepagePayload?.sectionBusinessIdsBySection || {};
   const resolvedSponsoredBusinessIds = new Set(
@@ -606,7 +608,12 @@ export default function WebPortal({
     fetch(`${apiConfiguration.resolvedHomepageEndpoint}?${params.toString()}`)
       .then((response) => (response.ok ? response.json() : null))
       .then((data: { payload?: ResolvedHomepagePayload; source?: 'published_snapshot' | 'live_resolver' } | null) => {
-        if (cancelled || !data?.payload) return;
+        if (cancelled) return;
+        if (!data?.payload) {
+          setResolvedHomepagePayload(null);
+          setResolvedHomepageSource('legacy_fallback');
+          return;
+        }
         setResolvedHomepagePayload(data.payload);
         setResolvedHomepageSource(data.source || 'live_resolver');
       })
@@ -1287,7 +1294,7 @@ export default function WebPortal({
     return homepageLayouts[0] || null;
   }, [homepageLayouts, currentLocality.id]);
   const activeHomepageSections = useMemo(() => {
-    const sections = resolvedHomepageSections.length > 0
+    const sections = hasResolvedHomepagePayload
       ? resolvedHomepageSections
       : (activeHomepageLayout?.sections || []);
     return [...sections]
@@ -1296,7 +1303,7 @@ export default function WebPortal({
       .filter((section) => section.visible)
       .filter((section) => matchesDateWindow(section.startDate, section.endDate))
       .filter((section) => matchesTargeting(section.localityIds, section.pincodes));
-  }, [activeHomepageLayout, resolvedHomepageSections, todayIso, activeLocalityId, savedPincode]);
+  }, [activeHomepageLayout, hasResolvedHomepagePayload, resolvedHomepageSections, todayIso, activeLocalityId, savedPincode]);
   const quickCategoryIds = homepageDefaultsConfig?.searchShortcutCategoryIds?.length
     ? homepageDefaultsConfig.searchShortcutCategoryIds
     : ['food-restaurants', 'health-medical', 'home-services', 'beauty-wellness', 'shopping-retail', 'professional-services'];
@@ -2789,7 +2796,8 @@ export default function WebPortal({
   };
 
   // Triggered on OTP Verification success
-  const handleOtpSuccess = async (verifiedName: string, verifiedPhone: string) => {
+  const handleOtpSuccess = async (verifiedName: string, verifiedPhone: string, unlockToken?: string) => {
+    setContactUnlockToken(unlockToken || '');
     // Authenticate the user session globally
     onUserSessionChange({
       role: userSession.role === 'buyer' ? 'buyer' : userSession.role,
@@ -2804,6 +2812,7 @@ export default function WebPortal({
         businessId: otpTargetBiz.id,
         viewerName: verifiedName,
         viewerPhone: verifiedPhone,
+        unlockToken,
       }));
       if (!allowed) {
         return false;
@@ -2834,6 +2843,7 @@ export default function WebPortal({
         businessId: biz.id,
         viewerName: userSession.userName,
         viewerPhone: userSession.userPhone,
+        unlockToken: contactUnlockToken,
       })).then((allowed) => {
         if (allowed === false) {
           return;
@@ -5202,7 +5212,7 @@ export default function WebPortal({
                       }}
                       className="bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] px-3.5 py-1.5 rounded-lg font-bold transition font-mono shadow-sm inline-flex items-center gap-1.5"
                     >
-                      <Lock className="w-3.5 h-3.5" /> Authenticate Phone via simulated SMS OTP
+                      <Lock className="w-3.5 h-3.5" /> Authenticate Phone via SMS OTP
                     </button>
                   </div>
                 )}

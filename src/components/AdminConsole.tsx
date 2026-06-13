@@ -294,11 +294,123 @@ const getPublicLocalityUrl = (locality?: Locality | null) => {
   return `https://www.localisy.in/${localitySlug}`;
 };
 
+const slugifyAdminValue = (value: string) => value
+  .toLowerCase()
+  .trim()
+  .replace(/&/g, ' and ')
+  .replace(/[^a-z0-9]+/g, '-')
+  .replace(/^-+|-+$/g, '');
+
+const buildUniqueAdminId = (seed: string, takenIds: Set<string>) => {
+  const baseId = slugifyAdminValue(seed);
+  if (!baseId) return '';
+  if (!takenIds.has(baseId)) return baseId;
+  let suffix = 2;
+  while (takenIds.has(`${baseId}-${suffix}`)) {
+    suffix += 1;
+  }
+  return `${baseId}-${suffix}`;
+};
+
 type AdminWorkspaceTab = 'moderation' | 'listing-status' | 'bulk-upload' | 'taxonomy-mapping' | 'data-audit';
 type ListingStatusFilter = 'all' | 'approved' | 'rejected' | 'pending';
 type AdminConsoleSurface = 'admin' | 'operations';
 type AdminOperationsSection = 'listings' | 'homepage' | 'campaigns' | 'geography' | 'content' | 'platform';
 type HomepageCmsSubtab = 'layout' | 'hero' | 'publish' | 'templates' | 'assignments' | 'campaigns' | 'insights';
+type PlatformConfigSubtab = 'api' | 'taxonomy' | 'geography' | 'defaults' | 'seo';
+type GeographyWorkspaceSubtab = 'localities' | 'routing' | 'links';
+type CampaignWorkspaceSubtab = 'offers' | 'ads' | 'leads';
+
+type InlineSubcategoryCreatorProps = {
+  categoryId: string;
+  disabled?: boolean;
+  canCreate: boolean;
+  onAssign: (subcategoryId: string) => void;
+  onCreate: (categoryId: string, name: string) => Promise<string | null>;
+};
+
+function InlineSubcategoryCreator({
+  categoryId,
+  disabled,
+  canCreate,
+  onAssign,
+  onCreate,
+}: InlineSubcategoryCreatorProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [name, setName] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [errorText, setErrorText] = useState('');
+
+  if (!canCreate) return null;
+
+  return (
+    <div className="space-y-1">
+      <button
+        type="button"
+        disabled={!categoryId || disabled}
+        onClick={() => {
+          setIsOpen((previous) => !previous);
+          setErrorText('');
+        }}
+        className="inline-flex items-center gap-1 rounded-md border border-dashed border-indigo-300 bg-indigo-50 px-2 py-1 text-[10px] font-bold text-indigo-700 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+      >
+        <PlusCircle className="h-3 w-3" />
+        <span>Create subcategory</span>
+      </button>
+
+      {isOpen && (
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            value={name}
+            disabled={isSaving || disabled}
+            onChange={(event) => setName(event.target.value)}
+            placeholder="New subcategory name"
+            className="min-w-[12rem] flex-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px]"
+          />
+          <button
+            type="button"
+            disabled={!name.trim() || isSaving || disabled}
+            onClick={async () => {
+              setIsSaving(true);
+              setErrorText('');
+              try {
+                const nextSubcategoryId = await onCreate(categoryId, name);
+                if (nextSubcategoryId) {
+                  onAssign(nextSubcategoryId);
+                  setName('');
+                  setIsOpen(false);
+                }
+              } catch (error) {
+                setErrorText(error instanceof Error ? error.message : 'Failed to create subcategory.');
+              } finally {
+                setIsSaving(false);
+              }
+            }}
+            className="rounded-md bg-indigo-600 px-2.5 py-1 text-[10px] font-bold text-white disabled:opacity-50"
+          >
+            {isSaving ? 'Saving...' : 'Save'}
+          </button>
+          <button
+            type="button"
+            disabled={isSaving}
+            onClick={() => {
+              setIsOpen(false);
+              setName('');
+              setErrorText('');
+            }}
+            className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-bold text-slate-700"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
+      {errorText && (
+        <div className="text-[10px] text-rose-600">{errorText}</div>
+      )}
+    </div>
+  );
+}
 
 type OrderedCategoryPickerProps = {
   label: string;
@@ -611,6 +723,8 @@ export default function AdminConsole({
 }: AdminConsoleProps) {
   // Internal infrastructure controls are hidden from public-facing admin UI.
   const showInternalTopology = false;
+  const consoleRole = String(userSession?.role || '');
+  const canUsePrivilegedAdminWorkspace = ['admin', 'developer'].includes(consoleRole);
   const [newLocName, setNewLocName] = useState('');
   const [newLocSubdomain, setNewLocSubdomain] = useState('');
   const [newLocDesc, setNewLocDesc] = useState('');
@@ -627,6 +741,9 @@ export default function AdminConsole({
   const [listingStatusFilter, setListingStatusFilter] = useState<ListingStatusFilter>('all');
   const [operationsSection, setOperationsSection] = useState<AdminOperationsSection>('homepage');
   const [homepageCmsSubtab, setHomepageCmsSubtab] = useState<HomepageCmsSubtab>('layout');
+  const [platformConfigSubtab, setPlatformConfigSubtab] = useState<PlatformConfigSubtab>('api');
+  const [geographyWorkspaceSubtab, setGeographyWorkspaceSubtab] = useState<GeographyWorkspaceSubtab>('localities');
+  const [campaignWorkspaceSubtab, setCampaignWorkspaceSubtab] = useState<CampaignWorkspaceSubtab>('offers');
   const [listingStatusPage, setListingStatusPage] = useState(1);
   const [auditPage, setAuditPage] = useState(1);
   const [importPreviewPage, setImportPreviewPage] = useState(1);
@@ -686,6 +803,18 @@ export default function AdminConsole({
     () => buildHeroStatDraftsFromTemplates(homepageDefaultsConfig?.heroStatTemplates),
     [homepageDefaultsConfig]
   );
+
+  useEffect(() => {
+    if (!canUsePrivilegedAdminWorkspace && consoleSurface !== 'admin') {
+      setConsoleSurface('admin');
+    }
+  }, [canUsePrivilegedAdminWorkspace, consoleSurface]);
+
+  useEffect(() => {
+    if (!canUsePrivilegedAdminWorkspace && ['bulk-upload', 'taxonomy-mapping'].includes(adminWorkspaceTab)) {
+      setAdminWorkspaceTab('moderation');
+    }
+  }, [adminWorkspaceTab, canUsePrivilegedAdminWorkspace]);
 
   const [couponBusinessId, setCouponBusinessId] = useState('');
   const [couponTitle, setCouponTitle] = useState('');
@@ -868,6 +997,33 @@ export default function AdminConsole({
   const [resolvedPreviewResult, setResolvedPreviewResult] = useState<{
     source: 'published_snapshot' | 'live_resolver' | 'legacy_fallback';
     payload: ResolvedHomepagePayload;
+    resolution?: {
+      source: 'published_snapshot' | 'live_resolver';
+      strategy: string;
+      usedPublished: boolean;
+      requestedSnapshotId: string;
+      legacySnapshotId: string;
+      snapshot?: {
+        id: string;
+        localityId: string;
+        categoryId: string;
+        subcategoryId: string;
+        pincode: string;
+        placementKey: string;
+        deviceTarget: string;
+        pageType: string;
+        publishedAt: string;
+        updatedAt: string;
+        score: number;
+      } | null;
+      template?: {
+        id?: string;
+        name?: string;
+        templateScope?: string;
+        isFallback?: boolean;
+      } | null;
+      resolvedAt?: string;
+    };
   } | null>(null);
   const [resolvedPreviewLoading, setResolvedPreviewLoading] = useState(false);
   const [publishScopeDraft, setPublishScopeDraft] = useState<{
@@ -1261,7 +1417,7 @@ export default function AdminConsole({
     id: sectionType,
     label: homepageSectionLabels[sectionType]
   }));
-  const operationsSectionTabs: Array<{ id: AdminOperationsSection; label: string; description: string }> = [
+  const allOperationsSectionTabs: Array<{ id: AdminOperationsSection; label: string; description: string }> = [
     { id: 'listings', label: 'Listings', description: 'Activate, deactivate, and review uploaded business records.' },
     { id: 'homepage', label: 'Homepage CMS', description: 'Manage layouts, hero banners, publishing, templates, and preview states.' },
     { id: 'campaigns', label: 'Ads & Offers', description: 'Run ad banners, offers, campaigns, and monitor incoming ad leads.' },
@@ -1269,8 +1425,9 @@ export default function AdminConsole({
     { id: 'content', label: 'Updates & Community', description: 'Publish locality updates and community-led content blocks.' },
     { id: 'platform', label: 'Platform Config', description: 'Control API sync, taxonomy, defaults, SEO discovery, and core configuration.' }
   ];
+  const operationsSectionTabs = allOperationsSectionTabs.filter((tab) => canUsePrivilegedAdminWorkspace || tab.id === 'listings');
   const selectedOperationsTab = operationsSectionTabs.find((tab) => tab.id === operationsSection) || operationsSectionTabs[0];
-  const homepageCmsSubtabs: Array<{ id: HomepageCmsSubtab; label: string; description: string }> = [
+  const allHomepageCmsSubtabs: Array<{ id: HomepageCmsSubtab; label: string; description: string }> = [
     { id: 'layout', label: 'Layout', description: 'Arrange homepage sections for the selected locality.' },
     { id: 'hero', label: 'Hero Banners', description: 'Manage hero banners and top stat cards.' },
     { id: 'publish', label: 'Publish', description: 'Publish locality pages, reseed legacy data, and manage scope-based releases.' },
@@ -1279,7 +1436,39 @@ export default function AdminConsole({
     { id: 'campaigns', label: 'Campaign Builder', description: 'Manage scalable campaigns for hero, ads, offers, content, and sponsorships.' },
     { id: 'insights', label: 'Snapshots & Preview', description: 'Review published snapshots and load resolved homepage previews.' },
   ];
+  const homepageCmsSubtabs = allHomepageCmsSubtabs.filter((tab) => canUsePrivilegedAdminWorkspace || ['layout', 'hero'].includes(tab.id));
   const selectedHomepageCmsSubtab = homepageCmsSubtabs.find((tab) => tab.id === homepageCmsSubtab) || homepageCmsSubtabs[0];
+  const allPlatformConfigSubtabs: Array<{ id: PlatformConfigSubtab; label: string; description: string }> = [
+    { id: 'api', label: 'API & Sync', description: 'Control platform endpoints, sync mode, and publish service paths.' },
+    { id: 'taxonomy', label: 'Taxonomy', description: 'Manage categories, subcategories, and spreadsheet-driven taxonomy imports.' },
+    { id: 'geography', label: 'Geography Master', description: 'Manage states, cities, localities, and Excel-friendly geography uploads.' },
+    { id: 'defaults', label: 'Homepage Defaults', description: 'Control shared hero defaults and reusable homepage preset values.' },
+    { id: 'seo', label: 'SEO Discovery', description: 'Manage discovery and SEO defaults for locality/category page generation.' },
+  ];
+  const geographyWorkspaceSubtabs: Array<{ id: GeographyWorkspaceSubtab; label: string; description: string }> = [
+    { id: 'localities', label: 'Locality Pages', description: 'Create locality pages and review the live locality catalog in one place.' },
+    { id: 'routing', label: 'Pincode Routing', description: 'Maintain fallback routing, active pincode bindings, and manual area mapping.' },
+    { id: 'links', label: 'Category URLs', description: 'Create and manage locality plus category landing routes without scrolling through routing tools.' },
+  ];
+  const selectedGeographyWorkspaceSubtab = geographyWorkspaceSubtabs.find((tab) => tab.id === geographyWorkspaceSubtab) || geographyWorkspaceSubtabs[0];
+  const campaignWorkspaceSubtabs: Array<{ id: CampaignWorkspaceSubtab; label: string; description: string }> = [
+    { id: 'offers', label: 'Offers', description: 'Create and manage locality-targeted offers and deal inventory.' },
+    { id: 'ads', label: 'Ad Banners', description: 'Configure banner creatives, placements, targeting, and run states.' },
+    { id: 'leads', label: 'Lead Inbox', description: 'Review enquiries generated from banner lead forms without mixing them into authoring.' },
+  ];
+  const selectedCampaignWorkspaceSubtab = campaignWorkspaceSubtabs.find((tab) => tab.id === campaignWorkspaceSubtab) || campaignWorkspaceSubtabs[0];
+  const platformConfigSubtabs = allPlatformConfigSubtabs.filter((tab) => {
+    if (tab.id === 'taxonomy') return Boolean(businessTaxonomy);
+    if (tab.id === 'geography') return Boolean(geographyConfig);
+    if (tab.id === 'defaults') return Boolean(homepageDefaultsConfig);
+    if (tab.id === 'seo') return Boolean(seoDiscoveryConfig);
+    return true;
+  });
+  const selectedPlatformConfigSubtab = platformConfigSubtabs.find((tab) => tab.id === platformConfigSubtab) || platformConfigSubtabs[0];
+  const workspaceSurfaceTabs = [
+    { id: 'admin', label: 'Admin Workspace' },
+    { id: 'operations', label: 'Operations Workspace' },
+  ].filter((surface) => canUsePrivilegedAdminWorkspace || surface.id === 'admin');
 
   const selectedHomepageLayout = homepageLayouts.find((layout) => layout.localityId === homepageLocalityId);
   const homepageSections = [...(selectedHomepageLayout?.sections || [])].sort((a, b) => a.sortOrder - b.sortOrder);
@@ -1695,13 +1884,18 @@ export default function AdminConsole({
     (safeListingStatusPage - 1) * LISTING_STATUS_PAGE_SIZE,
     safeListingStatusPage * LISTING_STATUS_PAGE_SIZE
   );
-  const adminWorkspaceTabs: Array<{ id: AdminWorkspaceTab; label: string; count?: number }> = [
+  const allAdminWorkspaceTabs: Array<{ id: AdminWorkspaceTab; label: string; count?: number }> = [
     { id: 'moderation', label: 'Moderation', count: pendingBusinesses.length },
     { id: 'listing-status', label: 'Listing Status', count: businesses.length },
     { id: 'bulk-upload', label: 'Bulk Upload' },
     { id: 'taxonomy-mapping', label: 'Taxonomy Mapping', count: unmappedTaxonomyBusinesses.length },
     { id: 'data-audit', label: 'Data Audit', count: auditLogs.length }
   ];
+  const adminWorkspaceTabs = allAdminWorkspaceTabs.filter((tab) => (
+    canUsePrivilegedAdminWorkspace
+      ? true
+      : !['bulk-upload', 'taxonomy-mapping'].includes(tab.id)
+  ));
   const AUDIT_PAGE_SIZE = 20;
   const auditTotalPages = Math.max(1, Math.ceil(auditLogs.length / AUDIT_PAGE_SIZE));
   const safeAuditPage = Math.min(auditPage, auditTotalPages);
@@ -1717,6 +1911,64 @@ export default function AdminConsole({
   const triggerNotification = (msg: string) => {
     setAdminNotification(msg);
     setTimeout(() => setAdminNotification(null), 3000);
+  };
+
+  const createInlineSubcategory = async (categoryId: string, rawName: string) => {
+    if (!businessTaxonomy || !onSaveBusinessTaxonomy) {
+      throw new Error('Taxonomy save is not available in this workspace.');
+    }
+
+    const category = businessTaxonomy.categories.find((entry) => entry.id === categoryId);
+    if (!category) {
+      throw new Error('Choose a valid category before creating a subcategory.');
+    }
+
+    const name = rawName.trim();
+    if (!name) {
+      throw new Error('Subcategory name is required.');
+    }
+
+    const existingMatch = businessTaxonomy.subcategories.find((subcategory) => (
+      subcategory.categoryId === categoryId &&
+      subcategory.name.toLowerCase() === name.toLowerCase()
+    ));
+    if (existingMatch) {
+      triggerNotification(`Subcategory already exists: ${existingMatch.name}`);
+      return existingMatch.id;
+    }
+
+    const nextId = buildUniqueAdminId(name, new Set(businessTaxonomy.subcategories.map((subcategory) => subcategory.id)));
+    if (!nextId) {
+      throw new Error('Could not generate a valid subcategory ID.');
+    }
+
+    const siblingCount = businessTaxonomy.subcategories.filter((subcategory) => subcategory.categoryId === categoryId).length;
+    const nextTaxonomy: BusinessTaxonomyState = {
+      ...businessTaxonomy,
+      subcategories: [
+        ...businessTaxonomy.subcategories,
+        {
+          id: nextId,
+          legacyId: Date.now(),
+          parentLegacyId: category.legacyId,
+          categoryId,
+          name,
+          slug: nextId,
+          icon: 'subcategory_icon',
+          status: 'active',
+          sortOrder: siblingCount + 1,
+        },
+      ],
+      metadata: {
+        ...businessTaxonomy.metadata,
+        seededFromCode: false,
+        updatedAt: new Date().toISOString(),
+      },
+    };
+
+    await onSaveBusinessTaxonomy(nextTaxonomy);
+    triggerNotification(`Created subcategory: ${name}`);
+    return nextId;
   };
 
   const getTaxonomyDraft = (biz: Business) => (
@@ -3062,6 +3314,7 @@ export default function AdminConsole({
       setResolvedPreviewResult({
         source: payload.source || 'live_resolver',
         payload: payload.payload,
+        resolution: payload.resolution,
       });
       triggerNotification(`Loaded ${payload.source || 'resolved'} homepage preview.`);
     } catch (error) {
@@ -3455,12 +3708,14 @@ export default function AdminConsole({
             <p className="text-xs text-slate-500 mt-0.5">
               Open admin review tools and operations management in separate full-width tabs so each workspace has enough room.
             </p>
+            {!canUsePrivilegedAdminWorkspace && (
+              <p className="mt-1 text-[11px] font-semibold text-amber-700">
+                Limited role access: advanced CMS, imports, taxonomy, and platform configuration stay hidden until you sign in as a platform admin or developer.
+              </p>
+            )}
           </div>
           <div className="flex flex-wrap gap-2">
-            {[
-              { id: 'admin', label: 'Admin Workspace' },
-              { id: 'operations', label: 'Operations Workspace' },
-            ].map((surface) => (
+            {workspaceSurfaceTabs.map((surface) => (
               <button
                 key={surface.id}
                 type="button"
@@ -3811,6 +4066,12 @@ export default function AdminConsole({
                                 <option key={subcategory.id} value={subcategory.id}>{subcategory.name}</option>
                               ))}
                             </select>
+                            <InlineSubcategoryCreator
+                              categoryId={business.categoryId}
+                              canCreate={Boolean(onSaveBusinessTaxonomy && businessTaxonomy)}
+                              onCreate={createInlineSubcategory}
+                              onAssign={(subcategoryId) => onUpdateBusiness({ ...business, subcategoryId })}
+                            />
                           </div>
                         ) : (
                           <span>{getCategoryById(business.categoryId)?.name || business.categoryId} / {getSubcategoryById(business.subcategoryId)?.name || business.subcategoryId}</span>
@@ -4201,17 +4462,25 @@ export default function AdminConsole({
                           <option key={category.id} value={category.id}>{category.name}</option>
                         ))}
                       </select>
-                      <select
-                        value={draft.subcategoryId}
-                        onChange={(e) => updateTaxonomyDraft(biz.id, { subcategoryId: e.target.value })}
-                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs"
-                        disabled={!draft.categoryId}
-                      >
-                        <option value="">{draft.categoryId ? 'Select master subcategory' : 'Choose category first'}</option>
-                        {getSubcategoriesForCategory(draft.categoryId).map((subcategory) => (
-                          <option key={subcategory.id} value={subcategory.id}>{subcategory.name}</option>
-                        ))}
-                      </select>
+                      <div className="space-y-2">
+                        <select
+                          value={draft.subcategoryId}
+                          onChange={(e) => updateTaxonomyDraft(biz.id, { subcategoryId: e.target.value })}
+                          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs"
+                          disabled={!draft.categoryId}
+                        >
+                          <option value="">{draft.categoryId ? 'Select master subcategory' : 'Choose category first'}</option>
+                          {getSubcategoriesForCategory(draft.categoryId).map((subcategory) => (
+                            <option key={subcategory.id} value={subcategory.id}>{subcategory.name}</option>
+                          ))}
+                        </select>
+                        <InlineSubcategoryCreator
+                          categoryId={draft.categoryId}
+                          canCreate={Boolean(onSaveBusinessTaxonomy && businessTaxonomy)}
+                          onCreate={createInlineSubcategory}
+                          onAssign={(subcategoryId) => updateTaxonomyDraft(biz.id, { subcategoryId })}
+                        />
+                      </div>
                       <button
                         type="button"
                         onClick={() => saveTaxonomyMapping(biz)}
@@ -4358,6 +4627,104 @@ export default function AdminConsole({
           </div>
         )}
 
+        {operationsSection === 'platform' && (
+          <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm space-y-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <h4 className="text-sm font-extrabold text-slate-950">Platform Config Sections</h4>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Split platform settings into smaller operational views so updates are faster and safer to review.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {platformConfigSubtabs.map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setPlatformConfigSubtab(tab.id)}
+                    className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+                      platformConfigSubtab === tab.id
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {selectedPlatformConfigSubtab && (
+              <div className="rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2 text-[11px] text-indigo-900">
+                <span className="font-bold">{selectedPlatformConfigSubtab.label}:</span> {selectedPlatformConfigSubtab.description}
+              </div>
+            )}
+          </div>
+        )}
+
+        {operationsSection === 'geography' && (
+          <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm space-y-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <h4 className="text-sm font-extrabold text-slate-950">Geography & Routing Sections</h4>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Keep page provisioning, routing, and landing-path management separated so ops work stays faster to scan.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {geographyWorkspaceSubtabs.map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setGeographyWorkspaceSubtab(tab.id)}
+                    className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+                      geographyWorkspaceSubtab === tab.id
+                        ? 'bg-sky-600 text-white'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-xl border border-sky-100 bg-sky-50 px-3 py-2 text-[11px] text-sky-900">
+              <span className="font-bold">{selectedGeographyWorkspaceSubtab.label}:</span> {selectedGeographyWorkspaceSubtab.description}
+            </div>
+          </div>
+        )}
+
+        {operationsSection === 'campaigns' && (
+          <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm space-y-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <h4 className="text-sm font-extrabold text-slate-950">Ads & Offers Sections</h4>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Separate offer creation, banner authoring, and lead review so campaign operations do not pile into one long screen.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {campaignWorkspaceSubtabs.map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setCampaignWorkspaceSubtab(tab.id)}
+                    className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+                      campaignWorkspaceSubtab === tab.id
+                        ? 'bg-amber-600 text-white'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-[11px] text-amber-900">
+              <span className="font-bold">{selectedCampaignWorkspaceSubtab.label}:</span> {selectedCampaignWorkspaceSubtab.description}
+            </div>
+          </div>
+        )}
+
         {/* Dynamic Mapping and DNS Status */}
         {showInternalTopology && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
           <div>
@@ -4409,7 +4776,7 @@ export default function AdminConsole({
         </div>}
 
         {/* Locality Spinner Form */}
-        {operationsSection === 'geography' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+        {operationsSection === 'geography' && geographyWorkspaceSubtab === 'localities' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
           <h3 className="text-lg font-bold text-slate-950 mb-1 flex items-center gap-2">
             <PlusCircle className="w-5 h-5 text-blue-600" />
             Create Hyper Local Business Page
@@ -4503,7 +4870,7 @@ export default function AdminConsole({
         </div>}
 
         {/* Existing Localities Grid Panel */}
-        {operationsSection === 'geography' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+        {operationsSection === 'geography' && geographyWorkspaceSubtab === 'localities' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
           <h4 className="text-xs font-bold font-mono text-slate-400 uppercase tracking-wider mb-3">
             Localities Databases ({filteredLocalities.length})
           </h4>
@@ -4536,7 +4903,7 @@ export default function AdminConsole({
         </div>}
 
         {/* Pincode Routing Master Config Panel */}
-        {operationsSection === 'geography' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+        {operationsSection === 'geography' && geographyWorkspaceSubtab === 'routing' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
           <div>
             <h3 className="text-base font-extrabold text-slate-950 flex items-center gap-2">
               <MapPin className="w-4 h-4 text-indigo-500" />
@@ -5011,210 +5378,214 @@ export default function AdminConsole({
           </div>
         </div>}
 
-        {operationsSection === 'platform' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <h3 className="text-base font-extrabold text-slate-950">Platform Configuration</h3>
-              <p className="text-[11px] text-slate-500 mt-1">
-                Control sync endpoints, fallback defaults, taxonomy, geography, and discovery settings for the platform.
-              </p>
-            </div>
-            <span className="text-[10px] font-mono text-slate-500 bg-slate-100 border border-slate-200 rounded-lg px-2.5 py-1">
-              {apiConfigDraft.syncMode.toUpperCase()}
-            </span>
-          </div>
-
-          <form onSubmit={handleSaveApiConfiguration} className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs">
-            <div className="grid grid-cols-2 gap-2">
-              <label className="space-y-1">
-                <span className="font-semibold text-slate-700">Sync mode</span>
-                <select
-                  value={apiConfigDraft.syncMode}
-                  onChange={(e) => setApiConfigDraft((prev) => ({ ...prev, syncMode: e.target.value as ApiConfiguration['syncMode'] }))}
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2"
-                >
-                  <option value="api">API + Local Fallback</option>
-                  <option value="local">Local Only</option>
-                </select>
-              </label>
-              <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-                <div className="font-semibold text-slate-700">Last sync</div>
-                <div className="mt-1 text-[11px] text-slate-500">
-                  {apiConfigDraft.lastHomepageSyncAt ? new Date(apiConfigDraft.lastHomepageSyncAt).toLocaleString() : 'Not synced yet'}
+        {operationsSection === 'platform' && <div className="space-y-4">
+          {platformConfigSubtab === 'api' && (
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-extrabold text-slate-950">Platform API & Sync</h3>
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Control sync endpoints, resolved homepage routes, and publish service paths.
+                  </p>
                 </div>
+                <span className="text-[10px] font-mono text-slate-500 bg-slate-100 border border-slate-200 rounded-lg px-2.5 py-1">
+                  {apiConfigDraft.syncMode.toUpperCase()}
+                </span>
               </div>
+
+              <form onSubmit={handleSaveApiConfiguration} className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs">
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="space-y-1">
+                    <span className="font-semibold text-slate-700">Sync mode</span>
+                    <select
+                      value={apiConfigDraft.syncMode}
+                      onChange={(e) => setApiConfigDraft((prev) => ({ ...prev, syncMode: e.target.value as ApiConfiguration['syncMode'] }))}
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2"
+                    >
+                      <option value="api">API + Local Fallback</option>
+                      <option value="local">Local Only</option>
+                    </select>
+                  </label>
+                  <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                    <div className="font-semibold text-slate-700">Last sync</div>
+                    <div className="mt-1 text-[11px] text-slate-500">
+                      {apiConfigDraft.lastHomepageSyncAt ? new Date(apiConfigDraft.lastHomepageSyncAt).toLocaleString() : 'Not synced yet'}
+                    </div>
+                  </div>
+                </div>
+
+                <label className="block space-y-1">
+                  <span className="font-semibold text-slate-700">Homepage config endpoint</span>
+                  <input
+                    value={apiConfigDraft.homepageConfigEndpoint}
+                    onChange={(e) => setApiConfigDraft((prev) => ({ ...prev, homepageConfigEndpoint: e.target.value }))}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono"
+                  />
+                </label>
+
+                <label className="block space-y-1">
+                  <span className="font-semibold text-slate-700">Ad leads endpoint</span>
+                  <input
+                    value={apiConfigDraft.adLeadsEndpoint || ''}
+                    onChange={(e) => setApiConfigDraft((prev) => ({ ...prev, adLeadsEndpoint: e.target.value }))}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono"
+                  />
+                </label>
+
+                <label className="block space-y-1">
+                  <span className="font-semibold text-slate-700">Homepage defaults endpoint</span>
+                  <input
+                    value={apiConfigDraft.homepageDefaultsConfigEndpoint || ''}
+                    onChange={(e) => setApiConfigDraft((prev) => ({ ...prev, homepageDefaultsConfigEndpoint: e.target.value }))}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono"
+                  />
+                </label>
+
+                <label className="block space-y-1">
+                  <span className="font-semibold text-slate-700">Locality routing endpoint</span>
+                  <input
+                    value={apiConfigDraft.localityRoutingConfigEndpoint || ''}
+                    onChange={(e) => setApiConfigDraft((prev) => ({ ...prev, localityRoutingConfigEndpoint: e.target.value }))}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono"
+                  />
+                </label>
+
+                <label className="block space-y-1">
+                  <span className="font-semibold text-slate-700">Geography endpoint</span>
+                  <input
+                    value={apiConfigDraft.geographyConfigEndpoint || ''}
+                    onChange={(e) => setApiConfigDraft((prev) => ({ ...prev, geographyConfigEndpoint: e.target.value }))}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono"
+                  />
+                </label>
+
+                <label className="block space-y-1">
+                  <span className="font-semibold text-slate-700">Taxonomy endpoint</span>
+                  <input
+                    value={apiConfigDraft.taxonomyConfigEndpoint || ''}
+                    onChange={(e) => setApiConfigDraft((prev) => ({ ...prev, taxonomyConfigEndpoint: e.target.value }))}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono"
+                  />
+                </label>
+
+                <label className="block space-y-1">
+                  <span className="font-semibold text-slate-700">SEO discovery endpoint</span>
+                  <input
+                    value={apiConfigDraft.seoDiscoveryConfigEndpoint || ''}
+                    onChange={(e) => setApiConfigDraft((prev) => ({ ...prev, seoDiscoveryConfigEndpoint: e.target.value }))}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono"
+                  />
+                </label>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="space-y-1">
+                    <span className="font-semibold text-slate-700">Scalable CMS endpoint</span>
+                    <input
+                      value={apiConfigDraft.scalableHomepageConfigEndpoint || ''}
+                      onChange={(e) => setApiConfigDraft((prev) => ({ ...prev, scalableHomepageConfigEndpoint: e.target.value }))}
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono"
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="font-semibold text-slate-700">Resolved homepage endpoint</span>
+                    <input
+                      value={apiConfigDraft.resolvedHomepageEndpoint || ''}
+                      onChange={(e) => setApiConfigDraft((prev) => ({ ...prev, resolvedHomepageEndpoint: e.target.value }))}
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono"
+                    />
+                  </label>
+                </div>
+
+                <label className="block space-y-1">
+                  <span className="font-semibold text-slate-700">Publish snapshots endpoint</span>
+                  <input
+                    value={apiConfigDraft.publishResolvedHomepageEndpoint || ''}
+                    onChange={(e) => setApiConfigDraft((prev) => ({ ...prev, publishResolvedHomepageEndpoint: e.target.value }))}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono"
+                  />
+                </label>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="space-y-1">
+                    <span className="font-semibold text-slate-700">Businesses endpoint</span>
+                    <input
+                      value={apiConfigDraft.businessesEndpoint}
+                      onChange={(e) => setApiConfigDraft((prev) => ({ ...prev, businessesEndpoint: e.target.value }))}
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono"
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="font-semibold text-slate-700">Audit endpoint</span>
+                    <input
+                      value={apiConfigDraft.auditEventsEndpoint}
+                      onChange={(e) => setApiConfigDraft((prev) => ({ ...prev, auditEventsEndpoint: e.target.value }))}
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono"
+                    />
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={apiConfigDraft.autoSyncHomepage}
+                      onChange={(e) => setApiConfigDraft((prev) => ({ ...prev, autoSyncHomepage: e.target.checked }))}
+                    />
+                    <span>Auto-sync homepage config</span>
+                  </label>
+                  <label className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={apiConfigDraft.autoSyncBusinesses}
+                      onChange={(e) => setApiConfigDraft((prev) => ({ ...prev, autoSyncBusinesses: e.target.checked }))}
+                    />
+                    <span>Auto-sync businesses</span>
+                  </label>
+                </div>
+
+                <div className="flex gap-2">
+                  <button type="submit" className="flex-1 rounded-lg bg-indigo-600 py-2 font-bold text-white hover:bg-indigo-700">
+                    Save API Settings
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onUpdateApiConfiguration?.(apiConfigDraft);
+                      onSyncHomepageConfig?.();
+                      triggerNotification('Homepage sync started.');
+                    }}
+                    className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 font-bold text-slate-700"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" />
+                    <span>Sync Now</span>
+                  </button>
+                </div>
+              </form>
             </div>
+          )}
 
-            <label className="block space-y-1">
-              <span className="font-semibold text-slate-700">Homepage config endpoint</span>
-              <input
-                value={apiConfigDraft.homepageConfigEndpoint}
-                onChange={(e) => setApiConfigDraft((prev) => ({ ...prev, homepageConfigEndpoint: e.target.value }))}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono"
-              />
-            </label>
-
-            <label className="block space-y-1">
-              <span className="font-semibold text-slate-700">Ad leads endpoint</span>
-              <input
-                value={apiConfigDraft.adLeadsEndpoint || ''}
-                onChange={(e) => setApiConfigDraft((prev) => ({ ...prev, adLeadsEndpoint: e.target.value }))}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono"
-              />
-            </label>
-
-            <label className="block space-y-1">
-              <span className="font-semibold text-slate-700">Homepage defaults endpoint</span>
-              <input
-                value={apiConfigDraft.homepageDefaultsConfigEndpoint || ''}
-                onChange={(e) => setApiConfigDraft((prev) => ({ ...prev, homepageDefaultsConfigEndpoint: e.target.value }))}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono"
-              />
-            </label>
-
-            <label className="block space-y-1">
-              <span className="font-semibold text-slate-700">Locality routing endpoint</span>
-              <input
-                value={apiConfigDraft.localityRoutingConfigEndpoint || ''}
-                onChange={(e) => setApiConfigDraft((prev) => ({ ...prev, localityRoutingConfigEndpoint: e.target.value }))}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono"
-              />
-            </label>
-
-            <label className="block space-y-1">
-              <span className="font-semibold text-slate-700">Geography endpoint</span>
-              <input
-                value={apiConfigDraft.geographyConfigEndpoint || ''}
-                onChange={(e) => setApiConfigDraft((prev) => ({ ...prev, geographyConfigEndpoint: e.target.value }))}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono"
-              />
-            </label>
-
-            <label className="block space-y-1">
-              <span className="font-semibold text-slate-700">Taxonomy endpoint</span>
-              <input
-                value={apiConfigDraft.taxonomyConfigEndpoint || ''}
-                onChange={(e) => setApiConfigDraft((prev) => ({ ...prev, taxonomyConfigEndpoint: e.target.value }))}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono"
-              />
-            </label>
-
-            <label className="block space-y-1">
-              <span className="font-semibold text-slate-700">SEO discovery endpoint</span>
-              <input
-                value={apiConfigDraft.seoDiscoveryConfigEndpoint || ''}
-                onChange={(e) => setApiConfigDraft((prev) => ({ ...prev, seoDiscoveryConfigEndpoint: e.target.value }))}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono"
-              />
-            </label>
-
-            <div className="grid grid-cols-2 gap-2">
-              <label className="space-y-1">
-                <span className="font-semibold text-slate-700">Scalable CMS endpoint</span>
-                <input
-                  value={apiConfigDraft.scalableHomepageConfigEndpoint || ''}
-                  onChange={(e) => setApiConfigDraft((prev) => ({ ...prev, scalableHomepageConfigEndpoint: e.target.value }))}
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono"
-                />
-              </label>
-              <label className="space-y-1">
-                <span className="font-semibold text-slate-700">Resolved homepage endpoint</span>
-                <input
-                  value={apiConfigDraft.resolvedHomepageEndpoint || ''}
-                  onChange={(e) => setApiConfigDraft((prev) => ({ ...prev, resolvedHomepageEndpoint: e.target.value }))}
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono"
-                />
-              </label>
-            </div>
-
-            <label className="block space-y-1">
-              <span className="font-semibold text-slate-700">Publish snapshots endpoint</span>
-              <input
-                value={apiConfigDraft.publishResolvedHomepageEndpoint || ''}
-                onChange={(e) => setApiConfigDraft((prev) => ({ ...prev, publishResolvedHomepageEndpoint: e.target.value }))}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono"
-              />
-            </label>
-
-            <div className="grid grid-cols-2 gap-2">
-              <label className="space-y-1">
-                <span className="font-semibold text-slate-700">Businesses endpoint</span>
-                <input
-                  value={apiConfigDraft.businessesEndpoint}
-                  onChange={(e) => setApiConfigDraft((prev) => ({ ...prev, businessesEndpoint: e.target.value }))}
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono"
-                />
-              </label>
-              <label className="space-y-1">
-                <span className="font-semibold text-slate-700">Audit endpoint</span>
-                <input
-                  value={apiConfigDraft.auditEventsEndpoint}
-                  onChange={(e) => setApiConfigDraft((prev) => ({ ...prev, auditEventsEndpoint: e.target.value }))}
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono"
-                />
-              </label>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <label className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={apiConfigDraft.autoSyncHomepage}
-                  onChange={(e) => setApiConfigDraft((prev) => ({ ...prev, autoSyncHomepage: e.target.checked }))}
-                />
-                <span>Auto-sync homepage config</span>
-              </label>
-              <label className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={apiConfigDraft.autoSyncBusinesses}
-                  onChange={(e) => setApiConfigDraft((prev) => ({ ...prev, autoSyncBusinesses: e.target.checked }))}
-                />
-                <span>Auto-sync businesses</span>
-              </label>
-            </div>
-
-            <div className="flex gap-2">
-              <button type="submit" className="flex-1 rounded-lg bg-indigo-600 py-2 font-bold text-white hover:bg-indigo-700">
-                Save API Settings
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  onUpdateApiConfiguration?.(apiConfigDraft);
-                  onSyncHomepageConfig?.();
-                  triggerNotification('Homepage sync started.');
-                }}
-                className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 font-bold text-slate-700"
-              >
-                <RefreshCw className="h-3.5 w-3.5" />
-                <span>Sync Now</span>
-              </button>
-            </div>
-          </form>
-
-          {businessTaxonomy && (
+          {platformConfigSubtab === 'taxonomy' && businessTaxonomy && (
             <BusinessTaxonomyManager
               taxonomy={businessTaxonomy}
               onSave={onSaveBusinessTaxonomy}
             />
           )}
 
-          {geographyConfig && (
+          {platformConfigSubtab === 'geography' && geographyConfig && (
             <GeographyConfigManager
               config={geographyConfig}
               onSave={onSaveGeographyConfig}
             />
           )}
 
-          {homepageDefaultsConfig && (
+          {platformConfigSubtab === 'defaults' && homepageDefaultsConfig && (
             <HomepageDefaultsManager
               config={homepageDefaultsConfig}
               onSave={onSaveHomepageDefaultsConfig}
             />
           )}
 
-          {seoDiscoveryConfig && (
+          {platformConfigSubtab === 'seo' && seoDiscoveryConfig && (
             <SeoDiscoveryManager
               config={seoDiscoveryConfig}
               localities={localities}
@@ -5608,6 +5979,11 @@ export default function AdminConsole({
                     <span className="rounded-full border border-emerald-200 bg-white px-2 py-0.5 font-mono text-emerald-800">
                       {resolvedPreviewResult.source}
                     </span>
+                    {resolvedPreviewResult.resolution?.strategy && (
+                      <span className="rounded-full border border-sky-200 bg-white px-2 py-0.5 font-mono text-sky-700">
+                        {resolvedPreviewResult.resolution.strategy}
+                      </span>
+                    )}
                     <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 font-mono text-slate-600">
                       {resolvedPreviewResult.payload.template?.name || 'No template'}
                     </span>
@@ -5618,6 +5994,24 @@ export default function AdminConsole({
                       {resolvedPreviewResult.payload.context.date}
                     </span>
                   </div>
+                  {resolvedPreviewResult.resolution && (
+                    <div className="rounded-lg border border-sky-100 bg-sky-50 px-3 py-2 text-[10px] text-sky-900 space-y-1">
+                      <div>
+                        <span className="font-bold">Resolver provenance:</span>{' '}
+                        {resolvedPreviewResult.resolution.usedPublished ? 'Published snapshot served' : 'Live resolver served'}
+                      </div>
+                      <div className="font-mono break-all">
+                        requested={resolvedPreviewResult.resolution.requestedSnapshotId}
+                        {resolvedPreviewResult.resolution.snapshot?.id ? ` | served=${resolvedPreviewResult.resolution.snapshot.id}` : ''}
+                        {resolvedPreviewResult.resolution.template?.id ? ` | template=${resolvedPreviewResult.resolution.template.id}` : ''}
+                      </div>
+                      {resolvedPreviewResult.resolution.snapshot && (
+                        <div className="font-mono break-all">
+                          score={resolvedPreviewResult.resolution.snapshot.score} | published={String(resolvedPreviewResult.resolution.snapshot.publishedAt || resolvedPreviewResult.resolution.snapshot.updatedAt || '').replace('T', ' ').slice(0, 16)}
+                        </div>
+                      )}
+                    </div>
+                  )}
                   <div className="rounded-lg border border-emerald-100 bg-white px-3 py-2 text-[10px] font-mono text-slate-600">
                     {[
                       `locality=${resolvedPreviewResult.payload.context.localityId}`,
@@ -6326,7 +6720,7 @@ export default function AdminConsole({
           )}
         </div>}
 
-        {operationsSection === 'campaigns' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+        {operationsSection === 'campaigns' && campaignWorkspaceSubtab === 'offers' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
           <h3 className="text-base font-extrabold text-slate-950">Offers & Deals Manager</h3>
           <form onSubmit={handleCreateCouponSubmit} className="space-y-3 text-xs">
             <select
@@ -6781,7 +7175,7 @@ export default function AdminConsole({
           </div>
         </div>}
 
-        {operationsSection === 'campaigns' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+        {operationsSection === 'campaigns' && campaignWorkspaceSubtab === 'ads' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
           <h3 className="text-base font-extrabold text-slate-950">Ad Banner Manager</h3>
           <form onSubmit={handleCreateListingAdSubmit} className="space-y-3 text-xs">
             <input
@@ -7244,7 +7638,7 @@ export default function AdminConsole({
           </div>
         </div>}
 
-        {operationsSection === 'campaigns' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-3">
+        {operationsSection === 'campaigns' && campaignWorkspaceSubtab === 'leads' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-3">
           <h3 className="text-base font-extrabold text-slate-950">Ad Lead Inbox</h3>
           <div className="max-h-56 overflow-y-auto space-y-2 pr-1">
             {adLeads.length === 0 ? (
@@ -7266,7 +7660,7 @@ export default function AdminConsole({
           </div>
         </div>}
 
-        {operationsSection === 'geography' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+        {operationsSection === 'geography' && geographyWorkspaceSubtab === 'links' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
           <h3 className="text-base font-extrabold text-slate-950">Locality + Category URL Mapper</h3>
           <form onSubmit={handleCreateLocalityCategoryLinkSubmit} className="space-y-3 text-xs">
             <select
@@ -7385,6 +7779,15 @@ export default function AdminConsole({
                       <option key={s.id} value={s.id}>{s.name}</option>
                     ))}
                   </select>
+                  <div className="mt-2">
+                    <InlineSubcategoryCreator
+                      categoryId={backendDraft.categoryId}
+                      disabled={!backendEditMode}
+                      canCreate={Boolean(onSaveBusinessTaxonomy && businessTaxonomy)}
+                      onCreate={createInlineSubcategory}
+                      onAssign={(subcategoryId) => setBackendDraft({ ...backendDraft, subcategoryId })}
+                    />
+                  </div>
                 </div>
                 <div>
                   <label className="block font-bold text-slate-500 mb-1">Uploaded Category Label</label>

@@ -34,8 +34,13 @@ This checklist is based on the current implementation in `src/App.tsx`, `src/com
 | Data layer | Homepage defaults config is backend-managed | Done | Default homepage section templates and fallback listing ad templates now load through `/api/homepage-defaults-config`. |
 | Data layer | SEO discovery config is backend-managed | Done | Route intents, locality SEO metadata, category labels, and fallback listing-name groups now load through `/api/seo-discovery-config`. |
 | Admin tooling | Geography config is editable from admin | Done | States, cities, and areas can now be managed from admin and saved through `/api/geography-config`. |
+| Admin tooling | Platform configuration UX is split into smaller subsections | Done | `Platform Config` now uses nested subtabs for API/sync, taxonomy, geography, homepage defaults, and SEO instead of stacking all managers into one long page. |
+| Admin tooling | Remaining operations workspaces are split into manageable subsections | Done | `Geography & Routing` and `Ads & Offers` now use focused subsections so locality pages, routing, links, offers, banners, and leads do not stack into one long operations page. |
+| Admin tooling | Taxonomy and geography support native Excel-friendly bulk imports | Done | Admin can download templates and upload `.xlsx`, `.xls`, `.csv`, `.tsv`, or tab-separated files for categories, subcategories, states, cities, and locality/sub-locality rows. |
+| Admin tooling | Admin listing flows can create subcategories inline | Done | Taxonomy mapping, listing status edits, and backend listing edits can create and immediately assign a new subcategory without leaving the listing workflow. |
 | Admin tooling | Homepage defaults are editable from admin | Done | Section templates and fallback listing ads can now be managed from admin and saved through `/api/homepage-defaults-config`. |
 | Admin tooling | Hero banner stat presets and launch defaults are admin-managed | Done | Hero stat templates plus default CTA and duration presets now come from managed homepage defaults instead of duplicated frontend constants. |
+| Content ops | First UAT localities now have managed launch content seeded | Done | `homepage-config.json` now seeds curated Roadpali and Kalamboli hero banners, layouts, ads, offers, updates, and locality-category links through the managed config path. |
 | Data layer | Runtime seed bootstrap no longer depends on `src/data.ts` | Done | Businesses now hydrate from `/api/businesses` and coupons/community bootstrap from `/api/homepage-config` backed by server-managed JSON files. |
 | Data layer | API mode no longer boots managed homepage state from localStorage | Done | Managed businesses, ads, hero banners, layouts, links, coupons, and community content now initialize server-first in API mode, with DB fallback seeded from managed JSON files. |
 | Codebase hygiene | Obsolete frontend seed payloads were removed from `src/data.ts` | Done | Legacy business, coupon, and community seed exports have been deleted now that runtime bootstrap is server-managed. |
@@ -56,6 +61,23 @@ This checklist is based on the current implementation in `src/App.tsx`, `src/com
 | Admin tooling | Legacy reseed is now safety-aware and ownership-visible | Done | Safe reseed now blocks when scalable-owned detached entities exist, admin shows legacy-vs-detached ownership counts, and force reseed requires explicit confirmation. |
 | Admin tooling | Scalable CMS records now expose ownership state and manual detach controls | Done | Template, assignment, and campaign cards now show legacy-managed vs detached vs scalable-owned state, and admins can detach legacy-seeded records without editing the content itself. |
 | Runtime | Scalable CMS relational persistence no longer rewrites whole tables on each save | Done | Server now upserts templates, assignments, campaigns, and snapshots transactionally, prunes only removed IDs, and preserves mirrored scalable metadata when reading from relational tables. |
+| Runtime | Published homepage reads now fall back to the best matching snapshot context | Done | Public resolved-homepage requests now reuse broader published snapshots when an exact device/category/pincode/placement match is absent, reducing unnecessary live resolver reads during rollout. |
+| Access control | Scalable CMS admin read APIs now require privileged auth | Done | `/api/scalable-homepage-config` and snapshot-history reads are no longer publicly readable and now align with the privileged write model. |
+| Access control | Full homepage config recovery blob is no longer publicly readable | Done | `/api/homepage-config` now requires privileged auth, while public runtime bootstrap continues through the scoped collection endpoints instead of the broad admin payload. |
+| Access control | Admin UI now hides privileged CMS/config sections for limited roles | Done | Moderator-style sessions stay on the moderation-facing workspace, while bulk import, taxonomy mapping, operations workspace, and advanced scalable CMS sections remain visible only to platform-admin/developer roles. |
+| Access control | Client-side privileged sync flows now match server-side role rules | Done | Moderator sessions no longer fire privileged locality-routing, scalable CMS, or ad-lead admin requests that require platform-admin/developer access on the server. |
+| QA | Access hardening smoke check now exists for guarded CMS/admin routes | Done | `npm run qa:access` statically verifies the current privileged read/write gates and role-aware admin workspace restrictions so access regressions are easier to catch before UAT. |
+| QA | Public write hardening smoke check now exists for auth/contact/audit paths | Done | `npm run qa:public-writes` verifies throttle coverage plus the current trusted-origin, OTP challenge integrity, and contact-unlock grant protections on the highest-risk public write flows. |
+| QA | Scalable homepage workflow smoke check now exists for publish/admin pipeline wiring | Done | `npm run qa:workflow` verifies the current publish/delete/reseed/snapshot/template/assignment/campaign pipeline is still wired across server routes, app handlers, and admin console actions before UAT. |
+| QA | Resolved homepage smoke check now exists for the public read path and UAT launch content | Done | `npm run qa:resolved-homepage` verifies resolved-homepage route wiring, authoritative portal consumption of resolved payloads, and managed Roadpali/Kalamboli launch content coverage. |
+| QA | Resolved homepage runtime smoke check now exists for end-to-end publish and readback | Done | `npm run qa:resolved-runtime` boots the server locally, publishes resolved homepage snapshots with privileged auth, reads them back through `/api/resolved-homepage`, verifies published-snapshot selection, and restores local seed state afterward. |
+| Admin tooling | Resolved homepage preview now exposes provenance for UAT verification | Done | Admin preview now shows source, selection strategy, requested snapshot ID, served snapshot ID, template ID, and publish timestamp so ops can verify published-vs-live behavior without digging through raw payloads. |
+| Runtime | Resolved homepage endpoint now exposes provenance headers | Done | `/api/resolved-homepage` now emits `X-Resolved-Homepage-Source`, `X-Resolved-Homepage-Strategy`, and snapshot/template IDs when available, which helps UAT confirm exactly what path served the page. |
+| Security | Public and admin browser write flows now reject cross-origin origins | Done | State-changing browser requests now validate origin/referer against the active host or configured trusted origins, and throttled public writes return `Retry-After` hints. |
+| Security | Security response headers are set by the server | Done | `Strict-Transport-Security` and `Content-Security-Policy` are now emitted from `server.js` as part of the current hardening layer. |
+| Security | Anonymous contact unlock writes now require proof of OTP verification | Done | Contact unlock OTP verification now issues a short-lived grant token, and `/api/contact-unlock/record-view` rejects anonymous writes that do not present that verified grant. |
+| Security | High-risk OTP verification flows now cross-check persisted challenge records | Done | Public registration and contact unlock OTP verification now validate the signed challenge token against the stored OTP challenge record before granting access or completing registration. |
+| Security | Privileged auth registration writes now use the trusted-origin guard | Done | `/api/auth/register` now rejects cross-origin browser writes the same way the other privileged mutation routes do. |
 | Admin tooling | Scalable CMS mutations now support entity-level template, assignment, and campaign APIs | Done | Server exposes dedicated entity CRUD routes and the admin now uses them for key template, assignment, and campaign edits instead of relying only on whole-config saves. |
 | Runtime | Snapshot publish/delete flows now update state from direct snapshot payloads | Done | Publish and delete endpoints now return updated published snapshots, and the app merges snapshot state directly instead of re-fetching the full scalable CMS config after each operation. |
 | Admin tooling | Published snapshot admin actions now use snapshot-scoped scalable CMS endpoints | Done | Admin can refresh published snapshots directly and single-snapshot deletion now uses the dedicated scalable snapshot route instead of only the generic scoped delete path. |
@@ -91,7 +113,6 @@ This checklist is based on the current implementation in `src/App.tsx`, `src/com
 | Data layer | Some operational state still relies on `localStorage` | Pending | `INITIAL_REVIEWS`, `INITIAL_CRM_CONTACTS`, audit logs, user session state, viewed-listing cache, and local-mode fallbacks still need a fuller managed persistence story. |
 | Data layer | Remaining operational/runtime state should move fully to API/database | Pending | Reviews, CRM contacts, audit logs, user session/view caches, local-mode fallback state, and any remaining legacy mirrors still need a fuller managed persistence story. |
 | Security | Public homepage flows need stronger production protection | Pending | Launch notes still call for server-side validation, rate limits, CSRF protection, and secure session handling. |
-| Security | Missing response headers should be added | Pending | `Strict-Transport-Security` and `Content-Security-Policy` are missing from the current production scan and should be added before release hardening is considered complete. |
 | Access control | Sandbox/admin-only controls need full production hardening | Pending | Repo notes still call out route-level admin gating and hiding internal tools from public users. |
 | Seller ops | Seller dashboard needs to be built | Done | Merchant workspace now locks to the seller-owned listing when available, shows real CRM/ad lead/offer/review counts, and keeps the existing campaign and CRM tools as the pre-UAT seller dashboard. |
 | Buyer ops | Buyer dashboard needs to be built | Done | Buyers now get a dedicated dashboard for saved listings, unlocked contacts, verified actions, and submitted reviews, all driven from managed app state instead of placeholder buttons. |
@@ -106,9 +127,8 @@ This checklist is based on the current implementation in `src/App.tsx`, `src/com
 1. Security + access hardening.
    - keep route-level admin gating complete for write APIs
    - hide internal/admin-only UI from public users where still exposed
-   - add `Strict-Transport-Security`
-   - add `Content-Security-Policy`
-   - add basic protection on public write flows
+   - verify `Strict-Transport-Security` and `Content-Security-Policy` in UAT/prod responses
+   - review only newly introduced public write surfaces for abuse controls, since current auth/contact/ad-lead/audit paths now have explicit smoke-covered protections
 2. Resolver/publish stability.
    - ensure homepage reads come from the intended resolved/scalable path for UAT localities
    - verify publish flow is consistent across locality/category/page variants
@@ -121,11 +141,13 @@ This checklist is based on the current implementation in `src/App.tsx`, `src/com
    - section combinations
    - empty-state handling
    - admin create/edit/publish flows
+   - execution checklist now captured in `UAT_QA_CHECKLIST.md`
 5. Launch content for selected UAT localities.
    - hero banners
    - offers
    - featured businesses
    - updates
+   - Roadpali and Kalamboli seed content is now in place; remaining work is UAT review/tuning and any broader locality rollout content
 
 ## Post-UAT Backlog
 

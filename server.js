@@ -141,6 +141,10 @@ const PUBLIC_WRITE_THROTTLE_LIMIT = Math.max(
   3,
   parseInt(process.env.PUBLIC_WRITE_THROTTLE_LIMIT || '12', 10) || 12,
 );
+const TRUSTED_APP_ORIGINS = String(process.env.TRUSTED_APP_ORIGINS || '')
+  .split(',')
+  .map((entry) => entry.trim().replace(/\/+$/, ''))
+  .filter(Boolean);
 
 const PUBLIC_USER_TYPES = ['buyer', 'seller', 'resource'];
 const ALL_USER_TYPES = ['platform_admin', 'developer', 'buyer', 'seller', 'resource'];
@@ -156,6 +160,46 @@ function getOrigin(req) {
   const forwardedHost = req.headers['x-forwarded-host'];
   const host = (Array.isArray(forwardedHost) ? forwardedHost[0] : forwardedHost) || req.get('host') || 'localhost:3000';
   return `${proto}://${host}`;
+}
+
+function normalizeOriginValue(value) {
+  try {
+    return new URL(String(value || '').trim()).origin.replace(/\/+$/, '');
+  } catch (_error) {
+    return '';
+  }
+}
+
+function getTrustedRequestOrigins(req) {
+  return new Set([
+    getOrigin(req).replace(/\/+$/, ''),
+    ...TRUSTED_APP_ORIGINS,
+  ].filter(Boolean));
+}
+
+function enforceTrustedWriteOrigin(req, res) {
+  const originHeader = req.headers.origin;
+  const refererHeader = req.headers.referer;
+  const requestOrigin = normalizeOriginValue(
+    Array.isArray(originHeader) ? originHeader[0] : originHeader,
+  ) || normalizeOriginValue(
+    Array.isArray(refererHeader) ? refererHeader[0] : refererHeader,
+  );
+
+  if (!requestOrigin) {
+    return true;
+  }
+
+  const trustedOrigins = getTrustedRequestOrigins(req);
+  if (trustedOrigins.has(requestOrigin)) {
+    return true;
+  }
+
+  res.status(403).json({
+    ok: false,
+    error: 'Cross-origin write requests are not allowed.',
+  });
+  return false;
 }
 
 function xmlEscape(value) {
@@ -624,6 +668,9 @@ function enforcePublicWriteThrottle(req, res, {
   windowMs = PUBLIC_WRITE_THROTTLE_WINDOW_MS,
   keySuffix = '',
 } = {}) {
+  if (!enforceTrustedWriteOrigin(req, res)) {
+    return false;
+  }
   const now = Date.now();
   prunePublicWriteThrottleBuckets(now);
   const ipAddress = normalizeRequestIp(req);
@@ -645,6 +692,7 @@ function enforcePublicWriteThrottle(req, res, {
 
   if (existingBucket.count >= limit) {
     const retryAfterMs = Math.max(0, windowMs - (now - existingBucket.windowStartedAt));
+    res.setHeader('Retry-After', String(Math.max(1, Math.ceil(retryAfterMs / 1000))));
     res.status(429).json({
       ok: false,
       error: 'Too many requests. Please try again shortly.',
@@ -777,6 +825,26 @@ function verifyOtpChallengeToken(token, expectedPurpose) {
   if (!payload || !payload.otpChallenge) return null;
   if (expectedPurpose && payload.purpose !== expectedPurpose) return null;
   if (!payload.mobile || !payload.sub || !payload.challengeId) return null;
+  return payload;
+}
+
+function buildContactUnlockGrantToken({ challengeId, mobile }) {
+  const exp = Math.floor(Date.now() / 1000) + 30 * 60;
+  return signToken({
+    sub: `contact:${mobile}`,
+    challengeId,
+    mobile,
+    purpose: 'contact-unlock-grant',
+    contactUnlockGrant: true,
+    exp,
+  });
+}
+
+function verifyContactUnlockGrantToken(token) {
+  const payload = verifyToken(token);
+  if (!payload || !payload.contactUnlockGrant) return null;
+  if (payload.purpose !== 'contact-unlock-grant') return null;
+  if (!payload.mobile || !payload.challengeId) return null;
   return payload;
 }
 
@@ -4529,11 +4597,11 @@ function resolveSectionBusinessIdsBySection(sections, businesses, sponsoredListi
     .filter(([sectionId]) => Boolean(sectionId)));
 }
 
-async function resolveHomepageForContext(context) {
+async function resolveHomepageForContext(context, preloaded = {}) {
   const [state, legacyConfig, businesses] = await Promise.all([
-    readScalableCmsState(),
-    readHomepageConfig(),
-    readBusinessListings(),
+    preloaded.state || readScalableCmsState(),
+    preloaded.legacyConfig || readHomepageConfig(),
+    preloaded.businesses || readBusinessListings(),
   ]);
   const effectiveContext = {
     localityId: String(context.localityId || ''),
@@ -4579,12 +4647,100 @@ async function resolveHomepageForContext(context) {
   };
 }
 
-function findPublishedSnapshot(state, context) {
+function calculatePublishedSnapshotScore(snapshot, context) {
+  if (!snapshot || typeof snapshot !== 'object') return -1;
+
+  const localityId = String(context.localityId || '');
+  const categoryId = String(context.categoryId || '');
+  const subcategoryId = String(context.subcategoryId || '');
+  const pincode = String(context.pincode || '');
+  const placementKey = String(context.placementKey || '');
+  const device = String(context.device || 'all');
+  const pageType = String(context.pageType || 'homepage');
+
+  if (String(snapshot.localityId || '') !== localityId) return -1;
+
+  let score = 100;
+  const snapshotCategoryId = String(snapshot.categoryId || '');
+  const snapshotSubcategoryId = String(snapshot.subcategoryId || '');
+  const snapshotPincode = String(snapshot.pincode || '');
+  const snapshotPlacementKey = String(snapshot.placementKey || '');
+  const snapshotDeviceTarget = String(snapshot.deviceTarget || 'all');
+  const snapshotPageType = String(snapshot.pageType || 'homepage');
+
+  if (snapshotCategoryId) {
+    if (!categoryId || snapshotCategoryId !== categoryId) return -1;
+    score += 40;
+  }
+  if (snapshotSubcategoryId) {
+    if (!subcategoryId || snapshotSubcategoryId !== subcategoryId) return -1;
+    score += 60;
+  }
+  if (snapshotPincode) {
+    if (!pincode || snapshotPincode !== pincode) return -1;
+    score += 30;
+  }
+  if (snapshotPlacementKey) {
+    if (!placementKey || snapshotPlacementKey !== placementKey) return -1;
+    score += 10;
+  }
+  if (snapshotDeviceTarget && snapshotDeviceTarget !== 'all') {
+    if (!device || snapshotDeviceTarget !== device) return -1;
+    score += 15;
+  }
+  if (snapshotPageType) {
+    if (!pageType || snapshotPageType !== pageType) return -1;
+    score += 10;
+  }
+
+  return score;
+}
+
+function findPublishedSnapshotMatch(state, context) {
   const snapshotId = buildSnapshotId(context);
   const exactSnapshot = (state.publishedSnapshots || []).find((snapshot) => snapshot.id === snapshotId);
-  if (exactSnapshot) return exactSnapshot;
+  if (exactSnapshot) {
+    return {
+      snapshot: exactSnapshot,
+      strategy: 'exact_snapshot_id',
+      score: calculatePublishedSnapshotScore(exactSnapshot, context),
+      requestedSnapshotId: snapshotId,
+      legacySnapshotId: buildLegacySnapshotId(context),
+    };
+  }
+
   const legacySnapshotId = buildLegacySnapshotId(context);
-  return (state.publishedSnapshots || []).find((snapshot) => snapshot.id === legacySnapshotId) || null;
+  const legacySnapshot = (state.publishedSnapshots || []).find((snapshot) => snapshot.id === legacySnapshotId);
+  if (legacySnapshot) {
+    return {
+      snapshot: legacySnapshot,
+      strategy: 'legacy_snapshot_id',
+      score: calculatePublishedSnapshotScore(legacySnapshot, context),
+      requestedSnapshotId: snapshotId,
+      legacySnapshotId,
+    };
+  }
+
+  const matchingSnapshot = (state.publishedSnapshots || [])
+    .map((snapshot) => ({
+      snapshot,
+      score: calculatePublishedSnapshotScore(snapshot, context),
+    }))
+    .filter((entry) => entry.score >= 0)
+    .sort((left, right) => {
+      if (right.score !== left.score) return right.score - left.score;
+      return new Date(right.snapshot.updatedAt || right.snapshot.publishedAt || 0).getTime()
+        - new Date(left.snapshot.updatedAt || left.snapshot.publishedAt || 0).getTime();
+    })[0];
+
+  if (!matchingSnapshot?.snapshot) return null;
+  return {
+    snapshot: matchingSnapshot.snapshot,
+    strategy: 'best_matching_snapshot',
+    score: matchingSnapshot.score,
+    requestedSnapshotId: snapshotId,
+    legacySnapshotId,
+  };
 }
 
 function buildPublishContexts(input, localityIds) {
@@ -4743,6 +4899,22 @@ function authFromHeader(req) {
 }
 
 function requirePrivilegedWriteAccess(req, res) {
+  if (!enforceTrustedWriteOrigin(req, res)) {
+    return null;
+  }
+  const payload = authFromHeader(req);
+  if (!payload) {
+    res.status(401).json({ ok: false, error: 'Unauthorized' });
+    return null;
+  }
+  if (!['platform_admin', 'developer'].includes(payload.userType)) {
+    res.status(403).json({ ok: false, error: 'Insufficient privileges' });
+    return null;
+  }
+  return payload;
+}
+
+function requirePrivilegedReadAccess(req, res) {
   const payload = authFromHeader(req);
   if (!payload) {
     res.status(401).json({ ok: false, error: 'Unauthorized' });
@@ -5592,7 +5764,10 @@ app.get('/api/media/proxy', async (req, res) => {
   }
 });
 
-app.get('/api/homepage-config', async (_req, res) => {
+app.get('/api/homepage-config', async (req, res) => {
+  const access = requirePrivilegedReadAccess(req, res);
+  if (!access) return;
+
   try {
     const config = await readHomepageConfig();
     res.json({ ok: true, config });
@@ -6138,7 +6313,10 @@ app.delete('/api/homepage-config/locality-category-links/:linkId', async (req, r
   }
 });
 
-app.get('/api/scalable-homepage-config', async (_req, res) => {
+app.get('/api/scalable-homepage-config', async (req, res) => {
+  const access = requirePrivilegedReadAccess(req, res);
+  if (!access) return;
+
   try {
     const config = await readScalableCmsState();
     res.json({ ok: true, config });
@@ -6416,7 +6594,10 @@ app.delete('/api/scalable-homepage-config/campaigns/:campaignId', async (req, re
   }
 });
 
-app.get('/api/scalable-homepage-config/snapshots', async (_req, res) => {
+app.get('/api/scalable-homepage-config/snapshots', async (req, res) => {
+  const access = requirePrivilegedReadAccess(req, res);
+  if (!access) return;
+
   try {
     const config = await readScalableCmsState();
     res.json({ ok: true, snapshots: config.publishedSnapshots || [] });
@@ -6529,12 +6710,45 @@ app.get('/api/resolved-homepage', async (req, res) => {
 
     const cmsState = await readScalableCmsState();
     const usePublished = String(req.query.usePublished || 'true') !== 'false';
-    const publishedSnapshot = usePublished ? findPublishedSnapshot(cmsState, context) : null;
-    const payload = publishedSnapshot?.payload || await resolveHomepageForContext(context);
+    const publishedSnapshotMatch = usePublished ? findPublishedSnapshotMatch(cmsState, context) : null;
+    const payload = publishedSnapshotMatch?.snapshot?.payload || await resolveHomepageForContext(context, { state: cmsState });
+    const resolution = {
+      source: publishedSnapshotMatch ? 'published_snapshot' : 'live_resolver',
+      strategy: publishedSnapshotMatch?.strategy || 'live_resolver',
+      usedPublished: Boolean(publishedSnapshotMatch),
+      requestedContext: context,
+      requestedSnapshotId: publishedSnapshotMatch?.requestedSnapshotId || buildSnapshotId(context),
+      legacySnapshotId: publishedSnapshotMatch?.legacySnapshotId || buildLegacySnapshotId(context),
+      snapshot: publishedSnapshotMatch ? {
+        id: publishedSnapshotMatch.snapshot.id,
+        localityId: publishedSnapshotMatch.snapshot.localityId,
+        categoryId: publishedSnapshotMatch.snapshot.categoryId || '',
+        subcategoryId: publishedSnapshotMatch.snapshot.subcategoryId || '',
+        pincode: publishedSnapshotMatch.snapshot.pincode || '',
+        placementKey: publishedSnapshotMatch.snapshot.placementKey || '',
+        deviceTarget: publishedSnapshotMatch.snapshot.deviceTarget || 'all',
+        pageType: publishedSnapshotMatch.snapshot.pageType || 'homepage',
+        publishedAt: publishedSnapshotMatch.snapshot.publishedAt || '',
+        updatedAt: publishedSnapshotMatch.snapshot.updatedAt || '',
+        score: publishedSnapshotMatch.score,
+      } : null,
+      template: payload?.template || null,
+      resolvedAt: payload?.resolvedAt || new Date().toISOString(),
+    };
+
+    res.setHeader('X-Resolved-Homepage-Source', resolution.source);
+    res.setHeader('X-Resolved-Homepage-Strategy', resolution.strategy);
+    if (resolution.snapshot?.id) {
+      res.setHeader('X-Resolved-Homepage-Snapshot-Id', resolution.snapshot.id);
+    }
+    if (resolution.template?.id) {
+      res.setHeader('X-Resolved-Homepage-Template-Id', String(resolution.template.id));
+    }
 
     res.json({
       ok: true,
-      source: publishedSnapshot ? 'published_snapshot' : 'live_resolver',
+      source: resolution.source,
+      resolution,
       payload,
     });
   } catch (err) {
@@ -6579,6 +6793,9 @@ app.post('/api/resolved-homepage/snapshots/delete', async (req, res) => {
 });
 
 app.post('/api/auth/register', async (req, res) => {
+  if (!enforceTrustedWriteOrigin(req, res)) {
+    return;
+  }
   const { name, email, phone, password, userType } = req.body || {};
   if (!name || !email || !userType) {
     return res.status(400).json({ ok: false, error: 'name, email and userType are required' });
@@ -6704,6 +6921,13 @@ app.post('/api/auth/register/verify-otp', async (req, res) => {
   const persistedChallenge = await readOtpChallenge(challenge.challengeId);
   if (!persistedChallenge) {
     return res.status(401).json({ ok: false, error: 'Invalid or expired OTP challenge' });
+  }
+  if (
+    persistedChallenge.purpose !== challenge.purpose ||
+    persistedChallenge.userId !== challenge.sub ||
+    persistedChallenge.mobile !== challenge.mobile
+  ) {
+    return res.status(401).json({ ok: false, error: 'Invalid OTP challenge' });
   }
 
   try {
@@ -6863,11 +7087,22 @@ app.post('/api/contact-unlock/verify-otp', async (req, res) => {
   if (!persistedChallenge) {
     return res.status(401).json({ ok: false, error: 'Invalid or expired OTP challenge' });
   }
+  if (
+    persistedChallenge.purpose !== challenge.purpose ||
+    persistedChallenge.userId !== challenge.sub ||
+    persistedChallenge.mobile !== challenge.mobile
+  ) {
+    return res.status(401).json({ ok: false, error: 'Invalid OTP challenge' });
+  }
 
   try {
     await verifyMsg91Otp(challenge.mobile, String(otp).trim());
     await markOtpChallengeUsed(challenge.challengeId);
-    res.json({ ok: true, mobile: challenge.mobile });
+    const unlockToken = buildContactUnlockGrantToken({
+      challengeId: challenge.challengeId,
+      mobile: challenge.mobile,
+    });
+    res.json({ ok: true, mobile: challenge.mobile, unlockToken });
   } catch (err) {
     console.error('Failed to verify contact unlock OTP:', err);
     res.status(401).json({ ok: false, error: err?.message || 'Invalid OTP' });
@@ -6888,17 +7123,30 @@ app.post('/api/contact-unlock/record-view', async (req, res) => {
   const normalizedDeviceId = normalizeDeviceId(deviceId || req.headers['x-device-id']);
   const normalizedPhone = normalizePhoneDigits(viewerPhone);
   const payload = authFromHeader(req);
+  const unlockTokenPayload = verifyContactUnlockGrantToken(String(req.body?.unlockToken || ''));
   const loginKey = payload?.sub ? `user:${payload.sub}` : normalizedPhone ? `phone:${normalizedPhone}` : '';
   const ipAddress = normalizeRequestIp(req);
 
   if (!normalizedBusinessId) {
     return res.status(400).json({ ok: false, error: 'businessId is required' });
   }
-  if (!loginKey) {
+  if (!payload?.sub && !normalizedPhone) {
     return res.status(400).json({ ok: false, error: 'viewerPhone or authenticated session is required' });
   }
   if (!normalizedDeviceId) {
     return res.status(400).json({ ok: false, error: 'deviceId is required' });
+  }
+  if (!payload?.sub) {
+    if (!unlockTokenPayload) {
+      return res.status(401).json({ ok: false, error: 'Verified contact unlock token is required' });
+    }
+    const grantPhone = normalizePhoneDigits(unlockTokenPayload.mobile);
+    if (!grantPhone || grantPhone !== normalizedPhone) {
+      return res.status(401).json({ ok: false, error: 'Contact unlock token does not match the verified phone number' });
+    }
+  }
+  if (!loginKey) {
+    return res.status(400).json({ ok: false, error: 'Unable to resolve contact unlock identity' });
   }
 
   const businesses = await readBusinessListings();

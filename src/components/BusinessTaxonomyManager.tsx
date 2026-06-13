@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { BusinessCategory, BusinessSubcategory, BusinessTaxonomyState } from '../types';
+import { downloadCsvTemplate, getTabularValue, readTabularFile, TabularRow } from '../utils/tabularImport';
 
 type BusinessTaxonomyManagerProps = {
   taxonomy: BusinessTaxonomyState;
@@ -32,6 +33,30 @@ const emptySubcategoryDraft = {
   sortOrder: '',
 };
 
+const buildUniqueId = (seed: string, takenIds: Set<string>) => {
+  const baseId = slugify(seed);
+  if (!baseId) return '';
+  if (!takenIds.has(baseId)) return baseId;
+  let suffix = 2;
+  while (takenIds.has(`${baseId}-${suffix}`)) {
+    suffix += 1;
+  }
+  return `${baseId}-${suffix}`;
+};
+
+const resolveCategoryFromRow = (row: TabularRow, categories: BusinessCategory[]) => {
+  const requestedId = getTabularValue(row, ['categoryId', 'category id', 'parentCategoryId', 'parent category id']);
+  if (requestedId) {
+    const directMatch = categories.find((category) => category.id === requestedId);
+    if (directMatch) return directMatch;
+  }
+
+  const requestedName = getTabularValue(row, ['categoryName', 'category', 'parentCategoryName', 'parent category']);
+  if (!requestedName) return null;
+
+  return categories.find((category) => category.name.toLowerCase() === requestedName.toLowerCase()) || null;
+};
+
 export default function BusinessTaxonomyManager({
   taxonomy,
   onSave,
@@ -42,6 +67,7 @@ export default function BusinessTaxonomyManager({
   const [editingSubcategoryId, setEditingSubcategoryId] = useState<string | null>(null);
   const [statusText, setStatusText] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
 
   const activeCategories = useMemo(
     () => [...taxonomy.categories].sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)),
@@ -187,6 +213,141 @@ export default function BusinessTaxonomyManager({
     }
   };
 
+  const importCategories = async (file: File) => {
+    setIsImporting(true);
+    try {
+      const rows = await readTabularFile(file);
+      const takenIds = new Set(taxonomy.categories.map((category) => category.id));
+      let imported = 0;
+      let skipped = 0;
+      const nextCategories = [...taxonomy.categories];
+
+      rows.forEach((row, index) => {
+        const name = getTabularValue(row, ['name', 'categoryName', 'category']);
+        const explicitId = getTabularValue(row, ['id', 'categoryId', 'slug']);
+        const id = slugify(explicitId || name);
+        if (!name || !id) {
+          skipped += 1;
+          return;
+        }
+
+        const existingCategory = nextCategories.find((category) => category.id === id);
+        const uniqueId = existingCategory ? existingCategory.id : buildUniqueId(id, takenIds);
+        if (!existingCategory && !uniqueId) {
+          skipped += 1;
+          return;
+        }
+
+        const nextCategory: BusinessCategory = {
+          id: uniqueId,
+          legacyId: existingCategory?.legacyId || Date.now() + index,
+          name,
+          slug: slugify(getTabularValue(row, ['slug']) || name),
+          icon: getTabularValue(row, ['icon']) || existingCategory?.icon || 'category_icon',
+          status: getTabularValue(row, ['status']).toLowerCase() === 'inactive' ? 'inactive' : (existingCategory?.status || 'active'),
+          sortOrder: Number(getTabularValue(row, ['sortOrder', 'sort order']) || existingCategory?.sortOrder || nextCategories.length + 1),
+        };
+
+        if (existingCategory) {
+          const targetIndex = nextCategories.findIndex((category) => category.id === existingCategory.id);
+          nextCategories[targetIndex] = nextCategory;
+        } else {
+          takenIds.add(uniqueId);
+          nextCategories.push(nextCategory);
+        }
+        imported += 1;
+      });
+
+      if (imported === 0) {
+        setStatusText('No valid category rows found in the uploaded file.');
+        return;
+      }
+
+      await persist(
+        {
+          ...taxonomy,
+          categories: nextCategories,
+          metadata: { ...taxonomy.metadata, updatedAt: new Date().toISOString(), seededFromCode: false },
+        },
+        `Imported ${imported} categories${skipped ? `, skipped ${skipped} rows.` : '.'}`
+      );
+    } catch (error) {
+      setStatusText(error instanceof Error ? error.message : 'Failed to import category file.');
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const importSubcategories = async (file: File) => {
+    setIsImporting(true);
+    try {
+      const rows = await readTabularFile(file);
+      const takenIds = new Set(taxonomy.subcategories.map((subcategory) => subcategory.id));
+      let imported = 0;
+      let skipped = 0;
+      const nextSubcategories = [...taxonomy.subcategories];
+
+      rows.forEach((row, index) => {
+        const name = getTabularValue(row, ['name', 'subcategoryName', 'subcategory', 'serviceName']);
+        const parentCategory = resolveCategoryFromRow(row, taxonomy.categories);
+        const explicitId = getTabularValue(row, ['id', 'subcategoryId', 'slug']);
+        const id = slugify(explicitId || name);
+
+        if (!name || !id || !parentCategory) {
+          skipped += 1;
+          return;
+        }
+
+        const existingSubcategory = nextSubcategories.find((subcategory) => subcategory.id === id);
+        const uniqueId = existingSubcategory ? existingSubcategory.id : buildUniqueId(id, takenIds);
+        if (!existingSubcategory && !uniqueId) {
+          skipped += 1;
+          return;
+        }
+
+        const siblingCount = nextSubcategories.filter((subcategory) => subcategory.categoryId === parentCategory.id).length;
+        const nextSubcategory: BusinessSubcategory = {
+          id: uniqueId,
+          legacyId: existingSubcategory?.legacyId || Date.now() + index,
+          parentLegacyId: parentCategory.legacyId,
+          categoryId: parentCategory.id,
+          name,
+          slug: slugify(getTabularValue(row, ['slug']) || name),
+          icon: getTabularValue(row, ['icon']) || existingSubcategory?.icon || 'subcategory_icon',
+          status: getTabularValue(row, ['status']).toLowerCase() === 'inactive' ? 'inactive' : (existingSubcategory?.status || 'active'),
+          sortOrder: Number(getTabularValue(row, ['sortOrder', 'sort order']) || existingSubcategory?.sortOrder || siblingCount + 1),
+        };
+
+        if (existingSubcategory) {
+          const targetIndex = nextSubcategories.findIndex((subcategory) => subcategory.id === existingSubcategory.id);
+          nextSubcategories[targetIndex] = nextSubcategory;
+        } else {
+          takenIds.add(uniqueId);
+          nextSubcategories.push(nextSubcategory);
+        }
+        imported += 1;
+      });
+
+      if (imported === 0) {
+        setStatusText('No valid subcategory rows found in the uploaded file.');
+        return;
+      }
+
+      await persist(
+        {
+          ...taxonomy,
+          subcategories: nextSubcategories,
+          metadata: { ...taxonomy.metadata, updatedAt: new Date().toISOString(), seededFromCode: false },
+        },
+        `Imported ${imported} subcategories${skipped ? `, skipped ${skipped} rows.` : '.'}`
+      );
+    } catch (error) {
+      setStatusText(error instanceof Error ? error.message : 'Failed to import subcategory file.');
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -207,6 +368,74 @@ export default function BusinessTaxonomyManager({
           {statusText}
         </div>
       )}
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3 space-y-3">
+          <div>
+            <div className="text-xs font-bold text-slate-900">Excel Import: Categories</div>
+            <p className="mt-1 text-[11px] text-slate-500">
+              Upload native `.xlsx` / `.xls` files or Excel-exported `.csv`, `.tsv`, and tab-separated files. Existing IDs update in place; new IDs are added.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => downloadCsvTemplate('category-template.csv', ['id', 'name', 'slug', 'icon', 'status', 'sortOrder'], [['health-medical', 'Health & Medical', 'health-medical', 'category_icon', 'active', '1']])}
+              className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-700"
+            >
+              Download Category Template
+            </button>
+            <label className="cursor-pointer rounded-md bg-indigo-600 px-3 py-1.5 text-[11px] font-bold text-white">
+              Upload Category File
+              <input
+                type="file"
+                accept=".xlsx,.xls,.csv,.tsv,.txt"
+                className="hidden"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) {
+                    void importCategories(file);
+                  }
+                  event.currentTarget.value = '';
+                }}
+              />
+            </label>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3 space-y-3">
+          <div>
+            <div className="text-xs font-bold text-slate-900">Excel Import: Subcategories</div>
+            <p className="mt-1 text-[11px] text-slate-500">
+              Supported headers include `categoryId`, `categoryName`, `id`, `name`, `slug`, `icon`, `status`, and `sortOrder`.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => downloadCsvTemplate('subcategory-template.csv', ['categoryId', 'id', 'name', 'slug', 'icon', 'status', 'sortOrder'], [['health-medical', 'dental-clinic', 'Dental Clinic', 'dental-clinic', 'subcategory_icon', 'active', '1']])}
+              className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-700"
+            >
+              Download Subcategory Template
+            </button>
+            <label className="cursor-pointer rounded-md bg-emerald-600 px-3 py-1.5 text-[11px] font-bold text-white">
+              Upload Subcategory File
+              <input
+                type="file"
+                accept=".xlsx,.xls,.csv,.tsv,.txt"
+                className="hidden"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) {
+                    void importSubcategories(file);
+                  }
+                  event.currentTarget.value = '';
+                }}
+              />
+            </label>
+          </div>
+        </div>
+      </div>
 
       <div className="grid gap-4 xl:grid-cols-2">
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-3">
@@ -232,7 +461,7 @@ export default function BusinessTaxonomyManager({
               <option value="active">Active</option>
               <option value="inactive">Inactive</option>
             </select>
-            <button type="button" onClick={handleSaveCategory} disabled={isSaving} className="rounded-lg bg-indigo-600 px-3 py-2 font-bold text-white disabled:opacity-50">
+            <button type="button" onClick={handleSaveCategory} disabled={isSaving || isImporting} className="rounded-lg bg-indigo-600 px-3 py-2 font-bold text-white disabled:opacity-50">
               {editingCategoryId ? 'Update Category' : 'Create Category'}
             </button>
           </div>
@@ -308,7 +537,7 @@ export default function BusinessTaxonomyManager({
               <option value="active">Active</option>
               <option value="inactive">Inactive</option>
             </select>
-            <button type="button" onClick={handleSaveSubcategory} disabled={isSaving} className="rounded-lg bg-emerald-600 px-3 py-2 font-bold text-white disabled:opacity-50">
+            <button type="button" onClick={handleSaveSubcategory} disabled={isSaving || isImporting} className="rounded-lg bg-emerald-600 px-3 py-2 font-bold text-white disabled:opacity-50">
               {editingSubcategoryId ? 'Update Subcategory' : 'Create Subcategory'}
             </button>
           </div>

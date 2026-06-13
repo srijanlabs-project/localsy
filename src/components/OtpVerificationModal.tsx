@@ -4,7 +4,7 @@ import { ShieldCheck, Phone, User, Check, X, HelpCircle } from 'lucide-react';
 interface OtpVerificationModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onVerifySuccess: (userName: string, userPhone: string) => Promise<boolean | void> | boolean;
+  onVerifySuccess: (userName: string, userPhone: string, unlockToken?: string) => Promise<boolean | void> | boolean;
   businessName?: string;
 }
 
@@ -84,7 +84,7 @@ export default function OtpVerificationModal({
       if (!response.ok) {
         throw new Error(data?.error || 'OTP verification failed');
       }
-      const unlockAllowed = await Promise.resolve(onVerifySuccess(name.trim(), `+91 ${normalizePhone(phone)}`));
+      const unlockAllowed = await Promise.resolve(onVerifySuccess(name.trim(), `+91 ${normalizePhone(phone)}`, data?.unlockToken || ''));
       if (unlockAllowed === false) {
         throw new Error('Daily contact view limit reached. Try again tomorrow.');
       }
