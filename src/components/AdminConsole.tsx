@@ -5675,7 +5675,7 @@ export default function AdminConsole({
             </div>
           </div>
 
-          {homepageCmsSubtab === 'publish' && (
+          {['publish', 'templates', 'assignments', 'campaigns', 'insights'].includes(homepageCmsSubtab) && (
           <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs space-y-3">
             <div className="flex items-center justify-between gap-3">
               <div>
