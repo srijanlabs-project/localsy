@@ -2950,21 +2950,28 @@ export default function App() {
 
   const handleCreateHomepageSection = (
     localityId: string,
-    sectionInput: Omit<HomepageSection, 'id' | 'sortOrder'>
+    sectionInput: Omit<HomepageSection, 'id' | 'sortOrder'>,
+    insertPosition?: number
   ) => {
     const baseLayout = buildHomepageLayoutDraft(localityId);
+    const orderedSections = reindexHomepageSections(baseLayout.sections);
     const nextSection = normalizeHomepageSection(
       {
         ...sectionInput,
         id: `home_section_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
-        sortOrder: (baseLayout.sections[baseLayout.sections.length - 1]?.sortOrder || 0) + 10
+        sortOrder: (orderedSections[orderedSections.length - 1]?.sortOrder || 0) + 10
       } as HomepageSection,
       localityId,
-      baseLayout.sections.length
+      orderedSections.length
     );
+    const normalizedInsertPosition = Number.isFinite(Number(insertPosition))
+      ? Math.max(1, Math.min(orderedSections.length + 1, Number(insertPosition)))
+      : 1;
+    const nextSections = [...orderedSections];
+    nextSections.splice(normalizedInsertPosition - 1, 0, nextSection);
     const nextLayout = {
       ...baseLayout,
-      sections: reindexHomepageSections([...baseLayout.sections, nextSection]),
+      sections: applyHomepageSectionOrder(nextSections),
       updatedAt: new Date().toISOString(),
     };
     if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
