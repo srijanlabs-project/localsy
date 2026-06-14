@@ -1014,15 +1014,11 @@ const normalizeHomepageLayout = (
   const locality = localities.find((entry) => entry.id === layout.localityId);
   const fallbackLocality = locality || localities[0];
   const defaultSections = fallbackLocality ? buildDefaultHomepageLayout(fallbackLocality, sectionTemplates).sections : [];
-  const layoutSections = (layout.sections || []).map((section, index) => normalizeHomepageSection(section, layout.localityId, index));
-  const existingIds = new Set(layoutSections.map((section) => section.id));
-  const mergedSections = [
-    ...layoutSections,
-    ...defaultSections
-      .filter((section) => !existingIds.has(section.id))
-      .map((section, index) => normalizeHomepageSection(section, layout.localityId, layoutSections.length + index))
-  ];
-  const normalizedSections = reindexHomepageSections(mergedSections);
+  const hasExplicitSections = Array.isArray(layout.sections);
+  const sourceSections = hasExplicitSections ? layout.sections : defaultSections;
+  const normalizedSections = reindexHomepageSections(
+    (sourceSections || []).map((section, index) => normalizeHomepageSection(section, layout.localityId, index))
+  );
   return {
     ...layout,
     id: layout.id || `homepage_${layout.localityId}`,
