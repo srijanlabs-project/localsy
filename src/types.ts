@@ -629,8 +629,15 @@ export interface CityMaster {
   name: string;
 }
 
+export interface LocalityMaster {
+  id: string;
+  cityId: string;
+  name: string;
+}
+
 export interface AreaMaster {
   id: string;
+  localityId: string;
   cityId: string;
   name: string;
   pincode: string;
@@ -639,6 +646,7 @@ export interface AreaMaster {
 export interface GeographyConfigState {
   states: StateMaster[];
   cities: CityMaster[];
+  localities: LocalityMaster[];
   areas: AreaMaster[];
   metadata: {
     seededFromCode: boolean;

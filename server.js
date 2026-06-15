@@ -14,6 +14,7 @@ import {
 import {
   DEFAULT_STATES,
   DEFAULT_CITIES,
+  DEFAULT_GEOGRAPHY_LOCALITIES,
   DEFAULT_AREAS,
 } from './shared/geographySeed.js';
 import {
@@ -1932,12 +1933,45 @@ function sanitizeCityMaster(value, stateIds, index = 0) {
   };
 }
 
-function sanitizeAreaMaster(value, cityIds, index = 0) {
-  const area = value && typeof value === 'object' ? value : {};
-  const cityId = String(area.cityId || '').trim();
+function sanitizeLocalityMaster(value, cityIds, index = 0) {
+  const locality = value && typeof value === 'object' ? value : {};
+  const cityId = String(locality.cityId || '').trim();
   if (!cityIds.has(cityId)) return null;
   return {
+    id: String(locality.id || `locality-${index + 1}`).trim(),
+    cityId,
+    name: String(locality.name || locality.id || '').trim(),
+  };
+}
+
+function inferLocalityIdForArea(area, localities) {
+  const explicitLocalityId = String(area?.localityId || '').trim();
+  if (explicitLocalityId) return explicitLocalityId;
+
+  const areaId = slugifyForUrl(area?.id || '');
+  const areaName = slugifyForUrl(area?.name || '');
+  const cityId = String(area?.cityId || '').trim();
+  const localityMatch = localities.find((locality) => {
+    if (cityId && locality.cityId !== cityId) return false;
+    const localityId = slugifyForUrl(locality.id || '');
+    const localityName = slugifyForUrl(locality.name || '');
+    return (
+      (localityId && (areaId.includes(localityId) || areaName.includes(localityId))) ||
+      (localityName && (areaId.includes(localityName) || areaName.includes(localityName)))
+    );
+  });
+  return localityMatch?.id || '';
+}
+
+function sanitizeAreaMaster(value, cityIds, localityIds, localities, index = 0) {
+  const area = value && typeof value === 'object' ? value : {};
+  const cityId = String(area.cityId || '').trim();
+  const localityId = inferLocalityIdForArea(area, localities);
+  if (!cityIds.has(cityId)) return null;
+  if (!localityIds.has(localityId)) return null;
+  return {
     id: String(area.id || `area-${index + 1}`).trim(),
+    localityId,
     cityId,
     name: String(area.name || area.id || '').trim(),
     pincode: String(area.pincode || '').replace(/\D/g, '').slice(0, 6),
@@ -1954,12 +1988,17 @@ function sanitizeGeographyConfigState(value) {
     ? source.cities.map((city, index) => sanitizeCityMaster(city, stateIds, index)).filter(Boolean)
     : DEFAULT_CITIES.map((city, index) => sanitizeCityMaster(city, stateIds, index)).filter(Boolean);
   const cityIds = new Set(cities.map((city) => city.id));
+  const localities = Array.isArray(source.localities)
+    ? source.localities.map((locality, index) => sanitizeLocalityMaster(locality, cityIds, index)).filter(Boolean)
+    : DEFAULT_GEOGRAPHY_LOCALITIES.map((locality, index) => sanitizeLocalityMaster(locality, cityIds, index)).filter(Boolean);
+  const localityIds = new Set(localities.map((locality) => locality.id));
   const areas = Array.isArray(source.areas)
-    ? source.areas.map((area, index) => sanitizeAreaMaster(area, cityIds, index)).filter(Boolean)
-    : DEFAULT_AREAS.map((area, index) => sanitizeAreaMaster(area, cityIds, index)).filter(Boolean);
+    ? source.areas.map((area, index) => sanitizeAreaMaster(area, cityIds, localityIds, localities, index)).filter(Boolean)
+    : DEFAULT_AREAS.map((area, index) => sanitizeAreaMaster(area, cityIds, localityIds, localities, index)).filter(Boolean);
   return {
     states,
     cities,
+    localities,
     areas,
     metadata: {
       seededFromCode: source.metadata?.seededFromCode ?? true,

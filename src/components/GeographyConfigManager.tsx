@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AreaMaster, CityMaster, GeographyConfigState, StateMaster } from '../types';
+import { AreaMaster, CityMaster, GeographyConfigState, LocalityMaster, StateMaster } from '../types';
 import { downloadCsvTemplate, getTabularValue, readTabularFile, TabularRow } from '../utils/tabularImport';
 
 type GeographyConfigManagerProps = {
@@ -26,10 +26,17 @@ const emptyCityDraft = {
 };
 
 const emptyAreaDraft = {
+  localityId: '',
   id: '',
   cityId: '',
   name: '',
   pincode: '',
+};
+
+const emptyLocalityDraft = {
+  id: '',
+  cityId: '',
+  name: '',
 };
 
 const resolveStateFromRow = (row: TabularRow, states: StateMaster[]) => {
@@ -62,6 +69,24 @@ const resolveCityFromRow = (row: TabularRow, cities: CityMaster[], states: State
   );
 };
 
+const resolveLocalityFromRow = (row: TabularRow, localities: LocalityMaster[], cities: CityMaster[], states: StateMaster[]) => {
+  const requestedId = getTabularValue(row, ['localityId', 'locality id']);
+  if (requestedId) {
+    const directMatch = localities.find((locality) => locality.id === requestedId);
+    if (directMatch) return directMatch;
+  }
+
+  const requestedName = getTabularValue(row, ['localityName', 'locality']);
+  if (!requestedName) return null;
+  const city = resolveCityFromRow(row, cities, states);
+  return (
+    localities.find((locality) => (
+      locality.name.toLowerCase() === requestedName.toLowerCase()
+      && (!city || locality.cityId === city.id)
+    )) || null
+  );
+};
+
 export default function GeographyConfigManager({
   config,
   onSave,
@@ -69,9 +94,11 @@ export default function GeographyConfigManager({
   const [draft, setDraft] = useState<GeographyConfigState>(config);
   const [stateDraft, setStateDraft] = useState(emptyStateDraft);
   const [cityDraft, setCityDraft] = useState(emptyCityDraft);
+  const [localityDraft, setLocalityDraft] = useState(emptyLocalityDraft);
   const [areaDraft, setAreaDraft] = useState(emptyAreaDraft);
   const [editingStateId, setEditingStateId] = useState<string | null>(null);
   const [editingCityId, setEditingCityId] = useState<string | null>(null);
+  const [editingLocalityId, setEditingLocalityId] = useState<string | null>(null);
   const [editingAreaId, setEditingAreaId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [statusText, setStatusText] = useState('');
@@ -88,6 +115,10 @@ export default function GeographyConfigManager({
   const cityLookup = useMemo(
     () => new Map(draft.cities.map((city) => [city.id, city])),
     [draft.cities]
+  );
+  const localityLookup = useMemo(
+    () => new Map(draft.localities.map((locality) => [locality.id, locality])),
+    [draft.localities]
   );
 
   const persist = async (nextDraft: GeographyConfigState, successMessage: string) => {
@@ -134,11 +165,13 @@ export default function GeographyConfigManager({
 
   const deleteState = async (stateId: string) => {
     const cityIds = new Set(draft.cities.filter((city) => city.stateId === stateId).map((city) => city.id));
+    const localityIds = new Set(draft.localities.filter((locality) => cityIds.has(locality.cityId)).map((locality) => locality.id));
     const nextDraft: GeographyConfigState = {
       ...draft,
       states: draft.states.filter((state) => state.id !== stateId),
       cities: draft.cities.filter((city) => city.stateId !== stateId),
-      areas: draft.areas.filter((area) => !cityIds.has(area.cityId)),
+      localities: draft.localities.filter((locality) => !cityIds.has(locality.cityId)),
+      areas: draft.areas.filter((area) => !cityIds.has(area.cityId) && !localityIds.has(area.localityId)),
     };
     setDraft(nextDraft);
     await persist(nextDraft, 'State removed.');
@@ -165,24 +198,63 @@ export default function GeographyConfigManager({
   };
 
   const deleteCity = async (cityId: string) => {
+    const localityIds = new Set(draft.localities.filter((locality) => locality.cityId === cityId).map((locality) => locality.id));
     const nextDraft: GeographyConfigState = {
       ...draft,
       cities: draft.cities.filter((city) => city.id !== cityId),
-      areas: draft.areas.filter((area) => area.cityId !== cityId),
+      localities: draft.localities.filter((locality) => locality.cityId !== cityId),
+      areas: draft.areas.filter((area) => area.cityId !== cityId && !localityIds.has(area.localityId)),
     };
     setDraft(nextDraft);
     await persist(nextDraft, 'City removed.');
+  };
+
+  const saveLocality = async () => {
+    const name = localityDraft.name.trim();
+    const id = slugify(localityDraft.id || name);
+    if (!id || !name || !localityDraft.cityId) {
+      setStatusText('Locality name and parent city are required.');
+      return;
+    }
+    const nextLocality: LocalityMaster = { id, cityId: localityDraft.cityId, name };
+    const nextDraft: GeographyConfigState = {
+      ...draft,
+      localities: editingLocalityId
+        ? draft.localities.map((locality) => (locality.id === editingLocalityId ? nextLocality : locality))
+        : [...draft.localities, nextLocality],
+    };
+    setDraft(nextDraft);
+    setLocalityDraft(emptyLocalityDraft);
+    setEditingLocalityId(null);
+    await persist(nextDraft, editingLocalityId ? 'Locality updated.' : 'Locality created.');
+  };
+
+  const deleteLocality = async (localityId: string) => {
+    const nextDraft: GeographyConfigState = {
+      ...draft,
+      localities: draft.localities.filter((locality) => locality.id !== localityId),
+      areas: draft.areas.filter((area) => area.localityId !== localityId),
+    };
+    setDraft(nextDraft);
+    await persist(nextDraft, 'Locality removed.');
   };
 
   const saveArea = async () => {
     const name = areaDraft.name.trim();
     const id = slugify(areaDraft.id || `${name}-${areaDraft.pincode}`);
     const pincode = areaDraft.pincode.replace(/\D/g, '').slice(0, 6);
-    if (!id || !name || !areaDraft.cityId || pincode.length !== 6) {
-      setStatusText('Area name, parent city, and 6-digit pincode are required.');
+    const parentLocality = draft.localities.find((locality) => locality.id === areaDraft.localityId) || null;
+    if (!id || !name || !parentLocality || pincode.length !== 6) {
+      setStatusText('Area name, parent locality, and 6-digit pincode are required.');
       return;
     }
-    const nextArea: AreaMaster = { id, cityId: areaDraft.cityId, name, pincode };
+    const nextArea: AreaMaster = {
+      id,
+      localityId: parentLocality.id,
+      cityId: parentLocality.cityId,
+      name,
+      pincode,
+    };
     const nextDraft: GeographyConfigState = {
       ...draft,
       areas: editingAreaId
@@ -285,6 +357,47 @@ export default function GeographyConfigManager({
     }
   };
 
+  const importLocalities = async (file: File) => {
+    setIsImporting(true);
+    try {
+      const rows = await readTabularFile(file);
+      const nextDraft: GeographyConfigState = { ...draft, localities: [...draft.localities] };
+      let imported = 0;
+      let skipped = 0;
+
+      rows.forEach((row) => {
+        const name = getTabularValue(row, ['name', 'localityName', 'locality']);
+        const city = resolveCityFromRow(row, draft.cities, draft.states);
+        const id = slugify(getTabularValue(row, ['id', 'localityId', 'locality id']) || name);
+        if (!name || !id || !city) {
+          skipped += 1;
+          return;
+        }
+
+        const nextLocality: LocalityMaster = { id, cityId: city.id, name };
+        const existingIndex = nextDraft.localities.findIndex((locality) => locality.id === id);
+        if (existingIndex >= 0) {
+          nextDraft.localities[existingIndex] = nextLocality;
+        } else {
+          nextDraft.localities.push(nextLocality);
+        }
+        imported += 1;
+      });
+
+      if (imported === 0) {
+        setStatusText('No valid locality rows found in the uploaded file.');
+        return;
+      }
+
+      setDraft(nextDraft);
+      await persist(nextDraft, `Imported ${imported} localities${skipped ? `, skipped ${skipped} rows.` : '.'}`);
+    } catch (error) {
+      setStatusText(error instanceof Error ? error.message : 'Failed to import locality file.');
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
   const importAreas = async (file: File) => {
     setIsImporting(true);
     try {
@@ -294,16 +407,16 @@ export default function GeographyConfigManager({
       let skipped = 0;
 
       rows.forEach((row) => {
-        const name = getTabularValue(row, ['name', 'areaName', 'area', 'locality', 'subLocality', 'sub locality']);
-        const city = resolveCityFromRow(row, draft.cities, draft.states);
+        const name = getTabularValue(row, ['name', 'areaName', 'area', 'subLocality', 'sub locality']);
+        const locality = resolveLocalityFromRow(row, draft.localities, draft.cities, draft.states);
         const pincode = getTabularValue(row, ['pincode', 'pin']).replace(/\D/g, '').slice(0, 6);
-        const id = slugify(getTabularValue(row, ['id', 'areaId', 'localityId', 'subLocalityId']) || `${name}-${pincode}`);
-        if (!name || !city || pincode.length !== 6 || !id) {
+        const id = slugify(getTabularValue(row, ['id', 'areaId', 'subLocalityId', 'sub locality id']) || `${name}-${pincode}`);
+        if (!name || !locality || pincode.length !== 6 || !id) {
           skipped += 1;
           return;
         }
 
-        const nextArea: AreaMaster = { id, cityId: city.id, name, pincode };
+        const nextArea: AreaMaster = { id, localityId: locality.id, cityId: locality.cityId, name, pincode };
         const existingIndex = nextDraft.areas.findIndex((area) => area.id === id);
         if (existingIndex >= 0) {
           nextDraft.areas[existingIndex] = nextArea;
@@ -314,14 +427,14 @@ export default function GeographyConfigManager({
       });
 
       if (imported === 0) {
-        setStatusText('No valid locality / sub-locality rows found in the uploaded file.');
+        setStatusText('No valid area rows found in the uploaded file.');
         return;
       }
 
       setDraft(nextDraft);
-      await persist(nextDraft, `Imported ${imported} localities / sub-localities${skipped ? `, skipped ${skipped} rows.` : '.'}`);
+      await persist(nextDraft, `Imported ${imported} areas${skipped ? `, skipped ${skipped} rows.` : '.'}`);
     } catch (error) {
-      setStatusText(error instanceof Error ? error.message : 'Failed to import locality file.');
+      setStatusText(error instanceof Error ? error.message : 'Failed to import area file.');
     } finally {
       setIsImporting(false);
     }
@@ -333,12 +446,13 @@ export default function GeographyConfigManager({
         <div>
           <h3 className="text-base font-extrabold text-slate-950">Managed Geography</h3>
           <p className="mt-1 text-[11px] text-slate-500">
-            States, cities, and areas now have an admin authoring path so locality and listing routing data can be managed without code edits.
+            States, cities, localities, and areas now have an admin authoring path so locality-driven routing can be managed without code edits.
           </p>
         </div>
         <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600">
           <div>States: <span className="font-bold text-slate-900">{draft.states.length}</span></div>
           <div>Cities: <span className="font-bold text-slate-900">{draft.cities.length}</span></div>
+          <div>Localities: <span className="font-bold text-slate-900">{draft.localities.length}</span></div>
           <div>Areas: <span className="font-bold text-slate-900">{draft.areas.length}</span></div>
         </div>
       </div>
@@ -349,7 +463,7 @@ export default function GeographyConfigManager({
         </div>
       )}
 
-      <div className="grid gap-4 xl:grid-cols-3">
+      <div className="grid gap-4 xl:grid-cols-4">
         <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3 space-y-3">
           <div>
             <div className="text-xs font-bold text-slate-900">Excel Import: States</div>
@@ -360,7 +474,7 @@ export default function GeographyConfigManager({
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={() => downloadCsvTemplate('state-template.csv', ['id', 'name'], [['maharashtra', 'Maharashtra']])}
+              onClick={() => downloadCsvTemplate('state-template.csv', ['id', 'name'], [['mh', 'Maharashtra']])}
               className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-700"
             >
               Download State Template
@@ -393,7 +507,7 @@ export default function GeographyConfigManager({
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={() => downloadCsvTemplate('city-template.csv', ['stateId', 'id', 'name'], [['maharashtra', 'navi-mumbai', 'Navi Mumbai']])}
+              onClick={() => downloadCsvTemplate('city-template.csv', ['stateId', 'id', 'name'], [['mh', 'navimumbai', 'Navi Mumbai']])}
               className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-700"
             >
               Download City Template
@@ -418,22 +532,54 @@ export default function GeographyConfigManager({
 
         <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3 space-y-3">
           <div>
-            <div className="text-xs font-bold text-slate-900">Excel Import: Locality / Sub-locality</div>
+            <div className="text-xs font-bold text-slate-900">Excel Import: Localities</div>
             <p className="mt-1 text-[11px] text-slate-500">
-              Current geography master stores locality and sub-locality rows as managed areas under a city with pincode.
-              Include `stateId` or `stateName`, `cityId` or `cityName`, plus `id`, `name`, and `pincode`.
+              Upload localities using `stateId` / `stateName`, `cityId` / `cityName`, plus `id` and `name`.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={() => downloadCsvTemplate('locality-template.csv', ['stateId', 'stateName', 'cityId', 'cityName', 'id', 'name', 'pincode'], [['maharashtra', 'Maharashtra', 'navi-mumbai', 'Navi Mumbai', 'roadpali', 'Roadpali', '410218']])}
+              onClick={() => downloadCsvTemplate('locality-template.csv', ['stateId', 'stateName', 'cityId', 'cityName', 'id', 'name'], [['mh', 'Maharashtra', 'navimumbai', 'Navi Mumbai', 'roadpali', 'Roadpali']])}
               className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-700"
             >
               Download Locality Template
             </button>
             <label className="cursor-pointer rounded-md bg-emerald-600 px-3 py-1.5 text-[11px] font-bold text-white">
               Upload Localities
+              <input
+                type="file"
+                accept=".xlsx,.xls,.csv,.tsv,.txt"
+                className="hidden"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) {
+                    void importLocalities(file);
+                  }
+                  event.currentTarget.value = '';
+                }}
+              />
+            </label>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3 space-y-3">
+          <div>
+            <div className="text-xs font-bold text-slate-900">Excel Import: Areas</div>
+            <p className="mt-1 text-[11px] text-slate-500">
+              Upload areas under a locality. Include `localityId` or `localityName`, plus `id`, `name`, and `pincode`.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => downloadCsvTemplate('area-template.csv', ['stateId', 'stateName', 'cityId', 'cityName', 'localityId', 'localityName', 'id', 'name', 'pincode'], [['mh', 'Maharashtra', 'navimumbai', 'Navi Mumbai', 'roadpali', 'Roadpali', 'roadpali-sec17', 'Sector 17', '410218']])}
+              className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-700"
+            >
+              Download Area Template
+            </button>
+            <label className="cursor-pointer rounded-md bg-emerald-700 px-3 py-1.5 text-[11px] font-bold text-white">
+              Upload Areas
               <input
                 type="file"
                 accept=".xlsx,.xls,.csv,.tsv,.txt"
@@ -451,7 +597,7 @@ export default function GeographyConfigManager({
         </div>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-3">
+      <div className="grid gap-4 xl:grid-cols-4">
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-3">
           <div className="flex items-center justify-between">
             <div className="text-xs font-bold text-slate-900">States</div>
@@ -513,16 +659,59 @@ export default function GeographyConfigManager({
 
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-3">
           <div className="flex items-center justify-between">
+            <div className="text-xs font-bold text-slate-900">Localities</div>
+            <button type="button" onClick={() => { setLocalityDraft(emptyLocalityDraft); setEditingLocalityId(null); }} className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-bold text-slate-700">
+              New
+            </button>
+          </div>
+          <select value={localityDraft.cityId} onChange={(e) => setLocalityDraft((prev) => ({ ...prev, cityId: e.target.value }))} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px]">
+            <option value="">Select city</option>
+            {draft.cities.map((city) => (
+              <option key={city.id} value={city.id}>
+                {city.name} ({stateLookup.get(city.stateId)?.name || city.stateId})
+              </option>
+            ))}
+          </select>
+          <input value={localityDraft.name} onChange={(e) => setLocalityDraft((prev) => ({ ...prev, name: e.target.value }))} placeholder="Locality name" className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px]" />
+          <input value={localityDraft.id} onChange={(e) => setLocalityDraft((prev) => ({ ...prev, id: e.target.value }))} placeholder="Locality ID" className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-mono" />
+          <button type="button" onClick={saveLocality} disabled={isSaving || isImporting} className="rounded-lg bg-indigo-600 px-3 py-2 text-[11px] font-bold text-white disabled:opacity-50">
+            {editingLocalityId ? 'Update Locality' : 'Create Locality'}
+          </button>
+          <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
+            {draft.localities.map((locality) => (
+              <div key={locality.id} className="rounded-lg border border-slate-200 bg-white p-3 text-[11px]">
+                <div className="font-semibold text-slate-900">{locality.name}</div>
+                <div className="text-[10px] text-slate-500">{cityLookup.get(locality.cityId)?.name || locality.cityId}</div>
+                <div className="font-mono text-[10px] text-slate-500">{locality.id}</div>
+                <div className="mt-2 flex gap-2">
+                  <button type="button" onClick={() => { setEditingLocalityId(locality.id); setLocalityDraft(locality); }} className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-bold text-slate-700">Edit</button>
+                  <button type="button" onClick={() => void deleteLocality(locality.id)} className="rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-[10px] font-bold text-rose-700">Delete</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-3">
+          <div className="flex items-center justify-between">
             <div className="text-xs font-bold text-slate-900">Areas</div>
             <button type="button" onClick={() => { setAreaDraft(emptyAreaDraft); setEditingAreaId(null); }} className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-bold text-slate-700">
               New
             </button>
           </div>
-          <select value={areaDraft.cityId} onChange={(e) => setAreaDraft((prev) => ({ ...prev, cityId: e.target.value }))} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px]">
-            <option value="">Select city</option>
-            {draft.cities.map((city) => (
-              <option key={city.id} value={city.id}>
-                {city.name} ({stateLookup.get(city.stateId)?.name || city.stateId})
+          <select
+            value={areaDraft.localityId}
+            onChange={(e) => {
+              const nextLocalityId = e.target.value;
+              const nextLocality = draft.localities.find((locality) => locality.id === nextLocalityId);
+              setAreaDraft((prev) => ({ ...prev, localityId: nextLocalityId, cityId: nextLocality?.cityId || '' }));
+            }}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px]"
+          >
+            <option value="">Select locality</option>
+            {draft.localities.map((locality) => (
+              <option key={locality.id} value={locality.id}>
+                {locality.name} ({cityLookup.get(locality.cityId)?.name || locality.cityId})
               </option>
             ))}
           </select>
@@ -536,7 +725,11 @@ export default function GeographyConfigManager({
             {draft.areas.map((area) => (
               <div key={area.id} className="rounded-lg border border-slate-200 bg-white p-3 text-[11px]">
                 <div className="font-semibold text-slate-900">{area.name}</div>
-                <div className="text-[10px] text-slate-500">{cityLookup.get(area.cityId)?.name || area.cityId}</div>
+                <div className="text-[10px] text-slate-500">
+                  {localityLookup.get(area.localityId)?.name || area.localityId}
+                  {' • '}
+                  {cityLookup.get(area.cityId)?.name || area.cityId}
+                </div>
                 <div className="font-mono text-[10px] text-slate-500">{area.id} | {area.pincode}</div>
                 <div className="mt-2 flex gap-2">
                   <button type="button" onClick={() => { setEditingAreaId(area.id); setAreaDraft(area); }} className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-bold text-slate-700">Edit</button>

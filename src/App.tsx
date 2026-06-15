@@ -6,7 +6,7 @@ import {
 import { 
   Locality, Business, SubdomainMapping, Review, UserSession, UserRole,
   CommunityItem, CRMContact, MarketingCoupon, AuditEvent, ListingAd, AdLead, HeroBanner, HeroBannerStat, BuyerActivityEvent,
-  HomepageLayout, HomepageSection, HomepageSectionType, ApiConfiguration, HomepageConfigState, ScalableHomepageConfigState, ScalableCampaign, ScalableHomepageTemplate, ScalableHomepageAssignment, BusinessTaxonomyState, BusinessCategory, BusinessSubcategory, LocalityRoutingConfigState, PincodeRoutingMapping, GeographyConfigState, StateMaster, CityMaster, AreaMaster, HomepageDefaultsConfigState, FallbackListingAdTemplate, HeroBannerDraftDefaults, SeoDiscoveryConfigState, SeoRouteIntent, SeoLocalityMetadata, SeoCategoryLabel, SeoTopListingGroup, SeoDefaultListingGroup, ResolvedHomepagePublishRequest, ResolvedHomepageSnapshotDeleteRequest, ScalableLegacyOwnershipSummary, PublishedHomepageSnapshot
+  HomepageLayout, HomepageSection, HomepageSectionType, ApiConfiguration, HomepageConfigState, ScalableHomepageConfigState, ScalableCampaign, ScalableHomepageTemplate, ScalableHomepageAssignment, BusinessTaxonomyState, BusinessCategory, BusinessSubcategory, LocalityRoutingConfigState, PincodeRoutingMapping, GeographyConfigState, StateMaster, CityMaster, LocalityMaster, AreaMaster, HomepageDefaultsConfigState, FallbackListingAdTemplate, HeroBannerDraftDefaults, SeoDiscoveryConfigState, SeoRouteIntent, SeoLocalityMetadata, SeoCategoryLabel, SeoTopListingGroup, SeoDefaultListingGroup, ResolvedHomepagePublishRequest, ResolvedHomepageSnapshotDeleteRequest, ScalableLegacyOwnershipSummary, PublishedHomepageSnapshot
 } from './types';
 import WebPortal from './components/WebPortal';
 import PincodeSelectionModal from './components/PincodeSelectionModal';
@@ -26,7 +26,7 @@ import {
   resolveDefaultSubcategoryId,
   resolveMasterCategoryId
 } from './categoryMaster';
-import { MASTER_AREAS, MASTER_CITIES, MASTER_STATES, setGeographyCatalog } from './geographyMaster';
+import { MASTER_AREAS, MASTER_CITIES, MASTER_LOCALITIES, MASTER_STATES, setGeographyCatalog } from './geographyMaster';
 import {
   DEFAULT_LOCALITIES,
   DEFAULT_LOCALITY_ID,
@@ -361,8 +361,15 @@ const normalizeStoredCity = (city: CityMaster): CityMaster => ({
   name: String(city.name || '').trim(),
 });
 
+const normalizeStoredGeographyLocality = (locality: LocalityMaster): LocalityMaster => ({
+  id: String(locality.id || '').trim(),
+  cityId: String(locality.cityId || '').trim(),
+  name: String(locality.name || '').trim(),
+});
+
 const normalizeStoredArea = (area: AreaMaster): AreaMaster => ({
   id: String(area.id || '').trim(),
+  localityId: String(area.localityId || '').trim(),
   cityId: String(area.cityId || '').trim(),
   name: String(area.name || '').trim(),
   pincode: String(area.pincode || '').replace(/\D/g, '').slice(0, 6),
@@ -379,12 +386,17 @@ const normalizeGeographyConfigState = (
     ? value.cities.map(normalizeStoredCity).filter((city) => city.id && city.name && stateIds.has(city.stateId))
     : [...MASTER_CITIES].map(normalizeStoredCity);
   const cityIds = new Set(cities.map((city) => city.id));
+  const localities = Array.isArray(value?.localities)
+    ? value.localities.map(normalizeStoredGeographyLocality).filter((locality) => locality.id && locality.name && cityIds.has(locality.cityId))
+    : [...MASTER_LOCALITIES].map(normalizeStoredGeographyLocality);
+  const localityIds = new Set(localities.map((locality) => locality.id));
   const areas = Array.isArray(value?.areas)
-    ? value.areas.map(normalizeStoredArea).filter((area) => area.id && area.name && area.pincode && cityIds.has(area.cityId))
+    ? value.areas.map(normalizeStoredArea).filter((area) => area.id && area.name && area.pincode && localityIds.has(area.localityId) && cityIds.has(area.cityId))
     : [...MASTER_AREAS].map(normalizeStoredArea);
   return {
     states,
     cities,
+    localities,
     areas,
     metadata: {
       seededFromCode: value?.metadata?.seededFromCode ?? true,
@@ -406,9 +418,11 @@ const validateGeographyConfigForOperations = (
   const errors: string[] = [];
   const seenStateNames = new Map<string, string>();
   const seenCityNames = new Map<string, string>();
+  const seenLocalityNames = new Map<string, string>();
   const seenAreaNames = new Map<string, string>();
   const stateIds = new Set<string>();
   const cityIds = new Set<string>();
+  const localityIds = new Set<string>();
   const areaIds = new Set<string>();
 
   const duplicateStateIds = config.states
@@ -430,6 +444,13 @@ const validateGeographyConfigForOperations = (
     .filter((id, index, values) => values.indexOf(id) !== index);
   if (duplicateAreaIds.length > 0) {
     errors.push(`Duplicate area IDs are not allowed: ${formatValidationExamples([...new Set(duplicateAreaIds)])}.`);
+  }
+
+  const duplicateLocalityIds = config.localities
+    .map((locality) => locality.id)
+    .filter((id, index, values) => values.indexOf(id) !== index);
+  if (duplicateLocalityIds.length > 0) {
+    errors.push(`Duplicate locality IDs are not allowed: ${formatValidationExamples([...new Set(duplicateLocalityIds)])}.`);
   }
 
   for (const state of config.states) {
@@ -457,29 +478,47 @@ const validateGeographyConfigForOperations = (
     seenCityNames.set(key, city.id);
   }
 
+  for (const locality of config.localities) {
+    localityIds.add(locality.id);
+    if (!cityIds.has(locality.cityId)) {
+      errors.push(`Locality "${locality.name}" points to missing city "${locality.cityId}".`);
+    }
+    const key = `${locality.cityId}::${slugifyForUrl(locality.name)}`;
+    const existing = seenLocalityNames.get(key);
+    if (existing && existing !== locality.id) {
+      errors.push(`Locality name "${locality.name}" is duplicated inside the same city.`);
+      break;
+    }
+    seenLocalityNames.set(key, locality.id);
+  }
+
   for (const area of config.areas) {
     areaIds.add(area.id);
     if (!cityIds.has(area.cityId)) {
       errors.push(`Area "${area.name}" points to missing city "${area.cityId}".`);
     }
+    if (!localityIds.has(area.localityId)) {
+      errors.push(`Area "${area.name}" points to missing locality "${area.localityId}".`);
+    }
     if (!/^\d{6}$/.test(area.pincode)) {
       errors.push(`Area "${area.name}" must have a valid 6-digit pincode.`);
     }
-    const key = `${area.cityId}::${slugifyForUrl(area.name)}`;
+    const key = `${area.localityId}::${slugifyForUrl(area.name)}`;
     const existing = seenAreaNames.get(key);
     if (existing && existing !== area.id) {
-      errors.push(`Area name "${area.name}" is duplicated inside the same city.`);
+      errors.push(`Area name "${area.name}" is duplicated inside the same locality.`);
       break;
     }
     seenAreaNames.set(key, area.id);
   }
 
   const cityLookup = new Map(config.cities.map((city) => [city.id, city]));
+  const localityLookup = new Map(config.localities.map((locality) => [locality.id, locality]));
   const areaLookup = new Map(config.areas.map((area) => [area.id, area]));
   const pincodeLocalityLookup = new Map(pincodeMappings.map((mapping) => [mapping.pincode, mapping.localityId]));
 
   const missingPrimaryGeoBusinesses = businesses
-    .filter((business) => !stateIds.has(business.stateId) || !cityIds.has(business.cityId) || !areaIds.has(business.areaId))
+    .filter((business) => !stateIds.has(business.stateId) || !cityIds.has(business.cityId) || !localityIds.has(business.localityId) || !areaIds.has(business.areaId))
     .map((business) => business.name);
   if (missingPrimaryGeoBusinesses.length > 0) {
     errors.push(`These listings would lose their primary geography mapping: ${formatValidationExamples(missingPrimaryGeoBusinesses)}.`);
@@ -496,12 +535,18 @@ const validateGeographyConfigForOperations = (
     .filter((business) => {
       const area = areaLookup.get(business.areaId);
       const city = cityLookup.get(business.cityId);
-      if (!area || !city) return false;
-      return area.cityId !== business.cityId || city.stateId !== business.stateId;
+      const locality = localityLookup.get(business.localityId);
+      if (!area || !city || !locality) return false;
+      return (
+        area.localityId !== business.localityId ||
+        area.cityId !== business.cityId ||
+        locality.cityId !== business.cityId ||
+        city.stateId !== business.stateId
+      );
     })
     .map((business) => business.name);
   if (mismatchedAreaChainBusinesses.length > 0) {
-    errors.push(`These listings would no longer match their state/city/area hierarchy: ${formatValidationExamples(mismatchedAreaChainBusinesses)}.`);
+    errors.push(`These listings would no longer match their state/city/locality/area hierarchy: ${formatValidationExamples(mismatchedAreaChainBusinesses)}.`);
   }
 
   const localityMismatchBusinesses = businesses
@@ -1645,7 +1690,7 @@ export default function App() {
         if (cancelled) return;
         const normalized = normalizeGeographyConfigState(data?.config || null);
         setGeographyConfig(normalized);
-        setGeographyCatalog(normalized.states, normalized.cities, normalized.areas);
+        setGeographyCatalog(normalized.states, normalized.cities, normalized.localities, normalized.areas);
         setBusinesses((prev) => prev.map(normalizeStoredBusiness));
         setGeographyConfigReady(true);
       })
@@ -3234,23 +3279,23 @@ export default function App() {
         throw new Error(savedValidationErrors.join(' '));
       }
       setGeographyConfig(saved);
-      setGeographyCatalog(saved.states, saved.cities, saved.areas);
+      setGeographyCatalog(saved.states, saved.cities, saved.localities, saved.areas);
       setBusinesses((prev) => prev.map(normalizeStoredBusiness));
       logAuditEvent(
         'data_entry',
         'Saved managed geography configuration',
-        `States: ${saved.states.length} | Cities: ${saved.cities.length} | Areas: ${saved.areas.length}`
+        `States: ${saved.states.length} | Cities: ${saved.cities.length} | Localities: ${saved.localities.length} | Areas: ${saved.areas.length}`
       );
       return saved;
     }
 
     setGeographyConfig(normalized);
-    setGeographyCatalog(normalized.states, normalized.cities, normalized.areas);
+    setGeographyCatalog(normalized.states, normalized.cities, normalized.localities, normalized.areas);
     setBusinesses((prev) => prev.map(normalizeStoredBusiness));
     logAuditEvent(
       'data_entry',
       'Saved managed geography configuration',
-      `States: ${normalized.states.length} | Cities: ${normalized.cities.length} | Areas: ${normalized.areas.length}`
+      `States: ${normalized.states.length} | Cities: ${normalized.cities.length} | Localities: ${normalized.localities.length} | Areas: ${normalized.areas.length}`
     );
     return normalized;
   };
@@ -3383,10 +3428,15 @@ export default function App() {
   };
 
   const handleSaveScalableTemplate = async (template: ScalableHomepageTemplate) => {
+    const isExistingTemplate = Boolean(
+      scalableHomepageConfig?.templates.some((entry) => entry.id === template.id)
+    );
     const response = await fetch(
-      template.id ? getScalableHomepageEntityEndpoint('templates', template.id) : getScalableHomepageEntityEndpoint('templates'),
+      isExistingTemplate
+        ? getScalableHomepageEntityEndpoint('templates', template.id)
+        : getScalableHomepageEntityEndpoint('templates'),
       {
-        method: template.id ? 'PUT' : 'POST',
+        method: isExistingTemplate ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...getAuthHeaders()
@@ -3404,7 +3454,7 @@ export default function App() {
     setScalableHomepageConfig(normalized);
     logAuditEvent(
       'data_entry',
-      template.id ? 'Updated scalable homepage template' : 'Created scalable homepage template',
+      isExistingTemplate ? 'Updated scalable homepage template' : 'Created scalable homepage template',
       `Template: ${template.name} | Scope: ${template.templateScope} | Localities: ${(template.localityIds || []).join(', ') || 'all'}`
     );
     return payload?.template as ScalableHomepageTemplate | undefined;

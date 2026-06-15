@@ -452,7 +452,7 @@ export default function WebPortal({
   const [isSearchInputFocused, setIsSearchInputFocused] = useState(false);
   const [resolvedHomepagePayload, setResolvedHomepagePayload] = useState<ResolvedHomepagePayload | null>(null);
   const [resolvedHomepageSource, setResolvedHomepageSource] = useState<'published_snapshot' | 'live_resolver' | 'legacy_fallback'>('legacy_fallback');
-  const [resolvedHomepageLoading, setResolvedHomepageLoading] = useState(false);
+  const [resolvedHomepageHydrated, setResolvedHomepageHydrated] = useState(false);
   const deferredSearchQuery = useDeferredValue(searchQuery);
 
   useEffect(() => {
@@ -555,7 +555,11 @@ export default function WebPortal({
   const cmsHeroBanners = hasResolvedHomepagePayload
     ? (resolvedHomepagePayload?.heroBanners || [])
     : heroBanners;
-  const shouldDeferResolvedListingAds = Boolean(apiConfiguration?.resolvedHomepageEndpoint && currentLocality?.id && resolvedHomepageLoading);
+  const shouldDeferResolvedListingAds = Boolean(
+    apiConfiguration?.resolvedHomepageEndpoint &&
+    currentLocality?.id &&
+    !resolvedHomepageHydrated
+  );
   const cmsListingAds = shouldDeferResolvedListingAds
     ? []
     : hasResolvedHomepagePayload
@@ -594,14 +598,14 @@ export default function WebPortal({
 
   useEffect(() => {
     if (!apiConfiguration?.resolvedHomepageEndpoint || !currentLocality?.id) {
-      setResolvedHomepageLoading(false);
+      setResolvedHomepageHydrated(true);
       setResolvedHomepagePayload(null);
       setResolvedHomepageSource('legacy_fallback');
       return;
     }
 
     let cancelled = false;
-    setResolvedHomepageLoading(true);
+    setResolvedHomepageHydrated(false);
     const params = new URLSearchParams({
       localityId: currentLocality.id,
       device: currentDeviceTarget,
@@ -616,18 +620,18 @@ export default function WebPortal({
       .then((data: { payload?: ResolvedHomepagePayload; source?: 'published_snapshot' | 'live_resolver' } | null) => {
         if (cancelled) return;
         if (!data?.payload) {
-          setResolvedHomepageLoading(false);
+          setResolvedHomepageHydrated(true);
           setResolvedHomepagePayload(null);
           setResolvedHomepageSource('legacy_fallback');
           return;
         }
-        setResolvedHomepageLoading(false);
+        setResolvedHomepageHydrated(true);
         setResolvedHomepagePayload(data.payload);
         setResolvedHomepageSource(data.source || 'live_resolver');
       })
       .catch(() => {
         if (cancelled) return;
-        setResolvedHomepageLoading(false);
+        setResolvedHomepageHydrated(true);
         setResolvedHomepagePayload(null);
         setResolvedHomepageSource('legacy_fallback');
       });

@@ -7983,7 +7983,19 @@ export default function AdminConsole({
                   <select
                     value={backendDraft.localityId}
                     disabled={!backendEditMode}
-                    onChange={(e) => setBackendDraft({ ...backendDraft, localityId: e.target.value })}
+                    onChange={(e) => {
+                      const nextLocalityId = e.target.value;
+                      const matchingAreas = MASTER_AREAS.filter((area) => area.localityId === nextLocalityId);
+                      const selectedAreaStillValid = matchingAreas.some((area) => area.id === backendDraft.areaId);
+                      const nextArea = selectedAreaStillValid ? matchingAreas.find((area) => area.id === backendDraft.areaId) : matchingAreas[0];
+                      setBackendDraft({
+                        ...backendDraft,
+                        localityId: nextLocalityId,
+                        areaId: nextArea?.id || '',
+                        cityId: nextArea?.cityId || backendDraft.cityId,
+                        pincode: nextArea?.pincode || backendDraft.pincode || '',
+                      });
+                    }}
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 disabled:bg-slate-50"
                   >
                     {localities.map(loc => (
@@ -7998,12 +8010,21 @@ export default function AdminConsole({
                     disabled={!backendEditMode}
                     onChange={(e) => {
                       const nextAreaId = e.target.value;
-                      const nextPincode = MASTER_AREAS.find((area) => area.id === nextAreaId)?.pincode || backendDraft.pincode || '';
-                      setBackendDraft({ ...backendDraft, areaId: nextAreaId, pincode: nextPincode });
+                      const nextArea = MASTER_AREAS.find((area) => area.id === nextAreaId);
+                      const nextPincode = nextArea?.pincode || backendDraft.pincode || '';
+                      setBackendDraft({
+                        ...backendDraft,
+                        areaId: nextAreaId,
+                        localityId: nextArea?.localityId || backendDraft.localityId,
+                        cityId: nextArea?.cityId || backendDraft.cityId,
+                        pincode: nextPincode,
+                      });
                     }}
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 disabled:bg-slate-50"
                   >
-                    {MASTER_AREAS.map(area => (
+                    {MASTER_AREAS
+                      .filter((area) => area.localityId === backendDraft.localityId)
+                      .map(area => (
                       <option key={area.id} value={area.id}>{area.name} ({area.pincode})</option>
                     ))}
                   </select>
