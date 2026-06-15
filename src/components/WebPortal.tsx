@@ -452,6 +452,7 @@ export default function WebPortal({
   const [isSearchInputFocused, setIsSearchInputFocused] = useState(false);
   const [resolvedHomepagePayload, setResolvedHomepagePayload] = useState<ResolvedHomepagePayload | null>(null);
   const [resolvedHomepageSource, setResolvedHomepageSource] = useState<'published_snapshot' | 'live_resolver' | 'legacy_fallback'>('legacy_fallback');
+  const [resolvedHomepageLoading, setResolvedHomepageLoading] = useState(false);
   const deferredSearchQuery = useDeferredValue(searchQuery);
 
   useEffect(() => {
@@ -554,9 +555,12 @@ export default function WebPortal({
   const cmsHeroBanners = hasResolvedHomepagePayload
     ? (resolvedHomepagePayload?.heroBanners || [])
     : heroBanners;
-  const cmsListingAds = hasResolvedHomepagePayload
-    ? (resolvedHomepagePayload?.listingAds || [])
-    : listingAds;
+  const shouldDeferResolvedListingAds = Boolean(apiConfiguration?.resolvedHomepageEndpoint && currentLocality?.id && resolvedHomepageLoading);
+  const cmsListingAds = shouldDeferResolvedListingAds
+    ? []
+    : hasResolvedHomepagePayload
+      ? (resolvedHomepagePayload?.listingAds || [])
+      : listingAds;
   const cmsCoupons = hasResolvedHomepagePayload
     ? (resolvedHomepagePayload?.offers || [])
     : coupons;
@@ -590,12 +594,14 @@ export default function WebPortal({
 
   useEffect(() => {
     if (!apiConfiguration?.resolvedHomepageEndpoint || !currentLocality?.id) {
+      setResolvedHomepageLoading(false);
       setResolvedHomepagePayload(null);
       setResolvedHomepageSource('legacy_fallback');
       return;
     }
 
     let cancelled = false;
+    setResolvedHomepageLoading(true);
     const params = new URLSearchParams({
       localityId: currentLocality.id,
       device: currentDeviceTarget,
@@ -610,15 +616,18 @@ export default function WebPortal({
       .then((data: { payload?: ResolvedHomepagePayload; source?: 'published_snapshot' | 'live_resolver' } | null) => {
         if (cancelled) return;
         if (!data?.payload) {
+          setResolvedHomepageLoading(false);
           setResolvedHomepagePayload(null);
           setResolvedHomepageSource('legacy_fallback');
           return;
         }
+        setResolvedHomepageLoading(false);
         setResolvedHomepagePayload(data.payload);
         setResolvedHomepageSource(data.source || 'live_resolver');
       })
       .catch(() => {
         if (cancelled) return;
+        setResolvedHomepageLoading(false);
         setResolvedHomepagePayload(null);
         setResolvedHomepageSource('legacy_fallback');
       });
@@ -1739,6 +1748,8 @@ export default function WebPortal({
       </div>
     );
   };
+
+  const shouldShowListingResultImage = (biz: Business) => biz.isSponsored === true;
 
   const handleListingAdAction = (ad: ListingAd) => {
     if (ad.actionType === 'landing_page') {
@@ -2941,7 +2952,7 @@ export default function WebPortal({
     ...section,
     id: `fallback_${section.id || section.sectionType || index + 1}`,
   }));
-  const shouldUseFallbackAds = resolvedHomepageSource === 'legacy_fallback' && activeListingAds.length === 0;
+  const shouldUseFallbackAds = !shouldDeferResolvedListingAds && resolvedHomepageSource === 'legacy_fallback' && activeListingAds.length === 0;
   const fallbackSidebarAds: ListingAd[] = (homepageDefaultsConfig?.fallbackListingAds || (DEFAULT_FALLBACK_LISTING_AD_TEMPLATES as Array<Record<string, unknown>>)).map((ad, index) => ({
     id: String(ad.id || `fallback_ad_${index + 1}`),
     title: String(ad.title || 'Fallback Ad'),
@@ -3961,7 +3972,7 @@ export default function WebPortal({
                           {renderCompactBusinessRow(biz, (biz.featured || biz.isSponsored) ? {
                             badgeLabel: 'VIP',
                             badgeClassName: 'bg-indigo-700 text-white',
-                            showImage: true
+                            showImage: shouldShowListingResultImage(biz)
                           } : undefined)}
                           <div 
                             onClick={() => openBusinessDetails(biz)}
@@ -3973,7 +3984,7 @@ export default function WebPortal({
                               </span>
                             )}
                             <div className="space-y-3">
-                              {(biz.featured || biz.isSponsored) && (
+                              {shouldShowListingResultImage(biz) && (
                                 <div className="relative">
                                   <img 
                                     src={getBusinessImageUrl(biz)}
