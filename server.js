@@ -2044,6 +2044,32 @@ function normalizeCmsStatus(value) {
     : 'active';
 }
 
+function normalizeDateOnlyInput(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    return raw;
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}T/.test(raw)) {
+    return raw.slice(0, 10);
+  }
+
+  const dayMonthYearMatch = raw.match(/^(\d{2})[-/](\d{2})[-/](\d{4})$/);
+  if (dayMonthYearMatch) {
+    const [, day, month, year] = dayMonthYearMatch;
+    return `${year}-${month}-${day}`;
+  }
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) {
+    return '';
+  }
+
+  return parsed.toISOString().slice(0, 10);
+}
+
 function normalizeTargetingRule(value) {
   const rule = value && typeof value === 'object' ? value : {};
   const devices = normalizeStringList(rule.devices).filter((entry) => ['all', 'mobile', 'desktop'].includes(entry));
@@ -2116,8 +2142,8 @@ function sanitizeCampaign(value, index = 0) {
     status: normalizeCmsStatus(campaign.status),
     priority: Number.isFinite(Number(campaign.priority)) ? Number(campaign.priority) : 100,
     isFallback: Boolean(campaign.isFallback),
-    startDate: campaign.startDate ? String(campaign.startDate) : '',
-    endDate: campaign.endDate ? String(campaign.endDate) : '',
+    startDate: normalizeDateOnlyInput(campaign.startDate),
+    endDate: normalizeDateOnlyInput(campaign.endDate),
     deviceTarget: ['all', 'mobile', 'desktop'].includes(String(campaign.deviceTarget || 'all'))
       ? String(campaign.deviceTarget || 'all')
       : 'all',
