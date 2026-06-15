@@ -2449,17 +2449,25 @@ export default function AdminConsole({
   ) => {
     if (!onSaveScalableTemplate) {
       triggerNotification('Scalable template save callback is not configured.');
-      return;
+      return { saved: false, published: false };
     }
     try {
       await onSaveScalableTemplate(nextTemplate);
-      if (publishLocalityIds && publishLocalityIds.length > 0 && onPublishResolvedHomepages) {
-        await onPublishResolvedHomepages(publishLocalityIds);
+      try {
+        if (publishLocalityIds && publishLocalityIds.length > 0 && onPublishResolvedHomepages) {
+          await onPublishResolvedHomepages(publishLocalityIds);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Publish failed after template save.';
+        triggerNotification(`Template saved, but publish failed: ${message}`);
+        return { saved: true, published: false };
       }
       triggerNotification(successMessage);
+      return { saved: true, published: true };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to save scalable template.';
       triggerNotification(message);
+      return { saved: false, published: false };
     }
   };
 
@@ -2631,12 +2639,14 @@ export default function AdminConsole({
       updatedAt: new Date().toISOString(),
     };
 
-    await persistScalableTemplateEntity(
+    const result = await persistScalableTemplateEntity(
       nextTemplate,
       templateDraft.id ? 'Template updated and published.' : 'Template created and published.',
       nextTemplate.localityIds.length > 0 ? nextTemplate.localityIds : [homepageLocalityId]
     );
-    resetTemplateDraft();
+    if (result?.saved) {
+      resetTemplateDraft();
+    }
   };
 
   const handleSyncTemplateSectionsFromLocality = async () => {
