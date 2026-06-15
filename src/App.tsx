@@ -2009,6 +2009,8 @@ export default function App() {
   const homepageConfigLoadedRef = useRef(false);
   const scalableHomepageConfigLoadedRef = useRef(false);
   const lastHomepageSyncSignatureRef = useRef('');
+  const legacyCampaignAutoSyncSignatureRef = useRef<Record<string, string>>({});
+  const legacyCampaignAutoSyncInFlightRef = useRef<Record<string, boolean>>({});
   const auditEventDedupRef = useRef<Map<string, number>>(new Map());
   const lastAutomatedAuditPostAtRef = useRef(0);
   const autoLocationAttemptedRef = useRef(false);
@@ -3923,7 +3925,8 @@ export default function App() {
 
   const syncScalableLegacyCampaignSourceInBackground = (
     sourceTag: ScalableLegacyCampaignSourceTag,
-    publishLocalityIds: string[] = []
+    publishLocalityIds: string[] = [],
+    sourceSignature = ''
   ) => {
     if (apiConfiguration.syncMode !== 'api' || !apiConfiguration.scalableHomepageConfigEndpoint) {
       return false;
@@ -3936,6 +3939,19 @@ export default function App() {
       return true;
     }
     const scopedLocalityIds: string[] = Array.from(new Set<string>(publishLocalityIds.filter(Boolean)));
+    const syncSignature = JSON.stringify({
+      sourceTag,
+      localityIds: [...scopedLocalityIds].sort(),
+      sourceSignature,
+    });
+    if (legacyCampaignAutoSyncInFlightRef.current[sourceTag]) {
+      return true;
+    }
+    if (legacyCampaignAutoSyncSignatureRef.current[sourceTag] === syncSignature) {
+      return true;
+    }
+    legacyCampaignAutoSyncSignatureRef.current[sourceTag] = syncSignature;
+    legacyCampaignAutoSyncInFlightRef.current[sourceTag] = true;
     void handleSyncScalableLegacyCampaigns([sourceTag], scopedLocalityIds)
       .then(() => {
         if (scopedLocalityIds.length === 0 || !apiConfiguration.publishResolvedHomepageEndpoint) return;
@@ -3943,6 +3959,9 @@ export default function App() {
       })
       .catch(() => {
         // Keep local state intact even if best-effort scalable sync fails.
+      })
+      .finally(() => {
+        legacyCampaignAutoSyncInFlightRef.current[sourceTag] = false;
       });
     return true;
   };
@@ -3993,7 +4012,16 @@ export default function App() {
 
   useEffect(() => {
     if (!scalableHomepageConfigReady) return;
-    if (syncScalableLegacyCampaignSourceInBackground('legacy_hero_banner', heroBanners.map((banner) => banner.localityId))) {
+    const heroBannerLocalityIds = heroBanners.map((banner) => banner.localityId);
+    const heroBannerSyncSignature = JSON.stringify(heroBanners.map((banner) => ({
+      id: banner.id,
+      localityId: banner.localityId,
+      isActive: banner.isActive,
+      startDate: banner.startDate || '',
+      endDate: banner.endDate || '',
+      updatedAt: banner.updatedAt || '',
+    })));
+    if (syncScalableLegacyCampaignSourceInBackground('legacy_hero_banner', heroBannerLocalityIds, heroBannerSyncSignature)) {
       return;
     }
     const nextCampaigns: ScalableCampaign[] = heroBanners.map((banner) => ({
@@ -4024,14 +4052,23 @@ export default function App() {
     }));
     syncScalableConfigInBackground(
       (config) => syncScalableCampaignCollection(config, 'hero_banner', nextCampaigns, 'legacy_hero_banner'),
-      heroBanners.map((banner) => banner.localityId)
+      heroBannerLocalityIds
     );
   }, [heroBanners, scalableHomepageConfigReady, userSession.authToken, userSession.role]);
 
   useEffect(() => {
     if (!scalableHomepageConfigReady) return;
     const listingAdLocalityIds = listingAds.flatMap((ad) => ad.localityIds || []);
-    if (syncScalableLegacyCampaignSourceInBackground('legacy_listing_ad', listingAdLocalityIds)) {
+    const listingAdSyncSignature = JSON.stringify(listingAds.map((ad) => ({
+      id: ad.id,
+      localityIds: ad.localityIds || [],
+      categoryIds: ad.categoryIds || [],
+      isActive: ad.isActive,
+      placementKey: ad.placementKey || '',
+      startDate: ad.startDate || '',
+      endDate: ad.endDate || '',
+    })));
+    if (syncScalableLegacyCampaignSourceInBackground('legacy_listing_ad', listingAdLocalityIds, listingAdSyncSignature)) {
       return;
     }
     const nextCampaigns: ScalableCampaign[] = listingAds.map((ad) => ({
@@ -4075,7 +4112,17 @@ export default function App() {
       const relatedBusiness = businesses.find((business) => business.id === coupon.businessId);
       return relatedBusiness?.localityId ? [relatedBusiness.localityId] : [];
     });
-    if (syncScalableLegacyCampaignSourceInBackground('legacy_coupon', couponLocalityIds)) {
+    const couponSyncSignature = JSON.stringify(coupons.map((coupon) => ({
+      id: coupon.id,
+      businessId: coupon.businessId,
+      localityIds: coupon.localityIds || [],
+      categoryIds: coupon.categoryIds || [],
+      status: coupon.status || '',
+      isActive: coupon.isActive,
+      startDate: coupon.startDate || '',
+      expiryDate: coupon.expiryDate || coupon.endDate || '',
+    })));
+    if (syncScalableLegacyCampaignSourceInBackground('legacy_coupon', couponLocalityIds, couponSyncSignature)) {
       return;
     }
     const nextCampaigns: ScalableCampaign[] = coupons.map((coupon) => {
@@ -4117,7 +4164,16 @@ export default function App() {
 
   useEffect(() => {
     if (!scalableHomepageConfigReady) return;
-    if (syncScalableLegacyCampaignSourceInBackground('legacy_community_item', communityItems.map((item) => item.localityId))) {
+    const communityLocalityIds = communityItems.map((item) => item.localityId);
+    const communitySyncSignature = JSON.stringify(communityItems.map((item) => ({
+      id: item.id,
+      localityId: item.localityId,
+      status: item.status,
+      publishAt: item.publishAt || '',
+      expireAt: item.expireAt || '',
+      isSponsored: item.isSponsored,
+    })));
+    if (syncScalableLegacyCampaignSourceInBackground('legacy_community_item', communityLocalityIds, communitySyncSignature)) {
       return;
     }
     const nextCampaigns: ScalableCampaign[] = communityItems.map((item) => ({
@@ -4152,7 +4208,7 @@ export default function App() {
     }));
     syncScalableConfigInBackground(
       (config) => syncScalableCampaignCollection(config, 'content_block', nextCampaigns, 'legacy_community_item'),
-      communityItems.map((item) => item.localityId)
+      communityLocalityIds
     );
   }, [communityItems, scalableHomepageConfigReady, userSession.authToken, userSession.role]);
 
@@ -4161,7 +4217,18 @@ export default function App() {
     const sponsoredLocalityIds = businesses
       .filter((business) => business.isSponsored)
       .map((business) => business.localityId);
-    if (syncScalableLegacyCampaignSourceInBackground('legacy_business_sponsorship', sponsoredLocalityIds)) {
+    const sponsoredSyncSignature = JSON.stringify(businesses
+      .filter((business) => business.isSponsored)
+      .map((business) => ({
+        id: business.id,
+        localityId: business.localityId,
+        categoryId: business.categoryId || '',
+        subcategoryId: business.subcategoryId || '',
+        pincode: business.pincode || '',
+        status: business.status || '',
+        cpcBudget: business.cpcBudget || '',
+      })));
+    if (syncScalableLegacyCampaignSourceInBackground('legacy_business_sponsorship', sponsoredLocalityIds, sponsoredSyncSignature)) {
       return;
     }
     const nextCampaigns: ScalableCampaign[] = businesses
