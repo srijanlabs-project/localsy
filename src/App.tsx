@@ -2042,7 +2042,7 @@ export default function App() {
   });
 
   const getAuthHeaders = () => {
-    const token = localStorage.getItem('yp_auth_token');
+    const token = userSession.authToken || localStorage.getItem('yp_auth_token');
     return token ? { Authorization: `Bearer ${token}` } : {};
   };
 
@@ -3176,12 +3176,11 @@ export default function App() {
     setBusinesses((prev) => prev.map(normalizeStoredBusiness));
 
     if (apiConfiguration.taxonomyConfigEndpoint && apiConfiguration.syncMode === 'api') {
-      const token = localStorage.getItem('yp_auth_token');
       const response = await fetch(apiConfiguration.taxonomyConfigEndpoint, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...getAuthHeaders(),
         },
         body: JSON.stringify({ taxonomy: normalized }),
       });
@@ -3211,12 +3210,11 @@ export default function App() {
     }
 
     if (apiConfiguration.geographyConfigEndpoint && apiConfiguration.syncMode === 'api') {
-      const token = localStorage.getItem('yp_auth_token');
       const response = await fetch(apiConfiguration.geographyConfigEndpoint, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...getAuthHeaders(),
         },
         body: JSON.stringify({ config: normalized }),
       });
@@ -3255,12 +3253,11 @@ export default function App() {
     const normalized = normalizeHomepageDefaultsConfigState(nextConfig);
 
     if (apiConfiguration.homepageDefaultsConfigEndpoint && apiConfiguration.syncMode === 'api') {
-      const token = localStorage.getItem('yp_auth_token');
       const response = await fetch(apiConfiguration.homepageDefaultsConfigEndpoint, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...getAuthHeaders(),
         },
         body: JSON.stringify({ config: normalized }),
       });
@@ -3296,12 +3293,11 @@ export default function App() {
     setSeoDiscoveryConfig(normalized);
 
     if (apiConfiguration.seoDiscoveryConfigEndpoint && apiConfiguration.syncMode === 'api') {
-      const token = localStorage.getItem('yp_auth_token');
       const response = await fetch(apiConfiguration.seoDiscoveryConfigEndpoint, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...getAuthHeaders(),
         },
         body: JSON.stringify({ config: normalized }),
       });
@@ -3326,12 +3322,11 @@ export default function App() {
       throw new Error('Scalable homepage config endpoint is not configured.');
     }
 
-    const token = localStorage.getItem('yp_auth_token');
     const response = await fetch(apiConfiguration.scalableHomepageConfigEndpoint, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
+        ...getAuthHeaders()
       },
       body: JSON.stringify({ config: nextConfiguration })
     });
@@ -3382,14 +3377,13 @@ export default function App() {
   };
 
   const handleSaveScalableTemplate = async (template: ScalableHomepageTemplate) => {
-    const token = localStorage.getItem('yp_auth_token');
     const response = await fetch(
       template.id ? getScalableHomepageEntityEndpoint('templates', template.id) : getScalableHomepageEntityEndpoint('templates'),
       {
         method: template.id ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
+          ...getAuthHeaders()
         },
         body: JSON.stringify({ template })
       }
@@ -3411,11 +3405,10 @@ export default function App() {
   };
 
   const handleDeleteScalableTemplate = async (templateId: string) => {
-    const token = localStorage.getItem('yp_auth_token');
     const response = await fetch(getScalableHomepageEntityEndpoint('templates', templateId), {
       method: 'DELETE',
       headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
+        ...getAuthHeaders()
       },
     });
     if (!response.ok) {
@@ -3435,14 +3428,13 @@ export default function App() {
   };
 
   const handleSaveScalableAssignment = async (assignment: ScalableHomepageAssignment) => {
-    const token = localStorage.getItem('yp_auth_token');
     const response = await fetch(
       assignment.id ? getScalableHomepageEntityEndpoint('assignments', assignment.id) : getScalableHomepageEntityEndpoint('assignments'),
       {
         method: assignment.id ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
+          ...getAuthHeaders()
         },
         body: JSON.stringify({ assignment })
       }
@@ -3464,11 +3456,10 @@ export default function App() {
   };
 
   const handleDeleteScalableAssignment = async (assignmentId: string) => {
-    const token = localStorage.getItem('yp_auth_token');
     const response = await fetch(getScalableHomepageEntityEndpoint('assignments', assignmentId), {
       method: 'DELETE',
       headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
+        ...getAuthHeaders()
       },
     });
     if (!response.ok) {
@@ -3488,14 +3479,13 @@ export default function App() {
   };
 
   const handleSaveScalableCampaign = async (campaign: ScalableCampaign) => {
-    const token = localStorage.getItem('yp_auth_token');
     const response = await fetch(
       campaign.id ? getScalableHomepageEntityEndpoint('campaigns', campaign.id) : getScalableHomepageEntityEndpoint('campaigns'),
       {
         method: campaign.id ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
+          ...getAuthHeaders()
         },
         body: JSON.stringify({ campaign })
       }
@@ -3517,11 +3507,10 @@ export default function App() {
   };
 
   const handleDeleteScalableCampaign = async (campaignId: string) => {
-    const token = localStorage.getItem('yp_auth_token');
     const response = await fetch(getScalableHomepageEntityEndpoint('campaigns', campaignId), {
       method: 'DELETE',
       headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
+        ...getAuthHeaders()
       },
     });
     if (!response.ok) {
@@ -3564,12 +3553,11 @@ export default function App() {
   };
 
   const handleCreateScalableTemplateSection = async (templateId: string, section: HomepageSection) => {
-    const token = localStorage.getItem('yp_auth_token');
     const response = await fetch(getScalableTemplateSectionsEndpoint(templateId), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
+        ...getAuthHeaders()
       },
       body: JSON.stringify({ section }),
     });
@@ -3585,12 +3573,11 @@ export default function App() {
   };
 
   const handleUpdateScalableTemplateSection = async (templateId: string, sectionId: string, section: HomepageSection) => {
-    const token = localStorage.getItem('yp_auth_token');
     const response = await fetch(getScalableTemplateSectionsEndpoint(templateId, sectionId), {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
+        ...getAuthHeaders()
       },
       body: JSON.stringify({ section }),
     });
@@ -3606,12 +3593,11 @@ export default function App() {
   };
 
   const handleReorderScalableTemplateSections = async (templateId: string, sections: HomepageSection[]) => {
-    const token = localStorage.getItem('yp_auth_token');
     const response = await fetch(getScalableTemplateSectionsEndpoint(templateId, undefined, 'reorder'), {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
+        ...getAuthHeaders()
       },
       body: JSON.stringify({ sections }),
     });
@@ -3627,12 +3613,11 @@ export default function App() {
   };
 
   const handleDuplicateScalableTemplateSection = async (templateId: string, sectionId: string) => {
-    const token = localStorage.getItem('yp_auth_token');
     const response = await fetch(getScalableTemplateSectionsEndpoint(templateId, sectionId, 'duplicate'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
+        ...getAuthHeaders()
       },
       body: JSON.stringify({}),
     });
@@ -3648,11 +3633,10 @@ export default function App() {
   };
 
   const handleDeleteScalableTemplateSection = async (templateId: string, sectionId: string) => {
-    const token = localStorage.getItem('yp_auth_token');
     const response = await fetch(getScalableTemplateSectionsEndpoint(templateId, sectionId), {
       method: 'DELETE',
       headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
+        ...getAuthHeaders()
       },
     });
     if (!response.ok) {
@@ -3667,12 +3651,11 @@ export default function App() {
   };
 
   const handleSyncScalableTemplateSectionsFromLocality = async (templateId: string, localityId: string) => {
-    const token = localStorage.getItem('yp_auth_token');
     const response = await fetch(getScalableTemplateSectionsEndpoint(templateId, undefined, 'sync-locality'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
+        ...getAuthHeaders()
       },
       body: JSON.stringify({ localityId }),
     });
@@ -3688,12 +3671,11 @@ export default function App() {
   };
 
   const handleSyncScalableLegacyLayouts = async (localityIds?: string[]) => {
-    const token = localStorage.getItem('yp_auth_token');
     const response = await fetch(getScalableLegacyLayoutSyncEndpoint(), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
+        ...getAuthHeaders()
       },
       body: JSON.stringify({ localityIds: localityIds && localityIds.length > 0 ? localityIds : undefined }),
     });
@@ -3712,12 +3694,11 @@ export default function App() {
     sourceTags: ScalableLegacyCampaignSourceTag[],
     localityIds?: string[]
   ) => {
-    const token = localStorage.getItem('yp_auth_token');
     const response = await fetch(getScalableLegacyCampaignSyncEndpoint(), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
+        ...getAuthHeaders()
       },
       body: JSON.stringify({
         sourceTags,
@@ -3740,11 +3721,10 @@ export default function App() {
   };
 
   const handleDeleteScalablePublishedSnapshot = async (snapshotId: string) => {
-    const token = localStorage.getItem('yp_auth_token');
     const response = await fetch(getScalableHomepageSnapshotsEndpoint(snapshotId), {
       method: 'DELETE',
       headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
+        ...getAuthHeaders()
       },
     });
     if (!response.ok) {
@@ -3769,12 +3749,11 @@ export default function App() {
       throw new Error('Scalable homepage config endpoint is not configured.');
     }
 
-    const token = localStorage.getItem('yp_auth_token');
     const response = await fetch(`${apiConfiguration.scalableHomepageConfigEndpoint}/reseed-legacy`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
+        ...getAuthHeaders()
       },
       body: JSON.stringify({ force })
     });
@@ -3829,12 +3808,11 @@ export default function App() {
               : localities.map((locality) => locality.id),
         };
 
-    const token = localStorage.getItem('yp_auth_token');
     const response = await fetch(apiConfiguration.publishResolvedHomepageEndpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
+        ...getAuthHeaders()
       },
       body: JSON.stringify(requestBody)
     });
@@ -3865,12 +3843,11 @@ export default function App() {
       throw new Error('Resolved homepage endpoint is not configured.');
     }
 
-    const token = localStorage.getItem('yp_auth_token');
     const response = await fetch(`${apiConfiguration.resolvedHomepageEndpoint}/snapshots/delete`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
+        ...getAuthHeaders()
       },
       body: JSON.stringify(deleteRequest || {})
     });

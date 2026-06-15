@@ -2442,13 +2442,63 @@ export default function AdminConsole({
     }
   };
 
+  const formatTemplateWorkflowError = (
+    error: unknown,
+    phase: 'save' | 'publish'
+  ) => {
+    const rawMessage = (error instanceof Error ? error.message : String(error || '')).trim();
+    const normalized = rawMessage.toLowerCase();
+
+    if (normalized.includes('only one active default template is allowed')) {
+      const existingTemplateNameMatch = rawMessage.match(/"([^"]+)"/);
+      const existingTemplateName = existingTemplateNameMatch?.[1];
+      return existingTemplateName
+        ? `Another default template is already active: ${existingTemplateName}. Open that template first and remove Default fallback or set it inactive, then try again.`
+        : 'Another default template is already active. Remove Default fallback from the current default template or set it inactive, then try again.';
+    }
+
+    if (normalized === 'unauthorized' || normalized.includes('401') || normalized.includes('forbidden')) {
+      return 'Your admin session has expired or you do not have permission for this action. Please log in again and retry.';
+    }
+
+    if (normalized.includes('save callback is not configured')) {
+      return 'Template save is not available in this environment right now. Please inform the tech team.';
+    }
+
+    if (normalized.includes('publish failed after template save')) {
+      return 'Template was saved, but the publish step failed. The template exists in admin, but the live page may still show the old version.';
+    }
+
+    if (normalized.includes('failed to save scalable template')) {
+      return 'Template could not be saved. Please retry once. If it still fails, inform the tech team.';
+    }
+
+    if (normalized.includes('failed to publish') || normalized.includes('publish') && normalized.includes('failed')) {
+      return 'Template was saved, but publish did not complete. Please retry publish or ask the tech team to check the publish service.';
+    }
+
+    if (normalized.includes('networkerror') || normalized.includes('failed to fetch') || normalized.includes('fetch failed')) {
+      return `Could not reach the server during template ${phase}. Check internet or server availability, then try again.`;
+    }
+
+    if (!rawMessage) {
+      return phase === 'save'
+        ? 'Template could not be saved due to an unexpected error.'
+        : 'Template publish could not be completed due to an unexpected error.';
+    }
+
+    return phase === 'save'
+      ? `Template could not be saved. Technical detail: ${rawMessage}`
+      : `Template publish could not be completed. Technical detail: ${rawMessage}`;
+  };
+
   const persistScalableTemplateEntity = async (
     nextTemplate: ScalableHomepageTemplate,
     successMessage: string,
     publishLocalityIds?: string[]
   ) => {
     if (!onSaveScalableTemplate) {
-      triggerNotification('Scalable template save callback is not configured.');
+      triggerNotification(formatTemplateWorkflowError('Scalable template save callback is not configured.', 'save'));
       return { saved: false, published: false };
     }
     try {
@@ -2458,15 +2508,13 @@ export default function AdminConsole({
           await onPublishResolvedHomepages(publishLocalityIds);
         }
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Publish failed after template save.';
-        triggerNotification(`Template saved, but publish failed: ${message}`);
+        triggerNotification(formatTemplateWorkflowError(error, 'publish'));
         return { saved: true, published: false };
       }
       triggerNotification(successMessage);
       return { saved: true, published: true };
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to save scalable template.';
-      triggerNotification(message);
+      triggerNotification(formatTemplateWorkflowError(error, 'save'));
       return { saved: false, published: false };
     }
   };
@@ -2617,7 +2665,7 @@ export default function AdminConsole({
       activeDefaultTemplate &&
       activeDefaultTemplate.id !== templateDraft.id
     ) {
-      triggerNotification(`Only one active default template is allowed. "${activeDefaultTemplate.name}" is already active as default.`);
+      triggerNotification(`Another default template is already active: ${activeDefaultTemplate.name}. Open that template first and remove Default fallback or set it inactive, then try again.`);
       return;
     }
 
