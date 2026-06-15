@@ -2009,8 +2009,10 @@ export default function App() {
   const homepageConfigLoadedRef = useRef(false);
   const scalableHomepageConfigLoadedRef = useRef(false);
   const lastHomepageSyncSignatureRef = useRef('');
+  const legacyLayoutAutoSyncInitializedRef = useRef(false);
   const legacyLayoutAutoSyncSignatureRef = useRef('');
   const legacyLayoutAutoSyncInFlightRef = useRef(false);
+  const legacyCampaignAutoSyncInitializedRef = useRef<Record<string, boolean>>({});
   const legacyCampaignAutoSyncSignatureRef = useRef<Record<string, string>>({});
   const legacyCampaignAutoSyncInFlightRef = useRef<Record<string, boolean>>({});
   const auditEventDedupRef = useRef<Map<string, number>>(new Map());
@@ -3946,6 +3948,11 @@ export default function App() {
       localityIds: [...scopedLocalityIds].sort(),
       sourceSignature,
     });
+    if (!legacyCampaignAutoSyncInitializedRef.current[sourceTag]) {
+      legacyCampaignAutoSyncInitializedRef.current[sourceTag] = true;
+      legacyCampaignAutoSyncSignatureRef.current[sourceTag] = syncSignature;
+      return true;
+    }
     if (legacyCampaignAutoSyncInFlightRef.current[sourceTag]) {
       return true;
     }
@@ -4013,6 +4020,11 @@ export default function App() {
       localityIds: [...scopedLocalityIds].sort(),
       layoutSyncSignature,
     });
+    if (!legacyLayoutAutoSyncInitializedRef.current) {
+      legacyLayoutAutoSyncInitializedRef.current = true;
+      legacyLayoutAutoSyncSignatureRef.current = layoutRequestSignature;
+      return;
+    }
     if (legacyLayoutAutoSyncInFlightRef.current) return;
     if (legacyLayoutAutoSyncSignatureRef.current === layoutRequestSignature) return;
     legacyLayoutAutoSyncSignatureRef.current = layoutRequestSignature;
