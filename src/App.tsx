@@ -2009,6 +2009,8 @@ export default function App() {
   const homepageConfigLoadedRef = useRef(false);
   const scalableHomepageConfigLoadedRef = useRef(false);
   const lastHomepageSyncSignatureRef = useRef('');
+  const legacyLayoutAutoSyncSignatureRef = useRef('');
+  const legacyLayoutAutoSyncInFlightRef = useRef(false);
   const legacyCampaignAutoSyncSignatureRef = useRef<Record<string, string>>({});
   const legacyCampaignAutoSyncInFlightRef = useRef<Record<string, boolean>>({});
   const auditEventDedupRef = useRef<Map<string, number>>(new Map());
@@ -4000,6 +4002,21 @@ export default function App() {
         .map((layout) => String(layout.localityId || '').trim())
         .filter((localityId): localityId is string => localityId.length > 0)
     ));
+    const layoutSyncSignature = JSON.stringify(homepageLayouts.map((layout) => ({
+      id: layout.id || '',
+      localityId: layout.localityId,
+      status: layout.status || '',
+      updatedAt: layout.updatedAt || '',
+      sections: Array.isArray(layout.sections) ? layout.sections.length : 0,
+    })));
+    const layoutRequestSignature = JSON.stringify({
+      localityIds: [...scopedLocalityIds].sort(),
+      layoutSyncSignature,
+    });
+    if (legacyLayoutAutoSyncInFlightRef.current) return;
+    if (legacyLayoutAutoSyncSignatureRef.current === layoutRequestSignature) return;
+    legacyLayoutAutoSyncSignatureRef.current = layoutRequestSignature;
+    legacyLayoutAutoSyncInFlightRef.current = true;
     void handleSyncScalableLegacyLayouts(scopedLocalityIds)
       .then(() => {
         if (scopedLocalityIds.length === 0 || !apiConfiguration.publishResolvedHomepageEndpoint) return;
@@ -4007,6 +4024,9 @@ export default function App() {
       })
       .catch(() => {
         // Keep local state intact even if best-effort scalable sync fails.
+      })
+      .finally(() => {
+        legacyLayoutAutoSyncInFlightRef.current = false;
       });
   }, [homepageLayouts, scalableHomepageConfigReady, userSession.authToken, userSession.role]);
 
