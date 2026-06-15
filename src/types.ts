@@ -417,6 +417,7 @@ export interface ScalableHomepageTemplate {
   localityIds: string[];
   status: 'draft' | 'active' | 'inactive' | 'archived';
   priority: number;
+  isDefault: boolean;
   isFallback: boolean;
   sections: HomepageSection[];
   metadata?: Record<string, unknown>;

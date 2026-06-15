@@ -1105,6 +1105,7 @@ const syncScalableTemplatesFromLayouts = (
       localityIds: [layout.localityId],
       status: layout.status === 'inactive' ? 'inactive' : 'active',
       priority: existing?.priority ?? 100,
+      isDefault: existing?.isDefault ?? false,
       isFallback: existing?.isFallback ?? true,
       sections: layout.sections,
       metadata: {

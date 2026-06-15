@@ -2082,6 +2082,7 @@ function sanitizeScalableTemplate(value, index = 0) {
     localityIds,
     status: normalizeCmsStatus(template.status),
     priority: Number.isFinite(Number(template.priority)) ? Number(template.priority) : 100,
+    isDefault: Boolean(template.isDefault),
     isFallback: Boolean(template.isFallback),
     sections: sanitizeTemplateSections(template.sections),
     metadata: cloneJson(template.metadata, {}) || {},
@@ -2415,6 +2416,7 @@ function syncScalableTemplatesFromLegacyLayouts(state, layouts) {
       localityIds: normalizeStringList([layout.localityId]),
       status: layout.status === 'inactive' ? 'inactive' : 'active',
       priority: existing?.priority ?? 100,
+      isDefault: existing?.isDefault ?? false,
       isFallback: existing?.isFallback ?? true,
       sections: sanitizeTemplateSections(layout.sections),
       metadata: {
@@ -2584,6 +2586,7 @@ function buildScalableCmsSeedFromLegacy(homepageConfig, businesses) {
     localityIds: normalizeStringList([layout.localityId]),
     status: layout.status === 'inactive' ? 'inactive' : 'active',
     priority: 100,
+    isDefault: false,
     isFallback: true,
     sections: sanitizeTemplateSections(layout.sections),
     metadata: {
@@ -3543,7 +3546,7 @@ async function mutateHomepageConfigState(mutator) {
 async function readScalableCmsStateFromTables(client) {
   const [templatesResult, assignmentsResult, campaignsResult, snapshotsResult, appStateResult] = await Promise.all([
     client.query(`
-      SELECT id, name, template_scope, locality_ids, status, priority, is_fallback, sections, metadata, updated_at
+      SELECT id, name, template_scope, locality_ids, status, priority, is_default, is_fallback, sections, metadata, updated_at
       FROM cms_templates
       ORDER BY priority DESC, updated_at DESC
     `),
@@ -3590,6 +3593,7 @@ async function readScalableCmsStateFromTables(client) {
       localityIds: row.locality_ids || [],
       status: row.status,
       priority: row.priority,
+      isDefault: row.is_default,
       isFallback: row.is_fallback,
       sections: row.sections || [],
       metadata: row.metadata || {},
@@ -3682,8 +3686,8 @@ async function syncScalableCmsStateToTables(_client, state) {
     for (const template of state.templates) {
       try {
         await client.query(
-          `INSERT INTO cms_templates (id, name, template_scope, locality_ids, status, priority, is_fallback, sections, metadata, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10::timestamptz)
+          `INSERT INTO cms_templates (id, name, template_scope, locality_ids, status, priority, is_default, is_fallback, sections, metadata, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11::timestamptz)
            ON CONFLICT (id)
            DO UPDATE SET
              name = EXCLUDED.name,
@@ -3691,6 +3695,7 @@ async function syncScalableCmsStateToTables(_client, state) {
              locality_ids = EXCLUDED.locality_ids,
              status = EXCLUDED.status,
              priority = EXCLUDED.priority,
+             is_default = EXCLUDED.is_default,
              is_fallback = EXCLUDED.is_fallback,
              sections = EXCLUDED.sections,
              metadata = EXCLUDED.metadata,
@@ -3702,6 +3707,7 @@ async function syncScalableCmsStateToTables(_client, state) {
             template.localityIds,
             template.status,
             template.priority,
+            template.isDefault,
             template.isFallback,
             JSON.stringify(template.sections || []),
             JSON.stringify(template.metadata || {}),
@@ -3918,6 +3924,16 @@ async function saveScalableTemplateEntity(templateInput) {
   }
 
   const state = await readScalableCmsState();
+  const conflictingDefault = template.isDefault && template.status === 'active'
+    ? state.templates.find((entry) => (
+      entry.id !== template.id &&
+      entry.isDefault &&
+      entry.status === 'active'
+    ))
+    : null;
+  if (conflictingDefault) {
+    throw new Error(`Only one active default template is allowed. "${conflictingDefault.name}" is already active as the default template.`);
+  }
   const nextTemplates = state.templates.some((entry) => entry.id === template.id)
     ? state.templates.map((entry) => (entry.id === template.id ? template : entry))
     : [template, ...state.templates];
@@ -4446,6 +4462,7 @@ function selectTemplateForContext(state, context, legacyConfig) {
 
   const scopedTemplate = state.templates
     .filter((template) => template && typeof template === 'object')
+    .filter((template) => !template.isDefault)
     .map((template) => ({
       template,
       score: calculateTemplateScore(template, context),
@@ -4457,6 +4474,15 @@ function selectTemplateForContext(state, context, legacyConfig) {
     return scopedTemplate.template;
   }
 
+  const defaultTemplate = state.templates
+    .filter((template) => template && typeof template === 'object')
+    .filter((template) => template.isDefault && template.status === 'active')
+    .sort((left, right) => right.priority - left.priority)[0];
+
+  if (defaultTemplate) {
+    return defaultTemplate;
+  }
+
   const legacyLayout = (legacyConfig?.homepageLayouts || []).find((layout) => String(layout.localityId || '') === String(context.localityId || ''));
   if (!legacyLayout) return null;
   return sanitizeScalableTemplate({
@@ -4466,6 +4492,7 @@ function selectTemplateForContext(state, context, legacyConfig) {
     localityIds: [String(legacyLayout.localityId || '')],
     status: legacyLayout.status === 'inactive' ? 'inactive' : 'active',
     priority: 10,
+    isDefault: false,
     isFallback: true,
     sections: legacyLayout.sections || [],
     metadata: { source: 'legacy_homepage_layout_fallback' },
@@ -5292,12 +5319,14 @@ async function getPgClient() {
         locality_ids TEXT[] NOT NULL DEFAULT '{}',
         status TEXT NOT NULL DEFAULT 'active',
         priority INT NOT NULL DEFAULT 100,
+        is_default BOOLEAN NOT NULL DEFAULT FALSE,
         is_fallback BOOLEAN NOT NULL DEFAULT FALSE,
         sections JSONB NOT NULL DEFAULT '[]'::jsonb,
         metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `);
+    await pgPool.query(`ALTER TABLE cms_templates ADD COLUMN IF NOT EXISTS is_default BOOLEAN NOT NULL DEFAULT FALSE`);
     await pgPool.query(`
       CREATE TABLE IF NOT EXISTS cms_template_assignments (
         id TEXT PRIMARY KEY,

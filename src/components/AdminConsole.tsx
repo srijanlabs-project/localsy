@@ -879,6 +879,7 @@ export default function AdminConsole({
     localityIds: string;
     status: ScalableHomepageTemplate['status'];
     priority: string;
+    isDefault: boolean;
     isFallback: boolean;
   }>({
     id: '',
@@ -887,6 +888,7 @@ export default function AdminConsole({
     localityIds: '',
     status: 'active',
     priority: '100',
+    isDefault: false,
     isFallback: false,
   });
   const [assignmentDraft, setAssignmentDraft] = useState<{
@@ -1498,6 +1500,7 @@ export default function AdminConsole({
   const sortedScalableTemplates = [...(scalableHomepageConfig?.templates || [])].sort((a, b) => b.priority - a.priority);
   const sortedScalableAssignments = [...(scalableHomepageConfig?.assignments || [])].sort((a, b) => b.priority - a.priority);
   const sortedScalableCampaigns = [...(scalableHomepageConfig?.campaigns || [])].sort((a, b) => b.priority - a.priority);
+  const activeDefaultTemplate = sortedScalableTemplates.find((template) => template.isDefault && template.status === 'active') || null;
   const localitySelectionOptions = localities.map((locality) => ({
     id: locality.id,
     label: locality.name,
@@ -2573,6 +2576,7 @@ export default function AdminConsole({
       localityIds: homepageLocalityId || localities[0]?.id || 'roadpali',
       status: 'active',
       priority: '100',
+      isDefault: false,
       isFallback: false,
     });
   };
@@ -2585,6 +2589,7 @@ export default function AdminConsole({
       localityIds: (template.localityIds || []).join(', '),
       status: template.status,
       priority: String(template.priority),
+      isDefault: template.isDefault,
       isFallback: template.isFallback,
     });
   };
@@ -2598,6 +2603,15 @@ export default function AdminConsole({
       triggerNotification('Template name is required.');
       return;
     }
+    if (
+      templateDraft.isDefault &&
+      templateDraft.status === 'active' &&
+      activeDefaultTemplate &&
+      activeDefaultTemplate.id !== templateDraft.id
+    ) {
+      triggerNotification(`Only one active default template is allowed. "${activeDefaultTemplate.name}" is already active as default.`);
+      return;
+    }
 
     const nextTemplate: ScalableHomepageTemplate = {
       id: templateDraft.id || createAdminId('tpl'),
@@ -2606,6 +2620,7 @@ export default function AdminConsole({
       localityIds: parseIdList(templateDraft.localityIds),
       status: templateDraft.status,
       priority: Number(templateDraft.priority) || 100,
+      isDefault: templateDraft.isDefault,
       isFallback: templateDraft.isFallback,
       sections: scalableHomepageConfig.templates.find((template) => template.id === templateDraft.id)?.sections || [],
       metadata: {
@@ -6242,12 +6257,30 @@ export default function AdminConsole({
                     <label className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-700">
                       <input
                         type="checkbox"
+                        checked={templateDraft.isDefault}
+                        onChange={(e) => setTemplateDraft((prev) => ({ ...prev, isDefault: e.target.checked }))}
+                      />
+                      <span>Default fallback</span>
+                    </label>
+                  </div>
+                  <div className="grid grid-cols-1 gap-2">
+                    <label className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-700">
+                      <input
+                        type="checkbox"
                         checked={templateDraft.isFallback}
                         onChange={(e) => setTemplateDraft((prev) => ({ ...prev, isFallback: e.target.checked }))}
                       />
                       <span>Fallback</span>
                     </label>
                   </div>
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[10px] text-amber-900">
+                    Default fallback is used only when no assignment, locality, city, or global targeted template matches. Only one active default template is allowed at a time.
+                  </div>
+                  {activeDefaultTemplate && (
+                    <div className="text-[10px] text-slate-500">
+                      Current active default: <span className="font-semibold text-slate-700">{activeDefaultTemplate.name}</span>
+                    </div>
+                  )}
                   <div className="flex gap-2">
                     <button
                       type="button"
@@ -6282,6 +6315,7 @@ export default function AdminConsole({
                               {getScalableEntityOwnershipPresentation(template.metadata).label}
                             </span>
                             <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] text-slate-600">{template.status}</span>
+                            {template.isDefault && <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-800">Default</span>}
                             {template.isFallback && <span className="rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-700">Fallback</span>}
                           </div>
                           <div className="text-[10px] text-slate-500">{template.templateScope} • priority {template.priority} • {template.sections.length} sections</div>
