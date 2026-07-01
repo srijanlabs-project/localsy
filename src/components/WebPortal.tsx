@@ -2818,7 +2818,8 @@ export default function WebPortal({
       role: userSession.role === 'buyer' ? 'buyer' : userSession.role,
       userName: `${verifiedName} (Verified Customer)`,
       userPhone: verifiedPhone,
-      isAuthenticated: true
+      isAuthenticated: true,
+      contactUnlockToken: unlockToken || userSession.contactUnlockToken,
     });
 
     // Unlock the specific contact requested
@@ -2853,12 +2854,13 @@ export default function WebPortal({
     setOtpTargetBiz(biz);
     
     // If already session-authenticated, immediately unlock and skip modal!
-    if (userSession.isAuthenticated && userSession.userPhone) {
+    const activeUnlockToken = contactUnlockToken || userSession.contactUnlockToken || '';
+    if (userSession.isAuthenticated && userSession.userPhone && activeUnlockToken) {
       void Promise.resolve(onUnlockBusinessContact({
         businessId: biz.id,
         viewerName: userSession.userName,
         viewerPhone: userSession.userPhone,
-        unlockToken: contactUnlockToken,
+        unlockToken: activeUnlockToken,
       })).then((allowed) => {
         if (allowed === false) {
           return;

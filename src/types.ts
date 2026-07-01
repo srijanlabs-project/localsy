@@ -662,6 +662,7 @@ export interface UserSession {
   userName: string;
   userPhone?: string;
   isAuthenticated: boolean;
+  contactUnlockToken?: string;
   sellerBusinessId?: string; // Linked for seller dashboard
   userType?: UserType;
   email?: string;

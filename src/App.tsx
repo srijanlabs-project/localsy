@@ -1399,6 +1399,10 @@ export default function App() {
     const prompted = localStorage.getItem('yp_pincode_prompted');
     return !prompted;
   });
+  const [pincodeModalContext, setPincodeModalContext] = useState<'initial_prompt' | 'manual'>(() => {
+    const prompted = localStorage.getItem('yp_pincode_prompted');
+    return prompted ? 'manual' : 'initial_prompt';
+  });
 
   const [pincodeMappings, setPincodeMappings] = useState<Array<{ pincode: string; localityId: string }>>(() => {
     if (!shouldBootstrapManagedStateFromLocal) {
@@ -2231,9 +2235,12 @@ export default function App() {
       .then((data: { businesses?: Business[] } | null) => {
         if (cancelled || !Array.isArray(data?.businesses)) return;
         if (data.businesses.length === 0) {
-          if (businesses.length > 0 && apiConfiguration.syncMode === 'api' && apiConfiguration.autoSyncBusinesses) {
-            persistBusinessesToServer(businesses);
-          }
+          setBusinesses((prev) => {
+            if (prev.length > 0 && apiConfiguration.syncMode === 'api' && apiConfiguration.autoSyncBusinesses) {
+              persistBusinessesToServer(prev);
+            }
+            return prev;
+          });
           return;
         }
         setBusinesses((prev) => {
@@ -2252,7 +2259,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [apiConfiguration.autoSyncBusinesses, apiConfiguration.businessesEndpoint, apiConfiguration.syncMode, businesses]);
+  }, [apiConfiguration.autoSyncBusinesses, apiConfiguration.businessesEndpoint, apiConfiguration.syncMode]);
 
   // Push state to localStorage on any updates
   const mirrorLocalityRoutingLocally = apiConfiguration.syncMode !== 'api';
@@ -2485,6 +2492,7 @@ export default function App() {
     if (autoLocationAttemptedRef.current) return;
     if (typeof window === 'undefined' || typeof navigator === 'undefined') return;
     if (!showPincodeModal) return;
+    if (pincodeModalContext !== 'initial_prompt') return;
     if (savedPincode) return;
     if (localStorage.getItem('yp_pincode_prompted')) return;
     if (window.location.pathname && window.location.pathname !== '/') return;
@@ -2539,7 +2547,7 @@ export default function App() {
         maximumAge: 300000,
       }
     );
-  }, [defaultLocalityId, localities, savedPincode, showPincodeModal]);
+  }, [defaultLocalityId, localities, pincodeModalContext, savedPincode, showPincodeModal]);
 
   // Unified logger for complete client-side security compliance auditing
   const logAuditEvent = (actionType: 'search' | 'contact_view' | 'data_entry', description: string, details: string) => {
@@ -4730,6 +4738,7 @@ export default function App() {
       });
       setActiveLocalityId(DEFAULT_LOCALITY_ID);
       setSavedPincode(null);
+      setPincodeModalContext('initial_prompt');
       setShowPincodeModal(true);
       setDefaultLocalityId(DEFAULT_LOCALITY_ID);
       setPincodeMappings((DEFAULT_PINCODE_MAPPINGS as PincodeRoutingMapping[]).map(normalizeStoredPincodeMapping));
@@ -5291,13 +5300,18 @@ export default function App() {
     const searchInput = document.getElementById('public-listing-search-input') as HTMLInputElement | null;
     window.setTimeout(() => searchInput?.focus(), 350);
   };
+  const openPincodeModalManually = () => {
+    setPincodeModalContext('manual');
+    setShowPincodeModal(true);
+  };
   const handleLogout = () => {
     localStorage.removeItem('yp_auth_token');
     setUserSession({
       role: 'buyer',
       userName: 'Anonymous Guest Explorer',
       isAuthenticated: false,
-      userPhone: undefined
+      userPhone: undefined,
+      contactUnlockToken: undefined,
     });
     setShowUserMenu(false);
     logAuditEvent('data_entry', 'User Logged Out', 'Client cleared verified session status.');
@@ -5465,7 +5479,7 @@ export default function App() {
         {/* Real-time Pincode and Locality tracker */}
           <button
             type="button"
-            onClick={() => setShowPincodeModal(true)}
+            onClick={openPincodeModalManually}
             className="min-w-0 flex-1 inline-flex h-9 items-center gap-1.5 rounded-full border border-indigo-100 bg-indigo-50 px-2.5 text-xs font-bold text-indigo-950 shadow-sm transition hover:border-indigo-200"
             title="Change pincode or locality"
           >
@@ -5745,7 +5759,7 @@ export default function App() {
           <div className="flex flex-wrap items-center justify-end gap-2.5">
             <button
               type="button"
-              onClick={() => setShowPincodeModal(true)}
+              onClick={openPincodeModalManually}
               className="flex items-center gap-2 rounded-full border border-indigo-100 bg-indigo-50 px-4 py-2 text-xs font-bold text-indigo-950 shadow-sm transition hover:border-indigo-200"
               title="Click to switch regional portal using pincode"
             >
