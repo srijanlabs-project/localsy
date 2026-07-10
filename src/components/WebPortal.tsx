@@ -4,7 +4,8 @@ import {
   BookOpen, Plus, Compass, ChevronRight, ChevronLeft, Share2, Globe, Heart, 
   ShieldAlert, Lock, Unlock, MessageSquare, CheckCircle, Navigation, Award, User, Clock,
   Volume2, Camera, Brain, Megaphone, Users, BarChart3, Ticket, PlusCircle, Filter, 
-  TrendingUp, Check, CheckSquare, Sparkles, Trash2, QrCode, Activity
+  TrendingUp, Check, CheckSquare, Sparkles, Trash2, QrCode, Activity,
+  Zap, Scissors, Utensils, ShoppingCart, Wrench, Calculator, Stethoscope, LayoutGrid
 } from 'lucide-react';
 import { 
   Locality, Business, Category, Review, UserSession,
@@ -21,6 +22,23 @@ import {
   getSubcategoryById,
   resolveDefaultSubcategoryId
 } from '../categoryMaster';
+
+// Icon lookup for homepage category grid tiles (falls back to LayoutGrid)
+const CATEGORY_TILE_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
+  'home-services': Zap,
+  'beauty-wellness': Scissors,
+  'health-medical': Stethoscope,
+  'food-restaurants': Utensils,
+  'shopping-retail': ShoppingCart,
+  'professional-services': Calculator,
+  home: Zap,
+  salon: Scissors,
+  health: Stethoscope,
+  food: Utensils,
+  retail: ShoppingCart,
+  services: Calculator,
+};
+const getCategoryTileIcon = (categoryId: string) => CATEGORY_TILE_ICONS[categoryId] || LayoutGrid;
 
 type PaginationControlsProps = {
   compact?: boolean;
@@ -174,6 +192,7 @@ export default function WebPortal({
     .replace(/^-+|-+$/g, '');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
+  const [showAllCategoryTiles, setShowAllCategoryTiles] = useState(false);
   const [selectedSubcategory, setSelectedSubcategory] = useState('all');
   const [showApplyModal, setShowApplyModal] = useState(false);
   const [selectedBiz, setSelectedBiz] = useState<Business | null>(null);
@@ -867,7 +886,7 @@ export default function WebPortal({
               <button
                 type="button"
                 onClick={(e) => handlePrimaryBusinessAction(biz, e)}
-                className="inline-flex items-center justify-center gap-1 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white"
+                className="inline-flex items-center justify-center gap-1 rounded-lg bg-[#26221c] px-3 py-2 text-xs font-semibold text-white"
               >
                 <Phone className="h-3.5 w-3.5" />
                 <span>{hasViewed && biz.phone ? 'Call' : 'Call'}</span>
@@ -1148,78 +1167,125 @@ export default function WebPortal({
         </div>
       </div>}
 
-      {/* Hero Header Section with Dynamic Carousel */}
-      <div className="relative rounded-3xl overflow-hidden bg-slate-950 text-white min-h-[240px] md:min-h-[300px] flex items-center shadow-lg group">
-        <div className="absolute inset-0 z-0">
-          <img 
-            src={carouselImages[carouselIndex]} 
-            alt={currentLocality.name}
-            className="w-full h-full object-cover opacity-35 transition-all duration-1000 transform scale-103"
-          />
-          <div className="absolute inset-0 bg-gradient-to-r from-slate-950 via-slate-950/85 to-transparent"></div>
-        </div>
-
-        {/* Sliders navigation overlays */}
-        <button 
-          onClick={handlePrevSlide}
-          className="absolute left-3 top-1/2 -translate-y-1/2 bg-black/40 hover:bg-black/60 p-1.5 rounded-full text-slate-300 hover:text-white transition opacity-0 group-hover:opacity-100 z-20"
-        >
-          <ChevronLeft className="w-5 h-5" />
-        </button>
-        <button 
-          onClick={handleNextSlide}
-          className="absolute right-3 top-1/2 -translate-y-1/2 bg-black/40 hover:bg-black/60 p-1.5 rounded-full text-slate-300 hover:text-white transition opacity-0 group-hover:opacity-100 z-20"
-        >
-          <ChevronRight className="w-5 h-5" />
-        </button>
-
-        {/* Carousel indicators dots */}
-        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-1.5 z-20">
-          {carouselImages.map((_, i) => (
-            <button
-              key={i}
-              onClick={() => setCarouselIndex(i)}
-              className={`w-2 h-2 rounded-full transition ${carouselIndex === i ? 'bg-indigo-500 w-4' : 'bg-slate-500/50'}`}
-            ></button>
-          ))}
-        </div>
-
-        <div className="relative z-10 px-6 md:px-12 py-8 max-w-2xl space-y-3">
-          <div className="inline-flex items-center gap-1.5 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-3 py-1 rounded-full text-xs font-semibold">
-            <MapPin className="w-3.5 h-3.5 animate-bounce" /> Indian Regional Directory
+      {/* Hero Header Section — Roadpali homepage redesign (marigold + charcoal on cream) */}
+      <div className="relative rounded-3xl overflow-hidden bg-[#faf7f0] text-[#26221c] border border-[#ece7dc] px-6 md:px-12 py-10 md:py-14 shadow-sm">
+        <div className="relative z-10 max-w-2xl space-y-4">
+          <div className="inline-flex items-center gap-1.5 bg-[#f4e3c8] text-[#8a5a19] px-3 py-1 rounded-full text-xs font-semibold">
+            <MapPin className="w-3.5 h-3.5" />
+            {selectedLocalityNames || currentLocality.name}
+            {selectedLocalityMappedPincodes.length > 0 && ` · ${selectedLocalityMappedPincodes.join(' / ')}`}
           </div>
-          <h2 className="text-2xl md:text-4xl font-extrabold font-sans tracking-tight text-white leading-tight">
-            {activeHeroSlide?.title || `Hyper Local Directory for ${selectedLocalityNames || currentLocality.name}`}
+
+          <h2 className="font-['Bricolage_Grotesque',_sans-serif] text-3xl md:text-5xl font-extrabold tracking-tight leading-[1.05] text-[#26221c]">
+            {activeHeroSlide?.title || `Find trusted local businesses in ${selectedLocalityNames || currentLocality.name}.`}
           </h2>
-          <p className="text-sm text-slate-300 leading-relaxed max-w-xl">
-            {activeHeroSlide?.subtitle || `${currentLocality.description} verified reviews, location-grabbing utilities, and dynamic approval tracking.`}
+          <p className="text-sm md:text-base text-[#6b6355] leading-relaxed max-w-xl">
+            {activeHeroSlide?.subtitle || `${currentLocality.description} Verified salons, restaurants, clinics, home services and shops — compared and reviewed by your neighbours.`}
           </p>
-          {selectedLocalityMappedPincodes.length > 0 && (
-            <div className="text-[10px] font-mono text-slate-300 bg-white/10 border border-white/20 px-2.5 py-1 rounded-full inline-flex">
-              Pincodes: {selectedLocalityMappedPincodes.join(', ')}
-            </div>
-          )}
 
-          <div className="flex flex-wrap items-center gap-3 pt-2">
-            {(userSession.role === 'admin' || userSession.role === 'moderator' || userSession.role === 'operator' || userSession.role === 'seller') ? (
-              <button
-                onClick={() => setShowApplyModal(true)}
-                className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold font-mono px-4 py-2.5 rounded-xl transition shadow hover:shadow-lg flex items-center gap-1.5"
-              >
-                <Plus className="w-4 h-4" /> Add New Business
-              </button>
-            ) : (
-              <button
-                onClick={() => setShowApplyModal(true)}
-                className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold font-mono px-4 py-2.5 rounded-xl transition shadow hover:shadow-lg flex items-center gap-1.5"
-              >
-                <Plus className="w-4 h-4" /> Apply To Add Business
-              </button>
-            )}
-            <div className="text-xs text-slate-400 font-mono">
-              🛡️ Operator SLA: verified in &lt;1 hour
+          {/* Search bar */}
+          <div className="flex flex-col sm:flex-row items-stretch gap-2.5 bg-white border border-[#ece7dc] rounded-2xl p-2 shadow-sm max-w-xl">
+            <div className="relative flex-1 min-w-0">
+              <Search className="w-4 h-4 text-[#b0a389] absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder={`Search "electrician", "dental clinic"…`}
+                className="w-full text-sm bg-transparent pl-9 pr-3 py-2.5 focus:outline-none placeholder:text-[#b0a389] text-[#26221c]"
+              />
             </div>
+            <button
+              type="button"
+              onClick={() => {
+                document.getElementById('public-listing-search')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }}
+              className="bg-[#26221c] hover:bg-[#3a342b] text-white text-sm font-bold px-6 py-2.5 rounded-xl transition"
+            >
+              Search
+            </button>
           </div>
+
+          {/* Popular category quick links */}
+          <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
+            <span className="text-[#8a8172] font-medium">Popular:</span>
+            {BUSINESS_CATEGORIES.slice(0, 4).map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => {
+                  setSelectedCategory(c.id);
+                  document.getElementById('public-listing-search')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }}
+                className="px-3 py-1.5 rounded-full bg-[#f1ece0] hover:bg-[#e9e2d2] text-[#4a4436] font-semibold transition"
+              >
+                {c.name}
+              </button>
+            ))}
+          </div>
+
+          <div className="pt-1">
+            <button
+              onClick={() => setShowApplyModal(true)}
+              className="inline-flex items-center gap-1.5 text-xs font-bold text-[#8a5a19] hover:text-[#26221c] transition"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              {(userSession.role === 'admin' || userSession.role === 'moderator' || userSession.role === 'operator' || userSession.role === 'seller')
+                ? 'Add new business'
+                : 'List your business for free'}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Category grid — matches "Browse by category" from the redesign */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-['Bricolage_Grotesque',_sans-serif] text-xl font-extrabold text-[#26221c]">
+            Browse by category
+          </h3>
+          <button
+            type="button"
+            onClick={() => setSelectedCategory('all')}
+            className="text-xs font-bold text-[#8a5a19] hover:text-[#26221c] transition"
+          >
+            All categories →
+          </button>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+          {(showAllCategoryTiles ? BUSINESS_CATEGORIES : BUSINESS_CATEGORIES.slice(0, 7)).map((c) => {
+            const TileIcon = getCategoryTileIcon(c.id);
+            const verifiedCount = approvedInLocality.filter((b) => b.categoryId === c.id).length;
+            return (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => {
+                  setSelectedCategory(c.id);
+                  document.getElementById('public-listing-search')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }}
+                className={`text-left rounded-2xl border p-4 transition bg-white hover:border-[#e0972a] hover:shadow-sm ${
+                  selectedCategory === c.id ? 'border-[#e0972a] ring-1 ring-[#e0972a]' : 'border-[#ece7dc]'
+                }`}
+              >
+                <div className="w-10 h-10 rounded-xl bg-[#f4e3c8] flex items-center justify-center mb-3">
+                  <TileIcon className="w-5 h-5 text-[#8a5a19]" />
+                </div>
+                <div className="font-bold text-sm text-[#26221c]">{c.name}</div>
+                <div className="text-xs text-[#8a8172] mt-0.5">{verifiedCount} verified</div>
+              </button>
+            );
+          })}
+          {!showAllCategoryTiles && BUSINESS_CATEGORIES.length > 7 && (
+            <button
+              type="button"
+              onClick={() => setShowAllCategoryTiles(true)}
+              className="text-left rounded-2xl border border-dashed border-[#d8cfa9] bg-[#f4e3c8]/40 p-4 flex flex-col justify-center hover:bg-[#f4e3c8]/70 transition"
+            >
+              <div className="font-bold text-sm text-[#8a5a19]">+ {BUSINESS_CATEGORIES.length - 7} more</div>
+              <div className="text-xs text-[#8a8172] mt-0.5">View all services</div>
+            </button>
+          )}
         </div>
       </div>
 
@@ -1267,10 +1333,10 @@ export default function WebPortal({
       {activePortalTab === 'listings' && (
         <div className="space-y-6">
           {/* Advanced Multi-Mode Search Suite */}
-          <div id="public-listing-search" className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4 scroll-mt-24">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3 flex-wrap gap-2">
-              <span className="text-xs font-bold font-mono uppercase text-indigo-600 tracking-wider flex items-center gap-1">
-                <Compass className="w-3.5 h-3.5" /> Discovery Search Suite:
+          <div id="public-listing-search" className="bg-white rounded-2xl border border-[#ece7dc] p-5 shadow-xs space-y-4 scroll-mt-24">
+            <div className="flex items-center justify-between border-b border-[#f1ece0] pb-3 flex-wrap gap-2">
+              <span className="text-xs font-bold uppercase text-[#8a5a19] tracking-wider flex items-center gap-1">
+                <Compass className="w-3.5 h-3.5" /> Refine your search
               </span>
               {!SIMPLE_SEARCH_FORM && <div className="flex bg-slate-100 p-1 rounded-lg gap-1">
                 {[
@@ -1686,16 +1752,16 @@ export default function WebPortal({
           </div>
 
           {/* Bulletin local campaign strip */}
-          <div className="bg-gradient-to-r from-amber-500/10 via-amber-600/5 to-transparent border-l-4 border-amber-500 rounded-r-2xl p-3.5 flex items-center justify-between gap-4 shadow-2xs">
+          <div className="bg-[#f4e3c8]/40 border-l-4 border-[#e0972a] rounded-r-2xl p-3.5 flex items-center justify-between gap-4 shadow-2xs">
             <div className="flex items-center gap-3">
-              <div className="bg-amber-400 text-amber-950 text-[10px] uppercase font-mono font-bold px-2 py-1 rounded-md tracking-wider">
+              <div className="bg-[#e0972a] text-[#26221c] text-[10px] uppercase font-bold px-2 py-1 rounded-md tracking-wider">
                 LOCAL BULLETIN
               </div>
-              <p className="text-slate-700 text-xs font-medium">
+              <p className="text-[#4a4436] text-xs font-medium">
                 ⚡ Monsoons prep campaign: Check listed electrical &amp; plumbing repair helplines below. Verified by regional ops.
               </p>
             </div>
-            <span className="text-[10px] font-mono text-slate-400 hidden md:inline">AD #2026</span>
+            <span className="text-[10px] text-[#b0a389] hidden md:inline">AD #2026</span>
           </div>
 
           {userSession.role === 'seller' && userSession.sellerBusinessId && (
@@ -1735,8 +1801,11 @@ export default function WebPortal({
             {/* VIP Premium Sponsored Segment */}
             {featuredBusinesses.length > 0 && (
               <div className="space-y-3">
-                <h3 className="text-xs font-bold font-mono text-indigo-650 tracking-widest uppercase flex items-center gap-1.5">
-                  ⭐ Premium Featured &amp; Sponsored ({featuredBusinesses.length})
+                <h3 className="font-['Bricolage_Grotesque',_sans-serif] text-lg font-extrabold text-[#26221c] flex items-center gap-1.5">
+                  Top verified listings
+                  <span className="text-xs font-semibold text-[#8a5a19] bg-[#f4e3c8] px-2 py-0.5 rounded-full ml-1">
+                    {featuredBusinesses.length}
+                  </span>
                 </h3>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1745,9 +1814,9 @@ export default function WebPortal({
                     return (
                       <React.Fragment key={biz.id}>
                         {renderCompactBusinessRow(biz, {
-                          highlightClass: 'border-indigo-300',
+                          highlightClass: 'border-[#e0972a]/50',
                           badgeLabel: 'VIP',
-                          badgeClassName: 'bg-indigo-700 text-white'
+                          badgeClassName: 'bg-[#e0972a] text-[#26221c]'
                         })}
                         <div 
                           onClick={() => openBusinessDetails(biz)}
@@ -1846,8 +1915,8 @@ export default function WebPortal({
 
             {/* Standard Approved Listings Segment */}
             <div className="space-y-3">
-              <h3 className="text-xs font-bold font-mono text-slate-400 tracking-widest uppercase mb-1">
-                Active Verified Listings Directory ({regularBusinesses.length})
+              <h3 className="text-xs font-bold text-[#8a8172] tracking-widest uppercase mb-1">
+                More verified listings ({regularBusinesses.length})
               </h3>
 
               {regularBusinesses.length === 0 && featuredBusinesses.length === 0 ? (
@@ -1992,6 +2061,24 @@ export default function WebPortal({
                   onPageChange={setRegularPage}
                 />
               )}
+            </div>
+
+            {/* Footer CTA banner — matches the redesign's "Own a business" strip */}
+            <div className="bg-[#26221c] rounded-2xl px-6 py-8 md:px-11 md:py-10 flex flex-col md:flex-row items-center justify-between gap-5">
+              <div className="text-center md:text-left">
+                <h3 className="font-['Bricolage_Grotesque',_sans-serif] text-xl md:text-2xl font-extrabold text-white tracking-tight mb-1">
+                  Own a business in {currentLocality.name}?
+                </h3>
+                <p className="text-[#c3bbaf] text-sm">
+                  List it free and get discovered by neighbours searching nearby.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowApplyModal(true)}
+                className="bg-[#e0972a] hover:bg-[#cf8a22] text-[#26221c] font-bold text-sm px-7 py-3.5 rounded-xl transition whitespace-nowrap flex items-center gap-1.5"
+              >
+                Add your business <ChevronRight className="w-4 h-4" />
+              </button>
             </div>
           </div>
         </div>
