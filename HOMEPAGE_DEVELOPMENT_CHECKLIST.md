@@ -92,9 +92,10 @@ This checklist is based on the current implementation in `src/App.tsx`, `src/com
 | Admin tooling | Key legacy homepage content collections now support scoped backend APIs | Done | Hero banners, listing ads, community items, coupons, and locality-category links now persist through dedicated homepage-config collection routes in API mode instead of relying only on local state plus a broad homepage-config autosync, and offers now have edit/delete coverage on the same path. |
 | Admin tooling | Legacy homepage layout lifecycle now supports scoped backend APIs | Done | Locality homepage layouts can now be created, replaced, or deleted through dedicated layout routes, and locality create/delete flows persist those layout changes without depending on a full homepage-config sync. |
 | Architecture | Ordinary API-mode homepage writes no longer rely on broad homepage-config autosync | Done | Homepage API settings and bulk layout reconciliation now have scoped routes, ordinary homepage edits persist through scoped APIs, and the full homepage-config sync path is retained only for explicit manual sync or recovery flows. |
-| Data layer | Ad leads now support managed API/database persistence in API mode | Done | Public ad lead submissions now post to a managed endpoint, admin lead views can load from that endpoint, and ad lead history is no longer browser-primary in API mode. |
+| Data layer | Ad leads now support managed API/database persistence in API mode | Done | Public ad lead submissions now post to a managed endpoint, seller/privileged lead views can load from that endpoint, and ad lead history is no longer browser-primary in API mode. |
 | Data layer | API-mode homepage bootstrap now prefers scoped read endpoints | Done | Homepage API settings, layouts, banners, ads, offers, community items, and locality-category links now load through dedicated read routes first, with the full homepage-config blob retained only as a compatibility fallback. |
 | Data layer | Legacy homepage collections now persist to dedicated DB tables | Done | Layouts, hero banners, listing ads, coupons, community items, and locality-category links now sync to dedicated homepage tables when Postgres is available, with the legacy homepage-config blob kept only as a mirror/fallback path. |
+| Data layer | Authenticated buyer dashboard state now supports managed API/database persistence | Done | API mode now stores viewed listings, saved listings, and buyer activity through `/api/buyer-state`, and hydration is scoped to the authenticated user so buyer state does not leak across logout or account switches. |
 
 ## Pending
 
@@ -102,7 +103,8 @@ This checklist is based on the current implementation in `src/App.tsx`, `src/com
 | --- | --- | --- | --- |
 | Architecture | Replace JSON-heavy homepage config with scalable DB-backed CMS foundation | Priority | Needed for 200-500+ localities with locality/category-aware hero banners, ads, sponsored listings, offers, and content. |
 | Architecture | Introduce reusable templates, targeting rules, campaign entities, and published snapshots | Priority | Final page payloads should be resolved on the backend and served as locality-aware snapshots rather than assembled from hardcoded or client-managed config state. |
-| Data layer | Seed remaining hardcoded fallbacks into DB-backed configuration records | Priority | Taxonomy, locality routing, runtime geography, homepage defaults, SEO discovery, their admin authoring, runtime seed bootstrap, legacy seed cleanup, and hero draft presets are now covered; `INITIAL_REVIEWS` and `INITIAL_CRM_CONTACTS` are the intentional remaining frontend seeds for now. |
+| Architecture | Finish fallback ownership migration out of bundled seed files | Priority | Runtime locality assumptions in `src/App.tsx` and `src/components/WebPortal.tsx` are now cleaned up, `shared/localityRoutingSeed.js` now derives locality/subdomain fallback records from geography seed, and the remaining bundled fallback owners in `shared/homepageDefaultsSeed.js`, `shared/seoDiscoverySeed.js`, and the residual routing shell should move behind managed DB/config records. |
+| Data layer | Seed remaining hardcoded fallbacks into DB-backed configuration records | Priority | Taxonomy, locality routing, runtime geography, homepage defaults, SEO discovery, their admin authoring, runtime seed bootstrap, legacy seed cleanup, hero draft presets, and managed review/CRM bootstrap are now covered; the remaining work is the broader non-critical persistence cleanup. |
 | Admin tooling | Migrate Homepage CMS from direct config blob editing to structured entity management | Priority | Admin should manage templates, sections, locality overrides, campaigns, scheduling, preview, and publish workflows. |
 | Performance | Add resolver and publish flow suitable for 500 localities and 1,000+ listings per locality | Priority | Reads should come from published snapshots or equivalent cached resolved payloads rather than repeated client-side assembly. |
 | Discovery | Advanced search modes need launch decision and enablement | Pending | Voice, image, and AI search flows are coded but hidden behind `SIMPLE_SEARCH_FORM = true`. |
@@ -111,8 +113,8 @@ This checklist is based on the current implementation in `src/App.tsx`, `src/com
 | Public UX | Subdomain/location mapping widget should stay removed or be redesigned | Pending | Old mapping UI exists in code but is disabled with `showSubdomainLocationMapping = false`. |
 | Content ops | Final hero copy, images, offers, and updates need real launch content | Pending | Structure exists, but homepage quality now depends on curated production content per locality. |
 | Content ops | Empty-state content strategy for optional sections needs polish | Pending | Promo, offers, updates, and shelf sections disappear when content is missing; launch may need designed fallbacks. |
-| Data layer | Some operational state still relies on `localStorage` | Pending | `INITIAL_REVIEWS`, `INITIAL_CRM_CONTACTS`, audit logs, user session state, viewed-listing cache, and local-mode fallbacks still need a fuller managed persistence story. |
-| Data layer | Remaining operational/runtime state should move fully to API/database | Pending | Reviews, CRM contacts, audit logs, user session/view caches, local-mode fallback state, and any remaining legacy mirrors still need a fuller managed persistence story. |
+| Data layer | Some operational state still relies on `localStorage` | Pending | Guest session state, guest/local-mode view caches, local-mode review/CRM mirrors, and other non-authenticated fallbacks still need a fuller managed persistence story. |
+| Data layer | Remaining operational/runtime state should move fully to API/database | Pending | Reviews, authenticated buyer state, seller/privileged CRM and ad-lead flows, and admin audit logs now have managed API paths, but guest session/view caches, local-mode fallback state, and any remaining legacy mirrors still need a fuller managed persistence story. |
 | Security | Public homepage flows need stronger production protection | Pending | Launch notes still call for server-side validation, rate limits, CSRF protection, and secure session handling. |
 | Access control | Sandbox/admin-only controls need full production hardening | Pending | Repo notes still call out route-level admin gating and hiding internal tools from public users. |
 | Seller ops | Seller dashboard needs to be built | Done | Merchant workspace now locks to the seller-owned listing when available, shows real CRM/ad lead/offer/review counts, and keeps the existing campaign and CRM tools as the pre-UAT seller dashboard. |
@@ -157,3 +159,20 @@ This checklist is based on the current implementation in `src/App.tsx`, `src/com
 3. Expand seller and buyer dashboards beyond pre-UAT scope as needed.
 4. Decide whether advanced search, portal tabs, and refined filters should launch.
 5. Complete the wider production-readiness pack: monitoring, compliance, full VAPT, and load testing.
+
+### Remaining Seed-Owned Fallback Inventory
+
+1. `shared/localityRoutingSeed.js`
+   - locality and subdomain fallback records now derive from `shared/geographySeed.js`; server bootstrap and read paths now use `locality-routing-config.json` plus managed DB/file backfill, and `src/App.tsx` no longer imports the seed module directly
+   - next implementation target: reduce the residual routing shell to a minimal bootstrap import now that the live app fallback path no longer imports bundled routing defaults directly
+2. `shared/homepageDefaultsSeed.js`
+   - homepage defaults now auto-backfill into managed config/file state; server bootstrap plus app/portal/admin fallback behavior now use `homepage-defaults-config.json` instead of the seed module directly
+   - next implementation target: keep code only as bootstrap/import material and remove any remaining direct bundled fallback usage from runtime/app paths
+3. `shared/seoDiscoverySeed.js`
+   - route intents, locality metadata, SEO labels, and default listing groups now auto-backfill into managed SEO discovery config when DB/file state is missing or partial; server bootstrap and `src/App.tsx` now use `seo-discovery-config.json` instead of the seed module directly
+   - next implementation target: keep code only as bootstrap/import material and remove any remaining direct bundled fallback usage from runtime/app paths
+4. Managed review/CRM bootstrap
+   - `reviews.json` and `crm-contacts.json` now own bootstrap sample data, while `/api/reviews`, `/api/crm-contacts`, and seller-scoped `/api/ad-leads` cover the managed API path
+   - next implementation target: retire the remaining guest/local-mode mirrors and broaden managed persistence beyond the current UAT-critical seller/admin/buyer paths
+5. `src/App.tsx`
+   - broader non-critical guest session and local-mode mirrors still need the post-UAT persistence migration even though authenticated API-mode buyer, seller, admin, and homepage runtime paths are now managed

@@ -228,7 +228,25 @@ This file tracks the remaining homepage and admin work after the current round o
   - deleted legacy `INITIAL_BUSINESSES`
   - deleted legacy `INITIAL_COMMUNITY_ITEMS`
   - deleted legacy `INITIAL_COUPONS`
-  - `src/data.ts` now only retains the smaller review and CRM seed collections still used by the current runtime
+- Moved review and CRM bootstrap off `src/data.ts` onto managed JSON/API-backed ownership.
+  - added managed `reviews.json` and `crm-contacts.json` bootstrap files
+  - app API mode now hydrates reviews from `/api/reviews`
+  - app seller/privileged API mode now hydrates CRM contacts from `/api/crm-contacts`
+  - review submissions now best-effort persist through the managed review endpoint
+  - admin CRM add/update flows now best-effort persist through the managed CRM endpoint
+- Added seller-scoped managed CRM and ad-lead access in API mode.
+  - server now derives seller-to-business linkage from seller account identity plus managed listings when an explicit stored link is absent
+  - `/api/auth/me` and OTP auth responses now return the resolved seller business linkage to the client
+  - seller API sessions can now read only their own CRM contacts and ad leads from `/api/crm-contacts` and `/api/ad-leads`
+  - public ad leads and verified contact unlocks now upsert CRM lead records server-side instead of relying only on frontend-local simulation
+- Moved audit log reads onto a managed privileged API path in API mode.
+  - server now supports privileged `GET /api/audit-events` backed by Postgres or `audit-events.jsonl`
+  - admin API mode now hydrates audit history from the managed endpoint instead of browser-only `localStorage`
+  - API mode clears stale local audit-log cache once the managed path is active
+- Moved authenticated buyer dashboard state onto a managed API path in API mode.
+  - server now supports authenticated `GET`/`PUT /api/buyer-state` backed by Postgres or `buyer-states.json`
+  - app API mode now hydrates viewed listings, saved listings, and buyer activity from the managed endpoint for authenticated users
+  - buyer-state hydration is now scoped to the authenticated user so logout or account switches do not leak one buyer's state into another session
 - Protected `PUT /api/homepage-config` with bearer-token auth for `platform_admin` and `developer` users.
 - Updated the client sync path to send the auth token when saving homepage config.
 - Completed backend control for homepage sections.
@@ -310,11 +328,11 @@ Priority implementation sequence:
 
 Remaining hardcoded sources that still need the same DB/configuration treatment:
 
-1. Remaining small frontend seed collections should still be migrated when we take the trust/CRM persistence pass.
-   - `INITIAL_REVIEWS`
-   - `INITIAL_CRM_CONTACTS`
+1. Remaining local-mode operational mirrors should still be migrated when we take the broader persistence pass.
+   - guest/browser-only session and support state
+   - guest/local-mode view caches and other non-critical local mirrors
 
-1. Move homepage state and content fully off `localStorage` into API/database-backed persistence.
+1. Move the remaining guest/local-mode homepage state and session mirrors fully off `localStorage` into API/database-backed persistence.
 2. Add preview-oriented controls in Homepage CMS.
    - device preview
    - locality preview
@@ -351,3 +369,22 @@ Remaining hardcoded sources that still need the same DB/configuration treatment:
 3. Finish the broader persistence migration beyond UAT-critical flows.
 4. Run VAPT and load testing before release.
 5. Run final responsive QA across the homepage and mobile nav.
+
+### Remaining Seed-Owned Fallback Inventory
+
+1. `shared/localityRoutingSeed.js`
+   - now derives fallback localities and subdomain mappings from `shared/geographySeed.js`; server bootstrap and read paths now use `locality-routing-config.json` plus managed DB/file backfill, and `src/App.tsx` no longer imports the seed module directly
+   - priority: P1 because the live app/server bootstrap path is now managed-snapshot based, but the residual routing shell still exists as bootstrap material
+   - target state: keep only a minimal empty-shell safety fallback in code and let managed locality-routing config own the default-locality and pincode-routing bootstrap records end-to-end
+2. `shared/homepageDefaultsSeed.js`
+   - homepage defaults now auto-backfill into managed config/file state; server bootstrap plus app/portal/admin fallback behavior now use `homepage-defaults-config.json` instead of the seed module directly
+   - priority: P0 because the live app/server bootstrap path is now managed-snapshot based, but the bundled homepage-defaults seed still exists as bootstrap material
+   - target state: keep code only as bootstrap/import material and remove any remaining direct bundled fallback usage from runtime/app paths
+3. `shared/seoDiscoverySeed.js`
+   - SEO discovery now auto-backfills into managed config when DB/file state is missing or partial; server bootstrap and `src/App.tsx` now use `seo-discovery-config.json` instead of the seed module directly
+   - priority: P0 because the live app/server bootstrap path is now managed-snapshot based, but the bundled SEO seed still exists as bootstrap material
+   - target state: keep code only as bootstrap/import material and remove any remaining direct bundled fallback usage from runtime/app paths
+4. `src/App.tsx` legacy local-storage mirrors
+   - reviews, community items, CRM contacts, coupons, and related non-critical mirrors still have client-owned persistence paths
+   - priority: P1 because UAT-critical homepage/admin flows are already protected, but the broader persistence migration is still incomplete
+   - target state: move the remaining non-critical state to managed API/DB persistence and retire the legacy local mirrors

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { MapPin, Search, Check, Sparkles, AlertCircle, X, HelpCircle, ArrowRight } from 'lucide-react';
 import { Locality } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
@@ -26,7 +26,25 @@ export default function PincodeSelectionModal({
   const [errorStatus, setErrorStatus] = useState<string | null>(null);
   const [matchedLocality, setMatchedLocality] = useState<Locality | null>(null);
 
-  const defaultLocality = localities.find(l => l.id === defaultLocalityId) || localities[0];
+  const defaultLocality = localities.find(l => l.id === defaultLocalityId) || localities[0] || null;
+  const quickGuideItems = useMemo(() => {
+    const seen = new Set<string>();
+    return pincodeMappings
+      .filter((mapping) => {
+        if (seen.has(mapping.pincode)) return false;
+        seen.add(mapping.pincode);
+        return true;
+      })
+      .slice(0, 8)
+      .map((mapping) => {
+        const locality = localities.find((entry) => entry.id === mapping.localityId);
+        const localityLabel = locality?.name.split(',')[0] || mapping.localityId || 'Directory Hub';
+        return {
+          pincode: mapping.pincode,
+          label: `${localityLabel} Hub`,
+        };
+      });
+  }, [localities, pincodeMappings]);
 
   useEffect(() => {
     if (isOpen) {
@@ -78,13 +96,13 @@ export default function PincodeSelectionModal({
       onClose();
     } else {
       // Pincode is valid 6 digits but not mapped
-      onSavePincode(trimmed, defaultLocalityId);
+      onSavePincode(trimmed, defaultLocality?.id || defaultLocalityId || localities[0]?.id || '');
       onClose();
     }
   };
 
   const handleSkip = () => {
-    onSavePincode(null, (matchedLocality || defaultLocality).id);
+    onSavePincode(null, matchedLocality?.id || defaultLocality?.id || defaultLocalityId || localities[0]?.id || '');
     onClose();
   };
 
@@ -132,7 +150,9 @@ export default function PincodeSelectionModal({
             <div className="space-y-2">
               <label className="text-xs font-bold text-slate-700 uppercase tracking-wide flex items-center justify-between">
                 <span>Enter 6-Digit Pincode</span>
-                <span className="font-mono text-[10px] text-slate-400 capitalize">Navi Mumbai Regional Node</span>
+                <span className="font-mono text-[10px] text-slate-400 capitalize">
+                  {defaultLocality ? `${defaultLocality.name.split(',')[0]} Default Hub` : 'Directory Routing'}
+                </span>
               </label>
               
               <div className="relative">
@@ -156,7 +176,7 @@ export default function PincodeSelectionModal({
                 <div>
                   <strong className="font-semibold">{errorStatus}</strong>
                   <p className="mt-0.5 text-rose-600 leading-normal">
-                    You can still submit to browse the directory, and we will place you on the default hub: <span className="font-bold">{defaultLocality.name.split(',')[0]}</span>.
+                    You can still submit to browse the directory, and we will place you on the default hub: <span className="font-bold">{defaultLocality?.name.split(',')[0] || 'Directory Home'}</span>.
                   </p>
                 </div>
               </div>
@@ -191,15 +211,7 @@ export default function PincodeSelectionModal({
                 Quick Guide: Supported Pincodes
               </span>
               <div className="grid grid-cols-2 gap-2 text-xs">
-                {[
-                  { pincode: '410101', label: 'Kalamboli Node' },
-                  { pincode: '410218', label: 'Roadpali & Kalamboli' },
-                  { pincode: '410210', label: 'Kharghar Node' },
-                  { pincode: '410209', label: 'Kamothe Node' },
-                  { pincode: '410206', label: 'Panvel (Sector Hub)' },
-                  { pincode: '410221', label: 'Panvel (New Sectors)' },
-                  { pincode: '410208', label: 'Taloja Phase 1 & 2' },
-                ].map(item => (
+                {quickGuideItems.map(item => (
                   <button
                     key={item.pincode}
                     type="button"
@@ -242,7 +254,7 @@ export default function PincodeSelectionModal({
                 onClick={handleSkip}
                 className="w-full sm:w-auto bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-sm py-3 px-5 rounded-2xl cursor-pointer transition"
               >
-                Skip ({(matchedLocality || defaultLocality).name.split(',')[0]})
+                Skip ({(matchedLocality || defaultLocality)?.name.split(',')[0] || 'Directory Home'})
               </button>
             </div>
           </form>

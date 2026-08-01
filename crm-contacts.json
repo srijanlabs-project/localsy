@@ -1,0 +1,26 @@
+[
+  {
+    "id": "crm1",
+    "businessId": "s1",
+    "name": "Dilip Patil",
+    "phone": "+91 98311 00223",
+    "email": "dilip.patil@startuphub.io",
+    "lastInteraction": "2026-05-19T08:00:00Z",
+    "followUpNotes": "Regular grooming client. Enrolled monthly family membership card for 5 Elements salon.",
+    "totalSpent": 3500,
+    "ordersCount": 8,
+    "loyaltyPoints": 350
+  },
+  {
+    "id": "crm2",
+    "businessId": "s2",
+    "name": "Sushma Swaraj",
+    "phone": "+91 88912 33441",
+    "email": "sushma.sw@gmail.com",
+    "lastInteraction": "2026-05-18T16:30:00Z",
+    "followUpNotes": "Booked customized pre-wedding beauty training module. Total batch size is 3 interns.",
+    "totalSpent": 12000,
+    "ordersCount": 1,
+    "loyaltyPoints": 1200
+  }
+]

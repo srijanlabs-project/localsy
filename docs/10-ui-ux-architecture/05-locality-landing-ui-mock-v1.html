@@ -1,0 +1,986 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Localisy Locality Landing UI Mock V1</title>
+    <style>
+      :root {
+        --bg: #fff5f9;
+        --surface: rgba(255, 255, 255, 0.82);
+        --surface-solid: #ffffff;
+        --text: #0d1b2a;
+        --muted: #64748b;
+        --line: #dbe2ea;
+        --accent: #1e3a8a;
+        --accent-2: #3b82f6;
+        --accent-3: #ffd54f;
+        --hero-1: #0d1b2a;
+        --hero-2: #1e3a8a;
+        --hero-3: #3b82f6;
+        --success: #1b8f5f;
+        --warm: #fff4cc;
+        --chip: rgba(255, 255, 255, 0.12);
+        --shadow-soft: 0 18px 60px rgba(15, 23, 42, 0.08);
+        --shadow-strong: 0 28px 90px rgba(15, 23, 42, 0.16);
+        --radius-xl: 34px;
+        --radius-lg: 28px;
+        --radius-md: 22px;
+        --radius-sm: 16px;
+        --font-display: "Inter", "Segoe UI", "Helvetica Neue", sans-serif;
+        --font-body: "Inter", "Segoe UI", "Helvetica Neue", sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: var(--font-body);
+        color: var(--text);
+        background:
+          radial-gradient(circle at top left, rgba(255, 213, 79, 0.22), transparent 28%),
+          radial-gradient(circle at top right, rgba(59, 130, 246, 0.12), transparent 30%),
+          var(--bg);
+      }
+
+      .page {
+        max-width: 1480px;
+        margin: 0 auto;
+        padding: 26px;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+        margin-bottom: 18px;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-weight: 800;
+        letter-spacing: -0.03em;
+        font-size: 36px;
+      }
+
+      .brand-mark {
+        width: 22px;
+        height: 22px;
+        border-radius: 6px;
+        transform: rotate(45deg);
+        background: linear-gradient(135deg, #ffd54f, #1e3a8a);
+        box-shadow: 0 10px 24px rgba(30, 58, 138, 0.2);
+      }
+
+      .top-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 12px 18px;
+        font-size: 14px;
+        font-weight: 600;
+        background: rgba(255, 255, 255, 0.88);
+      }
+
+      .pill.primary {
+        border-color: transparent;
+        color: #fff;
+        background: linear-gradient(135deg, #0d1b2a, #1e3a8a);
+      }
+
+      .shell {
+        border: 1px solid #e7edf3;
+        border-radius: 40px;
+        padding: 18px;
+        background: rgba(255, 255, 255, 0.4);
+        box-shadow: var(--shadow-soft);
+        backdrop-filter: blur(10px);
+      }
+
+      .section {
+        border: 1px solid var(--line);
+        border-radius: var(--radius-lg);
+        background: var(--surface-solid);
+        box-shadow: var(--shadow-soft);
+      }
+
+      .section.soft {
+        background: var(--surface);
+        backdrop-filter: blur(8px);
+      }
+
+      .meta-strip {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 18px 20px;
+      }
+
+      .meta-stack {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .micro {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px;
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      .tag {
+        padding: 7px 12px;
+        border-radius: 999px;
+        background: #fff2c7;
+        color: #8a5a00;
+      }
+
+      .breadcrumbs {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px;
+        font-size: 18px;
+        color: var(--muted);
+      }
+
+      .breadcrumbs strong {
+        color: var(--text);
+      }
+
+      .dark-button {
+        border: 0;
+        border-radius: 20px;
+        padding: 16px 24px;
+        color: #fff;
+        font-size: 15px;
+        font-weight: 700;
+        background: #0a1222;
+      }
+
+      .grid-hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.85fr);
+        gap: 18px;
+        margin-top: 18px;
+      }
+
+      .hero {
+        overflow: hidden;
+        border-radius: var(--radius-xl);
+        padding: 1px;
+        background: linear-gradient(135deg, var(--hero-1) 0%, var(--hero-2) 40%, var(--hero-3) 74%, #f59e0b 145%);
+        box-shadow: var(--shadow-strong);
+      }
+
+      .hero-inner {
+        border-radius: calc(var(--radius-xl) - 1px);
+        padding: 34px;
+        color: #fff;
+        background: rgba(7, 17, 31, 0.95);
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 13px;
+        font-weight: 700;
+        color: #f9d777;
+      }
+
+      .eyebrow-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #fde68a, #f59e0b);
+      }
+
+      .hero h1 {
+        max-width: 880px;
+        margin: 18px 0 0;
+        font-family: var(--font-display);
+        font-size: 76px;
+        line-height: 0.94;
+        letter-spacing: -0.06em;
+      }
+
+      .hero p {
+        max-width: 760px;
+        margin: 22px 0 0;
+        font-size: 19px;
+        line-height: 1.7;
+        color: rgba(255, 255, 255, 0.8);
+      }
+
+      .search-box {
+        margin-top: 28px;
+        padding: 16px;
+        border-radius: 26px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(255, 255, 255, 0.08);
+      }
+
+      .search-input {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        min-height: 72px;
+        border-radius: 22px;
+        padding: 0 22px;
+        color: var(--text);
+        background: #fff;
+      }
+
+      .search-icon {
+        font-size: 24px;
+      }
+
+      .search-label {
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: #94a3b8;
+      }
+
+      .search-query {
+        margin-top: 6px;
+        font-size: 18px;
+        font-weight: 700;
+      }
+
+      .filter-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 14px;
+      }
+
+      .filter-chip {
+        padding: 10px 14px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 999px;
+        background: var(--chip);
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 14px;
+        margin-top: 24px;
+      }
+
+      .stat {
+        padding: 18px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 22px;
+        background: rgba(255, 255, 255, 0.08);
+      }
+
+      .stat-value {
+        font-size: 40px;
+        font-weight: 900;
+        letter-spacing: -0.05em;
+      }
+
+      .stat-label {
+        margin-top: 6px;
+        color: rgba(255, 255, 255, 0.72);
+        font-size: 14px;
+      }
+
+      .stack {
+        display: grid;
+        gap: 18px;
+      }
+
+      .panel {
+        padding: 24px;
+      }
+
+      .panel h2 {
+        margin: 8px 0 0;
+        font-size: 42px;
+        line-height: 1.02;
+        letter-spacing: -0.05em;
+      }
+
+      .panel .subhead {
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      .info-list {
+        display: grid;
+        gap: 12px;
+        margin-top: 22px;
+      }
+
+      .info-card {
+        padding: 18px;
+        border-radius: 20px;
+        background: #f8fafc;
+        color: #334155;
+        font-size: 18px;
+        line-height: 1.65;
+      }
+
+      .action-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+        margin-top: 22px;
+      }
+
+      .action-card {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 16px;
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        background: #f8fafc;
+        font-weight: 800;
+        color: #1e293b;
+      }
+
+      .action-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 42px;
+        height: 42px;
+        border-radius: 14px;
+        color: var(--accent-2);
+        background: #ffffff;
+      }
+
+      .merchant-card {
+        padding: 18px;
+        border: 1px solid #f2dfb8;
+        border-radius: 20px;
+        background: rgba(255, 255, 255, 0.85);
+      }
+
+      .merchant-title {
+        font-size: 18px;
+        font-weight: 800;
+      }
+
+      .merchant-copy {
+        margin-top: 6px;
+        color: #475569;
+        line-height: 1.7;
+      }
+
+      .section-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 18px;
+        align-items: flex-end;
+        margin-bottom: 22px;
+      }
+
+      .section-header h3 {
+        margin: 8px 0 0;
+        font-size: 50px;
+        line-height: 1;
+        letter-spacing: -0.05em;
+      }
+
+      .section-note {
+        max-width: 470px;
+        color: var(--muted);
+        font-size: 16px;
+        line-height: 1.7;
+      }
+
+      .category-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 16px;
+      }
+
+      .category-card {
+        padding: 20px;
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+      }
+
+      .category-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 12px;
+      }
+
+      .category-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 54px;
+        height: 54px;
+        border-radius: 18px;
+        color: var(--accent-2);
+        background: #eafaf7;
+        font-size: 24px;
+      }
+
+      .count {
+        padding: 8px 12px;
+        border-radius: 999px;
+        background: #eef2f7;
+        font-size: 12px;
+        font-weight: 800;
+        color: #475569;
+      }
+
+      .category-name {
+        margin-top: 18px;
+        font-size: 28px;
+        font-weight: 900;
+        letter-spacing: -0.04em;
+      }
+
+      .category-copy {
+        margin-top: 8px;
+        color: #475569;
+        line-height: 1.7;
+      }
+
+      .category-link {
+        margin-top: 14px;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 800;
+      }
+
+      .two-col {
+        display: grid;
+        grid-template-columns: minmax(0, 1.2fr) minmax(340px, 0.8fr);
+        gap: 18px;
+        margin-top: 18px;
+      }
+
+      .listing-stack {
+        display: grid;
+        gap: 16px;
+      }
+
+      .listing-card {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 18px;
+        padding: 20px;
+        border: 1px solid var(--line);
+        border-radius: 26px;
+        background: #f8fafc;
+      }
+
+      .listing-card.primary {
+        border-color: #0a1222;
+        color: #fff;
+        background: #0a1222;
+        box-shadow: var(--shadow-strong);
+      }
+
+      .listing-name {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px;
+        font-size: 30px;
+        font-weight: 900;
+        letter-spacing: -0.04em;
+      }
+
+      .listing-badge {
+        padding: 6px 10px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: #8a5a00;
+        background: #fff2c7;
+      }
+
+      .listing-card.primary .listing-badge {
+        color: #f9d777;
+        background: rgba(255, 255, 255, 0.1);
+      }
+
+      .listing-copy {
+        margin-top: 10px;
+        line-height: 1.75;
+        color: #475569;
+      }
+
+      .listing-card.primary .listing-copy {
+        color: rgba(255, 255, 255, 0.78);
+      }
+
+      .pill-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 14px;
+      }
+
+      .metric-pill {
+        padding: 10px 14px;
+        border-radius: 999px;
+        font-size: 13px;
+        font-weight: 700;
+        background: #ffffff;
+      }
+
+      .listing-card.primary .metric-pill {
+        color: #fff;
+        background: rgba(255, 255, 255, 0.1);
+      }
+
+      .cta-column {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .cta {
+        min-width: 158px;
+        border-radius: 18px;
+        padding: 14px 18px;
+        text-align: center;
+        font-size: 14px;
+        font-weight: 800;
+      }
+
+      .cta.primary {
+        color: #fff;
+        background: #0a1222;
+      }
+
+      .cta.inverse {
+        color: #0a1222;
+        background: #ffffff;
+      }
+
+      .cta.secondary {
+        border: 1px solid var(--line);
+        color: #0f172a;
+        background: #ffffff;
+      }
+
+      .cta.ghost {
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        color: #ffffff;
+        background: rgba(255, 255, 255, 0.08);
+      }
+
+      .behavior-card {
+        padding: 18px;
+        border: 1px solid #d7f0ea;
+        border-radius: 20px;
+        background: rgba(255, 255, 255, 0.9);
+      }
+
+      .behavior-index {
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        color: var(--accent-2);
+      }
+
+      .behavior-title {
+        margin-top: 10px;
+        font-size: 24px;
+        font-weight: 900;
+        letter-spacing: -0.04em;
+      }
+
+      .behavior-copy {
+        margin-top: 6px;
+        color: #475569;
+        line-height: 1.75;
+      }
+
+      @media (max-width: 1180px) {
+        .grid-hero,
+        .two-col,
+        .category-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .section-header {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+
+        .hero h1 {
+          font-size: 58px;
+        }
+
+        .action-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 760px) {
+        .page {
+          padding: 14px;
+        }
+
+        .topbar,
+        .meta-strip,
+        .listing-card {
+          flex-direction: column;
+          grid-template-columns: 1fr;
+        }
+
+        .brand {
+          font-size: 28px;
+        }
+
+        .hero-inner,
+        .panel {
+          padding: 20px;
+        }
+
+        .hero h1,
+        .section-header h3,
+        .panel h2 {
+          font-size: 40px;
+        }
+
+        .stats {
+          grid-template-columns: 1fr;
+        }
+
+        .cta-column {
+          flex-direction: row;
+          flex-wrap: wrap;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <div class="topbar">
+        <div class="brand">
+          <span class="brand-mark"></span>
+          <span>localisy</span>
+        </div>
+        <div class="top-actions">
+          <div class="pill">Pincode: 410218</div>
+          <div class="pill">Node: Roadpali</div>
+          <div class="pill primary">Advertise Business</div>
+          <div class="pill">Sign In</div>
+        </div>
+      </div>
+
+      <div class="shell">
+        <section class="section soft meta-strip">
+          <div class="meta-stack">
+            <div class="micro">
+              <span class="tag">UI Screen V1</span>
+              <span>Locality Landing</span>
+              <span>/</span>
+              <span>Design Handoff Mock</span>
+            </div>
+            <div class="breadcrumbs">
+              <span>India</span>
+              <span>/</span>
+              <span>Navi Mumbai</span>
+              <span>/</span>
+              <strong>Roadpali</strong>
+            </div>
+          </div>
+          <button class="dark-button">Open Live Portal →</button>
+        </section>
+
+        <div class="grid-hero">
+          <section class="hero">
+            <div class="hero-inner">
+              <div class="eyebrow">
+                <span class="eyebrow-dot"></span>
+                <span>Hyperlocal discovery designed around speed, trust, and locality confidence</span>
+              </div>
+              <h1>Discover the best of Roadpali with one clean decision surface.</h1>
+              <p>
+                Search by need, compare trusted local businesses quickly, and move into calls,
+                WhatsApp, contact unlock, and reviews without losing locality context.
+              </p>
+
+              <div class="search-box">
+                <div class="search-input">
+                  <div class="search-icon">⌕</div>
+                  <div>
+                    <div class="search-label">Search in Roadpali</div>
+                    <div class="search-query">Dentist open now, birthday cake near me, best AC repair in Roadpali</div>
+                  </div>
+                </div>
+                <div class="filter-row">
+                  <span class="filter-chip">Open now</span>
+                  <span class="filter-chip">Verified only</span>
+                  <span class="filter-chip">Top rated</span>
+                  <span class="filter-chip">Near me</span>
+                </div>
+              </div>
+
+              <div class="stats">
+                <div class="stat">
+                  <div class="stat-value">124+</div>
+                  <div class="stat-label">Active listings</div>
+                </div>
+                <div class="stat">
+                  <div class="stat-value">48+</div>
+                  <div class="stat-label">Verified merchants</div>
+                </div>
+                <div class="stat">
+                  <div class="stat-value">4.7</div>
+                  <div class="stat-label">Average rating</div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <div class="stack">
+            <section class="section panel">
+              <div class="subhead">Quick Actions</div>
+              <h2>Jump straight into what most people want</h2>
+              <div class="action-grid">
+                <div class="action-card"><span class="action-icon">✚</span><span>Doctors near me</span></div>
+                <div class="action-card"><span class="action-icon">🍽</span><span>Order food</span></div>
+                <div class="action-card"><span class="action-icon">🔧</span><span>AC repair</span></div>
+                <div class="action-card"><span class="action-icon">🎂</span><span>Home bakers</span></div>
+                <div class="action-card"><span class="action-icon">🛡</span><span>Emergency help</span></div>
+                <div class="action-card"><span class="action-icon">★</span><span>Best rated picks</span></div>
+              </div>
+            </section>
+
+            <section class="section panel" style="background: var(--warm);">
+              <div class="subhead" style="color: #a16207;">Need Help Choosing?</div>
+              <h2>Get guided to the right business faster</h2>
+              <div class="info-list">
+                <div class="merchant-card">
+                  <div class="merchant-title">Ask Localisy AI</div>
+                  <div class="merchant-copy">Describe your need in plain language and get the best local options.</div>
+                </div>
+                <div class="merchant-card">
+                  <div class="merchant-title">Get results on WhatsApp</div>
+                  <div class="merchant-copy">Receive shortlists, listing links, and contact options directly on mobile.</div>
+                </div>
+                <div class="merchant-card">
+                  <div class="merchant-title">Compare trusted picks</div>
+                  <div class="merchant-copy">Use verification, response time, and reviews to narrow down confidently.</div>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+
+        <section class="section panel" style="margin-top: 18px;">
+          <div class="section-header">
+              <div>
+                <div class="subhead">Popular in Roadpali</div>
+                <h3>Category entry points that feel curated, not generic</h3>
+              </div>
+              <div class="section-note">
+                Most searched this week in Roadpali.
+              </div>
+            </div>
+
+          <div class="category-grid">
+            <article class="category-card">
+              <div class="category-top">
+                <div class="category-icon">🍽</div>
+                <div class="count">24 listings</div>
+              </div>
+              <div class="category-name">Restaurants</div>
+              <div class="category-copy">Discovery examples: Seaside Kitchen, Spice Route, Urban Tandoor.</div>
+              <div class="category-link">Explore category →</div>
+            </article>
+
+            <article class="category-card">
+              <div class="category-top">
+                <div class="category-icon">✚</div>
+                <div class="count">18 listings</div>
+              </div>
+              <div class="category-name">Doctors & Clinics</div>
+              <div class="category-copy">Discovery examples: HealthSpring Care, Family Dental Hub, Zenith Clinic.</div>
+              <div class="category-link">Explore category →</div>
+            </article>
+
+            <article class="category-card">
+              <div class="category-top">
+                <div class="category-icon">🔧</div>
+                <div class="count">31 listings</div>
+              </div>
+              <div class="category-name">Repairs & Services</div>
+              <div class="category-copy">Discovery examples: QuickFix Electric, Urban Cooling, Metro Plumbing.</div>
+              <div class="category-link">Explore category →</div>
+            </article>
+
+            <article class="category-card">
+              <div class="category-top">
+                <div class="category-icon">🛒</div>
+                <div class="count">16 listings</div>
+              </div>
+              <div class="category-name">Daily Needs</div>
+              <div class="category-copy">Discovery examples: Smart Mart, Daily Basket, Fresh Point.</div>
+              <div class="category-link">Explore category →</div>
+            </article>
+
+            <article class="category-card">
+              <div class="category-top">
+                <div class="category-icon">🎂</div>
+                <div class="count">11 listings</div>
+              </div>
+              <div class="category-name">Home Bakers</div>
+              <div class="category-copy">Discovery examples: Cake Loft, Sugar Lane, Oven Story Studio.</div>
+              <div class="category-link">Explore category →</div>
+            </article>
+
+            <article class="category-card">
+              <div class="category-top">
+                <div class="category-icon">🏠</div>
+                <div class="count">14 listings</div>
+              </div>
+              <div class="category-name">Home Services</div>
+              <div class="category-copy">Discovery examples: CleanNest, FixSure, Rapid Home Assist.</div>
+              <div class="category-link">Explore category →</div>
+            </article>
+          </div>
+        </section>
+
+        <div class="two-col">
+          <section class="section panel">
+            <div class="section-header">
+              <div>
+                <div class="subhead">Featured Listings</div>
+                <h3>High-confidence businesses users are likely to click first</h3>
+              </div>
+              <div class="section-note">Weighted by trust, relevance, visibility, and conversion potential.</div>
+            </div>
+
+            <div class="listing-stack">
+              <article class="listing-card primary">
+                <div>
+                  <div class="listing-name">
+                    <span>Roadpali Health Clinic</span>
+                    <span class="listing-badge">Featured</span>
+                  </div>
+                  <div class="listing-copy">
+                    Trusted neighborhood clinic with fast response times, verified contact details, and strong repeat visitation.
+                  </div>
+                  <div class="pill-row">
+                    <span class="metric-pill">★ 4.8 (162 reviews)</span>
+                    <span class="metric-pill">⏱ Responds in 10 mins</span>
+                    <span class="metric-pill">📍 Roadpali</span>
+                  </div>
+                </div>
+                <div class="cta-column">
+                  <div class="cta inverse">View listing</div>
+                  <div class="cta ghost">Unlock contact</div>
+                </div>
+              </article>
+
+              <article class="listing-card">
+                <div>
+                  <div class="listing-name">
+                    <span>Spice Route Kitchen</span>
+                    <span class="listing-badge">Featured</span>
+                  </div>
+                  <div class="listing-copy">
+                    Popular local dining pick with high ratings, locality relevance, and strong delivery intent.
+                  </div>
+                  <div class="pill-row">
+                    <span class="metric-pill">★ 4.7 (214 reviews)</span>
+                    <span class="metric-pill">⏱ Open now</span>
+                    <span class="metric-pill">📍 Roadpali</span>
+                  </div>
+                </div>
+                <div class="cta-column">
+                  <div class="cta primary">View listing</div>
+                  <div class="cta secondary">Unlock contact</div>
+                </div>
+              </article>
+
+              <article class="listing-card">
+                <div>
+                  <div class="listing-name">
+                    <span>Urban Cooling Services</span>
+                  </div>
+                  <div class="listing-copy">
+                    High-intent repair listing optimized for urgent needs like AC, electrical, and appliance service.
+                  </div>
+                  <div class="pill-row">
+                    <span class="metric-pill">★ 4.6 (89 reviews)</span>
+                    <span class="metric-pill">⏱ Same day service</span>
+                    <span class="metric-pill">📍 Roadpali</span>
+                  </div>
+                </div>
+                <div class="cta-column">
+                  <div class="cta primary">View listing</div>
+                  <div class="cta secondary">Unlock contact</div>
+                </div>
+              </article>
+            </div>
+          </section>
+
+          <section class="section panel" style="background: linear-gradient(180deg, #effcf9 0%, #ffffff 100%);">
+            <div class="subhead" style="color: var(--accent-2);">Local Signals</div>
+            <h2>What is active in Roadpali right now</h2>
+            <div class="info-list">
+              <div class="behavior-card">
+                <div class="behavior-index">38</div>
+                <div class="behavior-title">Open now</div>
+                <div class="behavior-copy">businesses available right now</div>
+              </div>
+              <div class="behavior-card">
+                <div class="behavior-index">08</div>
+                <div class="behavior-title">Offers today</div>
+                <div class="behavior-copy">live deals across the locality</div>
+              </div>
+              <div class="behavior-card">
+                <div class="behavior-index">26</div>
+                <div class="behavior-title">Fresh reviews</div>
+                <div class="behavior-copy">new reviews in the last 7 days</div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

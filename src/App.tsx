@@ -1,17 +1,17 @@
 import React, { useState, useEffect, useMemo, useRef, Suspense, lazy } from 'react';
 import { 
-  INITIAL_REVIEWS,
-  INITIAL_CRM_CONTACTS
-} from './data';
-import { 
   Locality, Business, SubdomainMapping, Review, UserSession, UserRole,
-  CommunityItem, CRMContact, MarketingCoupon, AuditEvent, ListingAd, AdLead, HeroBanner, HeroBannerStat, BuyerActivityEvent,
+  CommunityItem, CRMContact, MarketingCoupon, AuditEvent, ListingAd, AdLead, HeroBanner, HeroBannerStat, BuyerActivityEvent, BuyerStateSnapshot,
   HomepageLayout, HomepageSection, HomepageSectionType, ApiConfiguration, HomepageConfigState, ScalableHomepageConfigState, ScalableCampaign, ScalableHomepageTemplate, ScalableHomepageAssignment, BusinessTaxonomyState, BusinessCategory, BusinessSubcategory, LocalityRoutingConfigState, PincodeRoutingMapping, GeographyConfigState, StateMaster, CityMaster, LocalityMaster, AreaMaster, HomepageDefaultsConfigState, FallbackListingAdTemplate, HeroBannerDraftDefaults, SeoDiscoveryConfigState, SeoRouteIntent, SeoLocalityMetadata, SeoCategoryLabel, SeoTopListingGroup, SeoDefaultListingGroup, ResolvedHomepagePublishRequest, ResolvedHomepageSnapshotDeleteRequest, ScalableLegacyOwnershipSummary, PublishedHomepageSnapshot
 } from './types';
-import WebPortal from './components/WebPortal';
 import PincodeSelectionModal from './components/PincodeSelectionModal';
 import AuthModal from './components/AuthModal';
 import happyBusinessLogo from './assets/happy-business-logo.png';
+import homepageDefaultsBootstrap from '../homepage-defaults-config.json';
+import localityRoutingBootstrap from '../locality-routing-config.json';
+import seoDiscoveryBootstrap from '../seo-discovery-config.json';
+import reviewsBootstrap from '../reviews.json';
+import crmContactsBootstrap from '../crm-contacts.json';
 import { 
   Layout, Smartphone, Shield, BookOpen, Layers, RefreshCw, 
   User, CheckCircle, ShieldAlert, KeyRound, Wrench, Briefcase, HelpCircle,
@@ -27,37 +27,8 @@ import {
   resolveMasterCategoryId
 } from './categoryMaster';
 import { MASTER_AREAS, MASTER_CITIES, MASTER_LOCALITIES, MASTER_STATES, setGeographyCatalog } from './geographyMaster';
-import {
-  DEFAULT_LOCALITIES,
-  DEFAULT_LOCALITY_ID,
-  DEFAULT_PINCODE_MAPPINGS,
-  buildDefaultSubdomainMappings,
-} from '../shared/localityRoutingSeed.js';
-import {
-  DEFAULT_FALLBACK_LISTING_AD_TEMPLATES,
-  DEFAULT_HERO_BANNER_DRAFT_DEFAULTS,
-  DEFAULT_HERO_QUICK_ACTIONS,
-  DEFAULT_HERO_STAT_TEMPLATES,
-  DEFAULT_HOMEPAGE_SECTION_TEMPLATES,
-  DEFAULT_SEARCH_SHORTCUT_CATEGORY_IDS,
-} from '../shared/homepageDefaultsSeed.js';
-import {
-  DEFAULT_SEO_CATEGORY_LABELS,
-  DEFAULT_SEO_DEFAULT_LISTING_NAMES,
-  DEFAULT_SEO_LOCALITY_METADATA,
-  DEFAULT_SEO_ROUTE_INTENTS,
-  DEFAULT_SEO_TOP_LISTINGS,
-} from '../shared/seoDiscoverySeed.js';
 
 const PUBLIC_SITE_ORIGIN = 'https://www.localisy.in';
-const LOCALITY_GEO_CENTERS: Record<string, { lat: number; lng: number }> = {
-  roadpali: { lat: 19.0314, lng: 73.1028 },
-  kalamboli: { lat: 19.0412, lng: 73.1025 },
-  kharghar: { lat: 19.0436, lng: 73.0667 },
-  kamothe: { lat: 19.0167, lng: 73.0967 },
-  panvel: { lat: 18.9894, lng: 73.1175 },
-  taloja: { lat: 19.0769, lng: 73.1181 },
-};
 
 const toRadians = (value: number) => (value * Math.PI) / 180;
 const getDistanceInKm = (from: { lat: number; lng: number }, to: { lat: number; lng: number }) => {
@@ -69,6 +40,54 @@ const getDistanceInKm = (from: { lat: number; lng: number }, to: { lat: number; 
     Math.cos(toRadians(from.lat)) * Math.cos(toRadians(to.lat)) * Math.sin(deltaLng / 2) ** 2
   );
   return earthRadiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+};
+
+const isStoredLocalityLike = (value: unknown): value is Locality => {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<Locality>;
+  return (
+    typeof candidate.id === 'string' &&
+    candidate.id.trim().length > 0 &&
+    typeof candidate.name === 'string' &&
+    candidate.name.trim().length > 0
+  );
+};
+
+const isStoredBusinessLike = (value: unknown): value is Business => {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<Business>;
+  return (
+    typeof candidate.id === 'string' &&
+    candidate.id.trim().length > 0 &&
+    typeof candidate.name === 'string' &&
+    candidate.name.trim().length > 0 &&
+    typeof candidate.localityId === 'string' &&
+    candidate.localityId.trim().length > 0
+  );
+};
+
+const buildLocalityGeoCentersFromBusinesses = (localities: Locality[], businesses: Business[]) => {
+  const totals = new Map<string, { lat: number; lng: number; count: number }>();
+  businesses.forEach((business) => {
+    const coords = business.gpsCoordinates;
+    if (!coords || !Number.isFinite(coords.lat) || !Number.isFinite(coords.lng)) return;
+    if (!localities.some((locality) => locality.id === business.localityId)) return;
+    const existing = totals.get(business.localityId) || { lat: 0, lng: 0, count: 0 };
+    existing.lat += coords.lat;
+    existing.lng += coords.lng;
+    existing.count += 1;
+    totals.set(business.localityId, existing);
+  });
+
+  return localities.reduce<Record<string, { lat: number; lng: number }>>((acc, locality) => {
+    const total = totals.get(locality.id);
+    if (!total || total.count === 0) return acc;
+    acc[locality.id] = {
+      lat: total.lat / total.count,
+      lng: total.lng / total.count,
+    };
+    return acc;
+  }, {});
 };
 
 const resolveBusinessPincode = (business: Business): string => {
@@ -176,6 +195,13 @@ const normalizeStoredBusiness = (business: Business): Business => {
     paymentMethods: Array.isArray(business.paymentMethods)
       ? business.paymentMethods.map((method) => String(method || '').trim()).filter(Boolean)
       : undefined,
+    duplicateReviewStatus: ['pending', 'merged', 'separate'].includes(String(business.duplicateReviewStatus || ''))
+      ? business.duplicateReviewStatus
+      : undefined,
+    mergedIntoBusinessId: business.mergedIntoBusinessId ? String(business.mergedIntoBusinessId).trim() : undefined,
+    sourceLineage: Array.isArray(business.sourceLineage)
+      ? business.sourceLineage.map((entry) => String(entry || '').trim()).filter(Boolean)
+      : undefined,
   };
   const normalized = normalizeBusinessTaxonomy(sanitizedBusiness);
   const isUploadedListing =
@@ -186,6 +212,133 @@ const normalizeStoredBusiness = (business: Business): Business => {
   return isUploadedListing && normalized.status === 'pending'
     ? { ...normalized, status: 'approved' }
     : normalized;
+};
+
+const normalizeStoredReview = (review: Review): Review => ({
+  ...review,
+  id: String(review.id || '').trim(),
+  businessId: String(review.businessId || '').trim(),
+  userName: String(review.userName || '').trim(),
+  userPhone: String(review.userPhone || '').trim(),
+  rating: Number.isFinite(Number(review.rating)) ? Math.max(1, Math.min(5, Number(review.rating))) : 5,
+  comment: String(review.comment || '').trim(),
+  createdAt: String(review.createdAt || new Date().toISOString()),
+  verifiedByOtp: Boolean(review.verifiedByOtp),
+  photoUrl: review.photoUrl ? String(review.photoUrl).trim() : undefined,
+  videoUrl: review.videoUrl ? String(review.videoUrl).trim() : undefined,
+  isVerifiedPurchase: review.isVerifiedPurchase === true,
+  helpfulVotes: Number.isFinite(Number(review.helpfulVotes)) ? Number(review.helpfulVotes) : undefined,
+  reported: review.reported === true,
+  reportReason: review.reportReason ? String(review.reportReason).trim() : undefined,
+});
+
+const normalizeStoredCrmContact = (contact: CRMContact): CRMContact => ({
+  ...contact,
+  id: String(contact.id || '').trim(),
+  businessId: String(contact.businessId || '').trim(),
+  name: String(contact.name || '').trim(),
+  phone: String(contact.phone || '').trim(),
+  email: contact.email ? String(contact.email).trim() : undefined,
+  lastInteraction: String(contact.lastInteraction || new Date().toISOString()),
+  followUpNotes: contact.followUpNotes ? String(contact.followUpNotes).trim() : undefined,
+  totalSpent: Number.isFinite(Number(contact.totalSpent)) ? Number(contact.totalSpent) : undefined,
+  ordersCount: Number.isFinite(Number(contact.ordersCount)) ? Number(contact.ordersCount) : undefined,
+  loyaltyPoints: Number.isFinite(Number(contact.loyaltyPoints)) ? Number(contact.loyaltyPoints) : undefined,
+});
+
+const normalizeBuyerActivityEvent = (event: BuyerActivityEvent): BuyerActivityEvent => ({
+  ...event,
+  id: String(event.id || '').trim(),
+  actionType: ['saved_listing', 'unsaved_listing', 'contact_unlock', 'review_submitted'].includes(String(event.actionType || ''))
+    ? event.actionType
+    : 'saved_listing',
+  businessId: event.businessId ? String(event.businessId).trim() : undefined,
+  createdAt: String(event.createdAt || new Date().toISOString()),
+  title: String(event.title || '').trim(),
+  detail: event.detail ? String(event.detail).trim() : undefined,
+});
+
+const normalizeBuyerStateSnapshot = (value?: Partial<BuyerStateSnapshot> | null): BuyerStateSnapshot => ({
+  viewedBusinessIds: Array.isArray(value?.viewedBusinessIds)
+    ? Array.from(new Set(value.viewedBusinessIds.map((entry) => String(entry || '').trim()).filter(Boolean)))
+    : [],
+  savedBusinessIds: Array.isArray(value?.savedBusinessIds)
+    ? Array.from(new Set(value.savedBusinessIds.map((entry) => String(entry || '').trim()).filter(Boolean)))
+    : [],
+  buyerActivityEvents: Array.isArray(value?.buyerActivityEvents)
+    ? value.buyerActivityEvents
+        .map(normalizeBuyerActivityEvent)
+        .filter((event) => event.id && event.title)
+        .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+        .slice(0, 50)
+    : [],
+});
+
+const mergeBuyerStateSnapshots = (base: BuyerStateSnapshot, incoming: BuyerStateSnapshot): BuyerStateSnapshot => {
+  const mergedViewed = Array.from(new Set([...(incoming.viewedBusinessIds || []), ...(base.viewedBusinessIds || [])]));
+  const mergedSaved = Array.from(new Set([...(incoming.savedBusinessIds || []), ...(base.savedBusinessIds || [])]));
+  const eventMap = new Map<string, BuyerActivityEvent>();
+  [...(incoming.buyerActivityEvents || []), ...(base.buyerActivityEvents || [])]
+    .map(normalizeBuyerActivityEvent)
+    .forEach((event) => {
+      const key = event.id || `${event.actionType}|${event.businessId || ''}|${event.title}|${event.createdAt}`;
+      if (!eventMap.has(key)) {
+        eventMap.set(key, event);
+      }
+    });
+  return normalizeBuyerStateSnapshot({
+    viewedBusinessIds: mergedViewed,
+    savedBusinessIds: mergedSaved,
+    buyerActivityEvents: Array.from(eventMap.values()),
+  });
+};
+
+const DEFAULT_GUEST_VIEWED_BUSINESS_IDS = ['s1'];
+
+const buildGuestUserSession = (): UserSession => ({
+  role: 'buyer',
+  userType: 'buyer',
+  userName: 'Anonymous Guest Explorer',
+  userId: undefined,
+  userPhone: undefined,
+  email: undefined,
+  authToken: undefined,
+  contactUnlockToken: undefined,
+  sellerBusinessId: undefined,
+  isAuthenticated: false,
+});
+
+const readGuestBuyerStateSnapshotFromStorage = (): BuyerStateSnapshot => {
+  try {
+    const viewedBusinessIds = localStorage.getItem('yp_viewed_bizs');
+    const savedBusinessIds = localStorage.getItem('yp_saved_business_ids');
+    const buyerActivityEvents = localStorage.getItem('yp_buyer_activity_events');
+    const normalized = normalizeBuyerStateSnapshot({
+      viewedBusinessIds: viewedBusinessIds ? JSON.parse(viewedBusinessIds) : DEFAULT_GUEST_VIEWED_BUSINESS_IDS,
+      savedBusinessIds: savedBusinessIds ? JSON.parse(savedBusinessIds) : [],
+      buyerActivityEvents: buyerActivityEvents ? JSON.parse(buyerActivityEvents) : [],
+    });
+    return normalized.viewedBusinessIds.length > 0
+      ? normalized
+      : normalizeBuyerStateSnapshot({
+          ...normalized,
+          viewedBusinessIds: DEFAULT_GUEST_VIEWED_BUSINESS_IDS,
+        });
+  } catch {
+    return normalizeBuyerStateSnapshot({
+      viewedBusinessIds: DEFAULT_GUEST_VIEWED_BUSINESS_IDS,
+    });
+  }
+};
+
+const getBuyerStateScopeKey = (session: UserSession, config: ApiConfiguration) => {
+  if (!(session.isAuthenticated && session.authToken && config.syncMode === 'api' && config.buyerStateEndpoint)) {
+    return 'guest';
+  }
+  const normalizedUserId = String(session.userId || '').trim();
+  const normalizedEmail = String(session.email || '').trim().toLowerCase();
+  const normalizedPhone = String(session.userPhone || '').replace(/\D/g, '');
+  return `auth:${normalizedUserId || normalizedEmail || normalizedPhone || 'authenticated'}`;
 };
 
 const mergeBusinessCollections = (base: Business[], incoming: Business[]): Business[] => {
@@ -207,6 +360,9 @@ const DEFAULT_API_CONFIGURATION: ApiConfiguration = {
   syncMode: 'api',
   homepageConfigEndpoint: '/api/homepage-config',
   adLeadsEndpoint: '/api/ad-leads',
+  reviewsEndpoint: '/api/reviews',
+  crmContactsEndpoint: '/api/crm-contacts',
+  buyerStateEndpoint: '/api/buyer-state',
   homepageDefaultsConfigEndpoint: '/api/homepage-defaults-config',
   localityRoutingConfigEndpoint: '/api/locality-routing-config',
   geographyConfigEndpoint: '/api/geography-config',
@@ -227,6 +383,12 @@ const slugifyForUrl = (value: string) => value
   .replace(/&/g, ' and ')
   .replace(/[^a-z0-9]+/g, '-')
   .replace(/^-+|-+$/g, '');
+
+const HOMEPAGE_DEFAULTS_BOOTSTRAP = homepageDefaultsBootstrap as Partial<HomepageDefaultsConfigState>;
+const LOCALITY_ROUTING_BOOTSTRAP = localityRoutingBootstrap as Partial<LocalityRoutingConfigState>;
+const SEO_DISCOVERY_BOOTSTRAP = seoDiscoveryBootstrap as Partial<SeoDiscoveryConfigState>;
+const REVIEWS_BOOTSTRAP = Array.isArray(reviewsBootstrap) ? reviewsBootstrap as Review[] : [];
+const CRM_CONTACTS_BOOTSTRAP = Array.isArray(crmContactsBootstrap) ? crmContactsBootstrap as CRMContact[] : [];
 
 const normalizeStringList = (value: unknown): string[] => (
   Array.isArray(value)
@@ -252,6 +414,9 @@ const normalizeApiConfiguration = (value?: Partial<ApiConfiguration> | null): Ap
   syncMode: value?.syncMode === 'local' ? 'local' : 'api',
   homepageConfigEndpoint: value?.homepageConfigEndpoint || DEFAULT_API_CONFIGURATION.homepageConfigEndpoint,
   adLeadsEndpoint: value?.adLeadsEndpoint || DEFAULT_API_CONFIGURATION.adLeadsEndpoint,
+  reviewsEndpoint: value?.reviewsEndpoint || DEFAULT_API_CONFIGURATION.reviewsEndpoint,
+  crmContactsEndpoint: value?.crmContactsEndpoint || DEFAULT_API_CONFIGURATION.crmContactsEndpoint,
+  buyerStateEndpoint: value?.buyerStateEndpoint || DEFAULT_API_CONFIGURATION.buyerStateEndpoint,
   homepageDefaultsConfigEndpoint: value?.homepageDefaultsConfigEndpoint || DEFAULT_API_CONFIGURATION.homepageDefaultsConfigEndpoint,
   localityRoutingConfigEndpoint: value?.localityRoutingConfigEndpoint || DEFAULT_API_CONFIGURATION.localityRoutingConfigEndpoint,
   geographyConfigEndpoint: value?.geographyConfigEndpoint || DEFAULT_API_CONFIGURATION.geographyConfigEndpoint,
@@ -317,10 +482,22 @@ const normalizeStoredPincodeMapping = (mapping: PincodeRoutingMapping): PincodeR
   localityId: String(mapping.localityId || '').trim(),
 });
 
+const buildBootstrapSubdomainMappings = (localities: Locality[]): SubdomainMapping[] => (
+  localities.map((locality) => ({
+    domain: locality.subdomain || `${slugifyForUrl(locality.slug || locality.id)}.localisy.in`,
+    localityId: locality.id,
+    sslEnabled: true,
+    dnsStatus: 'active',
+    createdAt: '2026-07-29T00:00:00.000Z',
+  }))
+);
+
 const normalizeLocalityRoutingConfigState = (
   value?: Partial<LocalityRoutingConfigState> | null,
 ): LocalityRoutingConfigState => {
-  const fallbackLocalities = (DEFAULT_LOCALITIES as Locality[]).map(normalizeStoredLocality);
+  const fallbackLocalities = Array.isArray(LOCALITY_ROUTING_BOOTSTRAP.localities)
+    ? LOCALITY_ROUTING_BOOTSTRAP.localities.map((locality) => normalizeStoredLocality(locality as Locality)).filter((locality) => locality.id && locality.name)
+    : [];
   const localities = Array.isArray(value?.localities)
     ? value.localities.map(normalizeStoredLocality).filter((locality) => locality.id && locality.name)
     : fallbackLocalities;
@@ -329,23 +506,35 @@ const normalizeLocalityRoutingConfigState = (
     ? value.subdomains
         .map(normalizeStoredSubdomain)
         .filter((subdomain) => subdomain.domain && localityIds.has(subdomain.localityId))
-    : (buildDefaultSubdomainMappings(localities as unknown as typeof DEFAULT_LOCALITIES) as SubdomainMapping[]).map(normalizeStoredSubdomain);
+    : (
+      Array.isArray(LOCALITY_ROUTING_BOOTSTRAP.subdomains)
+        ? LOCALITY_ROUTING_BOOTSTRAP.subdomains.map((subdomain) => normalizeStoredSubdomain(subdomain as SubdomainMapping))
+        : buildBootstrapSubdomainMappings(localities)
+    ).filter((subdomain) => subdomain.domain && localityIds.has(subdomain.localityId));
   const pincodeMappings = Array.isArray(value?.pincodeMappings)
     ? value.pincodeMappings
         .map(normalizeStoredPincodeMapping)
         .filter((mapping) => mapping.pincode && localityIds.has(mapping.localityId))
-    : (DEFAULT_PINCODE_MAPPINGS as PincodeRoutingMapping[]).map(normalizeStoredPincodeMapping);
+    : (
+      Array.isArray(LOCALITY_ROUTING_BOOTSTRAP.pincodeMappings)
+        ? LOCALITY_ROUTING_BOOTSTRAP.pincodeMappings.map((mapping) => normalizeStoredPincodeMapping(mapping as PincodeRoutingMapping))
+        : []
+    ).filter((mapping) => mapping.pincode && localityIds.has(mapping.localityId));
   const defaultLocalityId = localityIds.has(String(value?.defaultLocalityId || ''))
     ? String(value?.defaultLocalityId)
-    : (localities[0]?.id || DEFAULT_LOCALITY_ID);
+    : (
+      localities[0]?.id ||
+      String(LOCALITY_ROUTING_BOOTSTRAP.defaultLocalityId || '').trim() ||
+      'locality-default'
+    );
   return {
     localities,
     subdomains,
     pincodeMappings,
     defaultLocalityId,
     metadata: {
-      seededFromCode: value?.metadata?.seededFromCode ?? true,
-      updatedAt: value?.metadata?.updatedAt || new Date().toISOString(),
+      seededFromCode: value?.metadata?.seededFromCode ?? LOCALITY_ROUTING_BOOTSTRAP.metadata?.seededFromCode ?? false,
+      updatedAt: value?.metadata?.updatedAt || LOCALITY_ROUTING_BOOTSTRAP.metadata?.updatedAt || new Date().toISOString(),
     },
   };
 };
@@ -518,7 +707,12 @@ const validateGeographyConfigForOperations = (
   const pincodeLocalityLookup = new Map(pincodeMappings.map((mapping) => [mapping.pincode, mapping.localityId]));
 
   const missingPrimaryGeoBusinesses = businesses
-    .filter((business) => !stateIds.has(business.stateId) || !cityIds.has(business.cityId) || !localityIds.has(business.localityId) || !areaIds.has(business.areaId))
+    .filter((business) => (
+      !stateIds.has(business.stateId) ||
+      !cityIds.has(business.cityId) ||
+      !localityIds.has(business.localityId) ||
+      (String(business.areaId || '').trim().length > 0 && !areaIds.has(business.areaId))
+    ))
     .map((business) => business.name);
   if (missingPrimaryGeoBusinesses.length > 0) {
     errors.push(`These listings would lose their primary geography mapping: ${formatValidationExamples(missingPrimaryGeoBusinesses)}.`);
@@ -533,6 +727,7 @@ const validateGeographyConfigForOperations = (
 
   const mismatchedAreaChainBusinesses = businesses
     .filter((business) => {
+      if (!String(business.areaId || '').trim()) return false;
       const area = areaLookup.get(business.areaId);
       const city = cityLookup.get(business.cityId);
       const locality = localityLookup.get(business.localityId);
@@ -588,21 +783,27 @@ const normalizeFallbackListingAdTemplate = (
   mobileRowPosition: Number.isFinite(Number(ad.mobileRowPosition)) ? Number(ad.mobileRowPosition) : undefined,
 });
 
+const homepageDefaultsBootstrapDraftDefaults = HOMEPAGE_DEFAULTS_BOOTSTRAP.heroBannerDraftDefaults || {};
+
 const DEFAULT_MANAGED_HERO_BANNER_DRAFT_DEFAULTS: HeroBannerDraftDefaults = {
-  ctaLabel: String(DEFAULT_HERO_BANNER_DRAFT_DEFAULTS.ctaLabel || 'Explore Businesses'),
+  ctaLabel: String(homepageDefaultsBootstrapDraftDefaults.ctaLabel || 'Explore Businesses'),
   ctaType: (
-    DEFAULT_HERO_BANNER_DRAFT_DEFAULTS.ctaType === 'landing_page' ||
-    DEFAULT_HERO_BANNER_DRAFT_DEFAULTS.ctaType === 'landing_listing' ||
-    DEFAULT_HERO_BANNER_DRAFT_DEFAULTS.ctaType === 'lead_form' ||
-    DEFAULT_HERO_BANNER_DRAFT_DEFAULTS.ctaType === 'search_category'
+    homepageDefaultsBootstrapDraftDefaults.ctaType === 'landing_page' ||
+    homepageDefaultsBootstrapDraftDefaults.ctaType === 'landing_listing' ||
+    homepageDefaultsBootstrapDraftDefaults.ctaType === 'lead_form' ||
+    homepageDefaultsBootstrapDraftDefaults.ctaType === 'search_category'
   )
-    ? DEFAULT_HERO_BANNER_DRAFT_DEFAULTS.ctaType
+    ? homepageDefaultsBootstrapDraftDefaults.ctaType
     : 'search_category',
-  ctaTarget: String(DEFAULT_HERO_BANNER_DRAFT_DEFAULTS.ctaTarget || 'all'),
-  durationDays: Math.max(1, Number(DEFAULT_HERO_BANNER_DRAFT_DEFAULTS.durationDays || 30)),
+  ctaTarget: String(homepageDefaultsBootstrapDraftDefaults.ctaTarget || 'all'),
+  durationDays: Math.max(1, Number(homepageDefaultsBootstrapDraftDefaults.durationDays || 30)),
 };
 
-const DEFAULT_MANAGED_HERO_STAT_TEMPLATES: HeroBannerStat[] = (DEFAULT_HERO_STAT_TEMPLATES as HeroBannerStat[]).map((stat) => ({
+const DEFAULT_MANAGED_HERO_STAT_TEMPLATES: HeroBannerStat[] = (
+  Array.isArray(HOMEPAGE_DEFAULTS_BOOTSTRAP.heroStatTemplates) && HOMEPAGE_DEFAULTS_BOOTSTRAP.heroStatTemplates.length > 0
+    ? HOMEPAGE_DEFAULTS_BOOTSTRAP.heroStatTemplates
+    : []
+).map((stat) => ({
   enabled: stat.enabled ?? true,
   label: String(stat.label || '').trim(),
   value: String(stat.value || '').trim(),
@@ -670,10 +871,10 @@ const normalizeHomepageDefaultsConfigState = (
 ): HomepageDefaultsConfigState => ({
   sectionTemplates: Array.isArray(value?.sectionTemplates)
     ? value.sectionTemplates.map((section, index) => normalizeHomepageSection(section, 'template', index))
-    : (DEFAULT_HOMEPAGE_SECTION_TEMPLATES as HomepageSection[]).map((section, index) => normalizeHomepageSection(section, 'template', index)),
+    : (Array.isArray(HOMEPAGE_DEFAULTS_BOOTSTRAP.sectionTemplates) ? HOMEPAGE_DEFAULTS_BOOTSTRAP.sectionTemplates : []).map((section, index) => normalizeHomepageSection(section as HomepageSection, 'template', index)),
   fallbackListingAds: Array.isArray(value?.fallbackListingAds)
     ? value.fallbackListingAds.map(normalizeFallbackListingAdTemplate)
-    : (DEFAULT_FALLBACK_LISTING_AD_TEMPLATES as FallbackListingAdTemplate[]).map(normalizeFallbackListingAdTemplate),
+    : (Array.isArray(HOMEPAGE_DEFAULTS_BOOTSTRAP.fallbackListingAds) ? HOMEPAGE_DEFAULTS_BOOTSTRAP.fallbackListingAds : []).map((ad) => normalizeFallbackListingAdTemplate(ad as FallbackListingAdTemplate)),
   heroStatTemplates: Array.isArray(value?.heroStatTemplates) && value.heroStatTemplates.length > 0
     ? value.heroStatTemplates.map(normalizeHeroStatTemplate)
     : DEFAULT_MANAGED_HERO_STAT_TEMPLATES.map(normalizeHeroStatTemplate),
@@ -682,15 +883,19 @@ const normalizeHomepageDefaultsConfigState = (
     ? value.heroQuickActions
         .map(normalizeHomepageCategoryShortcut)
         .filter((shortcut) => shortcut.categoryId)
-    : DEFAULT_HERO_QUICK_ACTIONS.map(normalizeHomepageCategoryShortcut).filter((shortcut) => shortcut.categoryId),
+    : (Array.isArray(HOMEPAGE_DEFAULTS_BOOTSTRAP.heroQuickActions) ? HOMEPAGE_DEFAULTS_BOOTSTRAP.heroQuickActions : [])
+        .map(normalizeHomepageCategoryShortcut)
+        .filter((shortcut) => shortcut.categoryId),
   searchShortcutCategoryIds: Array.isArray(value?.searchShortcutCategoryIds) && value.searchShortcutCategoryIds.length > 0
     ? normalizeStringList(value.searchShortcutCategoryIds)
-    : normalizeStringList(DEFAULT_SEARCH_SHORTCUT_CATEGORY_IDS),
+    : normalizeStringList(HOMEPAGE_DEFAULTS_BOOTSTRAP.searchShortcutCategoryIds),
   metadata: {
-    seededFromCode: value?.metadata?.seededFromCode ?? true,
-    updatedAt: value?.metadata?.updatedAt || new Date().toISOString(),
+    seededFromCode: value?.metadata?.seededFromCode ?? HOMEPAGE_DEFAULTS_BOOTSTRAP.metadata?.seededFromCode ?? false,
+    updatedAt: value?.metadata?.updatedAt || HOMEPAGE_DEFAULTS_BOOTSTRAP.metadata?.updatedAt || new Date().toISOString(),
   },
 });
+
+const DEFAULT_MANAGED_HOMEPAGE_DEFAULTS_CONFIG = normalizeHomepageDefaultsConfigState(HOMEPAGE_DEFAULTS_BOOTSTRAP);
 
 const normalizeSeoRouteIntent = (intent: Partial<SeoRouteIntent>, index: number): SeoRouteIntent => ({
   id: String(intent.id || intent.slug || `seo-intent-${index + 1}`).trim(),
@@ -744,42 +949,45 @@ const normalizeSeoDiscoveryConfigState = (
     ? value.routeIntents
         .map(normalizeSeoRouteIntent)
         .filter((intent) => intent.id && intent.slug && intent.categoryId && intent.q)
-    : (DEFAULT_SEO_ROUTE_INTENTS as SeoRouteIntent[])
-        .map(normalizeSeoRouteIntent)
+    : (Array.isArray(SEO_DISCOVERY_BOOTSTRAP.routeIntents) ? SEO_DISCOVERY_BOOTSTRAP.routeIntents : [])
+        .map((intent) => normalizeSeoRouteIntent(intent as SeoRouteIntent, 0))
         .filter((intent) => intent.id && intent.slug && intent.categoryId && intent.q),
   localityMetadata: Array.isArray(value?.localityMetadata)
     ? value.localityMetadata
         .map(normalizeSeoLocalityMetadata)
         .filter((locality) => locality.id && locality.name)
-    : (DEFAULT_SEO_LOCALITY_METADATA as SeoLocalityMetadata[])
-        .map(normalizeSeoLocalityMetadata)
+    : (Array.isArray(SEO_DISCOVERY_BOOTSTRAP.localityMetadata) ? SEO_DISCOVERY_BOOTSTRAP.localityMetadata : [])
+        .map((locality) => normalizeSeoLocalityMetadata(locality as SeoLocalityMetadata, 0))
         .filter((locality) => locality.id && locality.name),
   categoryLabels: Array.isArray(value?.categoryLabels)
     ? value.categoryLabels
         .map(normalizeSeoCategoryLabel)
         .filter((label) => label.categoryId && label.label)
-    : (DEFAULT_SEO_CATEGORY_LABELS as SeoCategoryLabel[])
-        .map(normalizeSeoCategoryLabel)
+    : (Array.isArray(SEO_DISCOVERY_BOOTSTRAP.categoryLabels) ? SEO_DISCOVERY_BOOTSTRAP.categoryLabels : [])
+        .map((label) => normalizeSeoCategoryLabel(label as SeoCategoryLabel, 0))
         .filter((label) => label.categoryId && label.label),
   topListings: Array.isArray(value?.topListings)
     ? value.topListings
         .map(normalizeSeoTopListingGroup)
         .filter((group) => group.localityId && group.categoryId && group.listingNames.length > 0)
-    : (DEFAULT_SEO_TOP_LISTINGS as SeoTopListingGroup[])
-        .map(normalizeSeoTopListingGroup)
+    : (Array.isArray(SEO_DISCOVERY_BOOTSTRAP.topListings) ? SEO_DISCOVERY_BOOTSTRAP.topListings : [])
+        .map((group) => normalizeSeoTopListingGroup(group as SeoTopListingGroup, 0))
         .filter((group) => group.localityId && group.categoryId && group.listingNames.length > 0),
   defaultListingNames: Array.isArray(value?.defaultListingNames)
     ? value.defaultListingNames
         .map(normalizeSeoDefaultListingGroup)
         .filter((group) => group.categoryId && group.listingNames.length > 0)
-    : (DEFAULT_SEO_DEFAULT_LISTING_NAMES as SeoDefaultListingGroup[])
-        .map(normalizeSeoDefaultListingGroup)
+    : (Array.isArray(SEO_DISCOVERY_BOOTSTRAP.defaultListingNames) ? SEO_DISCOVERY_BOOTSTRAP.defaultListingNames : [])
+        .map((group) => normalizeSeoDefaultListingGroup(group as SeoDefaultListingGroup, 0))
         .filter((group) => group.categoryId && group.listingNames.length > 0),
   metadata: {
-    seededFromCode: value?.metadata?.seededFromCode ?? true,
-    updatedAt: value?.metadata?.updatedAt || new Date().toISOString(),
+    seededFromCode: value?.metadata?.seededFromCode ?? SEO_DISCOVERY_BOOTSTRAP.metadata?.seededFromCode ?? false,
+    updatedAt: value?.metadata?.updatedAt || SEO_DISCOVERY_BOOTSTRAP.metadata?.updatedAt || new Date().toISOString(),
   },
 });
+
+const DEFAULT_MANAGED_LOCALITY_ROUTING_CONFIG = normalizeLocalityRoutingConfigState(LOCALITY_ROUTING_BOOTSTRAP);
+const DEFAULT_MANAGED_SEO_DISCOVERY_CONFIG = normalizeSeoDiscoveryConfigState(SEO_DISCOVERY_BOOTSTRAP);
 
 const PORTAL_CATEGORY_TONES = [
   'bg-emerald-500/10 text-emerald-600',
@@ -877,7 +1085,26 @@ const normalizeStoredListingAd = (ad: ListingAd): ListingAd => ({
   placementKey: ad.placementKey || 'homepage_inline_primary',
   deviceTarget: ad.deviceTarget || 'all',
   imageUrl: ad.imageUrl?.trim() || undefined,
-  mobileRowPosition: ad.mobileRowPosition && ad.mobileRowPosition > 0 ? ad.mobileRowPosition : undefined
+  mobileRowPosition: ad.mobileRowPosition && ad.mobileRowPosition > 0 ? ad.mobileRowPosition : undefined,
+  workflowStatus: ad.workflowStatus || (() => {
+    const todayIso = new Date().toISOString().slice(0, 10);
+    if (!ad.isActive) return 'draft';
+    if (ad.endDate < todayIso) return 'archived';
+    if (ad.startDate > todayIso) return 'scheduled';
+    return 'live';
+  })(),
+  billingModel: ad.billingModel || 'fixed',
+  rotationMode: ad.rotationMode || 'even',
+  plannedBudget: Number.isFinite(ad.plannedBudget) ? Number(ad.plannedBudget) : undefined,
+  spentBudget: Number.isFinite(ad.spentBudget) ? Number(ad.spentBudget) : 0,
+  cpcBid: Number.isFinite(ad.cpcBid) ? Number(ad.cpcBid) : undefined,
+  impressions: Number.isFinite(ad.impressions) ? Number(ad.impressions) : 0,
+  clicks: Number.isFinite(ad.clicks) ? Number(ad.clicks) : 0,
+  leadCount: Number.isFinite(ad.leadCount) ? Number(ad.leadCount) : 0,
+  submittedAt: ad.submittedAt || undefined,
+  reviewedAt: ad.reviewedAt || undefined,
+  reviewedBy: ad.reviewedBy || undefined,
+  reviewNotes: ad.reviewNotes?.trim() || undefined
 });
 
 const normalizeStoredHeroStat = (stat: HeroBannerStat | null | undefined, index: number): HeroBannerStat => {
@@ -965,34 +1192,36 @@ const getSectionLabel = (sectionType: HomepageSectionType) => {
   }
 };
 
-const normalizeHomepageSection = (
+function normalizeHomepageSection(
   section: HomepageSection,
   localityId: string,
   index: number
-): HomepageSection => ({
-  ...section,
-  id: section.id || `home_section_${localityId}_${index + 1}`,
-  title: section.title || getSectionLabel(section.sectionType),
-  status: section.status || 'active',
-  visible: section.visible ?? true,
-  sortOrder: section.sortOrder ?? (index + 1) * 10,
-  localityIds: normalizeStringList(section.localityIds).length > 0
-    ? normalizeStringList(section.localityIds)
-    : [localityId],
-  pincodes: normalizeStringList(section.pincodes),
-  categoryIds: normalizeStringList(section.categoryIds),
-  ctaType: section.ctaType || 'none',
-  showViewAll: section.showViewAll ?? true,
-  maxItems: section.maxItems ?? (section.sectionType === 'verified_business_grid' ? 9 : 6),
-  visibleSlots: section.visibleSlots ?? section.maxItems ?? (section.sectionType === 'verified_business_grid' ? 6 : 4),
-  desktopCardCount: section.desktopCardCount ?? section.visibleSlots ?? (section.sectionType === 'verified_business_grid' ? 5 : section.sectionType === 'featured_businesses' ? 3 : 4),
-  mobileCardCount: section.mobileCardCount ?? 2,
-  mobileDisplayMode: section.mobileDisplayMode || (section.sectionType === 'verified_business_grid' ? 'stack' : 'carousel'),
-  listingSourceMode: section.listingSourceMode || 'auto',
-  pinnedBusinessIds: normalizeStringList(section.pinnedBusinessIds),
-  autoRotate: section.autoRotate ?? true,
-  rotationIntervalSec: section.rotationIntervalSec ?? 3
-});
+): HomepageSection {
+  return {
+    ...section,
+    id: section.id || `home_section_${localityId}_${index + 1}`,
+    title: section.title || getSectionLabel(section.sectionType),
+    status: section.status || 'active',
+    visible: section.visible ?? true,
+    sortOrder: section.sortOrder ?? (index + 1) * 10,
+    localityIds: normalizeStringList(section.localityIds).length > 0
+      ? normalizeStringList(section.localityIds)
+      : [localityId],
+    pincodes: normalizeStringList(section.pincodes),
+    categoryIds: normalizeStringList(section.categoryIds),
+    ctaType: section.ctaType || 'none',
+    showViewAll: section.showViewAll ?? true,
+    maxItems: section.maxItems ?? (section.sectionType === 'verified_business_grid' ? 9 : 6),
+    visibleSlots: section.visibleSlots ?? section.maxItems ?? (section.sectionType === 'verified_business_grid' ? 6 : 4),
+    desktopCardCount: section.desktopCardCount ?? section.visibleSlots ?? (section.sectionType === 'verified_business_grid' ? 5 : section.sectionType === 'featured_businesses' ? 3 : 4),
+    mobileCardCount: section.mobileCardCount ?? 2,
+    mobileDisplayMode: section.mobileDisplayMode || (section.sectionType === 'verified_business_grid' ? 'stack' : 'carousel'),
+    listingSourceMode: section.listingSourceMode || 'auto',
+    pinnedBusinessIds: normalizeStringList(section.pinnedBusinessIds),
+    autoRotate: section.autoRotate ?? true,
+    rotationIntervalSec: section.rotationIntervalSec ?? 3
+  };
+}
 
 const reindexHomepageSections = (sections: HomepageSection[]) => (
   [...sections]
@@ -1035,7 +1264,7 @@ const instantiateHomepageTemplateSections = (
 
 const buildDefaultHomepageLayout = (
   locality: Locality,
-  sectionTemplates: HomepageSection[] = DEFAULT_HOMEPAGE_SECTION_TEMPLATES as HomepageSection[],
+  sectionTemplates: HomepageSection[] = DEFAULT_MANAGED_HOMEPAGE_DEFAULTS_CONFIG.sectionTemplates,
 ): HomepageLayout => {
   const localityName = locality.name.split(',')[0];
   const sections = instantiateHomepageTemplateSections(locality, sectionTemplates);
@@ -1054,7 +1283,7 @@ const buildDefaultHomepageLayout = (
 const normalizeHomepageLayout = (
   layout: HomepageLayout,
   localities: Locality[],
-  sectionTemplates: HomepageSection[] = DEFAULT_HOMEPAGE_SECTION_TEMPLATES as HomepageSection[],
+  sectionTemplates: HomepageSection[] = DEFAULT_MANAGED_HOMEPAGE_DEFAULTS_CONFIG.sectionTemplates,
 ): HomepageLayout => {
   const locality = localities.find((entry) => entry.id === layout.localityId);
   const fallbackLocality = locality || localities[0];
@@ -1078,7 +1307,7 @@ const normalizeHomepageLayout = (
 const ensureHomepageLayouts = (
   layouts: HomepageLayout[],
   localities: Locality[],
-  sectionTemplates: HomepageSection[] = DEFAULT_HOMEPAGE_SECTION_TEMPLATES as HomepageSection[],
+  sectionTemplates: HomepageSection[] = DEFAULT_MANAGED_HOMEPAGE_DEFAULTS_CONFIG.sectionTemplates,
 ): HomepageLayout[] => {
   const normalizedLayouts = layouts.map((layout) => normalizeHomepageLayout(layout, localities, sectionTemplates));
   const existingLocalityIds = new Set(normalizedLayouts.map((layout) => layout.localityId));
@@ -1091,7 +1320,7 @@ const ensureHomepageLayouts = (
 const normalizeHomepageConfigState = (
   value: Partial<HomepageConfigState> | null | undefined,
   localities: Locality[],
-  sectionTemplates: HomepageSection[] = DEFAULT_HOMEPAGE_SECTION_TEMPLATES as HomepageSection[],
+  sectionTemplates: HomepageSection[] = DEFAULT_MANAGED_HOMEPAGE_DEFAULTS_CONFIG.sectionTemplates,
 ): HomepageConfigState => ({
   heroBanners: Array.isArray(value?.heroBanners) ? value!.heroBanners.map(normalizeStoredHeroBanner) : [],
   listingAds: Array.isArray(value?.listingAds) ? value!.listingAds.map(normalizeStoredListingAd) : [],
@@ -1274,9 +1503,15 @@ type ScalableLegacyCampaignSourceTag =
   | 'legacy_community_item'
   | 'legacy_business_sponsorship';
 
+const WebPortal = lazy(() => import('./components/WebPortal'));
 const ProposalPanel = lazy(() => import('./components/ProposalPanel'));
 const AndroidSimulator = lazy(() => import('./components/AndroidSimulator'));
 const AdminConsole = lazy(() => import('./components/AdminConsole'));
+const LocalityLandingMockV1 = lazy(() => import('./components/ux/LocalityLandingMockV1'));
+const LocalityLandingUiV1 = lazy(() => import('./components/ux/LocalityLandingUiV1'));
+const CityDirectoryUiV1 = lazy(() => import('./components/ux/CityDirectoryUiV1'));
+const CategoryResultsUiV1 = lazy(() => import('./components/ux/CategoryResultsUiV1'));
+const ListingDetailUiV1 = lazy(() => import('./components/ux/ListingDetailUiV1'));
 
 export default function App() {
   const PRODUCTION_MODE = true;
@@ -1311,20 +1546,25 @@ export default function App() {
   // Load from local storage or fallback to defaults
   const [localities, setLocalities] = useState<Locality[]>(() => {
     if (!shouldBootstrapManagedStateFromLocal) {
-      return (DEFAULT_LOCALITIES as Locality[]).map(normalizeStoredLocality);
+      return DEFAULT_MANAGED_LOCALITY_ROUTING_CONFIG.localities.map(normalizeStoredLocality);
     }
     const saved = localStorage.getItem('yp_localities');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        // Ensure "roadpali" exists in loaded localities, otherwise discard stale developer storage
-        if (parsed && parsed.some((l: any) => l.id === 'roadpali')) {
-          return parsed;
+        if (Array.isArray(parsed)) {
+          const normalizedLocalities = parsed
+            .filter(isStoredLocalityLike)
+            .map(normalizeStoredLocality)
+            .filter((locality) => locality.id && locality.name);
+          if (normalizedLocalities.length > 0) {
+            return normalizedLocalities;
+          }
         }
       } catch (e) {
         // Fall through
       }
-      // Stale data detected - purge old database entries
+      // Stale or invalid data detected - purge old database entries
       localStorage.removeItem('yp_localities');
       localStorage.removeItem('yp_businesses');
       localStorage.removeItem('yp_reviews');
@@ -1341,7 +1581,7 @@ export default function App() {
       localStorage.removeItem('yp_homepage_layouts');
       localStorage.removeItem('yp_api_configuration');
     }
-    return (DEFAULT_LOCALITIES as Locality[]).map(normalizeStoredLocality);
+    return DEFAULT_MANAGED_LOCALITY_ROUTING_CONFIG.localities.map(normalizeStoredLocality);
   });
 
   const [businesses, setBusinesses] = useState<Business[]>(() => {
@@ -1352,8 +1592,32 @@ export default function App() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (parsed && parsed.some((b: any) => b.localityId === 'roadpali' || b.id === 's1')) {
-          return parsed.map(normalizeStoredBusiness);
+        if (Array.isArray(parsed)) {
+          const savedLocalities = localStorage.getItem('yp_localities');
+          const storedLocalityIds = new Set<string>();
+          if (savedLocalities) {
+            try {
+              const parsedLocalities = JSON.parse(savedLocalities);
+              if (Array.isArray(parsedLocalities)) {
+                parsedLocalities
+                  .filter(isStoredLocalityLike)
+                  .map(normalizeStoredLocality)
+                  .forEach((locality) => storedLocalityIds.add(locality.id));
+              }
+            } catch (error) {
+              // Ignore locality parsing errors and fall back to defaults below.
+            }
+          }
+          if (storedLocalityIds.size === 0) {
+            DEFAULT_MANAGED_LOCALITY_ROUTING_CONFIG.localities.map(normalizeStoredLocality).forEach((locality) => storedLocalityIds.add(locality.id));
+          }
+          const normalizedBusinesses = parsed
+            .filter(isStoredBusinessLike)
+            .map(normalizeStoredBusiness)
+            .filter((business) => storedLocalityIds.has(business.localityId));
+          if (normalizedBusinesses.length > 0 || parsed.length === 0) {
+            return normalizedBusinesses;
+          }
         }
       } catch (e) {
         // Fall through
@@ -1363,32 +1627,35 @@ export default function App() {
   });
 
   const [reviews, setReviews] = useState<Review[]>(() => {
+    if (!shouldBootstrapManagedStateFromLocal) {
+      return REVIEWS_BOOTSTRAP.map(normalizeStoredReview);
+    }
     const saved = localStorage.getItem('yp_reviews');
-    return saved ? JSON.parse(saved) : INITIAL_REVIEWS;
+    return saved ? JSON.parse(saved).map(normalizeStoredReview) : REVIEWS_BOOTSTRAP.map(normalizeStoredReview);
   });
 
   const [subdomains, setSubdomains] = useState<SubdomainMapping[]>(() => {
     if (!shouldBootstrapManagedStateFromLocal) {
-      return (buildDefaultSubdomainMappings(DEFAULT_LOCALITIES) as SubdomainMapping[]).map(normalizeStoredSubdomain);
+      return DEFAULT_MANAGED_LOCALITY_ROUTING_CONFIG.subdomains.map(normalizeStoredSubdomain);
     }
     const saved = localStorage.getItem('yp_subdomains');
     if (saved) return JSON.parse(saved);
 
     // Bootstrap subdomain maps from primary states
-    return (buildDefaultSubdomainMappings(DEFAULT_LOCALITIES) as SubdomainMapping[]).map(normalizeStoredSubdomain);
+    return DEFAULT_MANAGED_LOCALITY_ROUTING_CONFIG.subdomains.map(normalizeStoredSubdomain);
   });
 
   const [defaultLocalityId, setDefaultLocalityId] = useState<string>(() => {
     if (!shouldBootstrapManagedStateFromLocal) {
-      return DEFAULT_LOCALITY_ID;
+      return DEFAULT_MANAGED_LOCALITY_ROUTING_CONFIG.defaultLocalityId;
     }
-    return localStorage.getItem('yp_default_locality_id') || DEFAULT_LOCALITY_ID;
+    return localStorage.getItem('yp_default_locality_id') || DEFAULT_MANAGED_LOCALITY_ROUTING_CONFIG.defaultLocalityId;
   });
 
   const [activeLocalityId, setActiveLocalityId] = useState<string>(() => {
     const savedLoc = localStorage.getItem('yp_saved_locality_id');
     if (savedLoc) return savedLoc;
-    return localStorage.getItem('yp_default_locality_id') || DEFAULT_LOCALITY_ID;
+    return localStorage.getItem('yp_default_locality_id') || DEFAULT_MANAGED_LOCALITY_ROUTING_CONFIG.defaultLocalityId;
   });
 
   const [savedPincode, setSavedPincode] = useState<string | null>(() => {
@@ -1406,11 +1673,11 @@ export default function App() {
 
   const [pincodeMappings, setPincodeMappings] = useState<Array<{ pincode: string; localityId: string }>>(() => {
     if (!shouldBootstrapManagedStateFromLocal) {
-      return (DEFAULT_PINCODE_MAPPINGS as PincodeRoutingMapping[]).map(normalizeStoredPincodeMapping);
+      return DEFAULT_MANAGED_LOCALITY_ROUTING_CONFIG.pincodeMappings.map(normalizeStoredPincodeMapping);
     }
     const saved = localStorage.getItem('yp_pincode_mappings');
     if (saved) return JSON.parse(saved);
-    return (DEFAULT_PINCODE_MAPPINGS as PincodeRoutingMapping[]).map(normalizeStoredPincodeMapping);
+    return DEFAULT_MANAGED_LOCALITY_ROUTING_CONFIG.pincodeMappings.map(normalizeStoredPincodeMapping);
   });
 
   const [listingAds, setListingAds] = useState<ListingAd[]>(() => {
@@ -1425,7 +1692,7 @@ export default function App() {
     const seededListingAds: ListingAd[] = [
       {
         id: 'ad_seed_1',
-        title: 'Roadpali Fiber Upgrade Drive',
+        title: 'Local Broadband Upgrade Offer',
         description: 'Get high-speed broadband installation and starter plan offers this month.',
         badge: 'Local ISP Sponsor',
         ctaText: 'View Offer',
@@ -1435,7 +1702,7 @@ export default function App() {
         endDate,
         actionType: 'landing_page',
         targetUrl: 'https://www.jio.com/fiber',
-        localityIds: ['roadpali'],
+        localityIds: defaultLocalityId ? [defaultLocalityId] : [],
         placementKey: 'homepage_inline_primary',
         deviceTarget: 'all',
         mobileRowPosition: 3,
@@ -1464,7 +1731,7 @@ export default function App() {
     const seedHeroEndDate = new Date();
     seedHeroEndDate.setDate(seedHeroEndDate.getDate() + heroBannerDraftDefaults.durationDays);
     const endDate = seedHeroEndDate.toISOString().slice(0, 10);
-    const seededHeroBanners: HeroBanner[] = (DEFAULT_LOCALITIES as Locality[]).map((locality) => ({
+    const seededHeroBanners: HeroBanner[] = DEFAULT_MANAGED_LOCALITY_ROUTING_CONFIG.localities.map((locality) => ({
       id: `hero_${locality.id}`,
       localityId: locality.id,
       title: `Hyper Local Directory for ${locality.name.split(',')[0]}`,
@@ -1516,7 +1783,7 @@ export default function App() {
     return initialPersistedApiConfiguration;
   });
   const [homepageDefaultsConfig, setHomepageDefaultsConfig] = useState<HomepageDefaultsConfigState>(() => (
-    normalizeHomepageDefaultsConfigState(null)
+    DEFAULT_MANAGED_HOMEPAGE_DEFAULTS_CONFIG
   ));
   const [homepageDefaultsConfigReady, setHomepageDefaultsConfigReady] = useState(false);
   const [geographyConfigReady, setGeographyConfigReady] = useState(false);
@@ -1527,7 +1794,7 @@ export default function App() {
     normalizeBusinessTaxonomyState(null)
   ));
   const [seoDiscoveryConfig, setSeoDiscoveryConfig] = useState<SeoDiscoveryConfigState>(() => (
-    normalizeSeoDiscoveryConfigState(null)
+    DEFAULT_MANAGED_SEO_DISCOVERY_CONFIG
   ));
   const [scalableHomepageConfig, setScalableHomepageConfig] = useState<ScalableHomepageConfigState>(() => (
     normalizeScalableHomepageConfigState(null)
@@ -1535,6 +1802,10 @@ export default function App() {
   const [localityRoutingConfigReady, setLocalityRoutingConfigReady] = useState(false);
   const [scalableHomepageConfigReady, setScalableHomepageConfigReady] = useState(false);
   const portalCategories = useMemo(() => buildPortalCategories(businessTaxonomy.categories), [businessTaxonomy.categories]);
+  const localityGeoCenters = useMemo(
+    () => buildLocalityGeoCentersFromBusinesses(localities, businesses),
+    [localities, businesses]
+  );
 
   const seoIntentBySlug = useMemo(() => {
     const lookup = new Map<string, SeoRouteIntent>();
@@ -1577,7 +1848,24 @@ export default function App() {
     return lookup;
   }, [seoDiscoveryConfig.routeIntents]);
 
-  const [activeView, setActiveView] = useState<'proposal' | 'web' | 'android' | 'admin'>('web'); // Default to pubic web portal for instant aesthetics!
+  const [activeView, setActiveView] = useState<'proposal' | 'web' | 'android' | 'admin' | 'ux-mock' | 'ui-screen' | 'ui-city-screen' | 'ui-category-screen' | 'ui-listing-screen'>(() => {
+    if (typeof window !== 'undefined' && window.location.pathname.startsWith('/ux/locality-home-v1')) {
+      return 'ux-mock';
+    }
+    if (typeof window !== 'undefined' && window.location.pathname.startsWith('/ui/locality-home-v1')) {
+      return 'ui-screen';
+    }
+    if (typeof window !== 'undefined' && window.location.pathname.startsWith('/ui/city-page-v1')) {
+      return 'ui-city-screen';
+    }
+    if (typeof window !== 'undefined' && window.location.pathname.startsWith('/ui/category-results-v1')) {
+      return 'ui-category-screen';
+    }
+    if (typeof window !== 'undefined' && window.location.pathname.startsWith('/ui/listing-detail-v1')) {
+      return 'ui-listing-screen';
+    }
+    return 'web';
+  }); // Default to public web portal unless a dedicated preview route is requested.
   const [showSandbox, setShowSandbox] = useState(false); // Controls floating simulation HUD
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -1586,27 +1874,30 @@ export default function App() {
   // Active User session simulation
   const [userSession, setUserSession] = useState<UserSession>(() => {
     const saved = localStorage.getItem('yp_user_session');
-    return saved ? JSON.parse(saved) : {
-      role: 'buyer',
-      userName: 'Anonymous Guest Explorer',
-      userPhone: undefined,
-      isAuthenticated: false
-    };
+    return saved ? JSON.parse(saved) : buildGuestUserSession();
   });
 
   useEffect(() => {
     const token = localStorage.getItem('yp_auth_token');
-    if (!token) return;
+    if (!token) {
+      setUserSession((prev) => (prev.isAuthenticated ? buildGuestUserSession() : prev));
+      return;
+    }
     fetch('/api/auth/me', {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
-        if (!data?.user) return;
+        if (!data?.user) {
+          localStorage.removeItem('yp_auth_token');
+          setUserSession(buildGuestUserSession());
+          return;
+        }
         setUserSession({
           role: data.user.role,
           userType: data.user.userType,
           userName: data.user.name,
+          userId: data.user.id,
           userPhone: data.user.phone || undefined,
           email: data.user.email,
           sellerBusinessId: data.user.sellerBusinessId || undefined,
@@ -1616,6 +1907,7 @@ export default function App() {
       })
       .catch(() => {
         localStorage.removeItem('yp_auth_token');
+        setUserSession(buildGuestUserSession());
       });
   }, []);
 
@@ -1923,8 +2215,14 @@ export default function App() {
 
   useEffect(() => {
     if (apiConfiguration.syncMode !== 'api' || !apiConfiguration.adLeadsEndpoint) return;
-    const canReadAdLeads = Boolean(userSession.authToken) && ['admin', 'developer'].includes(userSession.role);
-    if (!canReadAdLeads) return;
+    const canReadAdLeads = Boolean(userSession.authToken) && (
+      ['admin', 'developer'].includes(userSession.role) ||
+      (userSession.role === 'seller' && Boolean(userSession.sellerBusinessId))
+    );
+    if (!canReadAdLeads) {
+      setAdLeads([]);
+      return;
+    }
     let cancelled = false;
 
     fetch(apiConfiguration.adLeadsEndpoint, {
@@ -1944,7 +2242,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [apiConfiguration.adLeadsEndpoint, apiConfiguration.syncMode, userSession.authToken, userSession.role]);
+  }, [apiConfiguration.adLeadsEndpoint, apiConfiguration.syncMode, userSession.authToken, userSession.role, userSession.sellerBusinessId]);
 
   useEffect(() => {
     if (!apiConfiguration.scalableHomepageConfigEndpoint) return;
@@ -1990,18 +2288,15 @@ export default function App() {
 
   // Track the business IDs for which the current user has performed OTP verification to unlock contact details
   const [viewedBusinessIds, setViewedBusinessIds] = useState<string[]>(() => {
-    const saved = localStorage.getItem('yp_viewed_bizs');
-    return saved ? JSON.parse(saved) : ['s1']; // Pre-authorize s1 for quick visual overview
+    return readGuestBuyerStateSnapshotFromStorage().viewedBusinessIds;
   });
 
   const [savedBusinessIds, setSavedBusinessIds] = useState<string[]>(() => {
-    const saved = localStorage.getItem('yp_saved_business_ids');
-    return saved ? JSON.parse(saved) : [];
+    return readGuestBuyerStateSnapshotFromStorage().savedBusinessIds;
   });
 
   const [buyerActivityEvents, setBuyerActivityEvents] = useState<BuyerActivityEvent[]>(() => {
-    const saved = localStorage.getItem('yp_buyer_activity_events');
-    return saved ? JSON.parse(saved) : [];
+    return readGuestBuyerStateSnapshotFromStorage().buyerActivityEvents;
   });
 
   const [communityItems, setCommunityItems] = useState<CommunityItem[]>(() => {
@@ -2015,8 +2310,11 @@ export default function App() {
   });
 
   const [crmContacts, setCrmContacts] = useState<CRMContact[]>(() => {
+    if (!shouldBootstrapManagedStateFromLocal) {
+      return CRM_CONTACTS_BOOTSTRAP.map(normalizeStoredCrmContact);
+    }
     const saved = localStorage.getItem('yp_crm');
-    return saved ? JSON.parse(saved) : INITIAL_CRM_CONTACTS;
+    return saved ? JSON.parse(saved).map(normalizeStoredCrmContact) : CRM_CONTACTS_BOOTSTRAP.map(normalizeStoredCrmContact);
   });
 
   const [coupons, setCoupons] = useState<MarketingCoupon[]>(() => {
@@ -2028,6 +2326,9 @@ export default function App() {
   });
 
   const [auditLogs, setAuditLogs] = useState<AuditEvent[]>(() => {
+    if (!shouldBootstrapManagedStateFromLocal) {
+      return [];
+    }
     const saved = localStorage.getItem('yp_audit_logs');
     if (saved) return JSON.parse(saved);
     // Seed some initial audited actions to make the UI look gorgeous upon launch
@@ -2036,8 +2337,8 @@ export default function App() {
         id: 'audit_init_1',
         timestamp: new Date(Date.now() - 3600000 * 2).toISOString(),
         actionType: 'data_entry',
-        description: 'Provisioned primary database shards for Locality "Roadpali"',
-        details: 'Route slug mapped to roadpali.yellowpages.co.in with active SSL',
+        description: 'Provisioned primary database shards for the default locality workspace',
+        details: 'Primary route slug mapped with active SSL and platform routing enabled',
         ipAddress: '103.45.22.105',
         deviceCode: 'Mozilla/5.0 (H:1080, W:1920, DPR:2)',
         userName: 'Rahul Sharma (National Administrator)'
@@ -2057,6 +2358,8 @@ export default function App() {
 
   const homepageConfigLoadedRef = useRef(false);
   const scalableHomepageConfigLoadedRef = useRef(false);
+  const buyerStateLoadedRef = useRef(false);
+  const buyerStateScopeRef = useRef('guest');
   const lastHomepageSyncSignatureRef = useRef('');
   const legacyLayoutAutoSyncInitializedRef = useRef(false);
   const legacyLayoutAutoSyncSignatureRef = useRef('');
@@ -2099,6 +2402,31 @@ export default function App() {
   const getAuthHeaders = () => {
     const token = userSession.authToken || localStorage.getItem('yp_auth_token');
     return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
+  const buyerStateScopeKey = getBuyerStateScopeKey(userSession, apiConfiguration);
+  const canUseManagedBuyerState = buyerStateScopeKey !== 'guest';
+
+  const buildCurrentBuyerStateSnapshot = (): BuyerStateSnapshot => normalizeBuyerStateSnapshot({
+    viewedBusinessIds,
+    savedBusinessIds,
+    buyerActivityEvents,
+  });
+
+  const persistBuyerStateToServer = (nextState: BuyerStateSnapshot) => {
+    if (!canUseManagedBuyerState || !apiConfiguration.buyerStateEndpoint) {
+      return;
+    }
+    fetch(apiConfiguration.buyerStateEndpoint, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify({ state: normalizeBuyerStateSnapshot(nextState) }),
+    }).catch(() => {
+      // Local in-memory state remains available if the managed buyer-state endpoint is unavailable.
+    });
   };
 
   const getHomepageConfigEntityEndpoint = (entityPath?: string) => {
@@ -2228,6 +2556,62 @@ export default function App() {
       });
   };
 
+  const createReviewOnServer = (review: Review) => {
+    if (apiConfiguration.syncMode !== 'api' || !apiConfiguration.reviewsEndpoint) {
+      return;
+    }
+    fetch(apiConfiguration.reviewsEndpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify({ review }),
+    }).catch(() => {
+      // Local state remains the fallback if the managed review API is unavailable.
+    });
+  };
+
+  const createCrmContactOnServer = (contact: CRMContact) => {
+    const canWriteCrmContacts = Boolean(userSession.authToken) && (
+      ['admin', 'developer'].includes(userSession.role) ||
+      (userSession.role === 'seller' && Boolean(userSession.sellerBusinessId))
+    );
+    if (apiConfiguration.syncMode !== 'api' || !apiConfiguration.crmContactsEndpoint || !canWriteCrmContacts) {
+      return;
+    }
+    fetch(apiConfiguration.crmContactsEndpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify({ crmContact: contact }),
+    }).catch(() => {
+      // Seller/local fallback remains available if the managed CRM API is unavailable.
+    });
+  };
+
+  const updateCrmContactOnServer = (contact: CRMContact) => {
+    const canWriteCrmContacts = Boolean(userSession.authToken) && (
+      ['admin', 'developer'].includes(userSession.role) ||
+      (userSession.role === 'seller' && Boolean(userSession.sellerBusinessId))
+    );
+    if (apiConfiguration.syncMode !== 'api' || !apiConfiguration.crmContactsEndpoint || !canWriteCrmContacts) {
+      return;
+    }
+    fetch(`${apiConfiguration.crmContactsEndpoint.replace(/\/+$/, '')}/${encodeURIComponent(contact.id)}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify({ crmContact: contact }),
+    }).catch(() => {
+      // Seller/local fallback remains available if the managed CRM API is unavailable.
+    });
+  };
+
   useEffect(() => {
     let cancelled = false;
     fetch(apiConfiguration.businessesEndpoint)
@@ -2260,6 +2644,57 @@ export default function App() {
       cancelled = true;
     };
   }, [apiConfiguration.autoSyncBusinesses, apiConfiguration.businessesEndpoint, apiConfiguration.syncMode]);
+
+  useEffect(() => {
+    if (apiConfiguration.syncMode !== 'api' || !apiConfiguration.reviewsEndpoint) return undefined;
+    let cancelled = false;
+
+    fetch(apiConfiguration.reviewsEndpoint)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { reviews?: Review[] } | null) => {
+        if (cancelled || !Array.isArray(data?.reviews)) return;
+        setReviews(data.reviews.map(normalizeStoredReview));
+      })
+      .catch(() => {
+        // Local bootstrap remains available if the managed review API is unavailable.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [apiConfiguration.reviewsEndpoint, apiConfiguration.syncMode]);
+
+  useEffect(() => {
+    const canReadCrmContacts = Boolean(userSession.authToken) && (
+      ['admin', 'developer'].includes(userSession.role) ||
+      (userSession.role === 'seller' && Boolean(userSession.sellerBusinessId))
+    );
+    if (apiConfiguration.syncMode !== 'api' || !apiConfiguration.crmContactsEndpoint || !canReadCrmContacts) {
+      if (apiConfiguration.syncMode === 'api') {
+        setCrmContacts(CRM_CONTACTS_BOOTSTRAP.map(normalizeStoredCrmContact));
+      }
+      return undefined;
+    }
+    let cancelled = false;
+
+    fetch(apiConfiguration.crmContactsEndpoint, {
+      headers: {
+        ...getAuthHeaders(),
+      },
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { crmContacts?: CRMContact[] } | null) => {
+        if (cancelled || !Array.isArray(data?.crmContacts)) return;
+        setCrmContacts(data.crmContacts.map(normalizeStoredCrmContact));
+      })
+      .catch(() => {
+        // Local bootstrap remains available if the managed CRM API is unavailable.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [apiConfiguration.crmContactsEndpoint, apiConfiguration.syncMode, userSession.authToken, userSession.role, userSession.sellerBusinessId]);
 
   // Push state to localStorage on any updates
   const mirrorLocalityRoutingLocally = apiConfiguration.syncMode !== 'api';
@@ -2294,9 +2729,15 @@ export default function App() {
     localStorage.setItem('yp_businesses', JSON.stringify(businesses));
   }, [businesses, mirrorBusinessesLocally]);
 
+  const mirrorReviewStateLocally = apiConfiguration.syncMode !== 'api';
+
   useEffect(() => {
+    if (!mirrorReviewStateLocally) {
+      localStorage.removeItem('yp_reviews');
+      return;
+    }
     localStorage.setItem('yp_reviews', JSON.stringify(reviews));
-  }, [reviews]);
+  }, [reviews, mirrorReviewStateLocally]);
 
   useEffect(() => {
     if (!mirrorLocalityRoutingLocally) return;
@@ -2308,16 +2749,28 @@ export default function App() {
   }, [userSession]);
 
   useEffect(() => {
+    if (canUseManagedBuyerState) {
+      localStorage.removeItem('yp_viewed_bizs');
+      return;
+    }
     localStorage.setItem('yp_viewed_bizs', JSON.stringify(viewedBusinessIds));
-  }, [viewedBusinessIds]);
+  }, [canUseManagedBuyerState, viewedBusinessIds]);
 
   useEffect(() => {
+    if (canUseManagedBuyerState) {
+      localStorage.removeItem('yp_saved_business_ids');
+      return;
+    }
     localStorage.setItem('yp_saved_business_ids', JSON.stringify(savedBusinessIds));
-  }, [savedBusinessIds]);
+  }, [canUseManagedBuyerState, savedBusinessIds]);
 
   useEffect(() => {
+    if (canUseManagedBuyerState) {
+      localStorage.removeItem('yp_buyer_activity_events');
+      return;
+    }
     localStorage.setItem('yp_buyer_activity_events', JSON.stringify(buyerActivityEvents));
-  }, [buyerActivityEvents]);
+  }, [buyerActivityEvents, canUseManagedBuyerState]);
 
   const mirrorHomepageStateLocally = apiConfiguration.syncMode !== 'api';
 
@@ -2326,9 +2779,15 @@ export default function App() {
     localStorage.setItem('yp_community', JSON.stringify(communityItems));
   }, [communityItems, mirrorHomepageStateLocally]);
 
+  const mirrorCrmStateLocally = apiConfiguration.syncMode !== 'api';
+
   useEffect(() => {
+    if (!mirrorCrmStateLocally) {
+      localStorage.removeItem('yp_crm');
+      return;
+    }
     localStorage.setItem('yp_crm', JSON.stringify(crmContacts));
-  }, [crmContacts]);
+  }, [crmContacts, mirrorCrmStateLocally]);
 
   useEffect(() => {
     if (!mirrorHomepageStateLocally) return;
@@ -2366,8 +2825,107 @@ export default function App() {
   }, [apiConfiguration, mirrorHomepageStateLocally]);
 
   useEffect(() => {
+    if (apiConfiguration.syncMode === 'api') {
+      localStorage.removeItem('yp_audit_logs');
+      return;
+    }
     localStorage.setItem('yp_audit_logs', JSON.stringify(auditLogs));
-  }, [auditLogs]);
+  }, [apiConfiguration.syncMode, auditLogs]);
+
+  useEffect(() => {
+    const canReadAuditLogs = Boolean(userSession.authToken) && ['admin', 'developer'].includes(userSession.role);
+    if (apiConfiguration.syncMode !== 'api' || !apiConfiguration.auditEventsEndpoint || !canReadAuditLogs) {
+      if (apiConfiguration.syncMode === 'api') {
+        setAuditLogs([]);
+      }
+      return undefined;
+    }
+
+    let cancelled = false;
+    fetch(apiConfiguration.auditEventsEndpoint, {
+      headers: {
+        ...getAuthHeaders(),
+      },
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { auditLogs?: AuditEvent[] } | null) => {
+        if (cancelled || !Array.isArray(data?.auditLogs)) return;
+        setAuditLogs(data.auditLogs);
+      })
+      .catch(() => {
+        // Keep current in-memory audit state if the managed audit endpoint is unavailable.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [apiConfiguration.auditEventsEndpoint, apiConfiguration.syncMode, userSession.authToken, userSession.role]);
+
+  useEffect(() => {
+    if (!canUseManagedBuyerState || !apiConfiguration.buyerStateEndpoint) {
+      const previousScopeKey = buyerStateScopeRef.current;
+      buyerStateScopeRef.current = 'guest';
+      buyerStateLoadedRef.current = false;
+      if (previousScopeKey !== 'guest') {
+        const guestBuyerState = readGuestBuyerStateSnapshotFromStorage();
+        setViewedBusinessIds(guestBuyerState.viewedBusinessIds);
+        setSavedBusinessIds(guestBuyerState.savedBusinessIds);
+        setBuyerActivityEvents(guestBuyerState.buyerActivityEvents);
+      }
+      return undefined;
+    }
+
+    const previousScopeKey = buyerStateScopeRef.current;
+    buyerStateScopeRef.current = buyerStateScopeKey;
+    buyerStateLoadedRef.current = false;
+    const shouldMergeCurrentBuyerState = previousScopeKey === 'guest' || previousScopeKey === buyerStateScopeKey;
+    let cancelled = false;
+    const localBuyerState = shouldMergeCurrentBuyerState
+      ? buildCurrentBuyerStateSnapshot()
+      : normalizeBuyerStateSnapshot({});
+
+    if (previousScopeKey !== 'guest' && previousScopeKey !== buyerStateScopeKey) {
+      setViewedBusinessIds([]);
+      setSavedBusinessIds([]);
+      setBuyerActivityEvents([]);
+    }
+
+    fetch(apiConfiguration.buyerStateEndpoint, {
+      headers: {
+        ...getAuthHeaders(),
+      },
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { state?: BuyerStateSnapshot } | null) => {
+        if (cancelled) return;
+        const remoteBuyerState = normalizeBuyerStateSnapshot(data?.state || {});
+        const mergedBuyerState = shouldMergeCurrentBuyerState
+          ? mergeBuyerStateSnapshots(localBuyerState, remoteBuyerState)
+          : remoteBuyerState;
+        buyerStateLoadedRef.current = true;
+        setViewedBusinessIds(mergedBuyerState.viewedBusinessIds);
+        setSavedBusinessIds(mergedBuyerState.savedBusinessIds);
+        setBuyerActivityEvents(mergedBuyerState.buyerActivityEvents);
+        if (JSON.stringify(mergedBuyerState) !== JSON.stringify(remoteBuyerState)) {
+          persistBuyerStateToServer(mergedBuyerState);
+        }
+      })
+      .catch(() => {
+        buyerStateLoadedRef.current = true;
+        // Keep current in-memory buyer state if the managed endpoint is unavailable.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [apiConfiguration.buyerStateEndpoint, buyerStateScopeKey, canUseManagedBuyerState]);
+
+  useEffect(() => {
+    if (!canUseManagedBuyerState || !buyerStateLoadedRef.current) {
+      return;
+    }
+    persistBuyerStateToServer(buildCurrentBuyerStateSnapshot());
+  }, [buyerActivityEvents, canUseManagedBuyerState, savedBusinessIds, viewedBusinessIds]);
 
   useEffect(() => {
     logAuditEvent('data_entry', 'Active locality changed', `Locality switched to: ${activeLocalityId}`);
@@ -2500,7 +3058,7 @@ export default function App() {
     autoLocationAttemptedRef.current = true;
 
     const fallbackToDefault = () => {
-      handleSavePincode(null, defaultLocalityId || 'roadpali');
+      handleSavePincode(null, defaultLocalityId || localities[0]?.id || '');
       setShowPincodeModal(false);
     };
 
@@ -2517,7 +3075,7 @@ export default function App() {
         };
 
         const nearestLocalityId = localities.reduce<{ id: string; distance: number } | null>((best, locality) => {
-          const center = LOCALITY_GEO_CENTERS[locality.id];
+          const center = localityGeoCenters[locality.id];
           if (!center) return best;
           const distance = getDistanceInKm(currentPoint, center);
           if (!best || distance < best.distance) {
@@ -2528,7 +3086,7 @@ export default function App() {
 
         const resolvedLocalityId = nearestLocalityId && nearestLocalityId.distance <= 25
           ? nearestLocalityId.id
-          : (defaultLocalityId || 'roadpali');
+          : (defaultLocalityId || localities[0]?.id || '');
 
         handleSavePincode(null, resolvedLocalityId);
         setShowPincodeModal(false);
@@ -2547,7 +3105,7 @@ export default function App() {
         maximumAge: 300000,
       }
     );
-  }, [defaultLocalityId, localities, pincodeModalContext, savedPincode, showPincodeModal]);
+  }, [defaultLocalityId, localityGeoCenters, localities, pincodeModalContext, savedPincode, showPincodeModal]);
 
   // Unified logger for complete client-side security compliance auditing
   const logAuditEvent = (actionType: 'search' | 'contact_view' | 'data_entry', description: string, details: string) => {
@@ -2713,11 +3271,17 @@ export default function App() {
       id: `crm_${Date.now()}`,
       lastInteraction: new Date().toISOString()
     };
-    setCrmContacts(prev => [fresh, ...prev]);
+    setCrmContacts((prev) => {
+      const next = [normalizeStoredCrmContact(fresh), ...prev];
+      createCrmContactOnServer(fresh);
+      return next;
+    });
   };
 
   const handleUpdateCRMContact = (updated: CRMContact) => {
-    setCrmContacts(prev => prev.map(c => c.id === updated.id ? updated : c));
+    const normalized = normalizeStoredCrmContact(updated);
+    setCrmContacts((prev) => prev.map((contact) => (contact.id === normalized.id ? normalized : contact)));
+    updateCrmContactOnServer(normalized);
   };
 
   const handleAddCoupon = (coupon: Omit<MarketingCoupon, 'id' | 'usageCount'>) => {
@@ -2801,6 +3365,29 @@ export default function App() {
     logAuditEvent('data_entry', `Updated listing ad banner`, `Ad ID: ${ad.id}`);
   };
 
+  const handleTrackListingAdInteraction = (payload: { adId: string; type: 'impression' | 'click' | 'lead'; context?: string }) => {
+    const targetAd = listingAds.find((ad) => ad.id === payload.adId);
+    if (!targetAd) return;
+    const nextAd = normalizeStoredListingAd({
+      ...targetAd,
+      impressions: payload.type === 'impression' ? Number(targetAd.impressions || 0) + 1 : Number(targetAd.impressions || 0),
+      clicks: payload.type === 'click' ? Number(targetAd.clicks || 0) + 1 : Number(targetAd.clicks || 0),
+      leadCount: payload.type === 'lead' ? Number(targetAd.leadCount || 0) + 1 : Number(targetAd.leadCount || 0),
+      spentBudget: payload.type === 'click' && targetAd.billingModel === 'cpc'
+        ? Number(targetAd.spentBudget || 0) + Number(targetAd.cpcBid || 0)
+        : Number(targetAd.spentBudget || 0),
+      workflowStatus: targetAd.workflowStatus === 'approved' && targetAd.startDate <= getTodayIso()
+        ? 'live'
+        : targetAd.workflowStatus
+    });
+    handleUpdateListingAd(nextAd);
+    logAuditEvent(
+      'data_entry',
+      `Tracked ad ${payload.type}`,
+      `Ad ID: ${payload.adId}${payload.context ? ` | Context: ${payload.context}` : ''}`
+    );
+  };
+
   const handleDeleteListingAd = (adId: string) => {
     const nextListingAds = listingAds.filter((ad) => ad.id !== adId);
     const nextAdLeads = adLeads.filter((lead) => lead.adId !== adId);
@@ -2878,7 +3465,20 @@ export default function App() {
     localityId: string,
     layoutsOverride: HomepageLayout[] = homepageLayouts
   ): HomepageLayout => {
-    const locality = localities.find((entry) => entry.id === localityId) || localities[0] || normalizeStoredLocality((DEFAULT_LOCALITIES as Locality[])[0]);
+    const locality = localities.find((entry) => entry.id === localityId)
+      || localities[0]
+      || DEFAULT_MANAGED_LOCALITY_ROUTING_CONFIG.localities[0]
+      || normalizeStoredLocality({
+        id: 'locality-default',
+        name: 'Default Locality',
+        slug: 'default-locality',
+        subdomain: 'default.localisy.in',
+        description: 'Managed locality bootstrap fallback.',
+        status: 'active',
+        coverImage: '',
+        stats: { numBusinesses: 0, numPending: 0 },
+        carouselImages: [],
+      });
     return layoutsOverride.find((layout) => layout.localityId === localityId)
       || buildDefaultHomepageLayout(locality, homepageDefaultsConfig.sectionTemplates);
   };
@@ -4377,7 +4977,14 @@ export default function App() {
       });
     }
 
-    if (leadInput.sellerBusinessId) {
+    const canMirrorFreshCrmLeadLocally = apiConfiguration.syncMode !== 'api' || (
+      Boolean(userSession.authToken) && (
+        ['admin', 'developer'].includes(userSession.role) ||
+        (userSession.role === 'seller' && userSession.sellerBusinessId === leadInput.sellerBusinessId)
+      )
+    );
+
+    if (leadInput.sellerBusinessId && canMirrorFreshCrmLeadLocally) {
       setCrmContacts((prev) => {
         const crmLead: CRMContact = {
           id: `crm_ad_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
@@ -4522,7 +5129,7 @@ export default function App() {
       subdomains: config.subdomains.filter((subdomain) => subdomain.localityId !== locId),
       pincodeMappings: config.pincodeMappings.filter((mapping) => mapping.localityId !== locId),
       defaultLocalityId: config.defaultLocalityId === locId
-        ? (remaining[0]?.id || DEFAULT_LOCALITY_ID)
+        ? (remaining[0]?.id || DEFAULT_MANAGED_LOCALITY_ROUTING_CONFIG.defaultLocalityId)
         : config.defaultLocalityId,
       metadata: {
         ...config.metadata,
@@ -4549,32 +5156,116 @@ export default function App() {
     logAuditEvent('data_entry', `Decommissioned municipal zone mapping: "${target?.name || locId}"`, `Removed SSL bindings and virtual shards`);
   };
 
+  const normalizeBusinessGeographyInput = <
+    T extends Pick<Business, 'localityId' | 'stateId' | 'cityId' | 'areaId' | 'pincode' | 'areasOfOperation'>
+  >(draft: T): T => {
+    const requestedAreaId = String(draft.areaId || '').trim();
+    const requestedLocalityId = String(draft.localityId || '').trim();
+    const requestedCityId = String(draft.cityId || '').trim();
+    const requestedStateId = String(draft.stateId || '').trim();
+    const requestedPincode = String(draft.pincode || '').replace(/\D/g, '').slice(0, 6);
+    const requestedAreasOfOperation = Array.isArray(draft.areasOfOperation)
+      ? draft.areasOfOperation.map((areaId) => String(areaId || '').trim()).filter(Boolean)
+      : [];
+
+    const explicitArea = requestedAreaId
+      ? MASTER_AREAS.find((area) => area.id === requestedAreaId)
+      : undefined;
+    const operationalAreas = requestedAreasOfOperation
+      .map((areaId) => MASTER_AREAS.find((area) => area.id === areaId))
+      .filter((area): area is AreaMaster => Boolean(area));
+    const primaryArea = explicitArea || operationalAreas[0];
+    const explicitLocality = requestedLocalityId
+      ? MASTER_LOCALITIES.find((locality) => locality.id === requestedLocalityId)
+      : undefined;
+    const pincodeMappedLocalityId = requestedPincode
+      ? pincodeMappings.find((mapping) => mapping.pincode === requestedPincode)?.localityId || ''
+      : '';
+    const resolvedLocality = (primaryArea
+      ? MASTER_LOCALITIES.find((locality) => locality.id === primaryArea.localityId)
+      : undefined)
+      || explicitLocality
+      || (operationalAreas[0]
+        ? MASTER_LOCALITIES.find((locality) => locality.id === operationalAreas[0].localityId)
+        : undefined)
+      || (pincodeMappedLocalityId
+        ? MASTER_LOCALITIES.find((locality) => locality.id === pincodeMappedLocalityId)
+        : undefined);
+    const explicitCity = requestedCityId
+      ? MASTER_CITIES.find((city) => city.id === requestedCityId)
+      : undefined;
+    const resolvedCity = (primaryArea
+      ? MASTER_CITIES.find((city) => city.id === primaryArea.cityId)
+      : undefined)
+      || (resolvedLocality
+        ? MASTER_CITIES.find((city) => city.id === resolvedLocality.cityId)
+        : undefined)
+      || explicitCity;
+    const explicitState = requestedStateId
+      ? MASTER_STATES.find((state) => state.id === requestedStateId)
+      : undefined;
+    const resolvedState = (resolvedCity
+      ? MASTER_STATES.find((state) => state.id === resolvedCity.stateId)
+      : undefined)
+      || explicitState;
+    const filteredAreasOfOperation = operationalAreas
+      .filter((area) => (!resolvedLocality || area.localityId === resolvedLocality.id))
+      .filter((area) => (!resolvedCity || area.cityId === resolvedCity.id))
+      .map((area) => area.id);
+    const normalizedAreaId = primaryArea
+      && (!resolvedLocality || primaryArea.localityId === resolvedLocality.id)
+      && (!resolvedCity || primaryArea.cityId === resolvedCity.id)
+        ? primaryArea.id
+        : (filteredAreasOfOperation[0] || '');
+    const normalizedAreasOfOperation = Array.from(
+      new Set([
+        ...(normalizedAreaId ? [normalizedAreaId] : []),
+        ...filteredAreasOfOperation,
+      ]),
+    );
+    const normalizedPincode = requestedPincode
+      || (normalizedAreaId
+        ? MASTER_AREAS.find((area) => area.id === normalizedAreaId)?.pincode || ''
+        : '');
+
+    return {
+      ...draft,
+      localityId: resolvedLocality?.id || requestedLocalityId,
+      cityId: resolvedCity?.id || requestedCityId,
+      stateId: resolvedState?.id || requestedStateId,
+      areaId: normalizedAreaId,
+      pincode: normalizedPincode,
+      areasOfOperation: normalizedAreasOfOperation,
+    };
+  };
+
   const handleSubmitApplication = (appData: Omit<Business, 'id' | 'status' | 'createdAt' | 'rating' | 'reviewCount'>) => {
+    const normalizedInput = normalizeBusinessGeographyInput(appData);
     const newBiz: Business = {
-      ...appData,
+      ...normalizedInput,
       id: `b_dynamic_${Date.now()}`,
       status: 'approved',
       rating: 0,
       reviewCount: 0,
       createdAt: new Date().toISOString(),
-      pincode: appData.pincode || MASTER_AREAS.find((area) => area.id === appData.areaId)?.pincode || ''
     };
 
     setBusinesses(prev => {
-      const next = [newBiz, ...prev];
+      const next = [normalizeStoredBusiness(newBiz), ...prev];
       persistBusinessesToServer(next);
       return next;
     });
-    logAuditEvent('data_entry', `Submitted registration request for new business: "${appData.name}"`, `Owner/Proprietor: ${appData.ownerName} | Ph: ${appData.phone} | Shard Locality: ${appData.localityId}`);
+    logAuditEvent('data_entry', `Submitted registration request for new business: "${appData.name}"`, `Owner/Proprietor: ${appData.ownerName} | Ph: ${appData.phone} | Shard Locality: ${normalizedInput.localityId}`);
   };
 
   // Allow Admins, Moderators, Sellers, and Data Operators to directly modify listings
   const handleUpdateBusiness = (updatedBiz: Business) => {
-    logAuditEvent('data_entry', `Business listing updated: "${updatedBiz.name}"`, `Updated listing ID: ${updatedBiz.id} | Locality: ${updatedBiz.localityId}`);
+    const normalizedInput = normalizeBusinessGeographyInput(updatedBiz);
+    logAuditEvent('data_entry', `Business listing updated: "${updatedBiz.name}"`, `Updated listing ID: ${updatedBiz.id} | Locality: ${normalizedInput.localityId}`);
     setBusinesses(prev => {
       const normalized = normalizeStoredBusiness({
         ...updatedBiz,
-        pincode: updatedBiz.pincode || MASTER_AREAS.find((area) => area.id === updatedBiz.areaId)?.pincode || ''
+        ...normalizedInput,
       });
       const next = prev.map(b => b.id === normalized.id ? normalized : b);
       persistBusinessesToServer(next);
@@ -4584,7 +5275,7 @@ export default function App() {
 
   // Add a verified customer review, and update rating counters
   const handleAddReview = (businessId: string, userName: string, userPhone: string, rating: number, comment: string) => {
-    const newReview: Review = {
+    const newReview: Review = normalizeStoredReview({
       id: `rev_${Date.now()}`,
       businessId,
       userName,
@@ -4593,10 +5284,11 @@ export default function App() {
       comment,
       createdAt: new Date().toISOString(),
       verifiedByOtp: true
-    };
+    });
 
     const nextReviews = [...reviews, newReview];
     setReviews(nextReviews);
+    createReviewOnServer(newReview);
     const reviewedBusiness = businesses.find((business) => business.id === businessId);
     appendBuyerActivityEvent({
       actionType: 'review_submitted',
@@ -4671,6 +5363,9 @@ export default function App() {
 
   const handleResetData = () => {
     if (confirm("Reset application data back to Indian defaults? This clears pending/registered custom edits.")) {
+      if (canUseManagedBuyerState) {
+        persistBuyerStateToServer(normalizeBuyerStateSnapshot({}));
+      }
       localStorage.removeItem('yp_localities');
       localStorage.removeItem('yp_businesses');
       localStorage.removeItem('yp_subdomains');
@@ -4695,22 +5390,22 @@ export default function App() {
       localStorage.removeItem('yp_homepage_layouts');
       localStorage.removeItem('yp_api_configuration');
       
-      const resetLocalities = (DEFAULT_LOCALITIES as Locality[]).map(normalizeStoredLocality);
+      const resetLocalities = DEFAULT_MANAGED_LOCALITY_ROUTING_CONFIG.localities.map(normalizeStoredLocality);
       setLocalities(resetLocalities);
       setBusinesses([]);
-      setReviews(INITIAL_REVIEWS);
+      setReviews(REVIEWS_BOOTSTRAP.map(normalizeStoredReview));
       setViewedBusinessIds([]);
       setSavedBusinessIds([]);
       setBuyerActivityEvents([]);
       setCommunityItems([]);
-      setCrmContacts(INITIAL_CRM_CONTACTS);
+      setCrmContacts(CRM_CONTACTS_BOOTSTRAP.map(normalizeStoredCrmContact));
       setCoupons([]);
       setListingAds([]);
       setAdLeads([]);
       const heroBannerDraftDefaults = getRuntimeHeroBannerDraftDefaults();
       const resetHeroEndDate = new Date();
       resetHeroEndDate.setDate(resetHeroEndDate.getDate() + heroBannerDraftDefaults.durationDays);
-      const resetHeroBanners: HeroBanner[] = (DEFAULT_LOCALITIES as Locality[]).map((locality) => ({
+      const resetHeroBanners: HeroBanner[] = DEFAULT_MANAGED_LOCALITY_ROUTING_CONFIG.localities.map((locality) => ({
         id: `hero_${locality.id}`,
         localityId: locality.id,
         title: `Hyper Local Directory for ${locality.name.split(',')[0]}`,
@@ -4728,20 +5423,20 @@ export default function App() {
       setHomepageLayouts(resetLocalities.map((locality) => buildDefaultHomepageLayout(locality, homepageDefaultsConfig.sectionTemplates)));
       setApiConfiguration(DEFAULT_API_CONFIGURATION);
       lastHomepageSyncSignatureRef.current = '';
-      setSubdomains((buildDefaultSubdomainMappings(DEFAULT_LOCALITIES) as SubdomainMapping[]).map(normalizeStoredSubdomain));
-      setViewedBusinessIds(['s1']);
+      setSubdomains(DEFAULT_MANAGED_LOCALITY_ROUTING_CONFIG.subdomains.map(normalizeStoredSubdomain));
+      setViewedBusinessIds(DEFAULT_GUEST_VIEWED_BUSINESS_IDS);
       setUserSession({
         role: 'buyer',
         userName: 'Karan Malhotra (Verified Citizen)',
         userPhone: '+91 80011 22334',
         isAuthenticated: true
       });
-      setActiveLocalityId(DEFAULT_LOCALITY_ID);
+      setActiveLocalityId(DEFAULT_MANAGED_LOCALITY_ROUTING_CONFIG.defaultLocalityId);
       setSavedPincode(null);
       setPincodeModalContext('initial_prompt');
       setShowPincodeModal(true);
-      setDefaultLocalityId(DEFAULT_LOCALITY_ID);
-      setPincodeMappings((DEFAULT_PINCODE_MAPPINGS as PincodeRoutingMapping[]).map(normalizeStoredPincodeMapping));
+      setDefaultLocalityId(DEFAULT_MANAGED_LOCALITY_ROUTING_CONFIG.defaultLocalityId);
+      setPincodeMappings(DEFAULT_MANAGED_LOCALITY_ROUTING_CONFIG.pincodeMappings.map(normalizeStoredPincodeMapping));
       setUrlCategoryFilter(null);
       setUrlSubcategoryFilter(null);
       setUrlFilterNonce(0);
@@ -4809,7 +5504,7 @@ export default function App() {
           .catch(() => {});
       }
 
-      alert("Application storage cleared & restored to Roadpali metrics!");
+      alert("Application storage cleared and restored to the default locality workspace.");
     }
   };
 
@@ -4913,17 +5608,13 @@ export default function App() {
         break;
       case 'buyer':
       default:
-        setUserSession({
-          role: 'buyer',
-          userName: 'Anonymous Guest Explorer',
-          isAuthenticated: false // Will require human Captcha slider + static SMS OTP code
-        });
+        setUserSession(buildGuestUserSession());
         break;
     }
     logAuditEvent('data_entry', 'Role switched in sandbox', `Switched to role: ${role}`);
   };
 
-  const setActiveViewWithAudit = (nextView: 'proposal' | 'web' | 'android' | 'admin') => {
+  const setActiveViewWithAudit = (nextView: 'proposal' | 'web' | 'android' | 'admin' | 'ux-mock' | 'ui-screen' | 'ui-city-screen' | 'ui-category-screen' | 'ui-listing-screen') => {
     if (PRODUCTION_MODE && (nextView === 'proposal' || nextView === 'android')) return;
     setActiveView(nextView);
     logAuditEvent('data_entry', 'Interface view switched', `Active view changed to: ${nextView}`);
@@ -4943,6 +5634,11 @@ export default function App() {
     const applyUrlContext = () => {
       const url = new URL(window.location.href);
       const pathParts = url.pathname.split('/').filter(Boolean);
+      const isUxMockRoute = pathParts[0] === 'ux' && pathParts[1] === 'locality-home-v1';
+      const isUiLocalityRoute = pathParts[0] === 'ui' && pathParts[1] === 'locality-home-v1';
+      const isUiCityRoute = pathParts[0] === 'ui' && pathParts[1] === 'city-page-v1';
+      const isUiCategoryRoute = pathParts[0] === 'ui' && pathParts[1] === 'category-results-v1';
+      const isUiListingRoute = pathParts[0] === 'ui' && pathParts[1] === 'listing-detail-v1';
 
       let pincodeToken = (url.searchParams.get('pin') || '').replace(/\D/g, '');
       let localityToken = (url.searchParams.get('locality') || '').trim().toLowerCase();
@@ -4950,6 +5646,51 @@ export default function App() {
       let subcategoryToken = (url.searchParams.get('subcategory') || '').trim().toLowerCase();
       const srpToken = (url.searchParams.get('srp') || url.searchParams.get('q') || '').trim();
       let shouldOpenSearchResults = Boolean(srpToken || categoryToken || subcategoryToken);
+
+      if (isUxMockRoute) {
+        if (localityToken) {
+          const matchedLocality = resolveLocalityFromToken(localityToken);
+          if (matchedLocality) {
+            setActiveLocalityId(matchedLocality.id);
+          }
+        }
+        setActiveView('ux-mock');
+        setUrlIsSearchResults(false);
+        setUrlCategoryFilter(null);
+        setUrlSubcategoryFilter(null);
+        setUrlSearchFilter(null);
+        setUrlFilterNonce((prev) => prev + 1);
+        return;
+      }
+
+      if (isUiLocalityRoute || isUiCityRoute || isUiCategoryRoute || isUiListingRoute) {
+        if (localityToken) {
+          const matchedLocality = resolveLocalityFromToken(localityToken);
+          if (matchedLocality) {
+            setActiveLocalityId(matchedLocality.id);
+          }
+        }
+        if (isUiLocalityRoute) setActiveView('ui-screen');
+        if (isUiCityRoute) setActiveView('ui-city-screen');
+        if (isUiCategoryRoute) setActiveView('ui-category-screen');
+        if (isUiListingRoute) setActiveView('ui-listing-screen');
+        setUrlIsSearchResults(false);
+        setUrlCategoryFilter(null);
+        setUrlSubcategoryFilter(null);
+        setUrlSearchFilter(null);
+        setUrlFilterNonce((prev) => prev + 1);
+        return;
+      }
+
+      setActiveView((prev) => (
+        prev === 'ux-mock'
+        || prev === 'ui-screen'
+        || prev === 'ui-city-screen'
+        || prev === 'ui-category-screen'
+        || prev === 'ui-listing-screen'
+          ? 'web'
+          : prev
+      ));
 
       if (pathParts[0] === 'pin' && pathParts[1]) {
         pincodeToken = pathParts[1].replace(/\D/g, '');
@@ -5021,6 +5762,7 @@ export default function App() {
     businessName: string;
     address: string;
     area: string;
+    locality?: string;
     city: string;
     state: string;
     pin: string;
@@ -5043,16 +5785,6 @@ export default function App() {
     taxonomyMapped?: boolean;
     tags?: string[];
   }>) => {
-    const inferLocality = (area: string) => {
-      const a = area.toLowerCase();
-      if (a.includes('kharghar')) return 'kharghar';
-      if (a.includes('kamothe')) return 'kamothe';
-      if (a.includes('panvel')) return 'panvel';
-      if (a.includes('taloja')) return 'taloja';
-      if (a.includes('kalamboli')) return 'kalamboli';
-      return 'roadpali';
-    };
-
     let imported = 0;
     let skipped = 0;
 
@@ -5060,25 +5792,72 @@ export default function App() {
       const next = [...prev];
       const normalizePhone = (phone: string) => phone.replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '');
       const getBusinessPincode = (b: Business) => b.pincode || MASTER_AREAS.find(a => a.id === b.areaId)?.pincode || '';
+      const normalizeImportGeoLookup = (value: string) => slugifyForUrl(String(value || ''));
 
       for (const row of rows) {
         const phone = row.mobile && row.mobile !== '—' ? (row.mobile.startsWith('+91') ? row.mobile : `+91 ${row.mobile}`) : '';
-        const address = row.address && row.address !== '—' ? row.address : `${row.area || 'Unknown Area'}, ${row.city || 'Navi Mumbai'}`;
         const name = row.businessName.trim();
         if (!name) {
           skipped++;
           continue;
         }
-        const localityId = row.localityId || inferLocality(row.area || row.city || '');
-        const areaMatch = MASTER_AREAS.find(a => a.id === row.areaId) || MASTER_AREAS.find(a => a.name.toLowerCase().includes((row.area || '').toLowerCase()));
-        const areaId = row.areaId || areaMatch?.id || 'roadpali-sec17';
+        const requestedPincode = row.pin.replace(/\D/g, '').slice(0, 6);
+        const requestedAreaId = String(row.areaId || '').trim();
+        const requestedAreaLookup = normalizeImportGeoLookup(row.area || '');
+        const requestedLocalityId = String(row.localityId || '').trim();
+        const requestedLocalityLookup = normalizeImportGeoLookup(row.locality || '');
+        const explicitLocality = requestedLocalityId
+          ? MASTER_LOCALITIES.find((locality) => locality.id === requestedLocalityId)
+          : undefined;
+        const namedLocality = requestedLocalityLookup
+          ? MASTER_LOCALITIES.find((locality) => normalizeImportGeoLookup(locality.name) === requestedLocalityLookup)
+          : undefined;
+        const localityHintId = explicitLocality?.id || namedLocality?.id || '';
+        const explicitArea = requestedAreaId
+          ? MASTER_AREAS.find((area) => area.id === requestedAreaId)
+          : undefined;
+        const namedArea = requestedAreaLookup
+          ? MASTER_AREAS.find((area) => {
+              const areaName = normalizeImportGeoLookup(area.name);
+              if (!areaName) return false;
+              if (localityHintId && area.localityId !== localityHintId) return false;
+              return areaName === requestedAreaLookup || areaName.includes(requestedAreaLookup) || requestedAreaLookup.includes(areaName);
+            })
+          : undefined;
+        const pincodeArea = requestedPincode
+          ? MASTER_AREAS.find((area) => area.pincode === requestedPincode && (!localityHintId || area.localityId === localityHintId))
+          : undefined;
+        const resolvedArea = explicitArea || namedArea || pincodeArea;
+        const areaId = resolvedArea?.id || '';
+        const localityId = explicitLocality?.id
+          || namedLocality?.id
+          || resolvedArea?.localityId
+          || pincodeMappings.find((mapping) => mapping.pincode === requestedPincode)?.localityId
+          || '';
+        const resolvedLocality = MASTER_LOCALITIES.find((locality) => locality.id === localityId)
+          || (resolvedArea?.localityId ? MASTER_LOCALITIES.find((locality) => locality.id === resolvedArea.localityId) : undefined);
+        const resolvedCityId = resolvedArea?.cityId || resolvedLocality?.cityId || '';
+        const resolvedCity = MASTER_CITIES.find((city) => city.id === resolvedCityId);
+        const resolvedStateId = resolvedCity?.stateId || '';
+        const fallbackAddressParts = [
+          String(row.area || '').trim(),
+          resolvedLocality?.name || String(row.locality || '').trim(),
+          resolvedCity?.name || String(row.city || '').trim(),
+        ].filter(Boolean);
+        const address = row.address && row.address !== '—'
+          ? row.address
+          : fallbackAddressParts.join(', ');
         const rating = row.rating && row.rating !== '—' ? parseFloat(row.rating) : 0;
         const reviewCount = row.reviews && row.reviews !== '—' ? parseInt(row.reviews, 10) || 0 : 0;
         const lat = row.latitude && row.latitude !== '—' ? parseFloat(row.latitude) : undefined;
         const lng = row.longitude && row.longitude !== '—' ? parseFloat(row.longitude) : undefined;
 
         const normalizedPhone = normalizePhone(phone);
-        const resolvedPincode = MASTER_AREAS.find(a => a.id === areaId)?.pincode || row.pin.replace(/\D/g, '');
+        const resolvedPincode = MASTER_AREAS.find(a => a.id === areaId)?.pincode || requestedPincode;
+        if (!resolvedLocality || !resolvedCity || !resolvedStateId || resolvedPincode.length !== 6) {
+          skipped++;
+          continue;
+        }
         const existingIndex = next.findIndex((b) => (
           (row.existingBusinessId && b.id === row.existingBusinessId) ||
           (
@@ -5086,7 +5865,7 @@ export default function App() {
             normalizedPhone.length > 0 &&
             normalizePhone(b.phone) === normalizedPhone &&
             getBusinessPincode(b) === resolvedPincode &&
-            b.localityId === localityId
+            b.localityId === resolvedLocality.id
           )
         ));
 
@@ -5099,10 +5878,12 @@ export default function App() {
             sourceCategoryLabel: row.sourceCategoryLabel || row.category || next[existingIndex].sourceCategoryLabel,
             sourceSubcategoryLabel: row.sourceSubcategoryLabel || row.subcategory || next[existingIndex].sourceSubcategoryLabel,
             taxonomyMapped: row.taxonomyMapped ?? isBusinessTaxonomyMapped({ categoryId: row.categoryId || '', subcategoryId: row.subcategoryId || '' }),
-            localityId,
+            localityId: resolvedLocality.id,
+            stateId: resolvedStateId,
+            cityId: resolvedCity.id,
             areaId,
             pincode: resolvedPincode,
-            areasOfOperation: [areaId],
+            areasOfOperation: areaId ? [areaId] : [],
             address,
             phone,
             description: row.services || next[existingIndex].description,
@@ -5135,12 +5916,12 @@ export default function App() {
           sourceCategoryLabel: row.sourceCategoryLabel || row.category || undefined,
           sourceSubcategoryLabel: row.sourceSubcategoryLabel || row.subcategory || undefined,
           taxonomyMapped: row.taxonomyMapped ?? isBusinessTaxonomyMapped({ categoryId: row.categoryId || '', subcategoryId: row.subcategoryId || '' }),
-          localityId,
-          stateId: 'mh',
-          cityId: 'navimumbai',
+          localityId: resolvedLocality.id,
+          stateId: resolvedStateId,
+          cityId: resolvedCity.id,
           areaId,
           pincode: resolvedPincode,
-          areasOfOperation: [areaId],
+          areasOfOperation: areaId ? [areaId] : [],
           address,
           phone,
           website: `https://${name.toLowerCase().replace(/[^a-z0-9]+/g, '') || 'business'}.in`,
@@ -5171,15 +5952,19 @@ export default function App() {
     return { imported, skipped };
   };
 
-  const activeLocality = localities.find((locality) => locality.id === activeLocalityId) || localities[0];
-  const activeLocalityName = activeLocality?.name.split(',')[0] || 'Roadpali';
+  const fallbackLocalityId = activeLocalityId || defaultLocalityId || localities[0]?.id || '';
+  const activeLocality = localities.find((locality) => locality.id === activeLocalityId) || localities.find((locality) => locality.id === defaultLocalityId) || localities[0];
+  const activeLocalityName = activeLocality?.name.split(',')[0] || 'Localisy';
   const seoCategoryName = BUSINESS_CATEGORIES.find((category) => category.id === (urlCategoryFilter || ''))?.name || '';
   const getLocalitySlug = (localityId: string) => {
     const locality = localities.find((candidate) => candidate.id === localityId);
-    return locality?.slug || localityId || 'roadpali';
+    return locality?.slug || localityId || '';
   };
 
-  const buildLocalityPath = (localityId: string) => `/${getLocalitySlug(localityId)}`;
+  const buildLocalityPath = (localityId: string) => {
+    const slug = getLocalitySlug(localityId);
+    return slug ? `/${slug}` : '/';
+  };
 
   const buildSeoPath = (
     localityId: string,
@@ -5210,7 +5995,7 @@ export default function App() {
   ), [activeLocalityName, seoDiscoveryConfig.routeIntents]);
 
   const buildSeoHref = (categoryId: string, q: string) => buildSeoPath(
-    activeLocality?.id || 'roadpali',
+    activeLocality?.id || fallbackLocalityId,
     categoryId,
     q
   );
@@ -5233,25 +6018,25 @@ export default function App() {
     localStorage.setItem('yp_pincode_prompted', 'true');
     setShowPincodeModal(false);
 
-    const nextUrl = buildSeoPath(activeLocality?.id || 'roadpali', categoryId, q);
+    const nextUrl = buildSeoPath(activeLocality?.id || fallbackLocalityId, categoryId, q);
     window.history.pushState({}, '', nextUrl);
   };
 
-  const activeNodeLabel = (() => {
-    if (activeLocalityId === 'roadpali') return 'Roadpali & Kalamboli';
-    return localities.find((l) => l.id === activeLocalityId)?.name.split(',')[0] || 'Roadpali';
-  })();
+  const activeLocalityIds = activeLocalityId.split(',').map((value) => value.trim()).filter(Boolean);
+  const activeNodeLocalityNames = Array.from(new Set(
+    activeLocalityIds
+      .map((id) => localities.find((locality) => locality.id === id)?.name.split(',')[0])
+      .filter(Boolean) as string[]
+  ));
+  const activeNodeLabel = activeNodeLocalityNames.length > 1
+    ? activeNodeLocalityNames.join(', ')
+    : (activeNodeLocalityNames[0] || activeLocalityName);
   const compactNodeLabel = activeNodeLabel.length > 16 ? `${activeNodeLabel.slice(0, 16)}...` : activeNodeLabel;
   const displayedPincode = savedPincode ? savedPincode : 'Select area';
-  const activeLocalityIds = activeLocalityId.split(',').map((value) => value.trim()).filter(Boolean);
   const mappedPincodesForActiveLocality = pincodeMappings
     .filter((mapping) => activeLocalityIds.includes(mapping.localityId))
     .map((mapping) => mapping.pincode);
   const localityServingLabel = (() => {
-    if (activeLocalityId === 'roadpali') {
-      return 'Serving Roadpali, Kalamboli, and Navi Mumbai since 2026.';
-    }
-    const localityName = localities.find((locality) => locality.id === activeLocalityId)?.name.split(',')[0] || 'Roadpali';
     const mappedLocalityNames = Array.from(new Set(
       pincodeMappings
         .filter((mapping) => activeLocalityIds.includes(mapping.localityId))
@@ -5272,7 +6057,7 @@ export default function App() {
       return `Serving ${mappedLocalityNames[0]} and nearby areas since 2026.`;
     }
 
-    return `Serving ${localityName} and nearby areas since 2026.`;
+    return `Serving ${activeLocalityName} and nearby areas since 2026.`;
   })();
   const handleMainLogoHome = () => {
     setActiveViewWithAudit('web');
@@ -5290,7 +6075,85 @@ export default function App() {
         return;
       }
     }
-    window.history.pushState({}, '', buildLocalityPath(activeLocality?.id || activeLocalityId || 'roadpali'));
+    window.history.pushState({}, '', buildLocalityPath(activeLocality?.id || activeLocalityId || defaultLocalityId || localities[0]?.id || ''));
+  };
+
+  const handleExitUxMock = () => {
+    setActiveViewWithAudit('web');
+    window.history.pushState({}, '', buildLocalityPath(activeLocality?.id || activeLocalityId || defaultLocalityId || localities[0]?.id || ''));
+  };
+
+  const handleOpenUiScreen = () => {
+    setActiveViewWithAudit('ui-screen');
+    const localityToken = activeLocality?.slug || activeLocality?.id || activeLocalityId || defaultLocalityId || localities[0]?.id || '';
+    const nextPath = localityToken
+      ? `/ui/locality-home-v1?locality=${encodeURIComponent(localityToken)}`
+      : '/ui/locality-home-v1';
+    window.history.pushState({}, '', nextPath);
+  };
+  const handleOpenUiLocalityPreview = (localityId?: string) => {
+    const targetLocalityId = localityId || activeLocality?.id || activeLocalityId || defaultLocalityId || localities[0]?.id || '';
+    const targetLocality = localities.find((locality) => locality.id === targetLocalityId) || activeLocality || localities[0];
+    if (targetLocality?.id) {
+      setActiveLocalityId(targetLocality.id);
+    }
+    setActiveViewWithAudit('ui-screen');
+    const localityToken = targetLocality?.slug || targetLocality?.id || targetLocalityId;
+    const nextPath = localityToken
+      ? `/ui/locality-home-v1?locality=${encodeURIComponent(localityToken)}`
+      : '/ui/locality-home-v1';
+    window.history.pushState({}, '', nextPath);
+  };
+  const handleOpenUiCityPreview = (localityId?: string) => {
+    const targetLocalityId = localityId || activeLocality?.id || activeLocalityId || defaultLocalityId || localities[0]?.id || '';
+    const targetLocality = localities.find((locality) => locality.id === targetLocalityId) || activeLocality || localities[0];
+    if (targetLocality?.id) {
+      setActiveLocalityId(targetLocality.id);
+    }
+    setActiveViewWithAudit('ui-city-screen');
+    const localityToken = targetLocality?.slug || targetLocality?.id || targetLocalityId;
+    const nextPath = localityToken
+      ? `/ui/city-page-v1?locality=${encodeURIComponent(localityToken)}`
+      : '/ui/city-page-v1';
+    window.history.pushState({}, '', nextPath);
+  };
+  const handleOpenUiCategoryPreview = (categoryId: string, localityId?: string) => {
+    const targetLocalityId = localityId || activeLocality?.id || activeLocalityId || defaultLocalityId || localities[0]?.id || '';
+    const targetLocality = localities.find((locality) => locality.id === targetLocalityId) || activeLocality || localities[0];
+    if (targetLocality?.id) {
+      setActiveLocalityId(targetLocality.id);
+    }
+    setActiveViewWithAudit('ui-category-screen');
+    const params = new URLSearchParams();
+    if (targetLocality?.slug || targetLocality?.id || targetLocalityId) {
+      params.set('locality', targetLocality?.slug || targetLocality?.id || targetLocalityId);
+    }
+    if (categoryId) {
+      params.set('category', categoryId);
+    }
+    const nextPath = params.toString()
+      ? `/ui/category-results-v1?${params.toString()}`
+      : '/ui/category-results-v1';
+    window.history.pushState({}, '', nextPath);
+  };
+  const handleOpenUiListingPreview = (businessId: string, localityId?: string) => {
+    const targetLocalityId = localityId || activeLocality?.id || activeLocalityId || defaultLocalityId || localities[0]?.id || '';
+    const targetLocality = localities.find((locality) => locality.id === targetLocalityId) || activeLocality || localities[0];
+    if (targetLocality?.id) {
+      setActiveLocalityId(targetLocality.id);
+    }
+    setActiveViewWithAudit('ui-listing-screen');
+    const params = new URLSearchParams();
+    if (targetLocality?.slug || targetLocality?.id || targetLocalityId) {
+      params.set('locality', targetLocality?.slug || targetLocality?.id || targetLocalityId);
+    }
+    if (businessId) {
+      params.set('business', businessId);
+    }
+    const nextPath = params.toString()
+      ? `/ui/listing-detail-v1?${params.toString()}`
+      : '/ui/listing-detail-v1';
+    window.history.pushState({}, '', nextPath);
   };
   const handleSearchShortcut = () => {
     const searchForm = document.getElementById('public-listing-search');
@@ -5306,16 +6169,12 @@ export default function App() {
   };
   const handleLogout = () => {
     localStorage.removeItem('yp_auth_token');
-    setUserSession({
-      role: 'buyer',
-      userName: 'Anonymous Guest Explorer',
-      isAuthenticated: false,
-      userPhone: undefined,
-      contactUnlockToken: undefined,
-    });
+    setUserSession(buildGuestUserSession());
     setShowUserMenu(false);
     logAuditEvent('data_entry', 'User Logged Out', 'Client cleared verified session status.');
   };
+
+  const isImmersivePreview = ['ui-screen', 'ui-city-screen', 'ui-category-screen', 'ui-listing-screen'].includes(activeView);
 
   useEffect(() => {
     const siteName = 'Localisy';
@@ -5330,8 +6189,8 @@ export default function App() {
       : `Discover verified local businesses in ${activeLocalityName}. Explore salons, restaurants, clinics, home services, and shops nearby.`;
 
     const origin = window.location.origin;
-    const activeLocalityPath = buildLocalityPath(activeLocality?.id || 'roadpali');
-    const canonicalPath = buildSeoPath(activeLocality?.id || 'roadpali', urlCategoryFilter, urlSearchFilter);
+    const activeLocalityPath = buildLocalityPath(activeLocality?.id || fallbackLocalityId);
+    const canonicalPath = buildSeoPath(activeLocality?.id || fallbackLocalityId, urlCategoryFilter, urlSearchFilter);
     const canonicalUrl = `${origin}${canonicalPath}`;
     const seoImageUrl = `${origin}/seo-image.svg?title=${encodeURIComponent(seoTitle)}&subtitle=${encodeURIComponent(
       urlSearchFilter?.trim()
@@ -5344,7 +6203,7 @@ export default function App() {
       seoCategoryName,
       urlSearchFilter,
       `verified businesses in ${activeLocalityName}`,
-      'Navi Mumbai businesses',
+      `${activeLocalityName} nearby businesses`,
       'local services near me',
     ]
       .filter(Boolean)
@@ -5461,7 +6320,7 @@ export default function App() {
     <div className="relative flex min-h-screen flex-col overflow-x-hidden bg-slate-50 font-sans text-slate-800 selection:bg-indigo-600/15">
       
       {/* Top Navigation Frame - Pristine, Live, Human-labeled web directory */}
-      <nav id="platform-navbar" className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 px-4 py-2.5 shadow-sm backdrop-blur md:top-auto md:px-8 md:py-0">
+      {!isImmersivePreview && <nav id="platform-navbar" className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 px-4 py-2.5 shadow-sm backdrop-blur md:top-auto md:px-8 md:py-0">
         <div className="relative flex items-center gap-2 md:hidden">
           <button
             type="button"
@@ -5713,12 +6572,7 @@ export default function App() {
                 type="button"
                 onClick={() => {
                   localStorage.removeItem('yp_auth_token');
-                  setUserSession({
-                    role: 'buyer',
-                    userName: 'Anonymous Guest Explorer',
-                    isAuthenticated: false,
-                    userPhone: undefined
-                  });
+                  setUserSession(buildGuestUserSession());
                   logAuditEvent('data_entry', 'User Logged Out', 'Client cleared verified session status.');
                 }}
                 className="text-rose-600 hover:text-rose-800 text-[10px] font-bold border-l border-slate-200 pl-2 cursor-pointer ml-1"
@@ -5830,10 +6684,10 @@ export default function App() {
             )}
           </div>
         </div>
-      </nav>
+      </nav>}
 
       {/* Main Workspace Frame */}
-      <main className="mx-auto flex w-full max-w-[1440px] flex-1 space-y-8 overflow-x-hidden px-4 py-5 md:px-8 md:py-8">
+      <main className={`${isImmersivePreview ? 'w-full px-0 py-0' : 'mx-auto max-w-[1440px] px-4 py-5 md:px-8 md:py-8'} flex w-full flex-1 space-y-8 overflow-x-hidden`}>
         
         {/* Workspace Active Presentation Render */}
         {!PRODUCTION_MODE && activeView === 'proposal' && (
@@ -5867,52 +6721,130 @@ export default function App() {
         )}
 
         {activeView === 'web' && (
-          <WebPortal 
-            localities={localities}
-            businesses={businesses}
-            categories={portalCategories}
-            reviews={reviews}
-            activeLocalityId={activeLocalityId}
-            pincodeMappings={pincodeMappings}
-            localityMappedPincodes={mappedPincodesForActiveLocality}
-            savedPincode={savedPincode}
-            initialCategoryFilter={urlCategoryFilter}
-            initialSearchFilter={urlSearchFilter}
-            initialResultsPage={urlIsSearchResults}
-            filterNonce={urlFilterNonce}
-            initialSelectedBusinessId={urlSelectedBusinessId}
-            selectionNonce={urlSelectionNonce}
-            onLocalityChange={setActiveLocalityId}
-            userSession={userSession}
-            onUserSessionChange={setUserSession}
-            viewedBusinessIds={viewedBusinessIds}
-            savedBusinessIds={savedBusinessIds}
-            onToggleSavedBusiness={handleToggleSavedBusiness}
-            buyerActivityEvents={buyerActivityEvents}
-            onUnlockBusinessContact={handleRegisterContactView}
-            onSubmitApplication={handleSubmitApplication}
-            onUpdateBusiness={handleUpdateBusiness}
-            onAddReview={handleAddReview}
-            listingAds={listingAds}
-            adLeads={adLeads}
-            heroBanners={heroBanners}
-            homepageLayouts={homepageLayouts}
-            homepageDefaultsConfig={homepageDefaultsConfig}
-            apiConfiguration={apiConfiguration}
-            onSubmitAdLead={handleSubmitAdLead}
-            urlCategoryFilter={urlCategoryFilter}
-            urlSubcategoryFilter={urlSubcategoryFilter}
-            urlFilterNonce={urlFilterNonce}
-            
-            communityItems={communityItems}
-            onAddCommunityItem={handleAddCommunityItem}
-            crmContacts={crmContacts}
-            onAddCRMContact={handleAddCRMContact}
-            onUpdateCRMContact={handleUpdateCRMContact}
-            coupons={coupons}
-            onAddCoupon={handleAddCoupon}
-            onLogAuditEvent={logAuditEvent}
-          />
+          <Suspense fallback={<div className="text-xs text-slate-500">Loading public directory...</div>}>
+            <WebPortal 
+              localities={localities}
+              businesses={businesses}
+              categories={portalCategories}
+              reviews={reviews}
+              activeLocalityId={activeLocalityId}
+              pincodeMappings={pincodeMappings}
+              localityMappedPincodes={mappedPincodesForActiveLocality}
+              savedPincode={savedPincode}
+              initialCategoryFilter={urlCategoryFilter}
+              initialSearchFilter={urlSearchFilter}
+              initialResultsPage={urlIsSearchResults}
+              filterNonce={urlFilterNonce}
+              initialSelectedBusinessId={urlSelectedBusinessId}
+              selectionNonce={urlSelectionNonce}
+              onLocalityChange={setActiveLocalityId}
+              userSession={userSession}
+              onUserSessionChange={setUserSession}
+              viewedBusinessIds={viewedBusinessIds}
+              savedBusinessIds={savedBusinessIds}
+              onToggleSavedBusiness={handleToggleSavedBusiness}
+              buyerActivityEvents={buyerActivityEvents}
+              onUnlockBusinessContact={handleRegisterContactView}
+              onSubmitApplication={handleSubmitApplication}
+              onUpdateBusiness={handleUpdateBusiness}
+              onAddReview={handleAddReview}
+              listingAds={listingAds}
+              adLeads={adLeads}
+              heroBanners={heroBanners}
+              homepageLayouts={homepageLayouts}
+              homepageDefaultsConfig={homepageDefaultsConfig}
+              apiConfiguration={apiConfiguration}
+              onSubmitAdLead={handleSubmitAdLead}
+              onTrackListingAdInteraction={handleTrackListingAdInteraction}
+              urlCategoryFilter={urlCategoryFilter}
+              urlSubcategoryFilter={urlSubcategoryFilter}
+              urlFilterNonce={urlFilterNonce}
+              
+              communityItems={communityItems}
+              onAddCommunityItem={handleAddCommunityItem}
+              crmContacts={crmContacts}
+              onAddCRMContact={handleAddCRMContact}
+              onUpdateCRMContact={handleUpdateCRMContact}
+              coupons={coupons}
+              onAddCoupon={handleAddCoupon}
+              onLogAuditEvent={logAuditEvent}
+            />
+          </Suspense>
+        )}
+
+        {activeView === 'ux-mock' && (
+          <Suspense fallback={<div className="text-xs text-slate-500">Loading UX mock...</div>}>
+            <LocalityLandingMockV1
+              activeLocalityId={activeLocalityId}
+              businesses={businesses}
+              categories={portalCategories.filter((category) => category.id !== 'all')}
+              localities={localities}
+              onExitMock={handleOpenUiScreen}
+            />
+          </Suspense>
+        )}
+
+        {activeView === 'ui-screen' && (
+          <Suspense fallback={<div className="text-xs text-slate-500">Loading locality UI preview...</div>}>
+            <LocalityLandingUiV1
+              activeLocalityId={activeLocalityId}
+              businesses={businesses}
+              categories={portalCategories.filter((category) => category.id !== 'all')}
+              localities={localities}
+              onOpenLivePortal={handleExitUxMock}
+              onOpenCityPage={handleOpenUiCityPreview}
+              onOpenCategoryPage={handleOpenUiCategoryPreview}
+              onOpenListingPage={handleOpenUiListingPreview}
+            />
+          </Suspense>
+        )}
+
+        {activeView === 'ui-city-screen' && (
+          <Suspense fallback={<div className="text-xs text-slate-500">Loading city UI preview...</div>}>
+            <CityDirectoryUiV1
+              activeLocalityId={activeLocalityId}
+              businesses={businesses}
+              categories={portalCategories.filter((category) => category.id !== 'all')}
+              localities={localities}
+              onOpenLivePortal={handleExitUxMock}
+              onOpenLocalityPage={handleOpenUiLocalityPreview}
+              onOpenCategoryPage={handleOpenUiCategoryPreview}
+              onOpenListingPage={handleOpenUiListingPreview}
+            />
+          </Suspense>
+        )}
+
+        {activeView === 'ui-category-screen' && (
+          <Suspense fallback={<div className="text-xs text-slate-500">Loading category UI preview...</div>}>
+            <CategoryResultsUiV1
+              activeLocalityId={activeLocalityId}
+              businesses={businesses}
+              categories={portalCategories.filter((category) => category.id !== 'all')}
+              localities={localities}
+              initialCategoryId={typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('category') || undefined : undefined}
+              onOpenLivePortal={handleExitUxMock}
+              onOpenCategoryPage={handleOpenUiCategoryPreview}
+              onOpenListingPage={handleOpenUiListingPreview}
+            />
+          </Suspense>
+        )}
+
+        {activeView === 'ui-listing-screen' && (
+          <Suspense fallback={<div className="text-xs text-slate-500">Loading listing UI preview...</div>}>
+            <ListingDetailUiV1
+              activeLocalityId={activeLocalityId}
+              businesses={businesses}
+              categories={portalCategories.filter((category) => category.id !== 'all')}
+              localities={localities}
+              reviews={reviews}
+              userSession={userSession}
+              businessId={typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('business') || undefined : undefined}
+              onOpenLivePortal={handleExitUxMock}
+              onOpenListingPage={handleOpenUiListingPreview}
+              onRequestAuth={() => setShowAuthModal(true)}
+              onSubmitReview={handleAddReview}
+            />
+          </Suspense>
         )}
 
         {!PRODUCTION_MODE && activeView === 'android' && (
@@ -6016,7 +6948,7 @@ export default function App() {
       </main>
 
       {/* Pristine, Professional Footer */}
-      <footer className="bg-slate-900 border-t border-slate-800 text-slate-400 py-10 mt-16">
+      {!isImmersivePreview && <footer className="bg-slate-900 border-t border-slate-800 text-slate-400 py-10 mt-16">
         <div className="max-w-7xl mx-auto px-4 md:px-8 flex flex-col gap-6">
           <div className="space-y-1.5 text-center md:text-left">
             <span className="block text-white font-bold text-sm">{activeNodeLabel} Businesses</span>
@@ -6061,7 +6993,7 @@ export default function App() {
             <span className="text-xs text-slate-500">(c) 2026 Localisy. A Hyper Local Business Directory. Discover Local. Support Local. Grow Local.</span>
           </div>
         </div>
-      </footer>
+      </footer>}
 
       {/* Floating Developer Sandbox Panel - For AI Studio reviewers and team tests */}
       {!PRODUCTION_MODE && <div className="fixed bottom-6 right-6 z-50">
@@ -6169,7 +7101,7 @@ export default function App() {
             <div className="border-t border-slate-800 pt-3 flex items-center justify-between gap-2">
               <button
                 onClick={() => {
-                  if (confirm("Reset cache and database metrics back to Roadpali defaults? This clears your custom input listings.")) {
+                  if (confirm("Reset cache and database metrics back to the default locality workspace? This clears your custom input listings.")) {
                     handleResetData();
                   }
                 }}
@@ -6201,12 +7133,13 @@ export default function App() {
       <AuthModal
         isOpen={showAuthModal}
         onClose={() => setShowAuthModal(false)}
-        onAuthSuccess={({ token, name, phone, email, role, userType, sellerBusinessId }) => {
+        onAuthSuccess={({ token, userId, name, phone, email, role, userType, sellerBusinessId }) => {
           localStorage.setItem('yp_auth_token', token);
           setUserSession({
             role: role as UserRole,
             userType,
             userName: `${name} (${userType})`,
+            userId,
             userPhone: phone,
             email,
             sellerBusinessId,

@@ -7,6 +7,7 @@ interface AuthModalProps {
   onClose: () => void;
   onAuthSuccess: (payload: {
     token: string;
+    userId: string;
     name: string;
     phone?: string;
     email: string;
@@ -63,9 +64,10 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
     resetFlow(nextTab);
   };
 
-  const finalizeAuth = (payload: { token: string; user: { name: string; phone?: string; email: string; role: string; userType: UserType; sellerBusinessId?: string } }) => {
+  const finalizeAuth = (payload: { token: string; user: { id: string; name: string; phone?: string; email: string; role: string; userType: UserType; sellerBusinessId?: string } }) => {
     onAuthSuccess({
       token: payload.token,
+      userId: payload.user.id,
       name: payload.user.name,
       phone: payload.user.phone,
       email: payload.user.email,

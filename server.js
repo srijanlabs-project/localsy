@@ -4,34 +4,16 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs/promises';
 import crypto from 'crypto';
+import localityRoutingBootstrap from './locality-routing-config.json' with { type: 'json' };
+import homepageDefaultsBootstrap from './homepage-defaults-config.json' with { type: 'json' };
+import seoDiscoveryBootstrap from './seo-discovery-config.json' with { type: 'json' };
 import { buildBusinessTaxonomySeed } from './shared/businessTaxonomySeed.js';
-import {
-  DEFAULT_LOCALITIES,
-  DEFAULT_LOCALITY_ID,
-  DEFAULT_PINCODE_MAPPINGS,
-  buildDefaultSubdomainMappings,
-} from './shared/localityRoutingSeed.js';
 import {
   DEFAULT_STATES,
   DEFAULT_CITIES,
   DEFAULT_GEOGRAPHY_LOCALITIES,
   DEFAULT_AREAS,
 } from './shared/geographySeed.js';
-import {
-  DEFAULT_FALLBACK_LISTING_AD_TEMPLATES,
-  DEFAULT_HERO_BANNER_DRAFT_DEFAULTS,
-  DEFAULT_HERO_QUICK_ACTIONS,
-  DEFAULT_HERO_STAT_TEMPLATES,
-  DEFAULT_HOMEPAGE_SECTION_TEMPLATES,
-  DEFAULT_SEARCH_SHORTCUT_CATEGORY_IDS,
-} from './shared/homepageDefaultsSeed.js';
-import {
-  DEFAULT_SEO_CATEGORY_LABELS,
-  DEFAULT_SEO_DEFAULT_LISTING_NAMES,
-  DEFAULT_SEO_LOCALITY_METADATA,
-  DEFAULT_SEO_ROUTE_INTENTS,
-  DEFAULT_SEO_TOP_LISTINGS,
-} from './shared/seoDiscoverySeed.js';
 
 const app = express();
 const __filename = fileURLToPath(import.meta.url);
@@ -40,6 +22,9 @@ const distPath = path.join(__dirname, 'dist');
 const auditLogPath = path.join(__dirname, 'audit-events.jsonl');
 const usersPath = path.join(__dirname, 'users.json');
 const businessesPath = path.join(__dirname, 'businesses.json');
+const reviewsPath = path.join(__dirname, 'reviews.json');
+const crmContactsPath = path.join(__dirname, 'crm-contacts.json');
+const buyerStatesPath = path.join(__dirname, 'buyer-states.json');
 const adLeadsPath = path.join(__dirname, 'ad-leads.json');
 const homepageConfigPath = path.join(__dirname, 'homepage-config.json');
 const businessTaxonomyPath = path.join(__dirname, 'business-taxonomy.json');
@@ -86,6 +71,9 @@ let pgPool = null;
 let pgInitAttempted = false;
 let memoryUsers = null;
 let memoryBusinesses = null;
+let memoryReviews = null;
+let memoryCrmContacts = null;
+let memoryBuyerStates = null;
 let memoryAdLeads = null;
 let memoryHomepageConfig = null;
 let memoryBusinessTaxonomy = null;
@@ -221,8 +209,29 @@ function slugifyForUrl(value) {
     .replace(/^-+|-+$/g, '');
 }
 
+const LOCALITY_ROUTING_BOOTSTRAP = localityRoutingBootstrap && typeof localityRoutingBootstrap === 'object'
+  ? localityRoutingBootstrap
+  : {};
+const HOMEPAGE_DEFAULTS_BOOTSTRAP = homepageDefaultsBootstrap && typeof homepageDefaultsBootstrap === 'object'
+  ? homepageDefaultsBootstrap
+  : {};
+const SEO_DISCOVERY_BOOTSTRAP = seoDiscoveryBootstrap && typeof seoDiscoveryBootstrap === 'object'
+  ? seoDiscoveryBootstrap
+  : {};
+
+function buildBootstrapSubdomainMappings(localities = []) {
+  return localities.map((locality) => ({
+    domain: String(locality?.subdomain || `${slugifyForUrl(locality?.slug || locality?.id)}.localisy.in`).trim(),
+    localityId: String(locality?.id || '').trim(),
+    sslEnabled: true,
+    dnsStatus: 'active',
+    createdAt: '2026-07-29T00:00:00.000Z',
+  })).filter((mapping) => mapping.domain && mapping.localityId);
+}
+
 function buildLocalityPath(localityId) {
-  return `/${slugifyForUrl(localityId || 'roadpali')}`;
+  const localitySlug = slugifyForUrl(localityId || '');
+  return localitySlug ? `/${localitySlug}` : '/';
 }
 
 function buildSeoPath(context, localityId, categoryId, q) {
@@ -807,6 +816,95 @@ function buildAuthUserResponse(user) {
   };
 }
 
+function resolveSellerBusinessIdForUser(user, businesses = []) {
+  if (!user || user.userType !== 'seller') return '';
+  const explicitSellerBusinessId = String(user.sellerBusinessId || '').trim();
+  if (explicitSellerBusinessId) {
+    return explicitSellerBusinessId;
+  }
+
+  const normalizedUserPhone = normalizePhoneDigits(user.phone || '');
+  const normalizedUserEmail = String(user.email || '').trim().toLowerCase();
+  const matchedBusiness = businesses.find((business) => {
+    const normalizedBusinessPhone = normalizePhoneDigits(business?.phone || '');
+    const normalizedBusinessEmail = String(business?.email || '').trim().toLowerCase();
+    return (
+      (normalizedUserPhone && normalizedBusinessPhone && normalizedUserPhone === normalizedBusinessPhone) ||
+      (normalizedUserEmail && normalizedBusinessEmail && normalizedUserEmail === normalizedBusinessEmail)
+    );
+  });
+
+  return String(matchedBusiness?.id || '').trim();
+}
+
+async function buildResolvedAuthUserResponse(user) {
+  if (!user || user.userType !== 'seller') {
+    return buildAuthUserResponse(user);
+  }
+  const businesses = await readBusinessListings();
+  const sellerBusinessId = resolveSellerBusinessIdForUser(user, businesses);
+  return buildAuthUserResponse({
+    ...user,
+    sellerBusinessId: sellerBusinessId || undefined,
+  });
+}
+
+async function readAuthenticatedUserFromRequest(req, res) {
+  const payload = authFromHeader(req);
+  if (!payload?.sub) {
+    res.status(401).json({ ok: false, error: 'Unauthorized' });
+    return null;
+  }
+  const users = await readUsers();
+  const user = users.find((entry) => entry.id === payload.sub);
+  if (!user) {
+    res.status(401).json({ ok: false, error: 'Unauthorized' });
+    return null;
+  }
+  if (user.status !== 'active') {
+    res.status(403).json({ ok: false, error: 'User is not active' });
+    return null;
+  }
+  return { payload, user };
+}
+
+async function resolveSellerOrPrivilegedAccess(req, res, { write = false } = {}) {
+  if (write && !enforceTrustedWriteOrigin(req, res)) {
+    return null;
+  }
+
+  const authenticated = await readAuthenticatedUserFromRequest(req, res);
+  if (!authenticated) return null;
+
+  if (['platform_admin', 'developer'].includes(authenticated.user.userType)) {
+    return {
+      scope: 'all',
+      payload: authenticated.payload,
+      user: authenticated.user,
+      sellerBusinessId: '',
+    };
+  }
+
+  if (authenticated.user.userType !== 'seller') {
+    res.status(403).json({ ok: false, error: 'Insufficient privileges' });
+    return null;
+  }
+
+  const businesses = await readBusinessListings();
+  const sellerBusinessId = resolveSellerBusinessIdForUser(authenticated.user, businesses);
+  if (!sellerBusinessId) {
+    res.status(403).json({ ok: false, error: 'Seller account is not linked to a business listing yet' });
+    return null;
+  }
+
+  return {
+    scope: 'seller',
+    payload: authenticated.payload,
+    user: authenticated.user,
+    sellerBusinessId,
+  };
+}
+
 function buildOtpChallengeToken({ challengeId, userId, userType, mobile, purpose, context = {} }) {
   const exp = Math.floor(Date.now() / 1000) + 10 * 60;
   return signToken({
@@ -1069,7 +1167,7 @@ async function readUsers() {
   const client = await getPgClient();
   if (client) {
     const result = await client.query(
-      `SELECT id, name, email, phone, user_type, role, password_hash, created_at, status
+      `SELECT id, name, email, phone, user_type, role, password_hash, created_at, status, seller_business_id
        FROM app_users
        ORDER BY created_at ASC`,
     );
@@ -1083,6 +1181,7 @@ async function readUsers() {
       passwordHash: row.password_hash,
       createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
       status: row.status,
+      sellerBusinessId: row.seller_business_id || undefined,
     }));
   }
 
@@ -1104,8 +1203,8 @@ async function writeUsers(users) {
       await tx.query('DELETE FROM app_users');
       for (const user of users) {
         await tx.query(
-          `INSERT INTO app_users (id, name, email, phone, user_type, role, password_hash, created_at, status)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+          `INSERT INTO app_users (id, name, email, phone, user_type, role, password_hash, created_at, status, seller_business_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
           [
             user.id,
             user.name,
@@ -1116,6 +1215,7 @@ async function writeUsers(users) {
             user.passwordHash,
             user.createdAt,
             user.status || 'active',
+            user.sellerBusinessId || null,
           ],
         );
       }
@@ -1152,6 +1252,72 @@ function mergeBusinessListings(existing, incoming) {
   for (const business of existing) merged.set(business.id, business);
   for (const business of incoming) merged.set(business.id, business);
   return Array.from(merged.values());
+}
+
+function sanitizeReview(value, index = 0) {
+  if (!value || typeof value !== 'object') return null;
+  const review = value;
+  const businessId = String(review.businessId || '').trim();
+  const userName = String(review.userName || '').trim();
+  const userPhone = String(review.userPhone || '').trim();
+  const comment = String(review.comment || '').trim();
+  if (!businessId || !userName || !userPhone || !comment) {
+    return null;
+  }
+  const numericRating = Number(review.rating);
+  return {
+    id: String(review.id || `review_${Date.now()}_${index + 1}`).trim(),
+    businessId,
+    userName,
+    userPhone,
+    rating: Number.isFinite(numericRating) ? Math.max(1, Math.min(5, numericRating)) : 5,
+    comment,
+    createdAt: String(review.createdAt || new Date().toISOString()),
+    verifiedByOtp: review.verifiedByOtp !== false,
+    photoUrl: review.photoUrl ? String(review.photoUrl).trim() : undefined,
+    videoUrl: review.videoUrl ? String(review.videoUrl).trim() : undefined,
+    isVerifiedPurchase: review.isVerifiedPurchase === true,
+    helpfulVotes: Number.isFinite(Number(review.helpfulVotes)) ? Number(review.helpfulVotes) : undefined,
+    reported: review.reported === true,
+    reportReason: review.reportReason ? String(review.reportReason).trim() : undefined,
+  };
+}
+
+function sanitizeReviews(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((review, index) => sanitizeReview(review, index))
+    .filter(Boolean);
+}
+
+function sanitizeCrmContact(value, index = 0) {
+  if (!value || typeof value !== 'object') return null;
+  const contact = value;
+  const businessId = String(contact.businessId || '').trim();
+  const name = String(contact.name || '').trim();
+  const phone = String(contact.phone || '').trim();
+  if (!businessId || !name || !phone) {
+    return null;
+  }
+  return {
+    id: String(contact.id || `crm_${Date.now()}_${index + 1}`).trim(),
+    businessId,
+    name,
+    phone,
+    email: contact.email ? String(contact.email).trim() : undefined,
+    lastInteraction: String(contact.lastInteraction || new Date().toISOString()),
+    followUpNotes: contact.followUpNotes ? String(contact.followUpNotes).trim() : undefined,
+    totalSpent: Number.isFinite(Number(contact.totalSpent)) ? Number(contact.totalSpent) : undefined,
+    ordersCount: Number.isFinite(Number(contact.ordersCount)) ? Number(contact.ordersCount) : undefined,
+    loyaltyPoints: Number.isFinite(Number(contact.loyaltyPoints)) ? Number(contact.loyaltyPoints) : undefined,
+  };
+}
+
+function sanitizeCrmContacts(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((contact, index) => sanitizeCrmContact(contact, index))
+    .filter(Boolean);
 }
 
 async function readBusinessListings() {
@@ -1216,6 +1382,362 @@ async function writeBusinessListings(businesses) {
   } catch (err) {
     console.warn('businesses.json write failed, using in-memory listing store:', err?.message || err);
     memoryBusinesses = listings;
+  }
+}
+
+async function readReviews() {
+  const client = await getPgClient();
+  if (client) {
+    const result = await client.query(
+      `SELECT value
+       FROM app_state
+       WHERE key = $1
+       LIMIT 1`,
+      ['reviews'],
+    );
+    const data = result.rows[0]?.value;
+    const reviews = sanitizeReviews(data);
+    if (Array.isArray(reviews) && reviews.length > 0) return reviews;
+    if (Array.isArray(data) && data.length === 0) return [];
+    try {
+      const raw = await fs.readFile(reviewsPath, 'utf8');
+      const fileData = JSON.parse(raw);
+      const seededReviews = sanitizeReviews(fileData);
+      await client.query(
+        `INSERT INTO app_state (key, value, updated_at)
+         VALUES ($1, $2::jsonb, NOW())
+         ON CONFLICT (key)
+         DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+        ['reviews', JSON.stringify(seededReviews)],
+      );
+      return seededReviews;
+    } catch {
+      return [];
+    }
+  }
+
+  if (Array.isArray(memoryReviews)) return memoryReviews;
+  try {
+    const raw = await fs.readFile(reviewsPath, 'utf8');
+    const data = JSON.parse(raw);
+    const reviews = sanitizeReviews(data);
+    memoryReviews = reviews;
+    return reviews;
+  } catch {
+    return [];
+  }
+}
+
+async function writeReviews(reviews) {
+  const sanitizedReviews = sanitizeReviews(reviews);
+  const client = await getPgClient();
+  if (client) {
+    await client.query(
+      `INSERT INTO app_state (key, value, updated_at)
+       VALUES ($1, $2::jsonb, NOW())
+       ON CONFLICT (key)
+       DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+      ['reviews', JSON.stringify(sanitizedReviews)],
+    );
+    return sanitizedReviews;
+  }
+
+  try {
+    await fs.writeFile(reviewsPath, JSON.stringify(sanitizedReviews, null, 2), 'utf8');
+    memoryReviews = sanitizedReviews;
+    return sanitizedReviews;
+  } catch (err) {
+    console.warn('reviews.json write failed, using in-memory review store:', err?.message || err);
+    memoryReviews = sanitizedReviews;
+    return sanitizedReviews;
+  }
+}
+
+async function readCrmContacts() {
+  const client = await getPgClient();
+  if (client) {
+    const result = await client.query(
+      `SELECT value
+       FROM app_state
+       WHERE key = $1
+       LIMIT 1`,
+      ['crm_contacts'],
+    );
+    const data = result.rows[0]?.value;
+    const crmContacts = sanitizeCrmContacts(data);
+    if (Array.isArray(crmContacts) && crmContacts.length > 0) return crmContacts;
+    if (Array.isArray(data) && data.length === 0) return [];
+    try {
+      const raw = await fs.readFile(crmContactsPath, 'utf8');
+      const fileData = JSON.parse(raw);
+      const seededContacts = sanitizeCrmContacts(fileData);
+      await client.query(
+        `INSERT INTO app_state (key, value, updated_at)
+         VALUES ($1, $2::jsonb, NOW())
+         ON CONFLICT (key)
+         DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+        ['crm_contacts', JSON.stringify(seededContacts)],
+      );
+      return seededContacts;
+    } catch {
+      return [];
+    }
+  }
+
+  if (Array.isArray(memoryCrmContacts)) return memoryCrmContacts;
+  try {
+    const raw = await fs.readFile(crmContactsPath, 'utf8');
+    const data = JSON.parse(raw);
+    const crmContacts = sanitizeCrmContacts(data);
+    memoryCrmContacts = crmContacts;
+    return crmContacts;
+  } catch {
+    return [];
+  }
+}
+
+async function writeCrmContacts(crmContacts) {
+  const sanitizedContacts = sanitizeCrmContacts(crmContacts);
+  const client = await getPgClient();
+  if (client) {
+    await client.query(
+      `INSERT INTO app_state (key, value, updated_at)
+       VALUES ($1, $2::jsonb, NOW())
+       ON CONFLICT (key)
+       DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+      ['crm_contacts', JSON.stringify(sanitizedContacts)],
+    );
+    return sanitizedContacts;
+  }
+
+  try {
+    await fs.writeFile(crmContactsPath, JSON.stringify(sanitizedContacts, null, 2), 'utf8');
+    memoryCrmContacts = sanitizedContacts;
+    return sanitizedContacts;
+  } catch (err) {
+    console.warn('crm-contacts.json write failed, using in-memory CRM store:', err?.message || err);
+    memoryCrmContacts = sanitizedContacts;
+    return sanitizedContacts;
+  }
+}
+
+function mergeCrmFollowUpNotes(existingNotes, nextNote) {
+  const existing = String(existingNotes || '').trim();
+  const incoming = String(nextNote || '').trim();
+  if (!incoming) return existing || undefined;
+  if (!existing) return incoming;
+  if (existing.toLowerCase().includes(incoming.toLowerCase())) return existing;
+  return `${incoming} | ${existing}`;
+}
+
+async function upsertCrmContactFromLead({
+  businessId,
+  name,
+  phone,
+  email,
+  occurredAt,
+  note,
+}) {
+  const normalizedBusinessId = String(businessId || '').trim();
+  const normalizedPhone = String(phone || '').trim();
+  const phoneDigits = normalizePhoneDigits(normalizedPhone);
+  if (!normalizedBusinessId || !phoneDigits) {
+    return null;
+  }
+
+  const existingContacts = await readCrmContacts();
+  const existingIndex = existingContacts.findIndex((contact) => (
+    String(contact.businessId || '').trim() === normalizedBusinessId &&
+    normalizePhoneDigits(contact.phone || '') === phoneDigits
+  ));
+
+  const nextContact = sanitizeCrmContact(existingIndex >= 0
+    ? {
+        ...existingContacts[existingIndex],
+        name: String(name || existingContacts[existingIndex].name || '').trim() || existingContacts[existingIndex].name,
+        phone: normalizedPhone || existingContacts[existingIndex].phone,
+        email: String(email || existingContacts[existingIndex].email || '').trim() || existingContacts[existingIndex].email,
+        lastInteraction: String(occurredAt || new Date().toISOString()),
+        followUpNotes: mergeCrmFollowUpNotes(existingContacts[existingIndex].followUpNotes, note),
+      }
+    : {
+        id: `crm_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+        businessId: normalizedBusinessId,
+        name: String(name || 'Lead').trim() || 'Lead',
+        phone: normalizedPhone,
+        email: email ? String(email).trim() : undefined,
+        lastInteraction: String(occurredAt || new Date().toISOString()),
+        followUpNotes: String(note || '').trim() || undefined,
+        loyaltyPoints: 0,
+      });
+
+  if (!nextContact) {
+    return null;
+  }
+
+  const nextContacts = existingIndex >= 0
+    ? existingContacts.map((contact, index) => (index === existingIndex ? nextContact : contact))
+    : [nextContact, ...existingContacts];
+
+  await writeCrmContacts(nextContacts);
+  return nextContact;
+}
+
+async function readAuditEvents() {
+  const client = await getPgClient();
+  if (client) {
+    const result = await client.query(
+      `SELECT id, timestamp, action_type, description, details, ip_address, device_code, user_name
+       FROM compliance_audit_logs
+       ORDER BY timestamp DESC
+       LIMIT 1000`,
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      timestamp: row.timestamp instanceof Date ? row.timestamp.toISOString() : String(row.timestamp),
+      actionType: row.action_type,
+      description: row.description,
+      details: row.details,
+      ipAddress: row.ip_address,
+      deviceCode: row.device_code,
+      userName: row.user_name,
+    }));
+  }
+
+  try {
+    const raw = await fs.readFile(auditLogPath, 'utf8');
+    return raw
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        try {
+          return JSON.parse(line);
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean)
+      .sort((left, right) => new Date(String(right.timestamp || '')).getTime() - new Date(String(left.timestamp || '')).getTime())
+      .slice(0, 1000);
+  } catch {
+    return [];
+  }
+}
+
+function sanitizeBuyerActivityEvent(value, index = 0) {
+  if (!value || typeof value !== 'object') return null;
+  const event = value;
+  const title = String(event.title || '').trim();
+  if (!title) return null;
+  const actionType = ['saved_listing', 'unsaved_listing', 'contact_unlock', 'review_submitted'].includes(String(event.actionType || ''))
+    ? String(event.actionType)
+    : 'saved_listing';
+  return {
+    id: String(event.id || `buyer_evt_${Date.now()}_${index + 1}`).trim(),
+    actionType,
+    businessId: event.businessId ? String(event.businessId).trim() : undefined,
+    createdAt: String(event.createdAt || new Date().toISOString()),
+    title,
+    detail: event.detail ? String(event.detail).trim() : undefined,
+  };
+}
+
+function sanitizeBuyerStateSnapshot(value) {
+  const source = value && typeof value === 'object' ? value : {};
+  const viewedBusinessIds = Array.isArray(source.viewedBusinessIds)
+    ? Array.from(new Set(source.viewedBusinessIds.map((entry) => String(entry || '').trim()).filter(Boolean)))
+    : [];
+  const savedBusinessIds = Array.isArray(source.savedBusinessIds)
+    ? Array.from(new Set(source.savedBusinessIds.map((entry) => String(entry || '').trim()).filter(Boolean)))
+    : [];
+  const buyerActivityEvents = Array.isArray(source.buyerActivityEvents)
+    ? source.buyerActivityEvents
+        .map((event, index) => sanitizeBuyerActivityEvent(event, index))
+        .filter(Boolean)
+        .sort((left, right) => new Date(String(right.createdAt || '')).getTime() - new Date(String(left.createdAt || '')).getTime())
+        .slice(0, 50)
+    : [];
+  return {
+    viewedBusinessIds,
+    savedBusinessIds,
+    buyerActivityEvents,
+  };
+}
+
+async function readBuyerStateForUser(userId) {
+  const normalizedUserId = String(userId || '').trim();
+  if (!normalizedUserId) {
+    return sanitizeBuyerStateSnapshot({});
+  }
+
+  const client = await getPgClient();
+  if (client) {
+    const result = await client.query(
+      `SELECT value
+       FROM app_state
+       WHERE key = $1
+       LIMIT 1`,
+      [`buyer_state:${normalizedUserId}`],
+    );
+    return sanitizeBuyerStateSnapshot(result.rows[0]?.value);
+  }
+
+  if (!memoryBuyerStates) {
+    try {
+      const raw = await fs.readFile(buyerStatesPath, 'utf8');
+      const parsed = JSON.parse(raw);
+      memoryBuyerStates = parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+      memoryBuyerStates = {};
+    }
+  }
+
+  return sanitizeBuyerStateSnapshot(memoryBuyerStates?.[normalizedUserId]);
+}
+
+async function writeBuyerStateForUser(userId, state) {
+  const normalizedUserId = String(userId || '').trim();
+  const sanitizedState = sanitizeBuyerStateSnapshot(state);
+  if (!normalizedUserId) {
+    return sanitizedState;
+  }
+
+  const client = await getPgClient();
+  if (client) {
+    await client.query(
+      `INSERT INTO app_state (key, value, updated_at)
+       VALUES ($1, $2::jsonb, NOW())
+       ON CONFLICT (key)
+       DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+      [`buyer_state:${normalizedUserId}`, JSON.stringify(sanitizedState)],
+    );
+    return sanitizedState;
+  }
+
+  if (!memoryBuyerStates) {
+    try {
+      const raw = await fs.readFile(buyerStatesPath, 'utf8');
+      const parsed = JSON.parse(raw);
+      memoryBuyerStates = parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+      memoryBuyerStates = {};
+    }
+  }
+
+  const nextStates = {
+    ...(memoryBuyerStates && typeof memoryBuyerStates === 'object' ? memoryBuyerStates : {}),
+    [normalizedUserId]: sanitizedState,
+  };
+
+  try {
+    await fs.writeFile(buyerStatesPath, JSON.stringify(nextStates, null, 2), 'utf8');
+    memoryBuyerStates = nextStates;
+    return sanitizedState;
+  } catch (err) {
+    console.warn('buyer-states.json write failed, using in-memory buyer state store:', err?.message || err);
+    memoryBuyerStates = nextStates;
+    return sanitizedState;
   }
 }
 
@@ -1340,6 +1862,9 @@ function sanitizeHomepageConfig(value) {
           resolvedHomepageEndpoint: '/api/resolved-homepage',
           publishResolvedHomepageEndpoint: '/api/resolved-homepage/publish',
           businessesEndpoint: '/api/businesses',
+          reviewsEndpoint: '/api/reviews',
+          crmContactsEndpoint: '/api/crm-contacts',
+          buyerStateEndpoint: '/api/buyer-state',
           auditEventsEndpoint: '/api/audit-events',
           autoSyncHomepage: true,
           autoSyncBusinesses: true,
@@ -1715,19 +2240,19 @@ function sanitizeSeoDiscoveryConfigState(value) {
   const source = value && typeof value === 'object' ? value : {};
   const routeIntents = Array.isArray(source.routeIntents)
     ? source.routeIntents.map(sanitizeSeoRouteIntent).filter((intent) => intent.id && intent.slug && intent.categoryId && intent.q)
-    : DEFAULT_SEO_ROUTE_INTENTS.map(sanitizeSeoRouteIntent).filter((intent) => intent.id && intent.slug && intent.categoryId && intent.q);
+    : (Array.isArray(SEO_DISCOVERY_BOOTSTRAP.routeIntents) ? SEO_DISCOVERY_BOOTSTRAP.routeIntents : []).map(sanitizeSeoRouteIntent).filter((intent) => intent.id && intent.slug && intent.categoryId && intent.q);
   const localityMetadata = Array.isArray(source.localityMetadata)
     ? source.localityMetadata.map(sanitizeSeoLocalityMetadata).filter((locality) => locality.id && locality.name)
-    : DEFAULT_SEO_LOCALITY_METADATA.map(sanitizeSeoLocalityMetadata).filter((locality) => locality.id && locality.name);
+    : (Array.isArray(SEO_DISCOVERY_BOOTSTRAP.localityMetadata) ? SEO_DISCOVERY_BOOTSTRAP.localityMetadata : []).map(sanitizeSeoLocalityMetadata).filter((locality) => locality.id && locality.name);
   const categoryLabels = Array.isArray(source.categoryLabels)
     ? source.categoryLabels.map(sanitizeSeoCategoryLabel).filter((label) => label.categoryId && label.label)
-    : DEFAULT_SEO_CATEGORY_LABELS.map(sanitizeSeoCategoryLabel).filter((label) => label.categoryId && label.label);
+    : (Array.isArray(SEO_DISCOVERY_BOOTSTRAP.categoryLabels) ? SEO_DISCOVERY_BOOTSTRAP.categoryLabels : []).map(sanitizeSeoCategoryLabel).filter((label) => label.categoryId && label.label);
   const topListings = Array.isArray(source.topListings)
     ? source.topListings.map(sanitizeSeoTopListingGroup).filter((group) => group.localityId && group.categoryId && group.listingNames.length > 0)
-    : DEFAULT_SEO_TOP_LISTINGS.map(sanitizeSeoTopListingGroup).filter((group) => group.localityId && group.categoryId && group.listingNames.length > 0);
+    : (Array.isArray(SEO_DISCOVERY_BOOTSTRAP.topListings) ? SEO_DISCOVERY_BOOTSTRAP.topListings : []).map(sanitizeSeoTopListingGroup).filter((group) => group.localityId && group.categoryId && group.listingNames.length > 0);
   const defaultListingNames = Array.isArray(source.defaultListingNames)
     ? source.defaultListingNames.map(sanitizeSeoDefaultListingGroup).filter((group) => group.categoryId && group.listingNames.length > 0)
-    : DEFAULT_SEO_DEFAULT_LISTING_NAMES.map(sanitizeSeoDefaultListingGroup).filter((group) => group.categoryId && group.listingNames.length > 0);
+    : (Array.isArray(SEO_DISCOVERY_BOOTSTRAP.defaultListingNames) ? SEO_DISCOVERY_BOOTSTRAP.defaultListingNames : []).map(sanitizeSeoDefaultListingGroup).filter((group) => group.categoryId && group.listingNames.length > 0);
   return {
     routeIntents,
     localityMetadata,
@@ -1739,6 +2264,17 @@ function sanitizeSeoDiscoveryConfigState(value) {
       updatedAt: String(source.metadata?.updatedAt || new Date().toISOString()),
     },
   };
+}
+
+function seoDiscoveryConfigNeedsBackfill(value) {
+  const source = value && typeof value === 'object' ? value : {};
+  return (
+    !Array.isArray(source.routeIntents) ||
+    !Array.isArray(source.localityMetadata) ||
+    !Array.isArray(source.categoryLabels) ||
+    !Array.isArray(source.topListings) ||
+    !Array.isArray(source.defaultListingNames)
+  );
 }
 
 function buildSeoDiscoveryContext(config) {
@@ -1883,7 +2419,7 @@ function sanitizePincodeRoutingMapping(value) {
 }
 
 function sanitizeLocalityRoutingConfigState(value) {
-  const seedLocalities = DEFAULT_LOCALITIES.map(sanitizeLocality);
+  const seedLocalities = (Array.isArray(LOCALITY_ROUTING_BOOTSTRAP.localities) ? LOCALITY_ROUTING_BOOTSTRAP.localities : []).map(sanitizeLocality).filter((locality) => locality.id && locality.name);
   const source = value && typeof value === 'object' ? value : {};
   const localities = Array.isArray(source.localities)
     ? source.localities.map(sanitizeLocality).filter((locality) => locality.id && locality.name)
@@ -1893,15 +2429,19 @@ function sanitizeLocalityRoutingConfigState(value) {
     ? source.subdomains
         .map(sanitizeSubdomainMapping)
         .filter((subdomain) => subdomain.domain && localityIds.has(subdomain.localityId))
-    : buildDefaultSubdomainMappings(localities).map(sanitizeSubdomainMapping);
+    : (
+      Array.isArray(LOCALITY_ROUTING_BOOTSTRAP.subdomains)
+        ? LOCALITY_ROUTING_BOOTSTRAP.subdomains.map(sanitizeSubdomainMapping)
+        : buildBootstrapSubdomainMappings(localities).map(sanitizeSubdomainMapping)
+    ).filter((subdomain) => subdomain.domain && localityIds.has(subdomain.localityId));
   const pincodeMappings = Array.isArray(source.pincodeMappings)
     ? source.pincodeMappings
         .map(sanitizePincodeRoutingMapping)
         .filter((mapping) => mapping.pincode && localityIds.has(mapping.localityId))
-    : DEFAULT_PINCODE_MAPPINGS.map(sanitizePincodeRoutingMapping);
+    : (Array.isArray(LOCALITY_ROUTING_BOOTSTRAP.pincodeMappings) ? LOCALITY_ROUTING_BOOTSTRAP.pincodeMappings : []).map(sanitizePincodeRoutingMapping).filter((mapping) => mapping.pincode && localityIds.has(mapping.localityId));
   const defaultLocalityId = localityIds.has(String(source.defaultLocalityId || ''))
     ? String(source.defaultLocalityId)
-    : (localities[0]?.id || DEFAULT_LOCALITY_ID);
+    : (localities[0]?.id || String(LOCALITY_ROUTING_BOOTSTRAP.defaultLocalityId || '').trim() || 'locality-default');
   return {
     localities,
     subdomains,
@@ -1912,6 +2452,17 @@ function sanitizeLocalityRoutingConfigState(value) {
       updatedAt: String(source.metadata?.updatedAt || new Date().toISOString()),
     },
   };
+}
+
+function localityRoutingConfigNeedsBackfill(value) {
+  const source = value && typeof value === 'object' ? value : {};
+  return (
+    !Array.isArray(source.localities) ||
+    !Array.isArray(source.subdomains) ||
+    !Array.isArray(source.pincodeMappings) ||
+    typeof source.defaultLocalityId !== 'string' ||
+    String(source.defaultLocalityId || '').trim().length === 0
+  );
 }
 
 function sanitizeStateMaster(value, index = 0) {
@@ -2017,7 +2568,7 @@ function sanitizeHomepageDefaultsConfigState(value) {
           id: String(payload.id || `template_section_${index + 1}`),
         };
       }).filter(Boolean)
-    : cloneJson(DEFAULT_HOMEPAGE_SECTION_TEMPLATES, []) || [];
+    : cloneJson(HOMEPAGE_DEFAULTS_BOOTSTRAP.sectionTemplates, []) || [];
   const fallbackListingAds = Array.isArray(source.fallbackListingAds)
     ? source.fallbackListingAds.map((ad, index) => {
         const payload = cloneJson(ad, {}) || {};
@@ -2026,11 +2577,12 @@ function sanitizeHomepageDefaultsConfigState(value) {
           id: String(payload.id || `fallback_ad_${index + 1}`),
         };
       }).filter(Boolean)
-    : cloneJson(DEFAULT_FALLBACK_LISTING_AD_TEMPLATES, []) || [];
+    : cloneJson(HOMEPAGE_DEFAULTS_BOOTSTRAP.fallbackListingAds, []) || [];
   const heroStatTemplates = Array.isArray(source.heroStatTemplates) && source.heroStatTemplates.length > 0
     ? source.heroStatTemplates.map((stat, index) => {
         const payload = cloneJson(stat, {}) || {};
-        const fallback = DEFAULT_HERO_STAT_TEMPLATES[index] || DEFAULT_HERO_STAT_TEMPLATES[0] || {};
+        const bootstrapStats = Array.isArray(HOMEPAGE_DEFAULTS_BOOTSTRAP.heroStatTemplates) ? HOMEPAGE_DEFAULTS_BOOTSTRAP.heroStatTemplates : [];
+        const fallback = bootstrapStats[index] || bootstrapStats[0] || {};
         return {
           enabled: payload.enabled ?? fallback.enabled ?? true,
           label: String(payload.label || fallback.label || `Stat ${index + 1}`),
@@ -2039,7 +2591,7 @@ function sanitizeHomepageDefaultsConfigState(value) {
           pincodes: normalizeStringList(payload.pincodes),
         };
       }).filter(Boolean)
-    : cloneJson(DEFAULT_HERO_STAT_TEMPLATES, []) || [];
+    : cloneJson(HOMEPAGE_DEFAULTS_BOOTSTRAP.heroStatTemplates, []) || [];
   const heroQuickActions = Array.isArray(source.heroQuickActions) && source.heroQuickActions.length > 0
     ? source.heroQuickActions.map((shortcut) => {
         const payload = cloneJson(shortcut, {}) || {};
@@ -2049,12 +2601,15 @@ function sanitizeHomepageDefaultsConfigState(value) {
           subcategoryId: payload.subcategoryId ? String(payload.subcategoryId).trim() : undefined,
         };
       }).filter((shortcut) => shortcut.categoryId)
-    : cloneJson(DEFAULT_HERO_QUICK_ACTIONS, []) || [];
+    : cloneJson(HOMEPAGE_DEFAULTS_BOOTSTRAP.heroQuickActions, []) || [];
   const searchShortcutCategoryIds = Array.isArray(source.searchShortcutCategoryIds) && source.searchShortcutCategoryIds.length > 0
     ? normalizeStringList(source.searchShortcutCategoryIds)
-    : cloneJson(DEFAULT_SEARCH_SHORTCUT_CATEGORY_IDS, []) || [];
+    : cloneJson(HOMEPAGE_DEFAULTS_BOOTSTRAP.searchShortcutCategoryIds, []) || [];
   const draftDefaultsSource = source.heroBannerDraftDefaults && typeof source.heroBannerDraftDefaults === 'object'
     ? source.heroBannerDraftDefaults
+    : {};
+  const bootstrapDraftDefaults = HOMEPAGE_DEFAULTS_BOOTSTRAP.heroBannerDraftDefaults && typeof HOMEPAGE_DEFAULTS_BOOTSTRAP.heroBannerDraftDefaults === 'object'
+    ? HOMEPAGE_DEFAULTS_BOOTSTRAP.heroBannerDraftDefaults
     : {};
   return {
     sectionTemplates,
@@ -2063,18 +2618,31 @@ function sanitizeHomepageDefaultsConfigState(value) {
     heroQuickActions,
     searchShortcutCategoryIds,
     heroBannerDraftDefaults: {
-      ctaLabel: String(draftDefaultsSource.ctaLabel || DEFAULT_HERO_BANNER_DRAFT_DEFAULTS.ctaLabel),
+      ctaLabel: String(draftDefaultsSource.ctaLabel || bootstrapDraftDefaults.ctaLabel || 'Explore Businesses'),
       ctaType: ['landing_page', 'landing_listing', 'lead_form', 'search_category'].includes(String(draftDefaultsSource.ctaType || ''))
         ? String(draftDefaultsSource.ctaType)
-        : DEFAULT_HERO_BANNER_DRAFT_DEFAULTS.ctaType,
-      ctaTarget: String(draftDefaultsSource.ctaTarget || DEFAULT_HERO_BANNER_DRAFT_DEFAULTS.ctaTarget),
-      durationDays: Math.max(1, parseInt(String(draftDefaultsSource.durationDays || DEFAULT_HERO_BANNER_DRAFT_DEFAULTS.durationDays), 10) || DEFAULT_HERO_BANNER_DRAFT_DEFAULTS.durationDays),
+        : String(bootstrapDraftDefaults.ctaType || 'search_category'),
+      ctaTarget: String(draftDefaultsSource.ctaTarget || bootstrapDraftDefaults.ctaTarget || 'all'),
+      durationDays: Math.max(1, parseInt(String(draftDefaultsSource.durationDays || bootstrapDraftDefaults.durationDays || 30), 10) || Number(bootstrapDraftDefaults.durationDays || 30)),
     },
     metadata: {
       seededFromCode: source.metadata?.seededFromCode ?? true,
       updatedAt: String(source.metadata?.updatedAt || new Date().toISOString()),
     },
   };
+}
+
+function homepageDefaultsConfigNeedsBackfill(value) {
+  const source = value && typeof value === 'object' ? value : {};
+  return (
+    !Array.isArray(source.sectionTemplates) ||
+    !Array.isArray(source.fallbackListingAds) ||
+    !Array.isArray(source.heroStatTemplates) ||
+    !Array.isArray(source.heroQuickActions) ||
+    !Array.isArray(source.searchShortcutCategoryIds) ||
+    !source.heroBannerDraftDefaults ||
+    typeof source.heroBannerDraftDefaults !== 'object'
+  );
 }
 
 function normalizeCmsStatus(value) {
@@ -2272,6 +2840,9 @@ function buildLegacyScalableCampaignSources(homepageConfig, businesses) {
       resolvedHomepageEndpoint: '/api/resolved-homepage',
       publishResolvedHomepageEndpoint: '/api/resolved-homepage/publish',
       businessesEndpoint: '/api/businesses',
+      reviewsEndpoint: '/api/reviews',
+      crmContactsEndpoint: '/api/crm-contacts',
+      buyerStateEndpoint: '/api/buyer-state',
       auditEventsEndpoint: '/api/audit-events',
       autoSyncHomepage: true,
       autoSyncBusinesses: true,
@@ -2638,6 +3209,9 @@ function buildScalableCmsSeedFromLegacy(homepageConfig, businesses) {
       resolvedHomepageEndpoint: '/api/resolved-homepage',
       publishResolvedHomepageEndpoint: '/api/resolved-homepage/publish',
       businessesEndpoint: '/api/businesses',
+      reviewsEndpoint: '/api/reviews',
+      crmContactsEndpoint: '/api/crm-contacts',
+      buyerStateEndpoint: '/api/buyer-state',
       auditEventsEndpoint: '/api/audit-events',
       autoSyncHomepage: true,
       autoSyncBusinesses: true,
@@ -2954,7 +3528,12 @@ async function readLocalityRoutingConfig() {
   const client = await getPgClient();
   if (client) {
     const tableState = await readLocalityRoutingConfigFromTables(client);
-    if (tableState) return tableState;
+    if (tableState) {
+      if (localityRoutingConfigNeedsBackfill(tableState)) {
+        await syncLocalityRoutingConfigToTables(client, tableState);
+      }
+      return tableState;
+    }
     const seeded = sanitizeLocalityRoutingConfigState(null);
     await syncLocalityRoutingConfigToTables(client, seeded);
     return seeded;
@@ -2968,10 +3547,18 @@ async function readLocalityRoutingConfig() {
     const raw = await fs.readFile(localityRoutingConfigPath, 'utf8');
     const data = JSON.parse(raw);
     const sanitized = sanitizeLocalityRoutingConfigState(data);
+    if (localityRoutingConfigNeedsBackfill(data)) {
+      await fs.writeFile(localityRoutingConfigPath, JSON.stringify(sanitized, null, 2), 'utf8');
+    }
     memoryLocalityRoutingConfig = sanitized;
     return sanitized;
   } catch {
     const seeded = sanitizeLocalityRoutingConfigState(null);
+    try {
+      await fs.writeFile(localityRoutingConfigPath, JSON.stringify(seeded, null, 2), 'utf8');
+    } catch (err) {
+      console.warn('locality-routing-config.json bootstrap write failed, using in-memory routing store:', err?.message || err);
+    }
     memoryLocalityRoutingConfig = seeded;
     return seeded;
   }
@@ -3138,7 +3725,19 @@ async function readHomepageDefaultsConfig() {
       ['homepage_defaults_config'],
     );
     const data = result.rows[0]?.value;
-    if (data) return sanitizeHomepageDefaultsConfigState(data);
+    if (data) {
+      const sanitized = sanitizeHomepageDefaultsConfigState(data);
+      if (homepageDefaultsConfigNeedsBackfill(data)) {
+        await client.query(
+          `INSERT INTO app_state (key, value, updated_at)
+           VALUES ($1, $2::jsonb, NOW())
+           ON CONFLICT (key)
+           DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+          ['homepage_defaults_config', JSON.stringify(sanitized)],
+        );
+      }
+      return sanitized;
+    }
     const seeded = sanitizeHomepageDefaultsConfigState(null);
     await client.query(
       `INSERT INTO app_state (key, value, updated_at)
@@ -3158,6 +3757,9 @@ async function readHomepageDefaultsConfig() {
     const raw = await fs.readFile(homepageDefaultsConfigPath, 'utf8');
     const data = JSON.parse(raw);
     const sanitized = sanitizeHomepageDefaultsConfigState(data);
+    if (homepageDefaultsConfigNeedsBackfill(data)) {
+      await fs.writeFile(homepageDefaultsConfigPath, JSON.stringify(sanitized, null, 2), 'utf8');
+    }
     memoryHomepageDefaultsConfig = sanitized;
     return sanitized;
   } catch {
@@ -3203,7 +3805,19 @@ async function readSeoDiscoveryConfig() {
       ['seo_discovery_config'],
     );
     const data = result.rows[0]?.value;
-    if (data) return sanitizeSeoDiscoveryConfigState(data);
+    if (data) {
+      const sanitized = sanitizeSeoDiscoveryConfigState(data);
+      if (seoDiscoveryConfigNeedsBackfill(data)) {
+        await client.query(
+          `INSERT INTO app_state (key, value, updated_at)
+           VALUES ($1, $2::jsonb, NOW())
+           ON CONFLICT (key)
+           DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+          ['seo_discovery_config', JSON.stringify(sanitized)],
+        );
+      }
+      return sanitized;
+    }
     const seeded = sanitizeSeoDiscoveryConfigState(null);
     await client.query(
       `INSERT INTO app_state (key, value, updated_at)
@@ -3223,10 +3837,18 @@ async function readSeoDiscoveryConfig() {
     const raw = await fs.readFile(seoDiscoveryConfigPath, 'utf8');
     const data = JSON.parse(raw);
     const sanitized = sanitizeSeoDiscoveryConfigState(data);
+    if (seoDiscoveryConfigNeedsBackfill(data)) {
+      await fs.writeFile(seoDiscoveryConfigPath, JSON.stringify(sanitized, null, 2), 'utf8');
+    }
     memorySeoDiscoveryConfig = sanitized;
     return sanitized;
   } catch {
     const seeded = sanitizeSeoDiscoveryConfigState(null);
+    try {
+      await fs.writeFile(seoDiscoveryConfigPath, JSON.stringify(seeded, null, 2), 'utf8');
+    } catch (err) {
+      console.warn('seo-discovery-config.json bootstrap write failed, using in-memory seo discovery store:', err?.message || err);
+    }
     memorySeoDiscoveryConfig = seeded;
     return seeded;
   }
@@ -3350,6 +3972,9 @@ async function mutateLegacyHomepageLayout(localityId, mutateLayout, fallbackLayo
       resolvedHomepageEndpoint: '/api/resolved-homepage',
       publishResolvedHomepageEndpoint: '/api/resolved-homepage/publish',
       businessesEndpoint: '/api/businesses',
+      reviewsEndpoint: '/api/reviews',
+      crmContactsEndpoint: '/api/crm-contacts',
+      buyerStateEndpoint: '/api/buyer-state',
       auditEventsEndpoint: '/api/audit-events',
       autoSyncHomepage: true,
       autoSyncBusinesses: true,
@@ -3413,6 +4038,9 @@ async function saveLegacyHomepageLayout(localityId, layoutInput) {
       resolvedHomepageEndpoint: '/api/resolved-homepage',
       publishResolvedHomepageEndpoint: '/api/resolved-homepage/publish',
       businessesEndpoint: '/api/businesses',
+      reviewsEndpoint: '/api/reviews',
+      crmContactsEndpoint: '/api/crm-contacts',
+      buyerStateEndpoint: '/api/buyer-state',
       auditEventsEndpoint: '/api/audit-events',
       autoSyncHomepage: true,
       autoSyncBusinesses: true,
@@ -3473,6 +4101,9 @@ async function deleteLegacyHomepageLayout(localityId) {
       resolvedHomepageEndpoint: '/api/resolved-homepage',
       publishResolvedHomepageEndpoint: '/api/resolved-homepage/publish',
       businessesEndpoint: '/api/businesses',
+      reviewsEndpoint: '/api/reviews',
+      crmContactsEndpoint: '/api/crm-contacts',
+      buyerStateEndpoint: '/api/buyer-state',
       auditEventsEndpoint: '/api/audit-events',
       autoSyncHomepage: true,
       autoSyncBusinesses: true,
@@ -3511,6 +4142,9 @@ async function saveLegacyHomepageLayouts(layoutsInput) {
       resolvedHomepageEndpoint: '/api/resolved-homepage',
       publishResolvedHomepageEndpoint: '/api/resolved-homepage/publish',
       businessesEndpoint: '/api/businesses',
+      reviewsEndpoint: '/api/reviews',
+      crmContactsEndpoint: '/api/crm-contacts',
+      buyerStateEndpoint: '/api/buyer-state',
       auditEventsEndpoint: '/api/audit-events',
       autoSyncHomepage: true,
       autoSyncBusinesses: true,
@@ -3549,6 +4183,9 @@ async function saveHomepageApiConfiguration(apiConfigurationInput) {
       resolvedHomepageEndpoint: '/api/resolved-homepage',
       publishResolvedHomepageEndpoint: '/api/resolved-homepage/publish',
       businessesEndpoint: '/api/businesses',
+      reviewsEndpoint: '/api/reviews',
+      crmContactsEndpoint: '/api/crm-contacts',
+      buyerStateEndpoint: '/api/buyer-state',
       auditEventsEndpoint: '/api/audit-events',
       autoSyncHomepage: true,
       autoSyncBusinesses: true,
@@ -3593,6 +4230,8 @@ async function mutateHomepageConfigState(mutator) {
       resolvedHomepageEndpoint: '/api/resolved-homepage',
       publishResolvedHomepageEndpoint: '/api/resolved-homepage/publish',
       businessesEndpoint: '/api/businesses',
+      reviewsEndpoint: '/api/reviews',
+      crmContactsEndpoint: '/api/crm-contacts',
       auditEventsEndpoint: '/api/audit-events',
       autoSyncHomepage: true,
       autoSyncBusinesses: true,
@@ -5258,6 +5897,7 @@ async function getPgClient() {
         status TEXT NOT NULL DEFAULT 'active'
       )
     `);
+    await pgPool.query(`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS seller_business_id TEXT`);
     await pgPool.query(`
       CREATE TABLE IF NOT EXISTS auth_otp_challenges (
         id TEXT PRIMARY KEY,
@@ -5593,13 +6233,133 @@ app.put('/api/businesses', async (req, res) => {
   }
 });
 
+app.get('/api/reviews', async (_req, res) => {
+  try {
+    const reviews = await readReviews();
+    res.json({ ok: true, reviews });
+  } catch (err) {
+    console.error('Failed to read reviews:', err);
+    res.status(500).json({ ok: false, error: 'Failed to read reviews' });
+  }
+});
+
+app.post('/api/reviews', async (req, res) => {
+  if (!enforceTrustedWriteOrigin(req, res)) {
+    return;
+  }
+  if (!enforcePublicWriteThrottle(req, res, {
+    bucket: 'reviews:create',
+    limit: 8,
+    windowMs: 10 * 60 * 1000,
+    keySuffix: String(req.body?.review?.businessId || ''),
+  })) {
+    return;
+  }
+
+  const incomingReview = sanitizeReview(req.body?.review);
+  if (!incomingReview) {
+    return res.status(400).json({ ok: false, error: 'review object is required' });
+  }
+
+  try {
+    const existingReviews = await readReviews();
+    const reviews = [incomingReview, ...existingReviews.filter((review) => review.id !== incomingReview.id)];
+    const savedReviews = await writeReviews(reviews);
+    res.status(201).json({ ok: true, review: incomingReview, reviews: savedReviews });
+  } catch (err) {
+    console.error('Failed to save review:', err);
+    res.status(500).json({ ok: false, error: 'Failed to save review' });
+  }
+});
+
+app.get('/api/crm-contacts', async (req, res) => {
+  const access = await resolveSellerOrPrivilegedAccess(req, res);
+  if (!access) return;
+
+  try {
+    const crmContacts = await readCrmContacts();
+    const visibleContacts = access.scope === 'all'
+      ? crmContacts
+      : crmContacts.filter((contact) => String(contact.businessId || '').trim() === access.sellerBusinessId);
+    res.json({ ok: true, crmContacts: visibleContacts });
+  } catch (err) {
+    console.error('Failed to read CRM contacts:', err);
+    res.status(500).json({ ok: false, error: 'Failed to read CRM contacts' });
+  }
+});
+
+app.post('/api/crm-contacts', async (req, res) => {
+  const access = await resolveSellerOrPrivilegedAccess(req, res, { write: true });
+  if (!access) return;
+
+  const incomingContact = sanitizeCrmContact(access.scope === 'seller'
+    ? {
+        ...(req.body?.crmContact && typeof req.body.crmContact === 'object' ? req.body.crmContact : {}),
+        businessId: access.sellerBusinessId,
+      }
+    : req.body?.crmContact);
+  if (!incomingContact) {
+    return res.status(400).json({ ok: false, error: 'crmContact object is required' });
+  }
+
+  try {
+    const existingContacts = await readCrmContacts();
+    const crmContacts = [incomingContact, ...existingContacts.filter((contact) => contact.id !== incomingContact.id)];
+    const savedContacts = await writeCrmContacts(crmContacts);
+    res.status(201).json({ ok: true, crmContact: incomingContact, crmContacts: savedContacts });
+  } catch (err) {
+    console.error('Failed to save CRM contact:', err);
+    res.status(500).json({ ok: false, error: 'Failed to save CRM contact' });
+  }
+});
+
+app.put('/api/crm-contacts/:contactId', async (req, res) => {
+  const access = await resolveSellerOrPrivilegedAccess(req, res, { write: true });
+  if (!access) return;
+
+  const incomingContact = sanitizeCrmContact(access.scope === 'seller'
+    ? {
+        ...(req.body?.crmContact && typeof req.body.crmContact === 'object' ? req.body.crmContact : {}),
+        id: req.params.contactId,
+        businessId: access.sellerBusinessId,
+      }
+    : {
+        ...(req.body?.crmContact && typeof req.body.crmContact === 'object' ? req.body.crmContact : {}),
+        id: req.params.contactId,
+      });
+  if (!incomingContact) {
+    return res.status(400).json({ ok: false, error: 'crmContact object is required' });
+  }
+
+  try {
+    const existingContacts = await readCrmContacts();
+    if (access.scope === 'seller') {
+      const existingContact = existingContacts.find((contact) => contact.id === incomingContact.id);
+      if (existingContact && String(existingContact.businessId || '').trim() !== access.sellerBusinessId) {
+        return res.status(403).json({ ok: false, error: 'Cannot modify another seller\'s CRM contact' });
+      }
+    }
+    const crmContacts = existingContacts.some((contact) => contact.id === incomingContact.id)
+      ? existingContacts.map((contact) => (contact.id === incomingContact.id ? incomingContact : contact))
+      : [incomingContact, ...existingContacts];
+    const savedContacts = await writeCrmContacts(crmContacts);
+    res.json({ ok: true, crmContact: incomingContact, crmContacts: savedContacts });
+  } catch (err) {
+    console.error('Failed to update CRM contact:', err);
+    res.status(500).json({ ok: false, error: 'Failed to update CRM contact' });
+  }
+});
+
 app.get('/api/ad-leads', async (req, res) => {
-  const access = requirePrivilegedWriteAccess(req, res);
+  const access = await resolveSellerOrPrivilegedAccess(req, res);
   if (!access) return;
 
   try {
     const adLeads = await readAdLeads();
-    res.json({ ok: true, adLeads });
+    const visibleAdLeads = access.scope === 'all'
+      ? adLeads
+      : adLeads.filter((lead) => String(lead.sellerBusinessId || '').trim() === access.sellerBusinessId);
+    res.json({ ok: true, adLeads: visibleAdLeads });
   } catch (err) {
     console.error('Failed to read ad leads:', err);
     res.status(500).json({ ok: false, error: 'Failed to read ad leads' });
@@ -5624,7 +6384,16 @@ app.post('/api/ad-leads', async (req, res) => {
     const existingLeads = await readAdLeads();
     const adLeads = [incomingLead, ...existingLeads];
     const savedAdLeads = await writeAdLeads(adLeads);
-    res.status(201).json({ ok: true, adLead: incomingLead, adLeads: savedAdLeads });
+    const crmContact = incomingLead.sellerBusinessId
+      ? await upsertCrmContactFromLead({
+          businessId: incomingLead.sellerBusinessId,
+          name: incomingLead.name,
+          phone: incomingLead.mobile,
+          occurredAt: incomingLead.createdAt,
+          note: `Lead captured from ad campaign (${incomingLead.adId})`,
+        })
+      : null;
+    res.status(201).json({ ok: true, adLead: incomingLead, adLeads: savedAdLeads, crmContact });
   } catch (err) {
     console.error('Failed to save ad lead:', err);
     res.status(500).json({ ok: false, error: 'Failed to save ad lead' });
@@ -7061,10 +7830,11 @@ app.post('/api/auth/register/verify-otp', async (req, res) => {
       exp,
     });
 
+    const authUser = await buildResolvedAuthUserResponse(created);
     res.json({
       ok: true,
       token,
-      user: buildAuthUserResponse(created),
+      user: authUser,
     });
   } catch (err) {
     console.error('Failed to verify registration OTP:', err);
@@ -7110,11 +7880,12 @@ app.post('/api/auth/request-otp', async (req, res) => {
       mobile,
       purpose: 'public-login',
     });
+    const authUser = await buildResolvedAuthUserResponse(user);
     res.json({
       ok: true,
       challengeToken,
       mobile,
-      user: buildAuthUserResponse(user),
+      user: authUser,
     });
   } catch (err) {
     console.error('Failed to send public OTP:', err);
@@ -7281,9 +8052,21 @@ app.post('/api/contact-unlock/record-view', async (req, res) => {
       deviceId: normalizedDeviceId,
     });
 
+    const crmContact = normalizedPhone
+      ? await upsertCrmContactFromLead({
+          businessId: normalizedBusinessId,
+          name: String(viewerName || authenticatedUser?.name || authenticatedUser?.email || 'Verified lead').trim(),
+          phone: normalizedPhone,
+          email: authenticatedUser?.email || undefined,
+          occurredAt: new Date().toISOString(),
+          note: 'Lead captured from verified contact unlock',
+        })
+      : null;
+
     res.json({
       ok: true,
       businessId: normalizedBusinessId,
+      crmContact,
       limit: CONTACT_VIEW_DAILY_LIMIT,
       counts: {
         login: counts.loginCount + 1,
@@ -7401,10 +8184,11 @@ app.post('/api/auth/verify-otp', async (req, res) => {
       exp,
     });
 
+    const authUser = await buildResolvedAuthUserResponse(user);
     res.json({
       ok: true,
       token,
-      user: buildAuthUserResponse(user),
+      user: authUser,
     });
   } catch (err) {
     console.error('Failed to verify OTP:', err);
@@ -7425,10 +8209,54 @@ app.get('/api/auth/me', async (req, res) => {
   const users = await readUsers();
   const user = users.find((u) => u.id === payload.sub);
   if (!user) return res.status(401).json({ ok: false, error: 'Unauthorized' });
+  const authUser = await buildResolvedAuthUserResponse(user);
   res.json({
     ok: true,
-    user: buildAuthUserResponse(user),
+    user: authUser,
   });
+});
+
+app.get('/api/buyer-state', async (req, res) => {
+  const authenticated = await readAuthenticatedUserFromRequest(req, res);
+  if (!authenticated) return;
+
+  try {
+    const state = await readBuyerStateForUser(authenticated.user.id);
+    res.json({ ok: true, state });
+  } catch (err) {
+    console.error('Failed to read buyer state:', err);
+    res.status(500).json({ ok: false, error: 'Failed to read buyer state' });
+  }
+});
+
+app.put('/api/buyer-state', async (req, res) => {
+  if (!enforceTrustedWriteOrigin(req, res)) {
+    return;
+  }
+
+  const authenticated = await readAuthenticatedUserFromRequest(req, res);
+  if (!authenticated) return;
+
+  try {
+    const state = await writeBuyerStateForUser(authenticated.user.id, req.body?.state);
+    res.json({ ok: true, state });
+  } catch (err) {
+    console.error('Failed to save buyer state:', err);
+    res.status(500).json({ ok: false, error: 'Failed to save buyer state' });
+  }
+});
+
+app.get('/api/audit-events', async (req, res) => {
+  const access = requirePrivilegedReadAccess(req, res);
+  if (!access) return;
+
+  try {
+    const auditLogs = await readAuditEvents();
+    res.json({ ok: true, auditLogs });
+  } catch (err) {
+    console.error('Failed to read audit events:', err);
+    res.status(500).json({ ok: false, error: 'Failed to read audit events' });
+  }
 });
 
 app.post('/api/audit-events', async (req, res) => {

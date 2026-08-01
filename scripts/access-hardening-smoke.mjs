@@ -58,9 +58,57 @@ mustContain(
   'server.js',
 );
 mustContain(
+  serverText,
+  /app\.get\('\/api\/audit-events', async \(req, res\) => \{\s*const access = requirePrivilegedReadAccess\(req, res\);/s,
+  'privileged audit-events read gate',
+  'server.js',
+);
+mustContain(
+  serverText,
+  /app\.get\('\/api\/buyer-state', async \(req, res\) => \{\s*const authenticated = await readAuthenticatedUserFromRequest\(req, res\);/s,
+  'authenticated buyer-state read gate',
+  'server.js',
+);
+mustContain(
+  serverText,
+  /app\.put\('\/api\/buyer-state', async \(req, res\) => \{\s*if \(!enforceTrustedWriteOrigin\(req, res\)\)\s*\{\s*return;\s*\}\s*\s*const authenticated = await readAuthenticatedUserFromRequest\(req, res\);/s,
+  'trusted-origin and authenticated buyer-state write gate',
+  'server.js',
+);
+mustContain(
+  serverText,
+  /app\.get\('\/api\/crm-contacts', async \(req, res\) => \{\s*const access = await resolveSellerOrPrivilegedAccess\(req, res\);/s,
+  'seller-or-privileged CRM read gate',
+  'server.js',
+);
+mustContain(
+  serverText,
+  /app\.post\('\/api\/crm-contacts', async \(req, res\) => \{\s*const access = await resolveSellerOrPrivilegedAccess\(req, res, \{ write: true \}\);/s,
+  'seller-or-privileged CRM write gate',
+  'server.js',
+);
+mustContain(
+  serverText,
+  /app\.get\('\/api\/ad-leads', async \(req, res\) => \{\s*const access = await resolveSellerOrPrivilegedAccess\(req, res\);/s,
+  'seller-or-privileged ad lead read gate',
+  'server.js',
+);
+mustContain(
   appText,
   /const canReadPrivilegedHomepageConfig = Boolean\(userSession\.authToken\) && \['admin', 'developer'\]\.includes\(userSession\.role\);/,
   'privileged homepage config client read gate',
+  'src/App.tsx',
+);
+mustContain(
+  appText,
+  /const canReadAuditLogs = Boolean\(userSession\.authToken\) && \['admin', 'developer'\]\.includes\(userSession\.role\);/,
+  'privileged audit log client read gate',
+  'src/App.tsx',
+);
+mustContain(
+  appText,
+  /const buyerStateScopeKey = getBuyerStateScopeKey\(userSession, apiConfiguration\);\s*const canUseManagedBuyerState = buyerStateScopeKey !== 'guest';/s,
+  'buyer-state client scope gate',
   'src/App.tsx',
 );
 mustContain(
@@ -79,6 +127,18 @@ mustContain(
   appText,
   /const canWriteScalableCms = Boolean\(userSession\.authToken\) && \['admin', 'developer'\]\.includes\(userSession\.role\);/,
   'privileged scalable CMS client write gate',
+  'src/App.tsx',
+);
+mustContain(
+  appText,
+  /const canReadAdLeads = Boolean\(userSession\.authToken\) && \(\s*\['admin', 'developer'\]\.includes\(userSession\.role\)\s*\|\|\s*\(userSession\.role === 'seller' && Boolean\(userSession\.sellerBusinessId\)\)\s*\);/s,
+  'seller-aware ad lead client read gate',
+  'src/App.tsx',
+);
+mustContain(
+  appText,
+  /const canReadCrmContacts = Boolean\(userSession\.authToken\) && \(\s*\['admin', 'developer'\]\.includes\(userSession\.role\)\s*\|\|\s*\(userSession\.role === 'seller' && Boolean\(userSession\.sellerBusinessId\)\)\s*\);/s,
+  'seller-aware CRM client read gate',
   'src/App.tsx',
 );
 mustContain(

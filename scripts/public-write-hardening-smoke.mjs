@@ -21,6 +21,7 @@ const serverText = readFile('server.js');
 
 const throttledPublicRoutes = [
   ['/api/ad-leads', 'ad lead create throttle'],
+  ['/api/reviews', 'review create throttle'],
   ['/api/auth/register/request-otp', 'public registration OTP request throttle'],
   ['/api/auth/register/verify-otp', 'public registration OTP verify throttle'],
   ['/api/auth/request-otp', 'public login OTP request throttle'],
@@ -36,12 +37,18 @@ for (const [route, label] of throttledPublicRoutes) {
   const escapedRoute = route.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   mustContain(
     serverText,
-    new RegExp(`app\\.post\\('${escapedRoute}', async \\(req, res\\) => \\{\\s*if \\(!enforcePublicWriteThrottle\\(req, res`, 's'),
+    new RegExp(`app\\.post\\('${escapedRoute}', async \\(req, res\\) => \\{[\\s\\S]*enforcePublicWriteThrottle\\(req, res`, 's'),
     label,
     'server.js',
   );
 }
 
+mustContain(
+  serverText,
+  /app\.post\('\/api\/reviews', async \(req, res\) => \{\s*if \(!enforceTrustedWriteOrigin\(req, res\)\)/s,
+  'trusted-origin enforcement on public review writes',
+  'server.js',
+);
 mustContain(
   serverText,
   /app\.post\('\/api\/auth\/register', async \(req, res\) => \{\s*if \(!enforceTrustedWriteOrigin\(req, res\)\)/s,

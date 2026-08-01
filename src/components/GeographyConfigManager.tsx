@@ -14,6 +14,16 @@ const slugify = (value: string) => value
   .replace(/[^a-z0-9]+/g, '-')
   .replace(/^-+|-+$/g, '');
 
+const buildUniqueId = (seed: string, takenIds: Set<string>, fallbackPrefix: string) => {
+  const baseId = slugify(seed) || fallbackPrefix;
+  if (!takenIds.has(baseId)) return baseId;
+  let suffix = 2;
+  while (takenIds.has(`${baseId}-${suffix}`)) {
+    suffix += 1;
+  }
+  return `${baseId}-${suffix}`;
+};
+
 const emptyStateDraft = {
   id: '',
   name: '',
@@ -145,7 +155,13 @@ export default function GeographyConfigManager({
 
   const saveState = async () => {
     const name = stateDraft.name.trim();
-    const id = slugify(stateDraft.id || name);
+    const takenIds = new Set(draft.states.filter((state) => state.id !== editingStateId).map((state) => state.id));
+    const existingState = editingStateId
+      ? draft.states.find((state) => state.id === editingStateId) || null
+      : null;
+    const id = stateDraft.id.trim()
+      ? buildUniqueId(stateDraft.id, takenIds, 'state')
+      : existingState?.id || buildUniqueId(name, takenIds, 'state');
     if (!id || !name) {
       setStatusText('State name is required.');
       return;
@@ -179,7 +195,13 @@ export default function GeographyConfigManager({
 
   const saveCity = async () => {
     const name = cityDraft.name.trim();
-    const id = slugify(cityDraft.id || name);
+    const takenIds = new Set(draft.cities.filter((city) => city.id !== editingCityId).map((city) => city.id));
+    const existingCity = editingCityId
+      ? draft.cities.find((city) => city.id === editingCityId) || null
+      : null;
+    const id = cityDraft.id.trim()
+      ? buildUniqueId(cityDraft.id, takenIds, 'city')
+      : existingCity?.id || buildUniqueId(name, takenIds, 'city');
     if (!id || !name || !cityDraft.stateId) {
       setStatusText('City name and parent state are required.');
       return;
@@ -211,7 +233,13 @@ export default function GeographyConfigManager({
 
   const saveLocality = async () => {
     const name = localityDraft.name.trim();
-    const id = slugify(localityDraft.id || name);
+    const takenIds = new Set(draft.localities.filter((locality) => locality.id !== editingLocalityId).map((locality) => locality.id));
+    const existingLocality = editingLocalityId
+      ? draft.localities.find((locality) => locality.id === editingLocalityId) || null
+      : null;
+    const id = localityDraft.id.trim()
+      ? buildUniqueId(localityDraft.id, takenIds, 'locality')
+      : existingLocality?.id || buildUniqueId(name, takenIds, 'locality');
     if (!id || !name || !localityDraft.cityId) {
       setStatusText('Locality name and parent city are required.');
       return;
@@ -241,9 +269,15 @@ export default function GeographyConfigManager({
 
   const saveArea = async () => {
     const name = areaDraft.name.trim();
-    const id = slugify(areaDraft.id || `${name}-${areaDraft.pincode}`);
     const pincode = areaDraft.pincode.replace(/\D/g, '').slice(0, 6);
     const parentLocality = draft.localities.find((locality) => locality.id === areaDraft.localityId) || null;
+    const takenIds = new Set(draft.areas.filter((area) => area.id !== editingAreaId).map((area) => area.id));
+    const existingArea = editingAreaId
+      ? draft.areas.find((area) => area.id === editingAreaId) || null
+      : null;
+    const id = areaDraft.id.trim()
+      ? buildUniqueId(areaDraft.id, takenIds, 'area')
+      : existingArea?.id || buildUniqueId(`${parentLocality?.id || 'area'}-${name}-${pincode}`, takenIds, 'area');
     if (!id || !name || !parentLocality || pincode.length !== 6) {
       setStatusText('Area name, parent locality, and 6-digit pincode are required.');
       return;
@@ -276,6 +310,111 @@ export default function GeographyConfigManager({
     await persist(nextDraft, 'Area removed.');
   };
 
+  const importFullGeography = async (file: File) => {
+    setIsImporting(true);
+    try {
+      const rows = await readTabularFile(file);
+      const nextDraft: GeographyConfigState = {
+        ...draft,
+        states: [...draft.states],
+        cities: [...draft.cities],
+        localities: [...draft.localities],
+        areas: [...draft.areas],
+      };
+      const touchedStates = new Set<string>();
+      const touchedCities = new Set<string>();
+      const touchedLocalities = new Set<string>();
+      const touchedAreas = new Set<string>();
+      let skipped = 0;
+
+      rows.forEach((row) => {
+        const stateName = getTabularValue(row, ['stateName', 'state', 'name']);
+        const cityName = getTabularValue(row, ['cityName', 'city']);
+        const localityName = getTabularValue(row, ['localityName', 'locality']);
+        const areaName = getTabularValue(row, ['areaName', 'area', 'subLocality', 'sub locality']);
+        const areaPincode = getTabularValue(row, ['pincode', 'pin']).replace(/\D/g, '').slice(0, 6);
+        if (!stateName || !cityName || !localityName) {
+          skipped += 1;
+          return;
+        }
+
+        const stateRequestedId = getTabularValue(row, ['stateId', 'state id', 'id']);
+        const existingState = stateRequestedId
+          ? nextDraft.states.find((state) => state.id === stateRequestedId) || null
+          : nextDraft.states.find((state) => state.name.toLowerCase() === stateName.toLowerCase()) || null;
+        const stateId = existingState?.id || buildUniqueId(stateRequestedId || stateName, new Set(nextDraft.states.map((state) => state.id)), 'state');
+
+        const nextState: StateMaster = { id: stateId, name: stateName };
+        const existingStateIndex = nextDraft.states.findIndex((state) => state.id === stateId);
+        if (existingStateIndex >= 0) {
+          nextDraft.states[existingStateIndex] = nextState;
+        } else {
+          nextDraft.states.push(nextState);
+        }
+        touchedStates.add(stateId);
+
+        const cityRequestedId = getTabularValue(row, ['cityId', 'city id']);
+        const existingCity = cityRequestedId
+          ? nextDraft.cities.find((city) => city.id === cityRequestedId) || null
+          : nextDraft.cities.find((city) => city.stateId === stateId && city.name.toLowerCase() === cityName.toLowerCase()) || null;
+        const cityId = existingCity?.id || buildUniqueId(cityRequestedId || cityName, new Set(nextDraft.cities.map((city) => city.id)), 'city');
+        const nextCity: CityMaster = { id: cityId, stateId, name: cityName };
+        const existingCityIndex = nextDraft.cities.findIndex((city) => city.id === cityId);
+        if (existingCityIndex >= 0) {
+          nextDraft.cities[existingCityIndex] = nextCity;
+        } else {
+          nextDraft.cities.push(nextCity);
+        }
+        touchedCities.add(cityId);
+
+        const localityRequestedId = getTabularValue(row, ['localityId', 'locality id']);
+        const existingLocality = localityRequestedId
+          ? nextDraft.localities.find((locality) => locality.id === localityRequestedId) || null
+          : nextDraft.localities.find((locality) => locality.cityId === cityId && locality.name.toLowerCase() === localityName.toLowerCase()) || null;
+        const localityId = existingLocality?.id || buildUniqueId(localityRequestedId || localityName, new Set(nextDraft.localities.map((locality) => locality.id)), 'locality');
+        const nextLocality: LocalityMaster = { id: localityId, cityId, name: localityName };
+        const existingLocalityIndex = nextDraft.localities.findIndex((locality) => locality.id === localityId);
+        if (existingLocalityIndex >= 0) {
+          nextDraft.localities[existingLocalityIndex] = nextLocality;
+        } else {
+          nextDraft.localities.push(nextLocality);
+        }
+        touchedLocalities.add(localityId);
+
+        if (areaName && areaPincode.length === 6) {
+          const areaRequestedId = getTabularValue(row, ['areaId', 'subLocalityId', 'sub locality id']);
+          const existingArea = areaRequestedId
+            ? nextDraft.areas.find((area) => area.id === areaRequestedId) || null
+            : nextDraft.areas.find((area) => area.localityId === localityId && area.name.toLowerCase() === areaName.toLowerCase() && area.pincode === areaPincode) || null;
+          const areaId = existingArea?.id || buildUniqueId(areaRequestedId || `${localityId}-${areaName}-${areaPincode}`, new Set(nextDraft.areas.map((area) => area.id)), 'area');
+          const nextArea: AreaMaster = { id: areaId, localityId, cityId, name: areaName, pincode: areaPincode };
+          const existingAreaIndex = nextDraft.areas.findIndex((area) => area.id === areaId);
+          if (existingAreaIndex >= 0) {
+            nextDraft.areas[existingAreaIndex] = nextArea;
+          } else {
+            nextDraft.areas.push(nextArea);
+          }
+          touchedAreas.add(areaId);
+        }
+      });
+
+      if (touchedStates.size === 0 && touchedCities.size === 0 && touchedLocalities.size === 0 && touchedAreas.size === 0) {
+        setStatusText('No valid geography rows found in the uploaded file.');
+        return;
+      }
+
+      setDraft(nextDraft);
+      await persist(
+        nextDraft,
+        `Imported geography from single file: ${touchedStates.size} states, ${touchedCities.size} cities, ${touchedLocalities.size} localities, ${touchedAreas.size} areas${skipped ? `, skipped ${skipped} rows.` : '.'}`,
+      );
+    } catch (error) {
+      setStatusText(error instanceof Error ? error.message : 'Failed to import geography file.');
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
   const importStates = async (file: File) => {
     setIsImporting(true);
     try {
@@ -286,12 +425,16 @@ export default function GeographyConfigManager({
 
       rows.forEach((row) => {
         const name = getTabularValue(row, ['name', 'stateName', 'state']);
-        const id = slugify(getTabularValue(row, ['id', 'stateId', 'state id']) || name);
-        if (!name || !id) {
+        if (!name) {
           skipped += 1;
           return;
         }
 
+        const requestedId = getTabularValue(row, ['id', 'stateId', 'state id']);
+        const existingState = requestedId
+          ? nextDraft.states.find((state) => state.id === requestedId) || null
+          : nextDraft.states.find((state) => state.name.toLowerCase() === name.toLowerCase()) || null;
+        const id = existingState?.id || buildUniqueId(requestedId || name, new Set(nextDraft.states.map((state) => state.id)), 'state');
         const nextState: StateMaster = { id, name };
         const existingIndex = nextDraft.states.findIndex((state) => state.id === id);
         if (existingIndex >= 0) {
@@ -327,12 +470,16 @@ export default function GeographyConfigManager({
       rows.forEach((row) => {
         const name = getTabularValue(row, ['name', 'cityName', 'city']);
         const state = resolveStateFromRow(row, draft.states);
-        const id = slugify(getTabularValue(row, ['id', 'cityId', 'city id']) || name);
-        if (!name || !id || !state) {
+        if (!name || !state) {
           skipped += 1;
           return;
         }
 
+        const requestedId = getTabularValue(row, ['id', 'cityId', 'city id']);
+        const existingCity = requestedId
+          ? nextDraft.cities.find((city) => city.id === requestedId) || null
+          : nextDraft.cities.find((city) => city.stateId === state.id && city.name.toLowerCase() === name.toLowerCase()) || null;
+        const id = existingCity?.id || buildUniqueId(requestedId || name, new Set(nextDraft.cities.map((city) => city.id)), 'city');
         const nextCity: CityMaster = { id, stateId: state.id, name };
         const existingIndex = nextDraft.cities.findIndex((city) => city.id === id);
         if (existingIndex >= 0) {
@@ -368,12 +515,16 @@ export default function GeographyConfigManager({
       rows.forEach((row) => {
         const name = getTabularValue(row, ['name', 'localityName', 'locality']);
         const city = resolveCityFromRow(row, draft.cities, draft.states);
-        const id = slugify(getTabularValue(row, ['id', 'localityId', 'locality id']) || name);
-        if (!name || !id || !city) {
+        if (!name || !city) {
           skipped += 1;
           return;
         }
 
+        const requestedId = getTabularValue(row, ['id', 'localityId', 'locality id']);
+        const existingLocality = requestedId
+          ? nextDraft.localities.find((locality) => locality.id === requestedId) || null
+          : nextDraft.localities.find((locality) => locality.cityId === city.id && locality.name.toLowerCase() === name.toLowerCase()) || null;
+        const id = existingLocality?.id || buildUniqueId(requestedId || name, new Set(nextDraft.localities.map((locality) => locality.id)), 'locality');
         const nextLocality: LocalityMaster = { id, cityId: city.id, name };
         const existingIndex = nextDraft.localities.findIndex((locality) => locality.id === id);
         if (existingIndex >= 0) {
@@ -410,12 +561,16 @@ export default function GeographyConfigManager({
         const name = getTabularValue(row, ['name', 'areaName', 'area', 'subLocality', 'sub locality']);
         const locality = resolveLocalityFromRow(row, draft.localities, draft.cities, draft.states);
         const pincode = getTabularValue(row, ['pincode', 'pin']).replace(/\D/g, '').slice(0, 6);
-        const id = slugify(getTabularValue(row, ['id', 'areaId', 'subLocalityId', 'sub locality id']) || `${name}-${pincode}`);
-        if (!name || !locality || pincode.length !== 6 || !id) {
+        if (!name || !locality || pincode.length !== 6) {
           skipped += 1;
           return;
         }
 
+        const requestedId = getTabularValue(row, ['id', 'areaId', 'subLocalityId', 'sub locality id']);
+        const existingArea = requestedId
+          ? nextDraft.areas.find((area) => area.id === requestedId) || null
+          : nextDraft.areas.find((area) => area.localityId === locality.id && area.name.toLowerCase() === name.toLowerCase() && area.pincode === pincode) || null;
+        const id = existingArea?.id || buildUniqueId(requestedId || `${locality.id}-${name}-${pincode}`, new Set(nextDraft.areas.map((area) => area.id)), 'area');
         const nextArea: AreaMaster = { id, localityId: locality.id, cityId: locality.cityId, name, pincode };
         const existingIndex = nextDraft.areas.findIndex((area) => area.id === id);
         if (existingIndex >= 0) {
@@ -463,7 +618,40 @@ export default function GeographyConfigManager({
         </div>
       )}
 
-      <div className="grid gap-4 xl:grid-cols-4">
+      <div className="grid gap-4 xl:grid-cols-5">
+        <div className="rounded-xl border border-dashed border-indigo-300 bg-indigo-50 p-3 space-y-3">
+          <div>
+            <div className="text-xs font-bold text-slate-900">Excel Import: Full Geography</div>
+            <p className="mt-1 text-[11px] text-slate-600">
+              Upload one flat Excel file with `state`, `city`, `locality`, and optional `area + pincode` columns. The system will upsert all four layers in one go.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => downloadCsvTemplate('full-geography-template.csv', ['stateId', 'stateName', 'cityId', 'cityName', 'localityId', 'localityName', 'areaId', 'areaName', 'pincode'], [['mh', 'Maharashtra', 'navimumbai', 'Navi Mumbai', 'roadpali', 'Roadpali', 'roadpali-sec17', 'Sector 17', '410218']])}
+              className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-700"
+            >
+              Download Full Template
+            </button>
+            <label className="cursor-pointer rounded-md bg-indigo-600 px-3 py-1.5 text-[11px] font-bold text-white">
+              Upload Full Geography
+              <input
+                type="file"
+                accept=".xlsx,.xls,.csv,.tsv,.txt"
+                className="hidden"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) {
+                    void importFullGeography(file);
+                  }
+                  event.currentTarget.value = '';
+                }}
+              />
+            </label>
+          </div>
+        </div>
+
         <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3 space-y-3">
           <div>
             <div className="text-xs font-bold text-slate-900">Excel Import: States</div>

@@ -67,6 +67,13 @@ export interface Business {
   responseTime?: string; // e.g. "< 10 mins", "Within 1 hour"
   customerSatisfaction?: number; // percent
   repeatCustomerScore?: number; // percent
+  isHomeBased?: boolean;
+  isWomenLed?: boolean;
+  isPublicService?: boolean;
+  contactPrivacyMode?: 'public' | 'unlock_required' | 'area_only';
+  duplicateReviewStatus?: 'pending' | 'merged' | 'separate';
+  mergedIntoBusinessId?: string;
+  sourceLineage?: string[];
 
   // monthly premium monetization states
   isMonthlySubscriber?: boolean;
@@ -174,6 +181,19 @@ export interface ListingAd {
   placementKey?: string;
   deviceTarget?: 'all' | 'desktop' | 'mobile';
   mobileRowPosition?: number;
+  workflowStatus?: 'draft' | 'submitted' | 'under_review' | 'approved' | 'scheduled' | 'live' | 'paused' | 'rejected' | 'archived';
+  billingModel?: 'fixed' | 'cpc' | 'lead';
+  rotationMode?: 'even' | 'weighted' | 'random';
+  plannedBudget?: number;
+  spentBudget?: number;
+  cpcBid?: number;
+  impressions?: number;
+  clicks?: number;
+  leadCount?: number;
+  submittedAt?: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+  reviewNotes?: string;
   isActive: boolean;
 }
 
@@ -310,6 +330,9 @@ export interface ApiConfiguration {
   syncMode: 'local' | 'api';
   homepageConfigEndpoint: string;
   adLeadsEndpoint?: string;
+  reviewsEndpoint?: string;
+  crmContactsEndpoint?: string;
+  buyerStateEndpoint?: string;
   homepageDefaultsConfigEndpoint?: string;
   localityRoutingConfigEndpoint?: string;
   geographyConfigEndpoint?: string;
@@ -660,6 +683,7 @@ export type UserType = 'platform_admin' | 'developer' | 'buyer' | 'seller' | 're
 export interface UserSession {
   role: UserRole;
   userName: string;
+  userId?: string;
   userPhone?: string;
   isAuthenticated: boolean;
   contactUnlockToken?: string;
@@ -676,6 +700,12 @@ export interface BuyerActivityEvent {
   createdAt: string;
   title: string;
   detail?: string;
+}
+
+export interface BuyerStateSnapshot {
+  viewedBusinessIds: string[];
+  savedBusinessIds: string[];
+  buyerActivityEvents: BuyerActivityEvent[];
 }
 
 export interface AuditEvent {

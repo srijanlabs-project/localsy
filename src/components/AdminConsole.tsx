@@ -1,20 +1,27 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { 
-  CheckCircle, XCircle, Plus, Info, Globe, AlertCircle, 
+  Plus, Info, Globe, AlertCircle, 
   Trash2, PlusCircle, Check, Database, Eye, Server, RefreshCw, MapPin, Copy, ChevronUp, ChevronDown, ChevronRight
 } from 'lucide-react';
 import { Locality, Business, SubdomainMapping, UserSession, AuditEvent, ListingAd, HeroBanner, HeroBannerStat, AdLead, MarketingCoupon, HomepageLayout, HomepageSection, HomepageSectionType, ApiConfiguration, CommunityItem, ScalableHomepageConfigState, ScalableHomepageTemplate, ScalableHomepageAssignment, ScalableCampaign, ScalableCampaignType, ResolvedHomepagePayload, BusinessTaxonomyState, SeoDiscoveryConfigState, GeographyConfigState, HomepageDefaultsConfigState, ResolvedHomepagePublishRequest, ResolvedHomepagePublishContext, ResolvedHomepageSnapshotDeleteRequest, ScalableLegacyOwnershipSummary } from '../types';
-import { MASTER_AREAS } from '../geographyMaster';
-import { getBusinessImageUrl, getCategoryFallbackImage, hasUploadedBusinessImage } from '../utils/businessImage';
+import homepageDefaultsBootstrap from '../../homepage-defaults-config.json';
+import { MASTER_AREAS, MASTER_CITIES, MASTER_LOCALITIES, MASTER_STATES } from '../geographyMaster';
 import { getMediaProxyUrl } from '../utils/mediaUrl';
 import BusinessTaxonomyManager from './BusinessTaxonomyManager';
 import GeographyConfigManager from './GeographyConfigManager';
 import HomepageDefaultsManager from './HomepageDefaultsManager';
 import SeoDiscoveryManager from './SeoDiscoveryManager';
-import {
-  DEFAULT_HERO_BANNER_DRAFT_DEFAULTS,
-  DEFAULT_HERO_STAT_TEMPLATES,
-} from '../../shared/homepageDefaultsSeed.js';
+import AdOperationsPanel from './admin/AdOperationsPanel';
+import AdLeadInboxPanel from './admin/AdLeadInboxPanel';
+import AdvertiserCreativeFormPanel from './admin/AdvertiserCreativeFormPanel';
+import BulkUploadWorkspace from './admin/BulkUploadWorkspace';
+import DataAuditWorkspace from './admin/DataAuditWorkspace';
+import { type DuplicateReviewCandidate } from './admin/DuplicateReviewQueue';
+import HeroBannerManagerPanel from './admin/HeroBannerManagerPanel';
+import ListingStatusWorkspace, { type ListingStatusFilter } from './admin/ListingStatusWorkspace';
+import ModerationQueue from './admin/ModerationQueue';
+import OffersManagerPanel from './admin/OffersManagerPanel';
+import TaxonomyMappingWorkspace from './admin/TaxonomyMappingWorkspace';
 import {
   BUSINESS_CATEGORIES,
   BUSINESS_SUBCATEGORIES,
@@ -23,6 +30,8 @@ import {
   getSubcategoryById,
   resolveDefaultSubcategoryId
 } from '../categoryMaster';
+
+const HOMEPAGE_DEFAULTS_BOOTSTRAP = homepageDefaultsBootstrap as Partial<HomepageDefaultsConfigState>;
 
 interface AdminConsoleProps {
   localities: Locality[];
@@ -46,6 +55,9 @@ interface AdminConsoleProps {
     businessName: string;
     address: string;
     area: string;
+    locality?: string;
+    localityId?: string;
+    areaId?: string;
     city: string;
     state: string;
     pin: string;
@@ -125,6 +137,7 @@ type BulkImportRow = {
   businessName: string;
   address: string;
   area: string;
+  locality?: string;
   city: string;
   state: string;
   pin: string;
@@ -157,6 +170,15 @@ type ImportPreviewRow = BulkImportRow & {
   resolvedLocalityId: string;
   requiresTaxonomyMapping: boolean;
   taxonomyStatusLabel: string;
+};
+
+type ResolvedImportGeography = {
+  resolvedPincode: string;
+  resolvedLocalityId: string;
+  resolvedCityId: string;
+  resolvedStateId: string;
+  areaId: string;
+  errors: string[];
 };
 
 type LocalityCategoryLink = {
@@ -205,7 +227,7 @@ const getFutureDateIso = (durationDays: number) => {
 const buildHeroStatDraftsFromTemplates = (heroStatTemplates?: HeroBannerStat[]): HeroStatDraft[] => {
   const templates = Array.isArray(heroStatTemplates) && heroStatTemplates.length > 0
     ? heroStatTemplates
-    : (DEFAULT_HERO_STAT_TEMPLATES as HeroBannerStat[]);
+    : ((Array.isArray(HOMEPAGE_DEFAULTS_BOOTSTRAP.heroStatTemplates) ? HOMEPAGE_DEFAULTS_BOOTSTRAP.heroStatTemplates : []) as HeroBannerStat[]);
   return templates.map((stat) => ({
     enabled: stat.enabled ?? true,
     label: String(stat.label || '').trim(),
@@ -247,10 +269,10 @@ const getScalableEntityOwnershipPresentation = (metadata?: Record<string, unknow
 };
 
 const getHeroBannerDraftDefaults = (config?: HomepageDefaultsConfigState) => ({
-  ctaLabel: String(config?.heroBannerDraftDefaults?.ctaLabel || DEFAULT_HERO_BANNER_DRAFT_DEFAULTS.ctaLabel).trim() || DEFAULT_HERO_BANNER_DRAFT_DEFAULTS.ctaLabel,
-  ctaType: config?.heroBannerDraftDefaults?.ctaType || DEFAULT_HERO_BANNER_DRAFT_DEFAULTS.ctaType,
-  ctaTarget: String(config?.heroBannerDraftDefaults?.ctaTarget || DEFAULT_HERO_BANNER_DRAFT_DEFAULTS.ctaTarget).trim() || DEFAULT_HERO_BANNER_DRAFT_DEFAULTS.ctaTarget,
-  durationDays: Math.max(1, Number(config?.heroBannerDraftDefaults?.durationDays || DEFAULT_HERO_BANNER_DRAFT_DEFAULTS.durationDays)),
+  ctaLabel: String(config?.heroBannerDraftDefaults?.ctaLabel || HOMEPAGE_DEFAULTS_BOOTSTRAP.heroBannerDraftDefaults?.ctaLabel || 'Explore Businesses').trim() || String(HOMEPAGE_DEFAULTS_BOOTSTRAP.heroBannerDraftDefaults?.ctaLabel || 'Explore Businesses'),
+  ctaType: config?.heroBannerDraftDefaults?.ctaType || HOMEPAGE_DEFAULTS_BOOTSTRAP.heroBannerDraftDefaults?.ctaType || 'search_category',
+  ctaTarget: String(config?.heroBannerDraftDefaults?.ctaTarget || HOMEPAGE_DEFAULTS_BOOTSTRAP.heroBannerDraftDefaults?.ctaTarget || 'all').trim() || String(HOMEPAGE_DEFAULTS_BOOTSTRAP.heroBannerDraftDefaults?.ctaTarget || 'all'),
+  durationDays: Math.max(1, Number(config?.heroBannerDraftDefaults?.durationDays || HOMEPAGE_DEFAULTS_BOOTSTRAP.heroBannerDraftDefaults?.durationDays || 30)),
 });
 
 const buildListingTags = (...sources: Array<string | string[] | undefined>) => {
@@ -290,8 +312,8 @@ const getBusinessTaxonomyLabel = (business: Pick<Business, 'categoryId' | 'subca
 };
 
 const getPublicLocalityUrl = (locality?: Locality | null) => {
-  const localitySlug = locality?.slug || locality?.id || 'roadpali';
-  return `https://www.localisy.in/${localitySlug}`;
+  const localitySlug = locality?.slug || locality?.id || '';
+  return localitySlug ? `https://www.localisy.in/${localitySlug}` : 'https://www.localisy.in';
 };
 
 const slugifyAdminValue = (value: string) => value
@@ -313,7 +335,6 @@ const buildUniqueAdminId = (seed: string, takenIds: Set<string>) => {
 };
 
 type AdminWorkspaceTab = 'moderation' | 'listing-status' | 'bulk-upload' | 'taxonomy-mapping' | 'data-audit';
-type ListingStatusFilter = 'all' | 'approved' | 'rejected' | 'pending';
 type AdminConsoleSurface = 'admin' | 'operations';
 type AdminOperationsSection = 'listings' | 'homepage' | 'campaigns' | 'geography' | 'content' | 'platform';
 type HomepageCmsSubtab = 'layout' | 'hero' | 'publish' | 'templates' | 'assignments' | 'campaigns' | 'insights';
@@ -402,6 +423,117 @@ function InlineSubcategoryCreator({
           >
             Cancel
           </button>
+        </div>
+      )}
+
+      {errorText && (
+        <div className="text-[10px] text-rose-600">{errorText}</div>
+      )}
+    </div>
+  );
+}
+
+type InlineAreaCreatorProps = {
+  localityId: string;
+  initialPincode?: string;
+  disabled?: boolean;
+  canCreate: boolean;
+  onAssign: (areaId: string, areaName: string, pincode: string) => void;
+  onCreate: (localityId: string, name: string, pincode: string) => Promise<string | null>;
+};
+
+function InlineAreaCreator({
+  localityId,
+  initialPincode = '',
+  disabled,
+  canCreate,
+  onAssign,
+  onCreate,
+}: InlineAreaCreatorProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [name, setName] = useState('');
+  const [pincode, setPincode] = useState(initialPincode);
+  const [isSaving, setIsSaving] = useState(false);
+  const [errorText, setErrorText] = useState('');
+
+  useEffect(() => {
+    setPincode(initialPincode);
+  }, [initialPincode]);
+
+  if (!canCreate) return null;
+
+  return (
+    <div className="space-y-1">
+      <button
+        type="button"
+        disabled={!localityId || disabled}
+        onClick={() => {
+          setIsOpen((previous) => !previous);
+          setErrorText('');
+        }}
+        className="inline-flex items-center gap-1 rounded-md border border-dashed border-emerald-300 bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+      >
+        <PlusCircle className="h-3 w-3" />
+        <span>Create area</span>
+      </button>
+
+      {isOpen && (
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              value={name}
+              disabled={isSaving || disabled}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="New area name"
+              className="min-w-[12rem] flex-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px]"
+            />
+            <input
+              value={pincode}
+              disabled={isSaving || disabled}
+              maxLength={6}
+              onChange={(event) => setPincode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+              placeholder="Pincode"
+              className="w-28 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-mono"
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              disabled={!name.trim() || pincode.length !== 6 || isSaving || disabled}
+              onClick={async () => {
+                setIsSaving(true);
+                setErrorText('');
+                try {
+                  const nextAreaId = await onCreate(localityId, name, pincode);
+                  if (nextAreaId) {
+                    onAssign(nextAreaId, name.trim(), pincode);
+                    setName('');
+                    setIsOpen(false);
+                  }
+                } catch (error) {
+                  setErrorText(error instanceof Error ? error.message : 'Failed to create area.');
+                } finally {
+                  setIsSaving(false);
+                }
+              }}
+              className="rounded-md bg-emerald-600 px-2.5 py-1 text-[10px] font-bold text-white disabled:opacity-50"
+            >
+              {isSaving ? 'Saving...' : 'Save'}
+            </button>
+            <button
+              type="button"
+              disabled={isSaving}
+              onClick={() => {
+                setIsOpen(false);
+                setName('');
+                setPincode(initialPincode);
+                setErrorText('');
+              }}
+              className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-bold text-slate-700"
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       )}
 
@@ -662,7 +794,7 @@ export default function AdminConsole({
   pincodeMappings = [],
   onAddPincodeMapping,
   onDeletePincodeMapping,
-  defaultLocalityId = 'roadpali',
+  defaultLocalityId = '',
   onChangeDefaultLocalityId,
   onBulkImportBusinesses,
   listingAds = [],
@@ -725,6 +857,7 @@ export default function AdminConsole({
   const showInternalTopology = false;
   const consoleRole = String(userSession?.role || '');
   const canUsePrivilegedAdminWorkspace = ['admin', 'developer'].includes(consoleRole);
+  const primaryLocalityId = localities.find((locality) => locality.id === defaultLocalityId)?.id || localities[0]?.id || '';
   const [newLocName, setNewLocName] = useState('');
   const [newLocSubdomain, setNewLocSubdomain] = useState('');
   const [newLocDesc, setNewLocDesc] = useState('');
@@ -739,6 +872,7 @@ export default function AdminConsole({
   const [consoleSurface, setConsoleSurface] = useState<AdminConsoleSurface>('admin');
   const [adminWorkspaceTab, setAdminWorkspaceTab] = useState<AdminWorkspaceTab>('moderation');
   const [listingStatusFilter, setListingStatusFilter] = useState<ListingStatusFilter>('all');
+  const [duplicateMergeTargetByBusinessId, setDuplicateMergeTargetByBusinessId] = useState<Record<string, string>>({});
   const [operationsSection, setOperationsSection] = useState<AdminOperationsSection>('homepage');
   const [homepageCmsSubtab, setHomepageCmsSubtab] = useState<HomepageCmsSubtab>('layout');
   const [platformConfigSubtab, setPlatformConfigSubtab] = useState<PlatformConfigSubtab>('api');
@@ -755,19 +889,20 @@ export default function AdminConsole({
   const [uploadedPage, setUploadedPage] = useState(1);
   const initialHeroBannerDraftDefaults = getHeroBannerDraftDefaults(homepageDefaultsConfig);
   const initialHeroStatDrafts = buildHeroStatDraftsFromTemplates(homepageDefaultsConfig?.heroStatTemplates);
+  const currentAdminDateIso = '2026-07-30';
 
   const [adTitle, setAdTitle] = useState('');
   const [adDescription, setAdDescription] = useState('');
   const [adBadge, setAdBadge] = useState('Sponsored');
   const [adCtaText, setAdCtaText] = useState('Know More');
   const [adBgColor, setAdBgColor] = useState('#1d4ed8');
-  const [adStartDate, setAdStartDate] = useState(new Date().toISOString().slice(0, 10));
+  const [adStartDate, setAdStartDate] = useState(currentAdminDateIso);
   const [adEndDate, setAdEndDate] = useState(new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().slice(0, 10));
   const [adActionType, setAdActionType] = useState<ListingAd['actionType']>('landing_page');
   const [adTargetUrl, setAdTargetUrl] = useState('');
   const [adTargetBusinessId, setAdTargetBusinessId] = useState('');
   const [adSellerBusinessId, setAdSellerBusinessId] = useState('');
-  const [adLocalityId, setAdLocalityId] = useState(localities[0]?.id || 'roadpali');
+  const [adLocalityId, setAdLocalityId] = useState(primaryLocalityId);
   const [adPincodes, setAdPincodes] = useState('');
   const [adCategoryIds, setAdCategoryIds] = useState<string[]>([]);
   const [adTags, setAdTags] = useState('');
@@ -777,10 +912,19 @@ export default function AdminConsole({
   const [adImageUploading, setAdImageUploading] = useState(false);
   const [adDeviceTarget, setAdDeviceTarget] = useState<NonNullable<ListingAd['deviceTarget']>>('all');
   const [adMobileRowPosition, setAdMobileRowPosition] = useState('3');
+  const [adWorkflowStatus, setAdWorkflowStatus] = useState<NonNullable<ListingAd['workflowStatus']>>('submitted');
+  const [adBillingModel, setAdBillingModel] = useState<NonNullable<ListingAd['billingModel']>>('fixed');
+  const [adRotationMode, setAdRotationMode] = useState<NonNullable<ListingAd['rotationMode']>>('even');
+  const [adPlannedBudget, setAdPlannedBudget] = useState('15000');
+  const [adSpentBudget, setAdSpentBudget] = useState('0');
+  const [adCpcBid, setAdCpcBid] = useState('25');
+  const [adImpressions, setAdImpressions] = useState('0');
+  const [adClicks, setAdClicks] = useState('0');
+  const [adReviewNotes, setAdReviewNotes] = useState('');
   const [adEditId, setAdEditId] = useState<string | null>(null);
   const [adFormError, setAdFormError] = useState('');
 
-  const [heroLocalityId, setHeroLocalityId] = useState(localities[0]?.id || 'roadpali');
+  const [heroLocalityId, setHeroLocalityId] = useState(primaryLocalityId);
   const [heroTitle, setHeroTitle] = useState('');
   const [heroSubtitle, setHeroSubtitle] = useState('');
   const [heroImageUrl, setHeroImageUrl] = useState('');
@@ -823,12 +967,12 @@ export default function AdminConsole({
   const [couponDescription, setCouponDescription] = useState('');
   const [couponStartDate, setCouponStartDate] = useState(new Date().toISOString().slice(0, 10));
   const [couponEndDate, setCouponEndDate] = useState(new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().slice(0, 10));
-  const [couponLocalityId, setCouponLocalityId] = useState(localities[0]?.id || 'roadpali');
+  const [couponLocalityId, setCouponLocalityId] = useState(primaryLocalityId);
   const [couponPincodes, setCouponPincodes] = useState('');
   const [couponEditId, setCouponEditId] = useState<string | null>(null);
 
-  const [homepageLocalityId, setHomepageLocalityId] = useState(localities[0]?.id || 'roadpali');
-  const [newSectionLocalityIds, setNewSectionLocalityIds] = useState<string[]>([localities[0]?.id || 'roadpali']);
+  const [homepageLocalityId, setHomepageLocalityId] = useState(primaryLocalityId);
+  const [newSectionLocalityIds, setNewSectionLocalityIds] = useState<string[]>(primaryLocalityId ? [primaryLocalityId] : []);
   const [newSectionType, setNewSectionType] = useState<HomepageSectionType>('hero_banner');
   const [newSectionTitle, setNewSectionTitle] = useState('Hero Banner');
   const [newSectionSubtitle, setNewSectionSubtitle] = useState('');
@@ -903,7 +1047,7 @@ export default function AdminConsole({
     isFallback: boolean;
   }>({
     id: '',
-    localityId: localities[0]?.id || 'roadpali',
+    localityId: primaryLocalityId,
     templateId: '',
     categoryId: '',
     subcategoryId: '',
@@ -988,7 +1132,7 @@ export default function AdminConsole({
     date: string;
     usePublished: boolean;
   }>({
-    localityId: localities[0]?.id || 'roadpali',
+    localityId: primaryLocalityId,
     categoryId: '',
     subcategoryId: '',
     pincode: '',
@@ -1039,7 +1183,7 @@ export default function AdminConsole({
     deviceTargets: string;
     pageTypes: string;
   }>({
-    localityIds: localities[0]?.id || 'roadpali',
+    localityIds: primaryLocalityId,
     categoryIds: '',
     subcategoryIds: '',
     pincodes: '',
@@ -1048,7 +1192,7 @@ export default function AdminConsole({
     pageTypes: 'homepage',
   });
 
-  const [linkLocalityId, setLinkLocalityId] = useState(localities[0]?.id || 'roadpali');
+  const [linkLocalityId, setLinkLocalityId] = useState(primaryLocalityId);
   const [linkCategoryId, setLinkCategoryId] = useState(BUSINESS_CATEGORIES[0]?.id || 'food-restaurants');
   const [linkSubcategoryId, setLinkSubcategoryId] = useState('');
   const [adminLocalityFilter, setAdminLocalityFilter] = useState('all');
@@ -1080,24 +1224,41 @@ export default function AdminConsole({
   useEffect(() => {
     if (localities.length === 0) return;
     if (!localities.some((locality) => locality.id === heroLocalityId)) {
-      setHeroLocalityId(localities[0].id);
+      setHeroLocalityId(primaryLocalityId);
     }
     if (!localities.some((locality) => locality.id === adLocalityId)) {
-      setAdLocalityId(localities[0].id);
+      setAdLocalityId(primaryLocalityId);
     }
     if (!localities.some((locality) => locality.id === couponLocalityId)) {
-      setCouponLocalityId(localities[0].id);
+      setCouponLocalityId(primaryLocalityId);
     }
     if (!localities.some((locality) => locality.id === homepageLocalityId)) {
-      setHomepageLocalityId(localities[0].id);
+      setHomepageLocalityId(primaryLocalityId);
     }
     if (!newSectionLocalityIds.length) {
-      setNewSectionLocalityIds([localities[0].id]);
+      setNewSectionLocalityIds(primaryLocalityId ? [primaryLocalityId] : []);
     }
     if (!localities.some((locality) => locality.id === linkLocalityId)) {
-      setLinkLocalityId(localities[0].id);
+      setLinkLocalityId(primaryLocalityId);
     }
-  }, [localities, heroLocalityId, adLocalityId, couponLocalityId, homepageLocalityId, linkLocalityId, newSectionLocalityIds.length]);
+    if (!assignmentDraft.localityId || !localities.some((locality) => locality.id === assignmentDraft.localityId)) {
+      setAssignmentDraft((prev) => ({ ...prev, localityId: primaryLocalityId }));
+    }
+    if (!resolvedPreviewDraft.localityId || !localities.some((locality) => locality.id === resolvedPreviewDraft.localityId)) {
+      setResolvedPreviewDraft((prev) => ({ ...prev, localityId: primaryLocalityId }));
+    }
+    const publishScopeLocalityIds = parseIdList(publishScopeDraft.localityIds);
+    if (publishScopeLocalityIds.length === 0 || publishScopeLocalityIds.some((id) => !localities.some((locality) => locality.id === id))) {
+      setPublishScopeDraft((prev) => ({ ...prev, localityIds: primaryLocalityId }));
+    }
+    const campaignLocalityIds = parseIdList(campaignDraft.localityIds);
+    if ((campaignDraft.localityIds && campaignLocalityIds.some((id) => !localities.some((locality) => locality.id === id))) || (!campaignDraft.localityIds && primaryLocalityId)) {
+      setCampaignDraft((prev) => ({ ...prev, localityIds: primaryLocalityId }));
+    }
+    if ((!templateDraft.localityIds || parseIdList(templateDraft.localityIds).some((id) => !localities.some((locality) => locality.id === id))) && templateDraft.templateScope === 'locality') {
+      setTemplateDraft((prev) => ({ ...prev, localityIds: primaryLocalityId }));
+    }
+  }, [localities, heroLocalityId, adLocalityId, couponLocalityId, homepageLocalityId, linkLocalityId, newSectionLocalityIds.length, assignmentDraft.localityId, resolvedPreviewDraft.localityId, publishScopeDraft.localityIds, campaignDraft.localityIds, templateDraft.localityIds, templateDraft.templateScope, primaryLocalityId]);
 
   useEffect(() => {
     if (!homepageLocalityId) return;
@@ -1165,7 +1326,7 @@ export default function AdminConsole({
     setCouponDescription('');
     setCouponStartDate(new Date().toISOString().slice(0, 10));
     setCouponEndDate(new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().slice(0, 10));
-    setCouponLocalityId(localities[0]?.id || 'roadpali');
+    setCouponLocalityId(primaryLocalityId);
     setCouponPincodes('');
     setCouponEditId(null);
   };
@@ -1179,7 +1340,7 @@ export default function AdminConsole({
     setCouponDescription(coupon.description);
     setCouponStartDate(coupon.startDate || new Date().toISOString().slice(0, 10));
     setCouponEndDate(coupon.endDate || coupon.expiryDate || new Date().toISOString().slice(0, 10));
-    setCouponLocalityId(coupon.localityIds?.[0] || localities[0]?.id || 'roadpali');
+    setCouponLocalityId(coupon.localityIds?.[0] || primaryLocalityId);
     setCouponPincodes((coupon.pincodes || []).join(', '));
   };
 
@@ -1199,6 +1360,15 @@ export default function AdminConsole({
     setAdImageFile(null);
     setAdDeviceTarget('all');
     setAdMobileRowPosition('3');
+    setAdWorkflowStatus('submitted');
+    setAdBillingModel('fixed');
+    setAdRotationMode('even');
+    setAdPlannedBudget('15000');
+    setAdSpentBudget('0');
+    setAdCpcBid('25');
+    setAdImpressions('0');
+    setAdClicks('0');
+    setAdReviewNotes('');
     setAdEditId(null);
     setAdFormError('');
   };
@@ -1216,7 +1386,7 @@ export default function AdminConsole({
     setAdTargetUrl(ad.targetUrl || '');
     setAdTargetBusinessId(ad.targetBusinessId || '');
     setAdSellerBusinessId(ad.sellerBusinessId || '');
-    setAdLocalityId(ad.localityIds?.[0] || localities[0]?.id || 'roadpali');
+    setAdLocalityId(ad.localityIds?.[0] || primaryLocalityId);
     setAdPincodes((ad.pincodes || []).join(', '));
     setAdCategoryIds(ad.categoryIds || []);
     setAdTags((ad.tags || []).join(', '));
@@ -1225,11 +1395,20 @@ export default function AdminConsole({
     setAdImageFile(null);
     setAdDeviceTarget(ad.deviceTarget || 'all');
     setAdMobileRowPosition(String(ad.mobileRowPosition || '3'));
+    setAdWorkflowStatus(ad.workflowStatus || 'submitted');
+    setAdBillingModel(ad.billingModel || 'fixed');
+    setAdRotationMode(ad.rotationMode || 'even');
+    setAdPlannedBudget(ad.plannedBudget !== undefined ? String(ad.plannedBudget) : '15000');
+    setAdSpentBudget(ad.spentBudget !== undefined ? String(ad.spentBudget) : '0');
+    setAdCpcBid(ad.cpcBid !== undefined ? String(ad.cpcBid) : '25');
+    setAdImpressions(ad.impressions !== undefined ? String(ad.impressions) : '0');
+    setAdClicks(ad.clicks !== undefined ? String(ad.clicks) : '0');
+    setAdReviewNotes(ad.reviewNotes || '');
     setAdFormError('');
   };
 
   const resetHeroBannerForm = () => {
-    setHeroLocalityId(localities[0]?.id || 'roadpali');
+    setHeroLocalityId(primaryLocalityId);
     setHeroTitle('');
     setHeroSubtitle('');
     setHeroImageUrl('');
@@ -1512,7 +1691,7 @@ export default function AdminConsole({
   const templateSelectionOptions = sortedScalableTemplates.map((template) => ({
     id: template.id,
     label: template.name,
-    meta: `${template.templateScope} • priority ${template.priority}`,
+    meta: `${template.templateScope} ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ priority ${template.priority}`,
   }));
   const categorySelectionOptions = BUSINESS_CATEGORIES.map((category) => ({
     id: category.id,
@@ -1592,7 +1771,7 @@ export default function AdminConsole({
     .map((business) => ({
       id: business.id,
       label: business.name,
-      meta: `${getCategoryById(business.categoryId)?.name || business.categoryId} • ${localities.find((locality) => locality.id === business.localityId)?.name || business.localityId}`,
+      meta: `${getCategoryById(business.categoryId)?.name || business.categoryId} ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ ${localities.find((locality) => locality.id === business.localityId)?.name || business.localityId}`,
     }));
   const filteredCoupons = coupons.filter((coupon) => {
     const business = businesses.find((entry) => entry.id === coupon.businessId);
@@ -1611,11 +1790,102 @@ export default function AdminConsole({
     if (adminStatusFilter === 'inactive' && ad.isActive) return false;
     if (adminSearchQuery.trim()) {
       const query = adminSearchQuery.trim().toLowerCase();
-      const searchable = `${ad.title} ${ad.description} ${ad.badge} ${ad.placementKey || ''}`.toLowerCase();
+      const searchable = `${ad.title} ${ad.description} ${ad.badge} ${ad.placementKey || ''} ${ad.workflowStatus || ''} ${ad.billingModel || ''}`.toLowerCase();
       if (!searchable.includes(query)) return false;
     }
     return true;
   });
+  const getDerivedAdLeadCount = (ad: ListingAd) => adLeads.filter((lead) => lead.adId === ad.id).length;
+  const getAdCtr = (ad: ListingAd) => {
+    const impressions = Number(ad.impressions || 0);
+    const clicks = Number(ad.clicks || 0);
+    if (impressions <= 0) return 0;
+    return (clicks / impressions) * 100;
+  };
+  const getAdCpl = (ad: ListingAd) => {
+    const leadCount = Math.max(Number(ad.leadCount || 0), getDerivedAdLeadCount(ad));
+    const spent = Number(ad.spentBudget || 0);
+    if (leadCount <= 0) return 0;
+    return spent / leadCount;
+  };
+  const pendingReviewAds = filteredListingAds.filter((ad) => ['submitted', 'under_review'].includes(ad.workflowStatus || 'draft'));
+  const getAdOpsPriorityScore = (ad: ListingAd) => {
+    const submittedAt = ad.submittedAt || ad.startDate || currentAdminDateIso;
+    const ageHours = Math.max(0, (Date.now() - Date.parse(submittedAt)) / (1000 * 60 * 60));
+    let score = 0;
+
+    if (ad.workflowStatus === 'submitted') score += 36;
+    if (ad.workflowStatus === 'under_review') score += 22;
+    if ((ad.deviceTarget || 'all') === 'all') score += 8;
+    if ((ad.placementKey || '').includes('homepage')) score += 10;
+    if ((ad.billingModel || 'fixed') === 'cpc') score += 8;
+    if ((ad.localityIds || []).length > 1) score += 6;
+
+    score += Math.min(32, ageHours / 6);
+    score += Math.min(18, Number(ad.plannedBudget || 0) / 5000);
+    score += Math.min(10, Number(ad.cpcBid || 0) / 10);
+
+    return score;
+  };
+  const getAdOpsSlaLabel = (ad: ListingAd) => {
+    const submittedAt = ad.submittedAt || ad.startDate || currentAdminDateIso;
+    const ageHours = Math.max(0, (Date.now() - Date.parse(submittedAt)) / (1000 * 60 * 60));
+    if (ageHours >= 48) return 'Critical SLA';
+    if (ageHours >= 24) return 'Due Today';
+    if (ageHours >= 8) return 'Review Soon';
+    return 'Fresh';
+  };
+  const prioritizedPendingReviewAds = pendingReviewAds
+    .slice()
+    .sort((left, right) => (
+      getAdOpsPriorityScore(right) - getAdOpsPriorityScore(left) ||
+      Date.parse(right.submittedAt || right.startDate || currentAdminDateIso) - Date.parse(left.submittedAt || left.startDate || currentAdminDateIso)
+    ));
+  const liveOrApprovedAds = filteredListingAds.filter((ad) => ['approved', 'scheduled', 'live', 'paused'].includes(ad.workflowStatus || 'draft'));
+  const rejectedAds = filteredListingAds.filter((ad) => ad.workflowStatus === 'rejected');
+  const adPerformanceSummary = filteredListingAds.reduce((summary, ad) => {
+    summary.plannedBudget += Number(ad.plannedBudget || 0);
+    summary.spentBudget += Number(ad.spentBudget || 0);
+    summary.impressions += Number(ad.impressions || 0);
+    summary.clicks += Number(ad.clicks || 0);
+    summary.leads += Math.max(Number(ad.leadCount || 0), getDerivedAdLeadCount(ad));
+    return summary;
+  }, {
+    plannedBudget: 0,
+    spentBudget: 0,
+    impressions: 0,
+    clicks: 0,
+    leads: 0
+  });
+  const handleAdWorkflowTransition = (
+    ad: ListingAd,
+    nextStatus: NonNullable<ListingAd['workflowStatus']>,
+    options?: { reason?: string; deactivate?: boolean }
+  ) => {
+    const nextLeadCount = Math.max(Number(ad.leadCount || 0), getDerivedAdLeadCount(ad));
+    const shouldDeactivate = options?.deactivate === true || ['rejected', 'archived', 'draft'].includes(nextStatus);
+    const shouldActivate = ['approved', 'scheduled', 'live'].includes(nextStatus);
+    onUpdateListingAd?.({
+      ...ad,
+      workflowStatus: nextStatus,
+      isActive: shouldDeactivate ? false : shouldActivate ? true : ad.isActive,
+      reviewedAt: ['approved', 'scheduled', 'live', 'paused', 'rejected'].includes(nextStatus) ? new Date().toISOString() : ad.reviewedAt,
+      reviewedBy: ['approved', 'scheduled', 'live', 'paused', 'rejected'].includes(nextStatus) ? (userSession?.userName || userSession?.role || 'admin') : ad.reviewedBy,
+      reviewNotes: options?.reason || ad.reviewNotes,
+      leadCount: nextLeadCount
+    });
+    triggerNotification(`Ad moved to ${nextStatus.replace(/_/g, ' ')}.`);
+  };
+  const handleAdRejection = (ad: ListingAd) => {
+    const reason = window.prompt('Why is this ad being rejected?', ad.reviewNotes || 'Needs creative or targeting revision.');
+    if (reason === null) return;
+    handleAdWorkflowTransition(ad, 'rejected', { reason: reason.trim() || 'Rejected by ops review.', deactivate: true });
+  };
+  const handleAdReviewRequest = (ad: ListingAd) => {
+    const note = window.prompt('What changes are needed before approval?', ad.reviewNotes || 'Please revise creative, targeting, or budget.');
+    if (note === null) return;
+    handleAdWorkflowTransition(ad, 'under_review', { reason: note.trim() || 'Revision requested by ops.' });
+  };
   const filteredHeroBanners = heroBanners.filter((hero) => {
     if (adminLocalityFilter !== 'all' && hero.localityId !== adminLocalityFilter) return false;
     if (adminStatusFilter === 'active' && !hero.isActive) return false;
@@ -1722,25 +1992,114 @@ export default function AdminConsole({
     return direct?.id || '';
   };
 
-  const inferLocality = (area: string) => {
-    const a = area.toLowerCase();
-    if (a.includes('kharghar')) return 'kharghar';
-    if (a.includes('kamothe')) return 'kamothe';
-    if (a.includes('panvel')) return 'panvel';
-    if (a.includes('taloja')) return 'taloja';
-    if (a.includes('kalamboli')) return 'kalamboli';
-    return 'roadpali';
+  const normalizeImportGeoLookup = (value: string) => slugifyAdminValue(String(value || ''));
+
+  const resolveImportGeography = (row: BulkImportRow): ResolvedImportGeography => {
+    const errors: string[] = [];
+    const requestedPincode = String(row.pin || '').replace(/\D/g, '').slice(0, 6);
+    const requestedAreaId = String(row.areaId || '').trim();
+    const requestedLocalityId = String(row.localityId || '').trim();
+    const requestedLocalityName = String(row.locality || '').trim();
+    const requestedAreaName = String(row.area || '').trim();
+    const requestedCityName = String(row.city || '').trim();
+    const requestedStateName = String(row.state || '').trim();
+
+    const explicitLocality = requestedLocalityId
+      ? MASTER_LOCALITIES.find((locality) => locality.id === requestedLocalityId)
+      : undefined;
+    const namedLocality = requestedLocalityName
+      ? MASTER_LOCALITIES.find((locality) => {
+          const publicLocalityName = localities.find((entry) => entry.id === locality.id)?.name || '';
+          return (
+            normalizeImportGeoLookup(locality.name) === normalizeImportGeoLookup(requestedLocalityName) ||
+            normalizeImportGeoLookup(publicLocalityName) === normalizeImportGeoLookup(requestedLocalityName)
+          );
+        })
+      : undefined;
+    const textMatchedLocality = !explicitLocality && !namedLocality
+      ? MASTER_LOCALITIES.find((locality) => {
+          const publicLocalityName = localities.find((entry) => entry.id === locality.id)?.name || '';
+          const localityNeedle = normalizeImportGeoLookup(locality.name || publicLocalityName);
+          const haystack = normalizeImportGeoLookup(`${requestedAreaName} ${requestedCityName} ${requestedStateName}`);
+          return Boolean(localityNeedle) && haystack.includes(localityNeedle);
+        })
+      : undefined;
+
+    const localityHintId = explicitLocality?.id || namedLocality?.id || textMatchedLocality?.id || '';
+    const requestedAreaLookup = normalizeImportGeoLookup(requestedAreaName);
+    const explicitArea = requestedAreaId
+      ? MASTER_AREAS.find((area) => area.id === requestedAreaId)
+      : undefined;
+    const namedArea = requestedAreaLookup
+      ? MASTER_AREAS.find((area) => {
+          const areaName = normalizeImportGeoLookup(area.name);
+          if (!areaName) return false;
+          if (localityHintId && area.localityId !== localityHintId) return false;
+          return areaName === requestedAreaLookup || areaName.includes(requestedAreaLookup) || requestedAreaLookup.includes(areaName);
+        })
+      : undefined;
+    const pincodeArea = requestedPincode
+      ? MASTER_AREAS.find((area) => area.pincode === requestedPincode && (!localityHintId || area.localityId === localityHintId))
+      : undefined;
+
+    const mappedLocalityId = requestedPincode
+      ? pincodeMappings.find((mapping) => mapping.pincode === requestedPincode)?.localityId || ''
+      : '';
+
+    const resolvedArea = explicitArea || namedArea || pincodeArea;
+    const resolvedLocality = explicitLocality
+      || namedLocality
+      || (resolvedArea ? MASTER_LOCALITIES.find((locality) => locality.id === resolvedArea.localityId) : undefined)
+      || (mappedLocalityId ? MASTER_LOCALITIES.find((locality) => locality.id === mappedLocalityId) : undefined)
+      || textMatchedLocality;
+    const resolvedCity = resolvedArea
+      ? MASTER_CITIES.find((city) => city.id === resolvedArea.cityId)
+      : resolvedLocality
+        ? MASTER_CITIES.find((city) => city.id === resolvedLocality.cityId)
+        : undefined;
+    const resolvedState = resolvedCity
+      ? MASTER_STATES.find((state) => state.id === resolvedCity.stateId)
+      : undefined;
+
+    if (requestedLocalityId && !explicitLocality) {
+      errors.push(`Locality ID "${requestedLocalityId}" was not found in geography master.`);
+    }
+    if (requestedLocalityName && !namedLocality) {
+      errors.push(`Locality "${requestedLocalityName}" was not found in geography master.`);
+    }
+    if (requestedPincode.length !== 6) {
+      errors.push('Valid 6-digit PIN is required.');
+    }
+    if (!resolvedLocality) {
+      errors.push('Could not resolve locality from Locality / Area / PIN mapping. Area is optional, but Locality or a mapped PIN is still required.');
+    }
+    if (mappedLocalityId && resolvedLocality && mappedLocalityId !== resolvedLocality.id) {
+      const mappedLocalityName = localities.find((entry) => entry.id === mappedLocalityId)?.name || mappedLocalityId;
+      errors.push(`PIN ${requestedPincode} is routed to ${mappedLocalityName}, but the row points to ${resolvedLocality.name}.`);
+    }
+    if (requestedCityName && resolvedCity && normalizeImportGeoLookup(resolvedCity.name) !== normalizeImportGeoLookup(requestedCityName)) {
+      errors.push(`City "${requestedCityName}" does not match resolved locality city "${resolvedCity.name}".`);
+    }
+    if (requestedStateName && resolvedState && normalizeImportGeoLookup(resolvedState.name) !== normalizeImportGeoLookup(requestedStateName)) {
+      errors.push(`State "${requestedStateName}" does not match resolved locality state "${resolvedState.name}".`);
+    }
+
+    return {
+      resolvedPincode: requestedPincode || resolvedArea?.pincode || '',
+      resolvedLocalityId: resolvedLocality?.id || '',
+      resolvedCityId: resolvedCity?.id || '',
+      resolvedStateId: resolvedState?.id || '',
+      areaId: resolvedArea?.id || '',
+      errors,
+    };
   };
 
   const buildImportPreview = (rows: BulkImportRow[]) => rows.map((row, idx): ImportPreviewRow => {
     const errors: string[] = [];
     const normalizedPhone = normalizePhone(row.mobile);
-    const areaMatch =
-      MASTER_AREAS.find(a => a.name.toLowerCase().includes((row.area || '').toLowerCase()) && row.area.trim()) ||
-      MASTER_AREAS.find(a => a.pincode === row.pin.replace(/\D/g, ''));
-    const resolvedPincode = row.pin.replace(/\D/g, '') || areaMatch?.pincode || '';
-    const mappedLocality = pincodeMappings.find(m => m.pincode === resolvedPincode)?.localityId;
-    const resolvedLocalityId = mappedLocality || inferLocality(`${row.area} ${row.city}`);
+    const geographyResolution = resolveImportGeography(row);
+    const resolvedPincode = geographyResolution.resolvedPincode;
+    const resolvedLocalityId = geographyResolution.resolvedLocalityId;
     const categoryId = resolveCategoryFromImport(row.category);
     const subcategoryId = resolveSubcategoryFromImport(row.subcategory, categoryId);
     const requiresTaxonomyMapping = !isBusinessTaxonomyMapped({ categoryId, subcategoryId });
@@ -1765,8 +2124,10 @@ export default function AdminConsole({
 
     if (!row.businessName.trim()) errors.push('Business Name is required.');
     if (normalizedPhone.length > 0 && normalizedPhone.length !== 10) errors.push('Mobile must be blank or a valid 10-digit number.');
-    if (resolvedPincode.length !== 6) errors.push('Valid 6-digit PIN is required or must match a known area.');
-    if (!localities.some(l => l.id === resolvedLocalityId)) errors.push(`Mapped locality "${resolvedLocalityId}" does not exist.`);
+    errors.push(...geographyResolution.errors);
+    if (resolvedLocalityId && !localities.some(l => l.id === resolvedLocalityId)) {
+      errors.push(`Mapped locality "${resolvedLocalityId}" does not exist.`);
+    }
 
     const duplicate = businesses.find((biz) => {
       const bizPincode = biz.pincode || MASTER_AREAS.find(a => a.id === biz.areaId)?.pincode || '';
@@ -1793,7 +2154,7 @@ export default function AdminConsole({
       importAction: duplicate ? 'update' : 'create',
       existingBusinessId: duplicate?.id,
       localityId: resolvedLocalityId,
-      areaId: areaMatch?.id || 'roadpali-sec17',
+      areaId: geographyResolution.areaId || '',
       categoryId,
       subcategoryId,
       sourceCategoryLabel: row.category?.trim() || undefined,
@@ -1822,6 +2183,9 @@ export default function AdminConsole({
         businessName: get('Business Name'),
         address: get('Address'),
         area: get('Area'),
+        locality: get('Locality') || get('Locality Name'),
+        localityId: get('Locality ID') || get('LocalityId'),
+        areaId: get('Area ID') || get('AreaId'),
         city: get('City'),
         state: get('State'),
         pin: get('PIN'),
@@ -1865,10 +2229,10 @@ export default function AdminConsole({
 
   const downloadFailedImportCsv = () => {
     const failedRows = importPreview.filter(r => r.previewStatus === 'fail');
-    const header = ['Row', 'Business Name', 'Address', 'Area', 'City', 'State', 'PIN', 'Mobile', 'Rating', 'Reviews', 'Services', 'Category', 'Subcategory', 'Latitude', 'Longitude', 'Error Details'];
+    const header = ['Row', 'Business Name', 'Address', 'Area', 'Locality', 'Locality ID', 'Area ID', 'City', 'State', 'PIN', 'Mobile', 'Rating', 'Reviews', 'Services', 'Category', 'Subcategory', 'Latitude', 'Longitude', 'Error Details'];
     const escapeCsv = (val: string | number) => `"${String(val ?? '').replace(/"/g, '""')}"`;
     const body = failedRows.map(r => [
-      r.rowNumber, r.businessName, r.address, r.area, r.city, r.state, r.pin, r.mobile, r.rating, r.reviews, r.services, r.category || '', r.subcategory || '', r.latitude, r.longitude, r.errors.join('; ')
+      r.rowNumber, r.businessName, r.address, r.area, r.locality || '', r.localityId || '', r.areaId || '', r.city, r.state, r.pin, r.mobile, r.rating, r.reviews, r.services, r.category || '', r.subcategory || '', r.latitude, r.longitude, r.errors.join('; ')
     ].map(escapeCsv).join(','));
     const blob = new Blob([[header.map(escapeCsv).join(','), ...body].join('\n')], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -1879,7 +2243,103 @@ export default function AdminConsole({
     URL.revokeObjectURL(url);
   };
 
+  const normalizeDuplicateText = (value: string) => String(value || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  const tokenizeDuplicateText = (value: string) => normalizeDuplicateText(value).split(' ').filter(Boolean);
+  const getTokenOverlapScore = (left: string, right: string) => {
+    const leftTokens = new Set(tokenizeDuplicateText(left));
+    const rightTokens = new Set(tokenizeDuplicateText(right));
+    if (leftTokens.size === 0 || rightTokens.size === 0) return 0;
+    let overlap = 0;
+    leftTokens.forEach((token) => {
+      if (rightTokens.has(token)) overlap += 1;
+    });
+    return overlap / Math.max(leftTokens.size, rightTokens.size);
+  };
+  const getDuplicateConfidenceScore = (left: Business, right: Business) => {
+    if (left.id === right.id) return 0;
+    if (left.localityId !== right.localityId) return 0;
+
+    const leftPhone = String(left.phone || '').replace(/\D/g, '').slice(-10);
+    const rightPhone = String(right.phone || '').replace(/\D/g, '').slice(-10);
+    const leftPincode = String(left.pincode || '').trim();
+    const rightPincode = String(right.pincode || '').trim();
+    const leftName = normalizeDuplicateText(left.name);
+    const rightName = normalizeDuplicateText(right.name);
+    const leftAddress = normalizeDuplicateText(`${left.address} ${left.areaId}`);
+    const rightAddress = normalizeDuplicateText(`${right.address} ${right.areaId}`);
+
+    let score = 0;
+    if (leftPhone && rightPhone && leftPhone === rightPhone) score += 48;
+    if (leftPincode && rightPincode && leftPincode === rightPincode) score += 10;
+    if (leftName && rightName && leftName === rightName) score += 20;
+    score += Math.round(getTokenOverlapScore(left.name, right.name) * 20);
+    score += Math.round(getTokenOverlapScore(left.address, right.address) * 14);
+    if (left.areaId && right.areaId && left.areaId === right.areaId) score += 8;
+    if (left.categoryId && right.categoryId && left.categoryId === right.categoryId) score += 6;
+    if (left.subcategoryId && right.subcategoryId && left.subcategoryId === right.subcategoryId) score += 6;
+    return Math.min(100, score);
+  };
+  const chooseCanonicalBusiness = (left: Business, right: Business) => {
+    const leftScore = (left.status === 'approved' ? 40 : 0)
+      + (left.verifiedBadge ? 15 : 0)
+      + (left.kycStatus === 'verified' ? 10 : 0)
+      + (left.reviewCount || 0)
+      + (left.rating || 0) * 5;
+    const rightScore = (right.status === 'approved' ? 40 : 0)
+      + (right.verifiedBadge ? 15 : 0)
+      + (right.kycStatus === 'verified' ? 10 : 0)
+      + (right.reviewCount || 0)
+      + (right.rating || 0) * 5;
+    if (leftScore === rightScore) {
+      return new Date(left.createdAt).getTime() <= new Date(right.createdAt).getTime()
+        ? { canonical: left, duplicate: right }
+        : { canonical: right, duplicate: left };
+    }
+    return leftScore >= rightScore
+      ? { canonical: left, duplicate: right }
+      : { canonical: right, duplicate: left };
+  };
+
   const pendingBusinesses = businesses.filter(b => b.status === 'pending');
+  const duplicateReviewCandidates = useMemo<DuplicateReviewCandidate[]>(() => {
+    const eligibleBusinesses = businesses.filter((business) => business.status !== 'rejected' && business.duplicateReviewStatus !== 'merged');
+    const candidates: DuplicateReviewCandidate[] = [];
+
+    for (let leftIndex = 0; leftIndex < eligibleBusinesses.length; leftIndex += 1) {
+      for (let rightIndex = leftIndex + 1; rightIndex < eligibleBusinesses.length; rightIndex += 1) {
+        const left = eligibleBusinesses[leftIndex];
+        const right = eligibleBusinesses[rightIndex];
+        const score = getDuplicateConfidenceScore(left, right);
+        if (score < 68) continue;
+
+        const { canonical, duplicate } = chooseCanonicalBusiness(left, right);
+        if (duplicate.duplicateReviewStatus === 'separate' && duplicate.mergedIntoBusinessId === canonical.id) continue;
+
+        const reasons: string[] = [];
+        const canonicalPhone = String(canonical.phone || '').replace(/\D/g, '').slice(-10);
+        const duplicatePhone = String(duplicate.phone || '').replace(/\D/g, '').slice(-10);
+        if (canonicalPhone && canonicalPhone === duplicatePhone) reasons.push('same phone');
+        if (canonical.pincode && canonical.pincode === duplicate.pincode) reasons.push('same pincode');
+        if (normalizeDuplicateText(canonical.name) === normalizeDuplicateText(duplicate.name)) reasons.push('same business name');
+        if (canonical.areaId === duplicate.areaId) reasons.push('same area');
+        if (canonical.categoryId === duplicate.categoryId) reasons.push('same category');
+        if (reasons.length === 0) reasons.push('high text similarity');
+
+        candidates.push({
+          id: `${canonical.id}__${duplicate.id}`,
+          canonical,
+          duplicate,
+          score,
+          reasons,
+        });
+      }
+    }
+
+    return candidates
+      .sort((left, right) => right.score - left.score || right.canonical.reviewCount - left.canonical.reviewCount)
+      .slice(0, 20);
+  }, [businesses]);
+
   const listingStatusItems = [...businesses]
     .filter((business) => listingStatusFilter === 'all' ? true : business.status === listingStatusFilter)
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
@@ -1920,6 +2380,73 @@ export default function AdminConsole({
   const triggerNotification = (msg: string) => {
     setAdminNotification(msg);
     setTimeout(() => setAdminNotification(null), 3000);
+  };
+
+  const mergeDuplicateCandidate = (candidate: DuplicateReviewCandidate) => {
+    if (!onUpdateBusiness) return;
+    const selectedCanonicalId = duplicateMergeTargetByBusinessId[candidate.duplicate.id] || candidate.canonical.id;
+    const canonical = selectedCanonicalId === candidate.duplicate.id ? candidate.duplicate : candidate.canonical;
+    const duplicate = selectedCanonicalId === candidate.duplicate.id ? candidate.canonical : candidate.duplicate;
+    const combinedReviewCount = (canonical.reviewCount || 0) + (duplicate.reviewCount || 0);
+    const weightedRating = combinedReviewCount > 0
+      ? (((canonical.rating || 0) * (canonical.reviewCount || 0)) + ((duplicate.rating || 0) * (duplicate.reviewCount || 0))) / combinedReviewCount
+      : Math.max(canonical.rating || 0, duplicate.rating || 0, 0);
+    const mergedCanonical: Business = {
+      ...canonical,
+      description: canonical.description.length >= duplicate.description.length ? canonical.description : duplicate.description,
+      phone: canonical.phone || duplicate.phone,
+      email: canonical.email || duplicate.email,
+      website: canonical.website || duplicate.website,
+      address: canonical.address || duplicate.address,
+      imageUrl: canonical.imageUrl || duplicate.imageUrl,
+      hours: canonical.hours || duplicate.hours,
+      featured: canonical.featured || duplicate.featured,
+      verifiedBadge: canonical.verifiedBadge || duplicate.verifiedBadge,
+      isSponsored: canonical.isSponsored || duplicate.isSponsored,
+      govRegistered: canonical.govRegistered || duplicate.govRegistered,
+      isHomeBased: canonical.isHomeBased || duplicate.isHomeBased,
+      isWomenLed: canonical.isWomenLed || duplicate.isWomenLed,
+      isPublicService: canonical.isPublicService || duplicate.isPublicService,
+      reviewCount: combinedReviewCount,
+      rating: Number(weightedRating.toFixed(1)),
+      areasOfOperation: Array.from(new Set([...(canonical.areasOfOperation || []), ...(duplicate.areasOfOperation || [])])),
+      tags: Array.from(new Set([...(canonical.tags || []), ...(duplicate.tags || []), 'merged-duplicate'])),
+      sourceLineage: Array.from(new Set([canonical.id, ...(canonical.sourceLineage || []), duplicate.id, ...(duplicate.sourceLineage || [])])),
+      duplicateReviewStatus: undefined,
+      mergedIntoBusinessId: undefined,
+    };
+    const mergedDuplicate: Business = {
+      ...duplicate,
+      status: 'rejected',
+      duplicateReviewStatus: 'merged',
+      mergedIntoBusinessId: canonical.id,
+      rejectionReason: `Merged into canonical listing "${canonical.name}" on July 30, 2026.`,
+      sourceLineage: Array.from(new Set([...(duplicate.sourceLineage || []), canonical.id])),
+    };
+
+    onUpdateBusiness(mergedCanonical);
+    onUpdateBusiness(mergedDuplicate);
+    setDuplicateMergeTargetByBusinessId((prev) => {
+      const next = { ...prev };
+      delete next[candidate.duplicate.id];
+      delete next[candidate.canonical.id];
+      return next;
+    });
+    triggerNotification(`Merged duplicate listing "${mergedDuplicate.name}" into "${mergedCanonical.name}".`);
+  };
+
+  const keepDuplicateSeparate = (candidate: DuplicateReviewCandidate) => {
+    if (!onUpdateBusiness) return;
+    const selectedCanonicalId = duplicateMergeTargetByBusinessId[candidate.duplicate.id] || candidate.canonical.id;
+    const canonical = selectedCanonicalId === candidate.duplicate.id ? candidate.duplicate : candidate.canonical;
+    const duplicate = selectedCanonicalId === candidate.duplicate.id ? candidate.canonical : candidate.duplicate;
+    onUpdateBusiness({
+      ...duplicate,
+      duplicateReviewStatus: 'separate',
+      mergedIntoBusinessId: canonical.id,
+      sourceLineage: Array.from(new Set([...(duplicate.sourceLineage || []), canonical.id])),
+    });
+    triggerNotification(`Marked "${duplicate.name}" as reviewed and kept separate from "${canonical.name}".`);
   };
 
   const createInlineSubcategory = async (categoryId: string, rawName: string) => {
@@ -2025,6 +2552,66 @@ export default function AdminConsole({
     triggerNotification(`Mapped taxonomy for ${biz.name}.`);
   };
 
+  const resolveLocalityGeography = (localityId: string) => {
+    const locality = geographyConfig?.localities.find((entry) => entry.id === localityId) || null;
+    const city = locality ? geographyConfig?.cities.find((entry) => entry.id === locality.cityId) || null : null;
+    return {
+      locality,
+      city,
+      stateId: city?.stateId || '',
+    };
+  };
+
+  const createInlineArea = async (localityId: string, name: string, pincode: string) => {
+    if (!onSaveGeographyConfig || !geographyConfig) {
+      throw new Error('Area save is not available in this workspace.');
+    }
+    const trimmedName = name.trim();
+    const normalizedPincode = pincode.replace(/\D/g, '').slice(0, 6);
+    if (!localityId) {
+      throw new Error('Choose a locality before creating an area.');
+    }
+    if (!trimmedName) {
+      throw new Error('Area name is required.');
+    }
+    if (normalizedPincode.length !== 6) {
+      throw new Error('A valid 6-digit pincode is required.');
+    }
+
+    const locality = geographyConfig.localities.find((entry) => entry.id === localityId);
+    if (!locality) {
+      throw new Error('Selected locality was not found in geography master.');
+    }
+
+    const areaSeed = `${localityId}-${trimmedName}-${normalizedPincode}`;
+    const nextAreaId = buildUniqueAdminId(areaSeed, new Set(geographyConfig.areas.map((area) => area.id)));
+    if (!nextAreaId) {
+      throw new Error('Could not generate a valid area ID.');
+    }
+
+    const saved = await onSaveGeographyConfig({
+      ...geographyConfig,
+      areas: [
+        ...geographyConfig.areas,
+        {
+          id: nextAreaId,
+          localityId,
+          cityId: locality.cityId,
+          name: trimmedName,
+          pincode: normalizedPincode,
+        },
+      ],
+    });
+
+    const savedConfig = (saved || geographyConfig) as GeographyConfigState;
+    const createdArea = savedConfig.areas.find((area) => area.id === nextAreaId);
+    if (!createdArea) {
+      throw new Error('Area was saved but could not be found afterwards.');
+    }
+    triggerNotification(`Created area: ${trimmedName}`);
+    return createdArea.id;
+  };
+
   const openBackendListing = (biz: Business) => {
     setSelectedBackendBiz(biz);
     setBackendDraft({
@@ -2043,9 +2630,31 @@ export default function AdminConsole({
 
   const saveBackendListing = () => {
     if (!backendDraft || !onUpdateBusiness) return;
+    const normalizedPincode = (backendDraft.pincode || MASTER_AREAS.find((area) => area.id === backendDraft.areaId)?.pincode || '').replace(/\D/g, '').slice(0, 6);
+    const { city, stateId } = resolveLocalityGeography(backendDraft.localityId);
+    if (!backendDraft.name.trim()) {
+      triggerNotification('Listing name is required.');
+      return;
+    }
+    if (!backendDraft.localityId) {
+      triggerNotification('Locality is required.');
+      return;
+    }
+    if (!city || !stateId) {
+      triggerNotification('Selected locality is missing city/state mapping in geography master.');
+      return;
+    }
+    if (normalizedPincode.length !== 6) {
+      triggerNotification('Valid 6-digit pincode is required.');
+      return;
+    }
     const normalizedDraft = {
       ...backendDraft,
-      pincode: backendDraft.pincode || MASTER_AREAS.find((area) => area.id === backendDraft.areaId)?.pincode || ''
+      stateId,
+      cityId: city.id,
+      areaId: String(backendDraft.areaId || '').trim(),
+      pincode: normalizedPincode,
+      areasOfOperation: String(backendDraft.areaId || '').trim() ? [String(backendDraft.areaId || '').trim()] : [],
     };
     onUpdateBusiness(normalizedDraft);
     setSelectedBackendBiz(normalizedDraft);
@@ -2124,6 +2733,7 @@ export default function AdminConsole({
 
     setAdImageUploading(true);
     try {
+      const existingAd = adEditId ? listingAds.find((entry) => entry.id === adEditId) || null : null;
       const nextPlacementKey = adPlacementKey.trim() || 'homepage_inline_primary';
       const uploadedImageUrl = adImageFile
         ? await uploadBannerImage(adImageFile, getListingAdFolder())
@@ -2156,7 +2766,20 @@ export default function AdminConsole({
         placementKey: nextPlacementKey,
         deviceTarget: adDeviceTarget,
         mobileRowPosition: adDeviceTarget !== 'desktop' && Number(adMobileRowPosition) > 0 ? Number(adMobileRowPosition) : undefined,
-        isActive: true
+        workflowStatus: adWorkflowStatus,
+        billingModel: adBillingModel,
+        rotationMode: adRotationMode,
+        plannedBudget: Number(adPlannedBudget.replace(/[^\d.]/g, '')) || undefined,
+        spentBudget: Number(adSpentBudget.replace(/[^\d.]/g, '')) || 0,
+        cpcBid: adBillingModel === 'cpc' ? (Number(adCpcBid.replace(/[^\d.]/g, '')) || undefined) : undefined,
+        impressions: Number(adImpressions.replace(/[^\d]/g, '')) || 0,
+        clicks: Number(adClicks.replace(/[^\d]/g, '')) || 0,
+        leadCount: existingAd?.leadCount || 0,
+        submittedAt: ['submitted', 'under_review'].includes(adWorkflowStatus) ? (existingAd?.submittedAt || new Date().toISOString()) : existingAd?.submittedAt,
+        reviewedAt: ['approved', 'scheduled', 'live', 'paused', 'rejected'].includes(adWorkflowStatus) ? new Date().toISOString() : existingAd?.reviewedAt,
+        reviewedBy: ['approved', 'scheduled', 'live', 'paused', 'rejected'].includes(adWorkflowStatus) ? (userSession?.userName || userSession?.role || 'admin') : existingAd?.reviewedBy,
+        reviewNotes: adReviewNotes.trim() || undefined,
+        isActive: ['approved', 'scheduled', 'live'].includes(adWorkflowStatus)
       };
 
       if (adEditId) {
@@ -2629,7 +3252,7 @@ export default function AdminConsole({
       id: '',
       name: '',
       templateScope: 'locality',
-      localityIds: homepageLocalityId || localities[0]?.id || 'roadpali',
+      localityIds: homepageLocalityId || primaryLocalityId,
       status: 'active',
       priority: '100',
       isDefault: false,
@@ -3017,7 +3640,7 @@ export default function AdminConsole({
   const resetAssignmentDraft = () => {
     setAssignmentDraft({
       id: '',
-      localityId: homepageLocalityId || localities[0]?.id || 'roadpali',
+      localityId: homepageLocalityId || primaryLocalityId,
       templateId: scalableHomepageConfig?.templates[0]?.id || '',
       categoryId: '',
       subcategoryId: '',
@@ -3122,7 +3745,7 @@ export default function AdminConsole({
       endDate: '',
       deviceTarget: 'all',
       placementKeys: '',
-      localityIds: homepageLocalityId || localities[0]?.id || 'roadpali',
+      localityIds: homepageLocalityId || primaryLocalityId,
       categoryIds: '',
       subcategoryIds: '',
       pincodes: '',
@@ -3573,7 +4196,7 @@ export default function AdminConsole({
               </div>
               <div className="mt-1 truncate text-xs font-semibold text-slate-900">{section.title}</div>
               <div className="truncate text-[10px] text-slate-500">
-                {targetingSummary} • {section.pincodes?.length ? `${section.pincodes.length} pincodes` : 'all pincodes'}
+                {targetingSummary} ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ {section.pincodes?.length ? `${section.pincodes.length} pincodes` : 'all pincodes'}
               </div>
             </div>
           </div>
@@ -3899,730 +4522,113 @@ export default function AdminConsole({
         </div>
 
         {adminWorkspaceTab === 'moderation' && (
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="text-lg font-bold text-slate-950 flex items-center gap-2">
-                <CheckCircle className="w-5 h-5 text-emerald-500" />
-                Intake Moderation Queue
-              </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Review submitted business requests from Hyper Local proprietors. Real-time verification simulator.
-              </p>
-            </div>
-            <span className="bg-amber-100 text-amber-800 text-xs px-2.5 py-1 rounded-full font-mono font-semibold">
-              {pendingBusinesses.length} Pending Approval
-            </span>
-          </div>
-
-          {pendingBusinesses.length === 0 ? (
-            <div className="text-center py-10 bg-slate-50 rounded-xl border border-dashed border-slate-200">
-              <Check className="w-10 h-10 text-emerald-500 mx-auto mb-2 opacity-60" />
-              <p className="text-sm font-medium text-slate-700">All applications processed!</p>
-              <p className="text-xs text-slate-400 mt-1">No new Hyper Local businesses waiting in the moderation queue.</p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {pendingBusinesses.map((biz) => {
-                const locality = localities.find(l => l.id === biz.localityId);
-                const isRejecting = rejectionActive[biz.id];
-
-                return (
-                  <div key={biz.id} className="p-4 bg-slate-50 rounded-xl border border-slate-200 flex flex-col md:flex-row tracking-tight gap-4">
-                    <img 
-                      src={getBusinessImageUrl(biz)}
-                      alt={biz.name}
-                      onError={(e)=>{
-                        (e.target as HTMLImageElement).src = getCategoryFallbackImage(biz.categoryId);
-                      }}
-                      className={`w-16 h-16 rounded-lg bg-slate-100 border border-slate-200 flex-shrink-0 self-start md:self-center ${hasUploadedBusinessImage(biz) ? 'object-cover' : 'object-contain p-2'}`}
-                    />
-                    <div className="flex-1 space-y-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h4 className="font-bold text-slate-900 text-sm leading-tight">{biz.name}</h4>
-                        <span className="text-[10px] bg-slate-200 text-slate-700 px-2 py-0.5 rounded-full font-semibold">
-                          {getCategoryById(biz.categoryId)?.name || biz.categoryId}
-                          {biz.subcategoryId && ` / ${getSubcategoryById(biz.subcategoryId)?.name || biz.subcategoryId}`}
-                        </span>
-                        {onUpdateBusiness && (
-                          <>
-                            <select
-                              value={biz.categoryId}
-                              onChange={(e) => {
-                                const nextCategory = e.target.value;
-                                onUpdateBusiness({ ...biz, categoryId: nextCategory, subcategoryId: resolveDefaultSubcategoryId(nextCategory) });
-                              }}
-                              className="text-[10px] bg-white border border-slate-300 rounded px-2 py-0.5 font-semibold text-slate-700"
-                              title="Change listing category"
-                            >
-                              {BUSINESS_CATEGORIES.map((c) => (
-                                <option key={c.id} value={c.id}>
-                                  {c.name}
-                                </option>
-                              ))}
-                            </select>
-                            <select
-                              value={biz.subcategoryId}
-                              onChange={(e) => onUpdateBusiness({ ...biz, subcategoryId: e.target.value })}
-                              className="text-[10px] bg-white border border-slate-300 rounded px-2 py-0.5 font-semibold text-slate-700"
-                              title="Change listing subcategory"
-                            >
-                              {getSubcategoriesForCategory(biz.categoryId).map((s) => (
-                                <option key={s.id} value={s.id}>
-                                  {s.name}
-                                </option>
-                              ))}
-                            </select>
-                          </>
-                        )}
-                        {locality && (
-                          <span className="text-[10px] bg-sky-100 text-sky-800 px-2 py-0.5 rounded-full font-medium">
-                            📌 Locality target: {locality.name}
-                          </span>
-                        )}
-                      </div>
-                      
-                      <p className="text-xs text-slate-600 line-clamp-2 italic">
-                        {biz.description}
-                      </p>
-
-                      {/* Display geographical operational areas & coordinates */}
-                      <div className="flex flex-wrap gap-1.5 pt-1">
-                        {biz.areasOfOperation && biz.areasOfOperation.map(aid => {
-                          const area = MASTER_AREAS.find(a => a.id === aid);
-                          return (
-                            <span key={aid} className="text-[10px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded border border-slate-200">
-                              🏠 Area: {area ? area.name : aid}
-                            </span>
-                          );
-                        })}
-                        {biz.gpsCoordinates && (
-                          <span className="text-[10px] bg-sky-50 text-sky-700 px-2 py-0.5 rounded border border-sky-100 font-mono">
-                            📡 GPS: {biz.gpsCoordinates.lat}, {biz.gpsCoordinates.lng}
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-1 text-xs font-mono text-slate-500 pt-2 bg-slate-100/40 p-2.5 rounded-lg border border-slate-200/50">
-                        <div className="truncate">📞 {biz.phone || 'Not provided'}</div>
-                        <div className="truncate">
-                          ✉️ {biz.email ? biz.email : <span className="text-slate-400 italic">No Email Specified</span>}
-                        </div>
-                        <div className="truncate text-blue-600 font-sans hover:underline">
-                          🔗 <a href={biz.website} hrefLang="en" target="_blank" rel="noreferrer">{biz.website}</a>
-                        </div>
-                        <div className="col-span-full font-sans text-slate-600 mt-1">
-                          📍 Address: {biz.address}
-                        </div>
-                        
-                        {/* Interactive edit trigger context */}
-                        <div className="col-span-full mt-2.5 flex items-center gap-2">
-                          <span className="font-sans text-[11px] text-slate-400">Hours Adjustment:</span>
-                          <input
-                            type="text"
-                            value={editedHrs[biz.id] !== undefined ? editedHrs[biz.id] : biz.hours || '10:00 AM - 08:30 PM'}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setEditedHrs(prev => ({ ...prev, [biz.id]: val }));
-                              if (onUpdateBusiness) {
-                                onUpdateBusiness({ ...biz, hours: val });
-                              }
-                            }}
-                            className="bg-white border border-slate-300 rounded text-[11px] px-2 py-0.5 font-sans focus:outline-none focus:ring-1 focus:ring-indigo-500 w-44"
-                          />
-                        </div>
-
-                        {biz.ownerName && (
-                          <div className="col-span-full font-sans text-slate-700 italic mt-0.5">
-                            👤 Applicant Proprietor: {biz.ownerName}
-                          </div>
-                        )}
-                      </div>
-
-                      {isRejecting && (
-                        <div className="mt-3 p-3 bg-red-50 border border-red-100 rounded-lg space-y-2">
-                          <label className="block text-xs font-semibold text-slate-700">Specify Rejection Reason:</label>
-                          <div className="flex gap-2">
-                            <input
-                              type="text"
-                              value={rejectionReasons[biz.id] || ''}
-                              onChange={(e) => setRejectionReasons({ ...rejectionReasons, [biz.id]: e.target.value })}
-                              placeholder="e.g. Missing license documentation, incorrect address or invalid category"
-                              className="text-xs px-3 py-1.5 bg-white border border-slate-300 rounded-lg flex-1 focus:outline-none focus:ring-1 focus:ring-red-400"
-                            />
-                            <button
-                              onClick={() => {
-                                onReject(biz.id, rejectionReasons[biz.id] || 'Rejected after auditing review guidelines.');
-                                setRejectionActive({ ...rejectionActive, [biz.id]: false });
-                              }}
-                              className="bg-red-600 hover:bg-red-700 text-white font-mono text-xs px-3 py-1.5 rounded-lg font-bold"
-                            >
-                              Confirm Rejection
-                            </button>
-                            <button
-                              onClick={() => setRejectionActive({ ...rejectionActive, [biz.id]: false })}
-                              className="bg-slate-200 hover:bg-slate-300 text-slate-700 font-mono text-xs px-3 py-1.5 rounded-lg"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        </div>
-                      )}
-
-                      {!isRejecting && (
-                        <div className="flex items-center gap-2 pt-2 border-t border-slate-200/60">
-                          <button
-                            onClick={() => onApprove(biz.id)}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3.5 py-1.5 rounded-lg flex items-center gap-1.5 font-semibold transition"
-                          >
-                            <Check className="w-3.5 h-3.5" /> Approve Entry
-                          </button>
-                          <button
-                            onClick={() => setRejectionActive({ ...rejectionActive, [biz.id]: true })}
-                            className="text-slate-600 hover:text-red-700 border border-slate-200 hover:border-red-200 bg-white hover:bg-red-50 text-xs px-3.5 py-1.5 rounded-lg flex items-center gap-1.5 font-medium transition"
-                          >
-                            <XCircle className="w-3.5 h-3.5" /> Reject
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+          <ModerationQueue
+            pendingBusinesses={pendingBusinesses}
+            localities={localities}
+            rejectionActive={rejectionActive}
+            rejectionReasons={rejectionReasons}
+            editedHrs={editedHrs}
+            onApprove={onApprove}
+            onReject={onReject}
+            onToggleRejectActive={(businessId, active) => {
+              setRejectionActive((prev) => ({ ...prev, [businessId]: active }));
+            }}
+            onRejectReasonChange={(businessId, reason) => {
+              setRejectionReasons((prev) => ({ ...prev, [businessId]: reason }));
+            }}
+            onHoursChange={(businessId, hours) => {
+              setEditedHrs((prev) => ({ ...prev, [businessId]: hours }));
+              const targetBusiness = pendingBusinesses.find((business) => business.id === businessId);
+              if (targetBusiness && onUpdateBusiness) {
+                onUpdateBusiness({ ...targetBusiness, hours });
+              }
+            }}
+            onUpdateBusiness={onUpdateBusiness}
+          />
         )}
-
         {adminWorkspaceTab === 'listing-status' && (
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <h3 className="text-md font-bold text-slate-950 flex items-center gap-2">
-                <Database className="w-4.5 h-4.5 text-blue-600" />
-                Other Listings Status
-              </h3>
-              <p className="text-xs text-slate-500 mt-1">
-                Review listing states in one place. This tab now paginates 20 listings per page.
-              </p>
-            </div>
-            <span className="text-[10px] font-mono text-slate-500 bg-slate-100 border border-slate-200 rounded-lg px-3 py-1.5 self-start">
-              {listingStatusItems.length} listings • 20 per page
-            </span>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            {[
-              { id: 'all', label: 'All' },
-              { id: 'approved', label: 'Active' },
-              { id: 'rejected', label: 'Deactivated' },
-              { id: 'pending', label: 'Pending' }
-            ].map((filter) => (
-              <button
-                key={filter.id}
-                type="button"
-                onClick={() => {
-                  setListingStatusFilter(filter.id as ListingStatusFilter);
-                  setListingStatusPage(1);
-                }}
-                className={`rounded-lg px-3 py-1.5 text-xs font-bold ${
-                  listingStatusFilter === filter.id ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'
-                }`}
-              >
-                {filter.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-slate-500 border-collapse">
-              <thead>
-                <tr className="border-b border-slate-100 text-[10px] uppercase font-mono tracking-wider font-semibold text-slate-400">
-                  <th className="py-2">Business</th>
-                  <th className="py-2">Category / Subcategory</th>
-                  <th className="py-2">Public Route</th>
-                  <th className="py-2">Proprietor</th>
-                  <th className="py-2">Decision Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {listingStatusPageItems.map((business) => {
-                  const locality = localities.find((candidate) => candidate.id === business.localityId);
-                  const isRejected = business.status === 'rejected';
-                  const isPending = business.status === 'pending';
-                  return (
-                    <tr
-                      key={business.id}
-                      onClick={() => openBackendListing(business)}
-                      className="hover:bg-slate-50/50 cursor-pointer"
-                    >
-                      <td className={`py-2.5 font-semibold ${isRejected ? 'text-slate-500 line-through' : 'text-slate-800'}`}>
-                        {business.name}
-                      </td>
-                      <td className="py-2.5">
-                        {onUpdateBusiness ? (
-                          <div className="flex flex-col gap-1">
-                            <select
-                              value={business.categoryId}
-                              required
-                              onClick={(e) => e.stopPropagation()}
-                              onChange={(e) => {
-                                const nextCategory = e.target.value;
-                                onUpdateBusiness({ ...business, categoryId: nextCategory, subcategoryId: resolveDefaultSubcategoryId(nextCategory) });
-                              }}
-                              className="text-[10px] bg-white border border-slate-300 rounded px-2 py-1 font-semibold text-slate-700"
-                              title="Update listing category"
-                            >
-                              {BUSINESS_CATEGORIES.map((category) => (
-                                <option key={category.id} value={category.id}>{category.name}</option>
-                              ))}
-                            </select>
-                            <select
-                              value={business.subcategoryId}
-                              required
-                              onClick={(e) => e.stopPropagation()}
-                              onChange={(e) => onUpdateBusiness({ ...business, subcategoryId: e.target.value })}
-                              className="text-[10px] bg-white border border-slate-300 rounded px-2 py-1 font-semibold text-slate-700"
-                              title="Update listing subcategory"
-                            >
-                              {getSubcategoriesForCategory(business.categoryId).map((subcategory) => (
-                                <option key={subcategory.id} value={subcategory.id}>{subcategory.name}</option>
-                              ))}
-                            </select>
-                            <InlineSubcategoryCreator
-                              categoryId={business.categoryId}
-                              canCreate={Boolean(onSaveBusinessTaxonomy && businessTaxonomy)}
-                              onCreate={createInlineSubcategory}
-                              onAssign={(subcategoryId) => onUpdateBusiness({ ...business, subcategoryId })}
-                            />
-                          </div>
-                        ) : (
-                          <span>{getCategoryById(business.categoryId)?.name || business.categoryId} / {getSubcategoryById(business.subcategoryId)?.name || business.subcategoryId}</span>
-                        )}
-                      </td>
-                      <td className={`py-2.5 font-mono ${isRejected ? 'text-slate-400' : 'text-slate-600'}`}>
-                        {locality ? getPublicLocalityUrl(locality) : 'https://www.localisy.in/roadpali'}
-                      </td>
-                      <td className="py-2.5">{business.ownerName || 'Self-Registered'}</td>
-                      <td className="py-2.5">
-                        {business.status === 'approved' && (
-                          <span className="inline-flex items-center gap-1.5 text-emerald-600 font-semibold">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                            Approved
-                          </span>
-                        )}
-                        {business.status === 'pending' && (
-                          <span className="inline-flex items-center gap-1.5 text-amber-600 font-semibold">
-                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-                            Pending
-                          </span>
-                        )}
-                        {business.status === 'rejected' && (
-                          <div className="text-red-500 font-semibold flex flex-col">
-                            <span className="inline-flex items-center gap-1.5">
-                              <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
-                              Rejected
-                            </span>
-                            <span className="text-[10px] font-sans text-slate-400 max-w-[180px] truncate" title={business.rejectionReason}>
-                              {business.rejectionReason || 'No reason recorded'}
-                            </span>
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-                {listingStatusPageItems.length === 0 && (
-                  <tr>
-                    <td colSpan={5} className="py-8 text-center text-xs text-slate-400">
-                      No listings found for this filter.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="flex items-center justify-between text-xs">
-            <button
-              type="button"
-              onClick={() => setListingStatusPage((prev) => Math.max(1, prev - 1))}
-              disabled={safeListingStatusPage <= 1}
-              className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 disabled:opacity-50"
-            >
-              Previous
-            </button>
-            <span className="font-mono text-slate-500">
-              Page {safeListingStatusPage} / {listingStatusTotalPages}
-            </span>
-            <button
-              type="button"
-              onClick={() => setListingStatusPage((prev) => Math.min(listingStatusTotalPages, prev + 1))}
-              disabled={safeListingStatusPage >= listingStatusTotalPages}
-              className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 disabled:opacity-50"
-            >
-              Next
-            </button>
-          </div>
-        </div>
+          <ListingStatusWorkspace
+            listingStatusItemsLength={listingStatusItems.length}
+            listingStatusFilter={listingStatusFilter}
+            onFilterChange={(filter) => {
+              setListingStatusFilter(filter);
+              setListingStatusPage(1);
+            }}
+            duplicateReviewCandidates={duplicateReviewCandidates}
+            duplicateMergeTargetByBusinessId={duplicateMergeTargetByBusinessId}
+            onSelectCanonical={(duplicateBusinessId, canonicalBusinessId) => {
+              setDuplicateMergeTargetByBusinessId((prev) => ({
+                ...prev,
+                [duplicateBusinessId]: canonicalBusinessId,
+              }));
+            }}
+            onMergeDuplicate={mergeDuplicateCandidate}
+            onKeepSeparate={keepDuplicateSeparate}
+            listingStatusPageItems={listingStatusPageItems}
+            localities={localities}
+            onOpenBusiness={openBackendListing}
+            onUpdateBusiness={onUpdateBusiness}
+            renderSubcategoryCreator={(business) => (
+              <InlineSubcategoryCreator
+                categoryId={business.categoryId}
+                canCreate={Boolean(onSaveBusinessTaxonomy && businessTaxonomy)}
+                onCreate={createInlineSubcategory}
+                onAssign={(subcategoryId) => onUpdateBusiness?.({ ...business, subcategoryId })}
+              />
+            )}
+            getPublicLocalityUrl={getPublicLocalityUrl}
+            safeListingStatusPage={safeListingStatusPage}
+            listingStatusTotalPages={listingStatusTotalPages}
+            onPreviousPage={() => setListingStatusPage((prev) => Math.max(1, prev - 1))}
+            onNextPage={() => setListingStatusPage((prev) => Math.min(listingStatusTotalPages, prev + 1))}
+          />
         )}
-
         {adminWorkspaceTab === 'data-audit' && (
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-            <div>
-              <h3 className="text-md font-bold text-slate-950 flex items-center gap-2">
-                <AlertCircle className="w-5 h-5 text-indigo-600" />
-                🇮🇳 Compliance &amp; Data Privacy Audit Desk
-              </h3>
-              <p className="text-xs text-slate-500 mt-1">
-                Mandatory privacy logs tracking human &amp; AI conversational searches, OTP validated contact unlocks, and listing mutations.
-              </p>
-            </div>
-            <div className="bg-slate-100 text-[10px] font-mono px-3 py-1 rounded-lg text-slate-600 border border-slate-200 uppercase tracking-tight self-start md:self-auto">
-              SLA Compliant • GDPR Safeguarded
-            </div>
-          </div>
-
-          {auditLogs.length === 0 ? (
-            <div className="text-center py-10 bg-slate-50 rounded-xl border border-dashed border-slate-200 text-xs text-slate-400">
-              No security compliance logs registered in current shard session.
-            </div>
-          ) : (
-            <div className="overflow-x-auto border border-slate-100 rounded-xl">
-              <table className="w-full text-left text-xs text-slate-500 border-collapse">
-                <thead>
-                  <tr className="bg-slate-50/70 border-b border-slate-100 text-[10px] uppercase font-mono tracking-wider font-bold text-slate-550">
-                    <th className="p-3">Logged Date/Time</th>
-                    <th className="p-3">Actor &amp; Scope</th>
-                    <th className="p-3">Audited Action description</th>
-                    <th className="p-3">Trace IP Address</th>
-                    <th className="p-3">Device Signature Code</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {pagedAuditLogs.map((log) => {
-                    const badgeColor = 
-                      log.actionType === 'search' 
-                        ? 'bg-blue-50 text-blue-700 border-blue-200/50' 
-                        : log.actionType === 'contact_view'
-                          ? 'bg-amber-50 text-amber-700 border-amber-200/50'
-                          : 'bg-emerald-50 text-emerald-700 border-emerald-200/50';
-
-                    return (
-                      <tr key={log.id} className="hover:bg-slate-50/35 transition text-[11px] whitespace-nowrap md:whitespace-normal">
-                        <td className="p-3 font-mono text-slate-500 whitespace-nowrap">
-                          {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                          <span className="block text-[9px] text-slate-400">{new Date(log.timestamp).toLocaleDateString()}</span>
-                        </td>
-                        <td className="p-3 whitespace-nowrap">
-                          <span className="font-semibold text-slate-800 block">{log.userName}</span>
-                          <span className={`inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded border mt-0.5 uppercase tracking-wide font-mono ${badgeColor}`}>
-                            {log.actionType.replace('_', ' ')}
-                          </span>
-                        </td>
-                        <td className="p-3 max-w-[280px]">
-                          <span className="font-bold text-slate-700 block">{log.description}</span>
-                          <span className="text-slate-500 text-[10px] leading-relaxed block overflow-hidden text-ellipsis">{log.details}</span>
-                        </td>
-                        <td className="p-3 font-mono text-slate-600 whitespace-nowrap">
-                          <span className="inline-flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block"></span>
-                            {log.ipAddress}
-                          </span>
-                          <span className="block text-[8px] text-emerald-600 font-bold uppercase tracking-wider">Zone B-West (IN)</span>
-                        </td>
-                        <td className="p-3 font-mono text-slate-400 max-w-[150px] truncate" title={log.deviceCode}>
-                          {log.deviceCode}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-          {auditLogs.length > 0 && (
-            <div className="flex items-center justify-between text-xs">
-              <button
-                type="button"
-                onClick={() => setAuditPage((prev) => Math.max(1, prev - 1))}
-                disabled={safeAuditPage <= 1}
-                className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 disabled:opacity-50"
-              >
-                Previous
-              </button>
-              <span className="font-mono text-slate-500">
-                Page {safeAuditPage} / {auditTotalPages}
-              </span>
-              <button
-                type="button"
-                onClick={() => setAuditPage((prev) => Math.min(auditTotalPages, prev + 1))}
-                disabled={safeAuditPage >= auditTotalPages}
-                className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 disabled:opacity-50"
-              >
-                Next
-              </button>
-            </div>
-          )}
-        </div>
+          <DataAuditWorkspace
+            auditLogs={auditLogs}
+            pagedAuditLogs={pagedAuditLogs}
+            safeAuditPage={safeAuditPage}
+            auditTotalPages={auditTotalPages}
+            onPreviousPage={() => setAuditPage((prev) => Math.max(1, prev - 1))}
+            onNextPage={() => setAuditPage((prev) => Math.min(auditTotalPages, prev + 1))}
+          />
         )}
 
         {adminWorkspaceTab === 'bulk-upload' && (
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-3">
-          <h3 className="text-md font-bold text-slate-950">Bulk Import Businesses (CSV)</h3>
-          <p className="text-xs text-slate-500">
-            Upload CSV with columns: Business Name, Address, Area, City, State, PIN, Mobile, Rating, Reviews, Services, Category, Subcategory, Latitude, Longitude. Invalid category/subcategory values will not be auto-guessed anymore; those listings go to the taxonomy mapping queue.
-          </p>
-          <input
-            type="file"
-            accept=".csv,text/csv"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) handleCsvImport(f);
-            }}
-            className="w-full text-xs border border-slate-200 rounded-lg p-2"
+          <BulkUploadWorkspace
+            localities={localities}
+            importResult={importResult}
+            importPreview={importPreview}
+            pagedImportPreview={pagedImportPreview}
+            safeImportPreviewPage={safeImportPreviewPage}
+            importPreviewTotalPages={importPreviewTotalPages}
+            onCsvFileSelected={handleCsvImport}
+            onDownloadFailedCsv={downloadFailedImportCsv}
+            onApplyImportPreview={handleApplyImportPreview}
+            onPreviousPage={() => setImportPreviewPage((prev) => Math.max(1, prev - 1))}
+            onNextPage={() => setImportPreviewPage((prev) => Math.min(importPreviewTotalPages, prev + 1))}
           />
-          {importResult && (
-            <div className="text-xs bg-emerald-50 border border-emerald-100 text-emerald-800 rounded-lg px-3 py-2">
-              {importResult}
-            </div>
-          )}
-          {importPreview.length > 0 && (
-            <div className="space-y-3 pt-2">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex flex-wrap gap-2 text-[10px] font-bold">
-                  <span className="bg-emerald-50 text-emerald-700 border border-emerald-100 px-2 py-1 rounded-lg">
-                    Ready: {importPreview.filter(r => r.previewStatus === 'ready').length}
-                  </span>
-                  <span className="bg-blue-50 text-blue-700 border border-blue-100 px-2 py-1 rounded-lg">
-                    Updates: {importPreview.filter(r => r.previewStatus === 'update').length}
-                  </span>
-                  <span className="bg-rose-50 text-rose-700 border border-rose-100 px-2 py-1 rounded-lg">
-                    Failed: {importPreview.filter(r => r.previewStatus === 'fail').length}
-                  </span>
-                </div>
-                <div className="flex gap-2">
-                  {importPreview.some(r => r.previewStatus === 'fail') && (
-                    <button
-                      type="button"
-                      onClick={downloadFailedImportCsv}
-                      className="text-[10px] bg-white border border-slate-200 text-slate-700 px-3 py-1.5 rounded-lg font-bold hover:bg-slate-50"
-                    >
-                      Export Failed CSV
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={handleApplyImportPreview}
-                    disabled={!importPreview.some(r => r.previewStatus !== 'fail')}
-                    className="text-[10px] bg-indigo-600 disabled:bg-slate-300 text-white px-3 py-1.5 rounded-lg font-bold hover:bg-indigo-700"
-                  >
-                    Upload Ready Items
-                  </button>
-                </div>
-              </div>
-              <div className="overflow-x-auto border border-slate-100 rounded-xl max-h-72">
-                <table className="w-full text-left text-[10px] text-slate-600">
-                  <thead className="bg-slate-50 sticky top-0">
-                    <tr className="uppercase font-mono text-slate-400">
-                      <th className="p-2">Row</th>
-                      <th className="p-2">Business</th>
-                      <th className="p-2">Phone</th>
-                      <th className="p-2">Pincode</th>
-                      <th className="p-2">Locality</th>
-                      <th className="p-2">Category</th>
-                      <th className="p-2">Subcategory</th>
-                      <th className="p-2">Status</th>
-                      <th className="p-2 min-w-[220px]">Error Details</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {pagedImportPreview.map((row) => (
-                      <tr key={`${row.rowNumber}-${row.businessName}`} className="hover:bg-slate-50/60">
-                        <td className="p-2 font-mono">{row.rowNumber}</td>
-                        <td className="p-2 font-semibold text-slate-800">{row.businessName}</td>
-                        <td className="p-2 font-mono">{row.normalizedPhone || 'Not provided'}</td>
-                        <td className="p-2 font-mono">{row.resolvedPincode || '-'}</td>
-                        <td className="p-2">{localities.find(l => l.id === row.resolvedLocalityId)?.name.split(',')[0] || row.resolvedLocalityId}</td>
-                        <td className="p-2 align-top">
-                          <span className="block text-slate-800">{row.category?.trim() || 'Not supplied'}</span>
-                          <span className={`block text-[9px] ${row.categoryId ? 'text-emerald-700' : 'text-amber-700 font-semibold'}`}>
-                            {row.categoryId ? `Mapped: ${getCategoryById(row.categoryId || '')?.name || row.categoryId}` : 'Unmapped - saved to tags'}
-                          </span>
-                        </td>
-                        <td className="p-2 align-top">
-                          <span className="block text-slate-800">{row.subcategory?.trim() || 'Not supplied'}</span>
-                          <span className={`block text-[9px] ${row.subcategoryId ? 'text-emerald-700' : 'text-amber-700 font-semibold'}`}>
-                            {row.subcategoryId ? `Mapped: ${getSubcategoryById(row.subcategoryId || '')?.name || row.subcategoryId}` : 'Unmapped - send to queue'}
-                          </span>
-                        </td>
-                        <td className="p-2">
-                          <span className={`px-2 py-0.5 rounded-full font-bold ${
-                            row.previewStatus === 'ready'
-                              ? 'bg-emerald-50 text-emerald-700'
-                              : row.previewStatus === 'update'
-                                ? 'bg-blue-50 text-blue-700'
-                                : 'bg-rose-50 text-rose-700'
-                          }`}>
-                            {row.previewStatus === 'ready' ? 'Ready' : row.previewStatus === 'update' ? 'Update existing' : 'Fail'}
-                          </span>
-                        </td>
-                        <td className="p-2 align-top">
-                          <div className="space-y-1">
-                            {row.errors.length > 0 ? (
-                              <div className="text-rose-600">{row.errors.join('; ')}</div>
-                            ) : row.previewStatus === 'update' ? (
-                              <div className="text-blue-700">Existing ID: {row.existingBusinessId}</div>
-                            ) : (
-                              <div className="text-slate-400">-</div>
-                            )}
-                            {row.requiresTaxonomyMapping && (
-                              <div className="rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-[9px] font-semibold text-amber-800">
-                                {row.taxonomyStatusLabel}
-                              </div>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <div className="flex items-center justify-between text-xs">
-                <button
-                  type="button"
-                  onClick={() => setImportPreviewPage((prev) => Math.max(1, prev - 1))}
-                  disabled={safeImportPreviewPage <= 1}
-                  className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 disabled:opacity-50"
-                >
-                  Previous
-                </button>
-                <span className="font-mono text-slate-500">
-                  Page {safeImportPreviewPage} / {importPreviewTotalPages}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setImportPreviewPage((prev) => Math.min(importPreviewTotalPages, prev + 1))}
-                  disabled={safeImportPreviewPage >= importPreviewTotalPages}
-                  className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 disabled:opacity-50"
-                >
-                  Next
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
         )}
-
         {adminWorkspaceTab === 'taxonomy-mapping' && (
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <h3 className="text-md font-bold text-slate-950">Unmapped Category / Subcategory Queue</h3>
-              <p className="text-xs text-slate-500">
-                Listings are saved even when upload taxonomy does not match master data. Use this queue to map them later. Raw upload values are preserved and also added to tags.
-              </p>
-            </div>
-            <span className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-[11px] font-bold text-amber-700">
-              {unmappedTaxonomyBusinesses.length} pending mapping
-            </span>
-          </div>
-
-          {unmappedTaxonomyBusinesses.length === 0 ? (
-            <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-xs text-emerald-800">
-              Nice and clean. No listings are waiting for taxonomy mapping right now.
-            </div>
-          ) : (
-            <div className="space-y-3 max-h-[36rem] overflow-y-auto pr-1">
-              {unmappedTaxonomyBusinesses.map((biz) => {
-                const draft = getTaxonomyDraft(biz);
-                const taxonomyLabel = getBusinessTaxonomyLabel(biz);
-                return (
-                  <div key={biz.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-3">
-                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                      <div className="min-w-0">
-                        <div className="text-sm font-bold text-slate-900 truncate">{biz.name}</div>
-                        <div className="text-[11px] text-slate-500">
-                          {localities.find((locality) => locality.id === biz.localityId)?.name || biz.localityId}
-                          {' • '}
-                          {biz.phone || 'Phone not provided'}
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => openBackendListing(biz)}
-                        className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-700"
-                      >
-                        <Eye className="h-3.5 w-3.5" />
-                        Open details
-                      </button>
-                    </div>
-
-                    <div className="grid gap-3 md:grid-cols-3 text-[11px]">
-                      <div className="rounded-lg border border-slate-200 bg-white p-2.5">
-                        <div className="font-bold text-slate-500 mb-1">Uploaded Category</div>
-                        <div className="text-slate-900">{biz.sourceCategoryLabel || taxonomyLabel.category}</div>
-                      </div>
-                      <div className="rounded-lg border border-slate-200 bg-white p-2.5">
-                        <div className="font-bold text-slate-500 mb-1">Uploaded Subcategory</div>
-                        <div className="text-slate-900">{biz.sourceSubcategoryLabel || taxonomyLabel.subcategory}</div>
-                      </div>
-                      <div className="rounded-lg border border-slate-200 bg-white p-2.5">
-                        <div className="font-bold text-slate-500 mb-1">Current Tags</div>
-                        <div className="text-slate-900 line-clamp-2">{(biz.tags || []).join(', ') || 'No tags yet'}</div>
-                      </div>
-                    </div>
-
-                    <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
-                      <select
-                        value={draft.categoryId}
-                        onChange={(e) => updateTaxonomyDraft(biz.id, { categoryId: e.target.value, subcategoryId: '' })}
-                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs"
-                      >
-                        <option value="">Select master category</option>
-                        {BUSINESS_CATEGORIES.map((category) => (
-                          <option key={category.id} value={category.id}>{category.name}</option>
-                        ))}
-                      </select>
-                      <div className="space-y-2">
-                        <select
-                          value={draft.subcategoryId}
-                          onChange={(e) => updateTaxonomyDraft(biz.id, { subcategoryId: e.target.value })}
-                          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs"
-                          disabled={!draft.categoryId}
-                        >
-                          <option value="">{draft.categoryId ? 'Select master subcategory' : 'Choose category first'}</option>
-                          {getSubcategoriesForCategory(draft.categoryId).map((subcategory) => (
-                            <option key={subcategory.id} value={subcategory.id}>{subcategory.name}</option>
-                          ))}
-                        </select>
-                        <InlineSubcategoryCreator
-                          categoryId={draft.categoryId}
-                          canCreate={Boolean(onSaveBusinessTaxonomy && businessTaxonomy)}
-                          onCreate={createInlineSubcategory}
-                          onAssign={(subcategoryId) => updateTaxonomyDraft(biz.id, { subcategoryId })}
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => saveTaxonomyMapping(biz)}
-                        disabled={!draft.categoryId || !draft.subcategoryId}
-                        className="inline-flex items-center justify-center rounded-lg bg-indigo-600 px-4 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
-                      >
-                        Save mapping
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+          <TaxonomyMappingWorkspace
+            localities={localities}
+            unmappedTaxonomyBusinesses={unmappedTaxonomyBusinesses}
+            getTaxonomyDraft={getTaxonomyDraft}
+            onUpdateTaxonomyDraft={updateTaxonomyDraft}
+            onSaveTaxonomyMapping={saveTaxonomyMapping}
+            onOpenBusinessDetails={openBackendListing}
+            renderSubcategoryCreator={(business, categoryId) => (
+              <InlineSubcategoryCreator
+                categoryId={categoryId}
+                canCreate={Boolean(onSaveBusinessTaxonomy && businessTaxonomy)}
+                onCreate={createInlineSubcategory}
+                onAssign={(subcategoryId) => updateTaxonomyDraft(business.id, { subcategoryId })}
+              />
+            )}
+          />
         )}
       </div>
       )}
-
       {/* Domain Mapping Panel and Locality Spinner */}
       {consoleSurface === 'operations' && (
       <div className="space-y-6">
@@ -4873,7 +4879,7 @@ export default function AdminConsole({
                 <div key={sub.domain} className="space-y-1 py-1">
                   <div className="flex justify-between items-center">
                     <span className="text-white font-semibold flex items-center gap-1.5">
-                      🌐 {sub.domain}
+                      ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â°ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â {sub.domain}
                     </span>
                     <span className={`text-[10px] px-1.5 py-0.5 rounded ${
                       sub.dnsStatus === 'active' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'
@@ -4883,7 +4889,7 @@ export default function AdminConsole({
                   </div>
                   <div className="text-[10px] text-slate-400 pl-5 flex items-center justify-between">
                     <span>Database: {loc ? `db_${loc.slug}_yellow` : 'db_unassigned'}</span>
-                    <span className="text-indigo-400">SSL Enabled ✔️</span>
+                    <span className="text-indigo-400">SSL Enabled ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â</span>
                   </div>
                 </div>
               );
@@ -4939,7 +4945,7 @@ export default function AdminConsole({
                 required
                 value={newLocSubdomain}
                 onChange={(e) => setNewLocSubdomain(e.target.value)}
-                placeholder="e.g. roadpali.localisy.in or legacy route"
+                placeholder="e.g. locality.localisy.in or legacy route"
                 className="w-full text-xs px-3.5 py-2.5 font-mono bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-700"
               />
               <span className="text-[10px] text-slate-400 mt-1 block">
@@ -4975,7 +4981,7 @@ export default function AdminConsole({
                 type="text"
                 value={newLocPincodes}
                 onChange={(e) => setNewLocPincodes(e.target.value)}
-                placeholder="e.g. 410218, 410101"
+                placeholder="e.g. 400001, 560001"
                 className="w-full text-xs px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-700 font-mono"
               />
               <span className="text-[10px] text-slate-400 mt-1 block">
@@ -5062,7 +5068,7 @@ export default function AdminConsole({
                 const matchedLoc = localities.find(l => l.id === mapping.localityId);
                 return (
                   <div key={mapping.pincode} className="flex justify-between items-center p-2 bg-slate-50 border border-slate-150 rounded-xl font-mono">
-                    <span className="font-bold text-slate-800">📪 {mapping.pincode}</span>
+                    <span className="font-bold text-slate-800">ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â°ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âª {mapping.pincode}</span>
                     <div className="flex items-center gap-2">
                       <span className="font-sans text-[11px] text-slate-600 font-semibold">{matchedLoc?.name.split(',')[0] || mapping.localityId}</span>
                       <button
@@ -6376,7 +6382,7 @@ export default function AdminConsole({
                             {template.isDefault && <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-800">Default</span>}
                             {template.isFallback && <span className="rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-700">Fallback</span>}
                           </div>
-                          <div className="text-[10px] text-slate-500">{template.templateScope} • priority {template.priority} • {template.sections.length} sections</div>
+                          <div className="text-[10px] text-slate-500">{template.templateScope} ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ priority {template.priority} ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ {template.sections.length} sections</div>
                           <div className="text-[10px] text-slate-500">Source: {getScalableEntityOwnershipPresentation(template.metadata).detail}</div>
                           {template.localityIds.length > 0 && (
                             <div className="text-[10px] text-slate-500">
@@ -6535,8 +6541,8 @@ export default function AdminConsole({
                             <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] text-slate-600">{assignment.status}</span>
                             {assignment.isFallback && <span className="rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-700">Fallback</span>}
                           </div>
-                          <div className="truncate font-semibold text-slate-800">{assignment.localityId} → {assignment.templateId}</div>
-                          <div className="text-[10px] text-slate-500">{assignment.categoryId || 'all'} / {assignment.subcategoryId || 'all'} / {assignment.pincode || 'all'} • priority {assignment.priority}</div>
+                          <div className="truncate font-semibold text-slate-800">{assignment.localityId} ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ {assignment.templateId}</div>
+                          <div className="text-[10px] text-slate-500">{assignment.categoryId || 'all'} / {assignment.subcategoryId || 'all'} / {assignment.pincode || 'all'} ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ priority {assignment.priority}</div>
                           <div className="text-[10px] text-slate-500">Source: {getScalableEntityOwnershipPresentation(assignment.metadata).detail}</div>
                         </div>
                         <div className="flex flex-wrap justify-end gap-1">
@@ -6848,7 +6854,7 @@ export default function AdminConsole({
                             <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] text-slate-600">{campaign.status}</span>
                             {campaign.isFallback && <span className="rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-700">Fallback</span>}
                           </div>
-                          <div className="text-[10px] text-slate-500">{campaign.campaignType} • {campaign.status} • priority {campaign.priority}</div>
+                          <div className="text-[10px] text-slate-500">{campaign.campaignType} ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ {campaign.status} ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ priority {campaign.priority}</div>
                           <div className="text-[10px] text-slate-500">Source: {getScalableEntityOwnershipPresentation(campaign.metadata).detail}</div>
                           <div className="text-[10px] text-slate-500">
                             Targets: {(campaign.targets.localityIds || []).slice(0, 2).map((localityId) => formatLocalityLabel(localityId)).join(', ') || 'all localities'}{(campaign.targets.localityIds || []).length > 2 ? ` +${(campaign.targets.localityIds || []).length - 2} more` : ''}{(campaign.placementKeys || []).length > 0 ? ` | placements: ${(campaign.placementKeys || []).slice(0, 2).join(', ')}${(campaign.placementKeys || []).length > 2 ? ` +${(campaign.placementKeys || []).length - 2}` : ''}` : ''}
@@ -6873,118 +6879,43 @@ export default function AdminConsole({
           )}
         </div>}
 
-        {operationsSection === 'campaigns' && campaignWorkspaceSubtab === 'offers' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
-          <h3 className="text-base font-extrabold text-slate-950">Offers & Deals Manager</h3>
-          <form onSubmit={handleCreateCouponSubmit} className="space-y-3 text-xs">
-            <select
-              value={couponBusinessId}
-              onChange={(e) => setCouponBusinessId(e.target.value)}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
-            >
-              <option value="">Select business</option>
-              {filteredBusinesses.filter((business) => business.status === 'approved').map((business) => (
-                <option key={business.id} value={business.id}>{business.name}</option>
-              ))}
-            </select>
-            <input
-              value={couponTitle}
-              onChange={(e) => setCouponTitle(e.target.value)}
-              placeholder="Offer title"
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
-            />
-            <div className="grid grid-cols-2 gap-2">
-              <input
-                value={couponCode}
-                onChange={(e) => setCouponCode(e.target.value)}
-                placeholder="Coupon code"
-                className="border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
-              />
-              <input
-                value={couponDiscount}
-                onChange={(e) => setCouponDiscount(e.target.value)}
-                placeholder="Discount label"
-                className="border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
-              />
-            </div>
-            <textarea
-              value={couponDescription}
-              onChange={(e) => setCouponDescription(e.target.value)}
-              placeholder="Offer description"
-              rows={2}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
-            />
-            <div className="grid grid-cols-2 gap-2">
-              <select
-                value={couponLocalityId}
-                onChange={(e) => setCouponLocalityId(e.target.value)}
-                className="border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
-              >
-                {localities.map((locality) => (
-                  <option key={locality.id} value={locality.id}>{locality.name}</option>
-                ))}
-              </select>
-              <input
-                value={couponPincodes}
-                onChange={(e) => setCouponPincodes(e.target.value)}
-                placeholder="Pincodes"
-                className="border border-slate-200 rounded-lg px-3 py-2 bg-slate-50 font-mono"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <input
-                type="date"
-                value={couponStartDate}
-                onChange={(e) => setCouponStartDate(e.target.value)}
-                className="border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
-              />
-              <input
-                type="date"
-                value={couponEndDate}
-                onChange={(e) => setCouponEndDate(e.target.value)}
-                className="border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
-              />
-            </div>
-            <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-lg">
-              {couponEditId ? 'Update Offer' : 'Create Offer'}
-            </button>
-          </form>
-          <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-            {filteredCoupons.map((coupon) => (
-              <div key={coupon.id} className="bg-slate-50 border border-slate-150 rounded-lg p-2.5 text-xs">
-                <span className="block font-semibold text-slate-800 truncate">{coupon.title || coupon.code}</span>
-                <span className="block text-[10px] text-slate-500">
-                  {businesses.find((business) => business.id === coupon.businessId)?.name || coupon.businessId}
-                </span>
-                <span className="block text-[10px] text-slate-500 font-mono">
-                  {(coupon.startDate || coupon.expiryDate)} {'->'} {(coupon.endDate || coupon.expiryDate)}
-                </span>
-                <div className="mt-2 flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => beginEditCoupon(coupon)}
-                    className="rounded border border-indigo-200 bg-white px-2 py-1 text-[10px] font-bold text-indigo-700"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onDeleteCoupon?.(coupon.id);
-                      if (couponEditId === coupon.id) {
-                        resetCouponForm();
-                      }
-                      triggerNotification('Offer deleted successfully.');
-                    }}
-                    className="rounded border border-rose-200 bg-rose-50 px-2 py-1 text-[10px] font-bold text-rose-700"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            ))}
-            {coupons.length === 0 && <div className="text-xs text-slate-400">No offers created yet.</div>}
-          </div>
-        </div>}
+        {operationsSection === 'campaigns' && campaignWorkspaceSubtab === 'offers' && (
+          <OffersManagerPanel
+            localities={localities}
+            businesses={businesses}
+            approvedBusinesses={filteredBusinesses.filter((business) => business.status === 'approved')}
+            coupons={coupons}
+            filteredCoupons={filteredCoupons}
+            couponBusinessId={couponBusinessId}
+            couponTitle={couponTitle}
+            couponCode={couponCode}
+            couponDiscount={couponDiscount}
+            couponDescription={couponDescription}
+            couponLocalityId={couponLocalityId}
+            couponPincodes={couponPincodes}
+            couponStartDate={couponStartDate}
+            couponEndDate={couponEndDate}
+            couponEditId={couponEditId}
+            onCouponBusinessIdChange={setCouponBusinessId}
+            onCouponTitleChange={setCouponTitle}
+            onCouponCodeChange={setCouponCode}
+            onCouponDiscountChange={setCouponDiscount}
+            onCouponDescriptionChange={setCouponDescription}
+            onCouponLocalityIdChange={setCouponLocalityId}
+            onCouponPincodesChange={setCouponPincodes}
+            onCouponStartDateChange={setCouponStartDate}
+            onCouponEndDateChange={setCouponEndDate}
+            onSubmit={handleCreateCouponSubmit}
+            onBeginEdit={beginEditCoupon}
+            onDelete={(coupon) => {
+              onDeleteCoupon?.(coupon.id);
+              if (couponEditId === coupon.id) {
+                resetCouponForm();
+              }
+              triggerNotification('Offer deleted successfully.');
+            }}
+          />
+        )}
 
         {operationsSection === 'content' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
           <div className="flex items-center justify-between gap-3">
@@ -7295,11 +7226,11 @@ export default function AdminConsole({
                     ) : null}
                     <div className="font-bold text-slate-900 truncate">{item.title}</div>
                     <div className="mt-1 text-[10px] text-slate-500">
-                      {localities.find((locality) => locality.id === item.localityId)?.name || item.localityId} • {item.type}
+                      {localities.find((locality) => locality.id === item.localityId)?.name || item.localityId} ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ {item.type}
                     </div>
                     <div className="mt-1 text-[10px] text-slate-500">
-                      {(item.status || 'published').toUpperCase()} • {(item.publishAt || item.createdAt).slice(0, 10)}
-                      {item.expireAt ? ` • Ends ${item.expireAt.slice(0, 10)}` : ''}
+                      {(item.status || 'published').toUpperCase()} ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ {(item.publishAt || item.createdAt).slice(0, 10)}
+                      {item.expireAt ? ` ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ Ends ${item.expireAt.slice(0, 10)}` : ''}
                     </div>
                     <div className="mt-1 text-[11px] text-slate-600 line-clamp-2">{item.content}</div>
                   </div>
@@ -7328,490 +7259,157 @@ export default function AdminConsole({
           </div>
         </div>}
 
-        {operationsSection === 'campaigns' && campaignWorkspaceSubtab === 'ads' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
-          <h3 className="text-base font-extrabold text-slate-950">Ad Banner Manager</h3>
-          <form onSubmit={handleCreateListingAdSubmit} className="space-y-3 text-xs">
-            <input
-              value={adTitle}
-              onChange={(e) => setAdTitle(e.target.value)}
-              placeholder="Ad title"
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
+        {operationsSection === 'campaigns' && campaignWorkspaceSubtab === 'ads' && (
+          <div className="space-y-4">
+            <AdOperationsPanel
+              localities={localities}
+              filteredBusinesses={filteredBusinesses.filter((business) => business.status === 'approved')}
+              filteredListingAds={filteredListingAds}
+              pendingReviewAds={pendingReviewAds}
+              prioritizedPendingReviewAds={prioritizedPendingReviewAds}
+              liveOrApprovedAds={liveOrApprovedAds}
+              rejectedAds={rejectedAds}
+              adPerformanceSummary={adPerformanceSummary}
+              currentAdminDateIso={currentAdminDateIso}
+              getAdCtr={getAdCtr}
+              getAdCpl={getAdCpl}
+              getDerivedAdLeadCount={getDerivedAdLeadCount}
+              getAdOpsPriorityScore={getAdOpsPriorityScore}
+              getAdOpsSlaLabel={getAdOpsSlaLabel}
+              onBeginEditListingAd={beginEditListingAd}
+              onTransitionAd={handleAdWorkflowTransition}
+              onReviewRequest={handleAdReviewRequest}
+              onRejectAd={handleAdRejection}
+              onDeleteAd={(adId) => onDeleteListingAd?.(adId)}
+              onUpdateAd={(ad) => onUpdateListingAd?.(ad)}
             />
-            <textarea
-              value={adDescription}
-              onChange={(e) => setAdDescription(e.target.value)}
-              placeholder="Ad description"
-              rows={2}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
+            <AdvertiserCreativeFormPanel
+              localities={localities}
+              approvedBusinesses={filteredBusinesses.filter((business) => business.status === 'approved')}
+              categoryPicker={(
+                <OrderedCategoryPicker
+                  label="Ad category targeting"
+                  selectedIds={adCategoryIds}
+                  onChange={setAdCategoryIds}
+                  helperText="Add categories this ad should match on search results. Leave empty to allow all categories."
+                />
+              )}
+              adTitle={adTitle}
+              adDescription={adDescription}
+              adBadge={adBadge}
+              adCtaText={adCtaText}
+              adStartDate={adStartDate}
+              adEndDate={adEndDate}
+              adWorkflowStatus={adWorkflowStatus}
+              adBillingModel={adBillingModel}
+              adRotationMode={adRotationMode}
+              adActionType={adActionType}
+              adBgColor={adBgColor}
+              adPlannedBudget={adPlannedBudget}
+              adSpentBudget={adSpentBudget}
+              adCpcBid={adCpcBid}
+              adImpressions={adImpressions}
+              adClicks={adClicks}
+              adReviewNotes={adReviewNotes}
+              adLocalityId={adLocalityId}
+              adPlacementKey={adPlacementKey}
+              adTags={adTags}
+              adImageUrl={adImageUrl}
+              adDeviceTarget={adDeviceTarget}
+              adMobileRowPosition={adMobileRowPosition}
+              adPincodes={adPincodes}
+              adTargetUrl={adTargetUrl}
+              adTargetBusinessId={adTargetBusinessId}
+              adSellerBusinessId={adSellerBusinessId}
+              adImageUploading={adImageUploading}
+              adEditId={adEditId}
+              adFormError={adFormError}
+              adPreviewImageUrl={adImageFile ? URL.createObjectURL(adImageFile) : adImageUrl}
+              adImageFolder={getListingAdFolder()}
+              onAdTitleChange={setAdTitle}
+              onAdDescriptionChange={setAdDescription}
+              onAdBadgeChange={setAdBadge}
+              onAdCtaTextChange={setAdCtaText}
+              onAdStartDateChange={setAdStartDate}
+              onAdEndDateChange={setAdEndDate}
+              onAdWorkflowStatusChange={setAdWorkflowStatus}
+              onAdBillingModelChange={setAdBillingModel}
+              onAdRotationModeChange={setAdRotationMode}
+              onAdActionTypeChange={setAdActionType}
+              onAdBgColorChange={setAdBgColor}
+              onAdPlannedBudgetChange={(value) => setAdPlannedBudget(value.replace(/[^\d.]/g, ''))}
+              onAdSpentBudgetChange={(value) => setAdSpentBudget(value.replace(/[^\d.]/g, ''))}
+              onAdCpcBidChange={(value) => setAdCpcBid(value.replace(/[^\d.]/g, ''))}
+              onAdImpressionsChange={(value) => setAdImpressions(value.replace(/[^\d]/g, ''))}
+              onAdClicksChange={(value) => setAdClicks(value.replace(/[^\d]/g, ''))}
+              onAdReviewNotesChange={setAdReviewNotes}
+              onAdLocalityIdChange={setAdLocalityId}
+              onAdPlacementKeyChange={setAdPlacementKey}
+              onAdTagsChange={setAdTags}
+              onAdImageUrlChange={setAdImageUrl}
+              onAdImageFileChange={setAdImageFile}
+              onAdDeviceTargetChange={setAdDeviceTarget}
+              onAdMobileRowPositionChange={(value) => setAdMobileRowPosition(value.replace(/\D/g, ''))}
+              onAdPincodesChange={setAdPincodes}
+              onAdTargetUrlChange={setAdTargetUrl}
+              onAdTargetBusinessIdChange={setAdTargetBusinessId}
+              onAdSellerBusinessIdChange={setAdSellerBusinessId}
+              onSubmit={handleCreateListingAdSubmit}
+              onReset={resetListingAdForm}
             />
-            <div className="grid grid-cols-2 gap-2">
-              <input
-                value={adBadge}
-                onChange={(e) => setAdBadge(e.target.value)}
-                placeholder="Badge"
-                className="border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
-              />
-              <input
-                value={adCtaText}
-                onChange={(e) => setAdCtaText(e.target.value)}
-                placeholder="CTA text"
-                className="border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <input
-                type="date"
-                value={adStartDate}
-                onChange={(e) => setAdStartDate(e.target.value)}
-                className="border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
-              />
-              <input
-                type="date"
-                value={adEndDate}
-                onChange={(e) => setAdEndDate(e.target.value)}
-                className="border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <select
-                value={adActionType}
-                onChange={(e) => setAdActionType(e.target.value as ListingAd['actionType'])}
-                className="border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
-              >
-                <option value="landing_page">Landing Page</option>
-                <option value="landing_listing">Landing Listing</option>
-                <option value="lead_form">Lead Generation Form</option>
-              </select>
-              <input
-                type="color"
-                value={adBgColor}
-                onChange={(e) => setAdBgColor(e.target.value)}
-                className="border border-slate-200 rounded-lg h-9 w-full bg-slate-50"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <select
-                value={adLocalityId}
-                onChange={(e) => setAdLocalityId(e.target.value)}
-                className="border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
-              >
-                {localities.map((locality) => (
-                  <option key={locality.id} value={locality.id}>{locality.name}</option>
-                ))}
-              </select>
-              <input
-                value={adPlacementKey}
-                onChange={(e) => setAdPlacementKey(e.target.value)}
-                placeholder="Placement key"
-                className="border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
-              />
-            </div>
-            <OrderedCategoryPicker
-              label="Ad category targeting"
-              selectedIds={adCategoryIds}
-              onChange={setAdCategoryIds}
-              helperText="Add categories this ad should match on search results. Leave empty to allow all categories."
-            />
-            <input
-              value={adTags}
-              onChange={(e) => setAdTags(e.target.value)}
-              placeholder="Target tags, comma separated (pickle, food, salon)"
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
-            />
-            <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
-              <input
-                value={adImageUrl}
-                onChange={(e) => setAdImageUrl(e.target.value)}
-                placeholder="Banner image URL (optional if uploading)"
-                className="border border-slate-200 rounded-lg px-3 py-2 bg-slate-50 md:col-span-2"
-              />
-              <select
-                value={adDeviceTarget}
-                onChange={(e) => setAdDeviceTarget(e.target.value as NonNullable<ListingAd['deviceTarget']>)}
-                className="border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
-              >
-                <option value="all">Desktop + Mobile</option>
-                <option value="desktop">Desktop Only</option>
-                <option value="mobile">Mobile Only</option>
-              </select>
-            </div>
-            <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-600">
-              <div className="font-semibold text-slate-700">Upload ad image</div>
-              <input
-                type="file"
-                accept="image/*"
-                onChange={(e) => setAdImageFile(e.target.files?.[0] || null)}
-                className="mt-2 block w-full text-[11px] text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-3 file:py-2 file:text-[11px] file:font-bold file:text-indigo-700"
-              />
-              <div className="mt-1 text-[10px] text-slate-500">
-                Uploads to <span className="font-mono">{getListingAdFolder()}</span>
-              </div>
-            </div>
-            {adDeviceTarget !== 'desktop' && (
-              <input
-                value={adMobileRowPosition}
-                onChange={(e) => setAdMobileRowPosition(e.target.value.replace(/\D/g, ''))}
-                placeholder="Mobile row position (after section row)"
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
-              />
-            )}
-            <input
-              value={adPincodes}
-              onChange={(e) => setAdPincodes(e.target.value)}
-              placeholder="Target pincodes"
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-slate-50 font-mono"
-            />
-            {adActionType === 'landing_page' && (
-              <input
-                type="url"
-                value={adTargetUrl}
-                onChange={(e) => setAdTargetUrl(e.target.value)}
-                placeholder="https://example.com"
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
-              />
-            )}
-            {adActionType === 'landing_listing' && (
-              <select
-                value={adTargetBusinessId}
-                onChange={(e) => setAdTargetBusinessId(e.target.value)}
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
-              >
-                <option value="">Select target listing</option>
-                {filteredBusinesses.filter((business) => business.status === 'approved').map((business) => (
-                  <option key={business.id} value={business.id}>{business.name}</option>
-                ))}
-              </select>
-            )}
-            <select
-              value={adSellerBusinessId}
-              onChange={(e) => setAdSellerBusinessId(e.target.value)}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
-            >
-              <option value="">No seller mapping (platform only)</option>
-              {filteredBusinesses.filter((business) => business.status === 'approved').map((business) => (
-                <option key={business.id} value={business.id}>{business.name}</option>
-              ))}
-            </select>
-            <button
-              type="submit"
-              disabled={adImageUploading}
-              className="w-full rounded-lg bg-indigo-600 py-2 font-bold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {adImageUploading ? 'Uploading...' : (adEditId ? 'Update Ad Banner' : 'Create Ad Banner')}
-            </button>
-            {adFormError && <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] font-semibold text-rose-700">{adFormError}</div>}
-            {adEditId && (
-              <button
-                type="button"
-                onClick={resetListingAdForm}
-                className="w-full rounded-lg border border-slate-200 bg-white py-2 text-xs font-bold text-slate-700"
-              >
-                Cancel Edit
-              </button>
-            )}
-          </form>
-          <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-            {filteredListingAds.map((ad) => (
-              <div key={ad.id} className="bg-slate-50 border border-slate-150 rounded-lg p-2.5 text-xs">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <span className="block font-semibold text-slate-800 truncate">{ad.title}</span>
-                    <span className="block text-[10px] text-slate-500 font-mono">{ad.startDate} → {ad.endDate}</span>
-                    <span className="block text-[10px] text-slate-500">
-                      {(ad.localityIds || []).join(', ') || 'All localities'} • {ad.placementKey || 'homepage_inline_primary'}
-                    </span>
-                    <span className="block text-[10px] text-slate-500">
-                      {ad.deviceTarget || 'all'}{ad.mobileRowPosition ? ` • mobile row ${ad.mobileRowPosition}` : ''}
-                    </span>
-                    <span className="block text-[10px] text-slate-500">
-                      Categories: {(ad.categoryIds || []).map((categoryId) => getCategoryById(categoryId)?.name || categoryId).join(', ') || 'All'} | Tags: {(ad.tags || []).join(', ') || 'Any'}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => beginEditListingAd(ad)}
-                      className="text-[10px] px-2 py-1 rounded bg-white border border-indigo-200 text-indigo-700"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onUpdateListingAd?.({ ...ad, isActive: !ad.isActive })}
-                      className={`text-[10px] px-2 py-1 rounded ${ad.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-700'}`}
-                    >
-                      {ad.isActive ? 'Active' : 'Paused'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onDeleteListingAd?.(ad.id)}
-                      className="text-[10px] px-2 py-1 rounded bg-rose-100 text-rose-700"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </div>
-                <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
-                  <select
-                    value={ad.deviceTarget || 'all'}
-                    onChange={(e) => {
-                      const nextTarget = e.target.value as NonNullable<ListingAd['deviceTarget']>;
-                      onUpdateListingAd?.({
-                        ...ad,
-                        deviceTarget: nextTarget,
-                        mobileRowPosition: nextTarget === 'desktop' ? undefined : (ad.mobileRowPosition || 3)
-                      });
-                    }}
-                    className="border border-slate-200 rounded px-2 py-1.5 bg-white text-[11px]"
-                  >
-                    <option value="all">Desktop + Mobile</option>
-                    <option value="desktop">Desktop Only</option>
-                    <option value="mobile">Mobile Only</option>
-                  </select>
-                  {(ad.deviceTarget || 'all') !== 'desktop' && (
-                    <input
-                      value={String(ad.mobileRowPosition || '')}
-                      onChange={(e) => onUpdateListingAd?.({ ...ad, mobileRowPosition: Number(e.target.value.replace(/\D/g, '')) || undefined })}
-                      placeholder="Mobile row"
-                      className="border border-slate-200 rounded px-2 py-1.5 bg-white text-[11px]"
-                    />
-                  )}
-                </div>
-              </div>
-            ))}
-            {listingAds.length === 0 && <div className="text-xs text-slate-400">No ads created yet.</div>}
           </div>
-        </div>}
-
-        {operationsSection === 'homepage' && homepageCmsSubtab === 'hero' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
-          <h3 className="text-base font-extrabold text-slate-950">Hero Banner Manager</h3>
-          <form onSubmit={handleCreateHeroBannerSubmit} className="space-y-3 text-xs">
-            <select
-              value={heroLocalityId}
-              onChange={(e) => setHeroLocalityId(e.target.value)}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
-            >
-              {localities.map((locality) => (
-                <option key={locality.id} value={locality.id}>{locality.name}</option>
-              ))}
-            </select>
-            <input
-              value={heroTitle}
-              onChange={(e) => setHeroTitle(e.target.value)}
-              placeholder="Hero title"
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
-            />
-            <textarea
-              value={heroSubtitle}
-              onChange={(e) => setHeroSubtitle(e.target.value)}
-              placeholder="Hero subtitle"
-              rows={2}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
-            />
-            <input
-              type="url"
-              value={heroImageUrl}
-              onChange={(e) => setHeroImageUrl(e.target.value)}
-              placeholder="Hero image URL (optional if uploading)"
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
-            />
-            <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-600">
-              <div className="font-semibold text-slate-700">Upload hero image</div>
-              <input
-                type="file"
-                accept="image/*"
-                onChange={(e) => setHeroImageFile(e.target.files?.[0] || null)}
-                className="mt-2 block w-full text-[11px] text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-3 file:py-2 file:text-[11px] file:font-bold file:text-indigo-700"
-              />
-              <div className="mt-1 text-[10px] text-slate-500">
-                Uploads to <span className="font-mono">{getHeroBannerFolder()}</span>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <input
-                type="date"
-                value={heroStartDate}
-                onChange={(e) => setHeroStartDate(e.target.value)}
-                className="border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
-              />
-              <input
-                type="date"
-                value={heroEndDate}
-                onChange={(e) => setHeroEndDate(e.target.value)}
-                className="border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <input
-                value={heroCtaLabel}
-                onChange={(e) => setHeroCtaLabel(e.target.value)}
-                placeholder="CTA label"
-                className="border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
-              />
-              <select
-                value={heroCtaType}
-                onChange={(e) => setHeroCtaType(e.target.value as NonNullable<HeroBanner['ctaType']>)}
-                className="border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
-              >
-                <option value="landing_page">Landing Page</option>
-                <option value="landing_listing">Landing Listing</option>
-                <option value="lead_form">Lead Form</option>
-                <option value="search_category">Search Category</option>
-              </select>
-            </div>
-            <input
-              value={heroCtaTarget}
-              onChange={(e) => setHeroCtaTarget(e.target.value)}
-              placeholder="CTA target"
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
-            />
-            <input
-              value={heroPincodes}
-              onChange={(e) => setHeroPincodes(e.target.value)}
-              placeholder="Target pincodes"
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-slate-50 font-mono"
-            />
-            <div className="rounded-lg border border-slate-200 bg-white p-3 space-y-3">
-              <div className="flex items-center justify-between gap-2">
-                <div>
-                  <div className="text-xs font-bold text-slate-800">Hero stat cards</div>
-                  <div className="text-[10px] text-slate-500">Toggle each card and target it by locality or pincode.</div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setHeroStatsDraft((prev) => prev.map((stat) => ({ ...stat, enabled: !stat.enabled })))}
-                  className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-bold text-slate-700"
-                >
-                  Toggle all
-                </button>
-              </div>
-              <div className="space-y-2">
-                {heroStatsDraft.map((stat, index) => (
-                  <div key={`hero-stat-${index}`} className="rounded-lg border border-slate-100 bg-slate-50 p-2 space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <label className="flex items-center gap-2 text-[11px] font-bold text-slate-800">
-                        <input
-                          type="checkbox"
-                          checked={stat.enabled}
-                          onChange={() => setHeroStatsDraft((prev) => prev.map((item, itemIndex) => itemIndex === index ? { ...item, enabled: !item.enabled } : item))}
-                          className="h-4 w-4 rounded border-slate-300 text-indigo-600"
-                        />
-                        Card {index + 1}
-                      </label>
-                      <span className="text-[10px] text-slate-500">{stat.enabled ? 'Visible' : 'Hidden'}</span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <input
-                        value={stat.value}
-                        onChange={(e) => setHeroStatsDraft((prev) => prev.map((item, itemIndex) => itemIndex === index ? { ...item, value: e.target.value } : item))}
-                        placeholder="Value"
-                        className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs"
-                      />
-                      <input
-                        value={stat.label}
-                        onChange={(e) => setHeroStatsDraft((prev) => prev.map((item, itemIndex) => itemIndex === index ? { ...item, label: e.target.value } : item))}
-                        placeholder="Label"
-                        className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs"
-                      />
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <input
-                        value={stat.localityIds}
-                        onChange={(e) => setHeroStatsDraft((prev) => prev.map((item, itemIndex) => itemIndex === index ? { ...item, localityIds: e.target.value } : item))}
-                        placeholder="Locality IDs"
-                        className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs font-mono"
-                      />
-                      <input
-                        value={stat.pincodes}
-                        onChange={(e) => setHeroStatsDraft((prev) => prev.map((item, itemIndex) => itemIndex === index ? { ...item, pincodes: e.target.value } : item))}
-                        placeholder="Pincodes"
-                        className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs font-mono"
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <button
-              type="submit"
-              disabled={heroImageUploading}
-              className="w-full rounded-lg bg-indigo-600 py-2 font-bold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {heroImageUploading ? 'Uploading...' : (heroEditId ? 'Update Hero Banner' : 'Create Hero Banner')}
-            </button>
-            {heroFormError && <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] font-semibold text-rose-700">{heroFormError}</div>}
-            {heroEditId && (
-              <button
-                type="button"
-                onClick={resetHeroBannerForm}
-                className="w-full rounded-lg border border-slate-200 bg-white py-2 text-xs font-bold text-slate-700"
-              >
-                Cancel Edit
-              </button>
-            )}
-          </form>
-          <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-            {filteredHeroBanners.map((hero) => (
-              <div key={hero.id} className="bg-slate-50 border border-slate-150 rounded-lg p-2.5 text-xs">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <span className="block font-semibold text-slate-800 truncate">{hero.title}</span>
-                    <span className="block text-[10px] text-slate-500">{localities.find((locality) => locality.id === hero.localityId)?.name || hero.localityId}</span>
-                    <span className="block text-[10px] text-slate-500">
-                      {hero.ctaLabel || 'No CTA'} • {(hero.pincodes || []).join(', ') || 'All pincodes'}
-                    </span>
-                  </div>
-                  <div className="flex gap-1">
-                    <button
-                      type="button"
-                      onClick={() => beginEditHeroBanner(hero)}
-                      className="text-[10px] px-2 py-1 rounded bg-white border border-indigo-200 text-indigo-700"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onUpdateHeroBanner?.({ ...hero, isActive: !hero.isActive })}
-                      className={`text-[10px] px-2 py-1 rounded ${hero.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-700'}`}
-                    >
-                      {hero.isActive ? 'Active' : 'Paused'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onDeleteHeroBanner?.(hero.id)}
-                      className="text-[10px] px-2 py-1 rounded bg-rose-100 text-rose-700"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))}
-            {heroBanners.length === 0 && <div className="text-xs text-slate-400">No hero banners configured.</div>}
-          </div>
-        </div>}
-
-        {operationsSection === 'campaigns' && campaignWorkspaceSubtab === 'leads' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-3">
-          <h3 className="text-base font-extrabold text-slate-950">Ad Lead Inbox</h3>
-          <div className="max-h-56 overflow-y-auto space-y-2 pr-1">
-            {adLeads.length === 0 ? (
-              <div className="text-xs text-slate-400">No ad leads submitted yet.</div>
-            ) : (
-              filteredAdLeads.slice(0, 50).map((lead) => (
-                <div key={lead.id} className="bg-slate-50 border border-slate-150 rounded-lg p-2.5 text-xs">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-semibold text-slate-800">{lead.name}</span>
-                    <span className="font-mono text-slate-500">{lead.pincode}</span>
-                  </div>
-                  <div className="text-slate-600 font-mono">{lead.mobile}</div>
-                  <div className="text-[10px] text-slate-400">
-                    Seller: {lead.sellerBusinessId || 'Platform'} • {new Date(lead.createdAt).toLocaleString()}
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>}
+        )}
+        {operationsSection === 'homepage' && homepageCmsSubtab === 'hero' && (
+          <HeroBannerManagerPanel
+            localities={localities}
+            heroBanners={heroBanners}
+            filteredHeroBanners={filteredHeroBanners}
+            heroLocalityId={heroLocalityId}
+            heroTitle={heroTitle}
+            heroSubtitle={heroSubtitle}
+            heroImageUrl={heroImageUrl}
+            heroImageUploading={heroImageUploading}
+            heroEditId={heroEditId}
+            heroFormError={heroFormError}
+            heroStartDate={heroStartDate}
+            heroEndDate={heroEndDate}
+            heroCtaLabel={heroCtaLabel}
+            heroCtaType={heroCtaType}
+            heroCtaTarget={heroCtaTarget}
+            heroPincodes={heroPincodes}
+            heroStatsDraft={heroStatsDraft}
+            heroPreviewImageUrl={heroImageFile ? URL.createObjectURL(heroImageFile) : heroImageUrl}
+            heroImageFolder={getHeroBannerFolder()}
+            onHeroLocalityIdChange={setHeroLocalityId}
+            onHeroTitleChange={setHeroTitle}
+            onHeroSubtitleChange={setHeroSubtitle}
+            onHeroImageUrlChange={setHeroImageUrl}
+            onHeroImageFileChange={setHeroImageFile}
+            onHeroStartDateChange={setHeroStartDate}
+            onHeroEndDateChange={setHeroEndDate}
+            onHeroCtaLabelChange={setHeroCtaLabel}
+            onHeroCtaTypeChange={setHeroCtaType}
+            onHeroCtaTargetChange={setHeroCtaTarget}
+            onHeroPincodesChange={setHeroPincodes}
+            onToggleAllStats={() => setHeroStatsDraft((prev) => prev.map((stat) => ({ ...stat, enabled: !stat.enabled })))}
+            onToggleStat={(index) => setHeroStatsDraft((prev) => prev.map((item, itemIndex) => itemIndex === index ? { ...item, enabled: !item.enabled } : item))}
+            onUpdateStatField={(index, field, value) => setHeroStatsDraft((prev) => prev.map((item, itemIndex) => itemIndex === index ? { ...item, [field]: value } : item))}
+            onSubmit={handleCreateHeroBannerSubmit}
+            onReset={resetHeroBannerForm}
+            onBeginEdit={beginEditHeroBanner}
+            onToggleActive={(hero) => onUpdateHeroBanner?.({ ...hero, isActive: !hero.isActive })}
+            onDelete={(heroId) => onDeleteHeroBanner?.(heroId)}
+          />
+        )}
+        {operationsSection === 'campaigns' && campaignWorkspaceSubtab === 'leads' && (
+          <AdLeadInboxPanel
+            adLeads={adLeads}
+            filteredAdLeads={filteredAdLeads}
+            listingAds={listingAds}
+            businesses={businesses}
+            localities={localities}
+          />
+        )}
 
         {operationsSection === 'geography' && geographyWorkspaceSubtab === 'links' && <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
           <h3 className="text-base font-extrabold text-slate-950">Locality + Category URL Mapper</h3>
@@ -7857,7 +7455,7 @@ export default function AdminConsole({
                     {fullUrl}
                   </a>
                   <div className="text-[10px] text-slate-500 mt-1">
-                    {localities.find((locality) => locality.id === link.localityId)?.name || link.localityId} • {link.subcategoryId || link.categoryId}
+                    {localities.find((locality) => locality.id === link.localityId)?.name || link.localityId} ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ {link.subcategoryId || link.categoryId}
                   </div>
                   <button
                     type="button"
@@ -7987,13 +7585,15 @@ export default function AdminConsole({
                       const nextLocalityId = e.target.value;
                       const matchingAreas = MASTER_AREAS.filter((area) => area.localityId === nextLocalityId);
                       const selectedAreaStillValid = matchingAreas.some((area) => area.id === backendDraft.areaId);
-                      const nextArea = selectedAreaStillValid ? matchingAreas.find((area) => area.id === backendDraft.areaId) : matchingAreas[0];
+                      const nextArea = selectedAreaStillValid ? matchingAreas.find((area) => area.id === backendDraft.areaId) : null;
+                      const { city, stateId } = resolveLocalityGeography(nextLocalityId);
                       setBackendDraft({
                         ...backendDraft,
                         localityId: nextLocalityId,
+                        stateId: stateId || backendDraft.stateId,
                         areaId: nextArea?.id || '',
-                        cityId: nextArea?.cityId || backendDraft.cityId,
-                        pincode: nextArea?.pincode || backendDraft.pincode || '',
+                        cityId: nextArea?.cityId || city?.id || backendDraft.cityId,
+                        pincode: backendDraft.pincode || nextArea?.pincode || '',
                       });
                     }}
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 disabled:bg-slate-50"
@@ -8004,7 +7604,7 @@ export default function AdminConsole({
                   </select>
                 </div>
                 <div>
-                  <label className="block font-bold text-slate-500 mb-1">Primary Area / Pincode</label>
+                  <label className="block font-bold text-slate-500 mb-1">Primary Area (Optional)</label>
                   <select
                     value={backendDraft.areaId}
                     disabled={!backendEditMode}
@@ -8022,12 +7622,34 @@ export default function AdminConsole({
                     }}
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 disabled:bg-slate-50"
                   >
+                    <option value="">No area selected</option>
                     {MASTER_AREAS
                       .filter((area) => area.localityId === backendDraft.localityId)
                       .map(area => (
                       <option key={area.id} value={area.id}>{area.name} ({area.pincode})</option>
                     ))}
                   </select>
+                  <div className="mt-2">
+                    <InlineAreaCreator
+                      localityId={backendDraft.localityId}
+                      initialPincode={backendDraft.pincode || ''}
+                      disabled={!backendEditMode}
+                      canCreate={Boolean(onSaveGeographyConfig && geographyConfig)}
+                      onCreate={createInlineArea}
+                      onAssign={(areaId, _areaName, pincode) => {
+                        const nextArea = MASTER_AREAS.find((area) => area.id === areaId);
+                        const { city, stateId } = resolveLocalityGeography(backendDraft.localityId);
+                        setBackendDraft({
+                          ...backendDraft,
+                          areaId,
+                          stateId: stateId || backendDraft.stateId,
+                          cityId: nextArea?.cityId || city?.id || backendDraft.cityId,
+                          pincode,
+                          areasOfOperation: [areaId],
+                        });
+                      }}
+                    />
+                  </div>
                 </div>
                 <div>
                   <label className="block font-bold text-slate-500 mb-1">Pincode</label>
@@ -8115,3 +7737,4 @@ export default function AdminConsole({
     </div>
   );
 }
+

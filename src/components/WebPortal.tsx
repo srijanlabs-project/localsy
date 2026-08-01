@@ -14,9 +14,12 @@ import {
   Locality, Business, Category, Review, UserSession, BuyerActivityEvent,
   CommunityItem, CRMContact, MarketingCoupon, ListingAd, AdLead, HeroBanner, HomepageLayout, HomepageSection, ApiConfiguration, ResolvedHomepagePayload, HomepageDefaultsConfigState
 } from '../types';
-import { MASTER_STATES, MASTER_CITIES, MASTER_AREAS } from '../geographyMaster';
+import homepageDefaultsBootstrap from '../../homepage-defaults-config.json';
+import { MASTER_STATES, MASTER_CITIES, MASTER_LOCALITIES, MASTER_AREAS } from '../geographyMaster';
 import OtpVerificationModal from './OtpVerificationModal';
 import GoogleLocationPicker from './GoogleLocationPicker';
+import NoResultsState from './webportal/NoResultsState';
+import ResultsMapView from './webportal/ResultsMapView';
 import { getBusinessImageUrl, getCategoryFallbackImage, hasUploadedBusinessImage } from '../utils/businessImage';
 import { getMediaProxyUrl } from '../utils/mediaUrl';
 import {
@@ -27,12 +30,10 @@ import {
   getSubcategoryById,
   resolveDefaultSubcategoryId
 } from '../categoryMaster';
-import {
-  DEFAULT_FALLBACK_LISTING_AD_TEMPLATES,
-  DEFAULT_HOMEPAGE_SECTION_TEMPLATES,
-} from '../../shared/homepageDefaultsSeed.js';
 
 type PortalIcon = React.ComponentType<{ className?: string }>;
+
+const HOMEPAGE_DEFAULTS_BOOTSTRAP = homepageDefaultsBootstrap as Partial<HomepageDefaultsConfigState>;
 
 type PaginationControlsProps = {
   compact?: boolean;
@@ -199,12 +200,14 @@ type ViewAllModalState =
 
 type SearchSuggestion = {
   id: string;
-  type: 'category' | 'subcategory' | 'business';
+  type: 'category' | 'subcategory' | 'business' | 'intent' | 'locality' | 'recent';
   displayValue: string;
   queryValue: string;
   categoryId?: string;
   subcategoryId?: string;
   businessId?: string;
+  localityId?: string;
+  metaLabel?: string;
 };
 
 function SwipeDots({ totalDots, activeIndex = 0, className = '' }: SwipeDotsProps) {
@@ -255,6 +258,7 @@ interface WebPortalProps {
   homepageDefaultsConfig?: HomepageDefaultsConfigState;
   apiConfiguration?: ApiConfiguration;
   onSubmitAdLead?: (lead: Omit<AdLead, 'id' | 'createdAt'>) => void;
+  onTrackListingAdInteraction?: (payload: { adId: string; type: 'impression' | 'click' | 'lead'; context?: string }) => void;
   urlCategoryFilter?: string | null;
   urlSubcategoryFilter?: string | null;
   urlFilterNonce?: number;
@@ -303,6 +307,7 @@ export default function WebPortal({
   homepageDefaultsConfig,
   apiConfiguration,
   onSubmitAdLead,
+  onTrackListingAdInteraction,
   urlCategoryFilter = null,
   urlSubcategoryFilter = null,
   urlFilterNonce = 0,
@@ -340,7 +345,36 @@ export default function WebPortal({
     .replace(/&/g, ' and ')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
+  const initialSelectedLocalityIds = activeLocalityId
+    .split(',')
+    .map((id) => id.trim())
+    .filter(Boolean);
+  const initialMasterLocality =
+    MASTER_LOCALITIES.find((locality) => locality.id === initialSelectedLocalityIds[0]) ||
+    MASTER_LOCALITIES.find((locality) => locality.id === activeLocalityId) ||
+    MASTER_LOCALITIES.find((locality) => locality.id === localities[0]?.id) ||
+    MASTER_LOCALITIES[0];
+  const initialMasterCity =
+    (initialMasterLocality
+      ? MASTER_CITIES.find((city) => city.id === initialMasterLocality.cityId)
+      : undefined) ||
+    MASTER_CITIES[0];
+  const initialMasterState =
+    (initialMasterCity
+      ? MASTER_STATES.find((state) => state.id === initialMasterCity.stateId)
+      : undefined) ||
+    MASTER_STATES[0];
+  const initialLocalityAreas = initialMasterLocality
+    ? MASTER_AREAS.filter((area) => area.localityId === initialMasterLocality.id)
+    : [];
+  const initialPrimaryArea =
+    initialLocalityAreas[0] ||
+    (initialMasterCity
+      ? MASTER_AREAS.find((area) => area.cityId === initialMasterCity.id)
+      : undefined) ||
+    MASTER_AREAS[0];
   const [searchQuery, setSearchQuery] = useState('');
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedSubcategory, setSelectedSubcategory] = useState('all');
   const [showApplyModal, setShowApplyModal] = useState(false);
@@ -367,13 +401,13 @@ export default function WebPortal({
   const [hours, setHours] = useState('10:00 AM - 08:30 PM');
   const [imageUrl, setImageUrl] = useState('');
   const [gpsCoords, setGpsCoords] = useState<{ lat: number; lng: number } | undefined>(undefined);
-  const [listingPincode, setListingPincode] = useState(savedPincode || '410218');
+  const [listingPincode, setListingPincode] = useState(savedPincode || initialPrimaryArea?.pincode || '');
 
   // Master geography form values
-  const [formStateId, setFormStateId] = useState('mh');
-  const [formCityId, setFormCityId] = useState('navimumbai');
-  const [formAreaId, setFormAreaId] = useState('roadpali-sec17');
-  const [formAreasOfOperation, setFormAreasOfOperation] = useState<string[]>(['roadpali-sec17']);
+  const [formStateId, setFormStateId] = useState(initialMasterState?.id || '');
+  const [formCityId, setFormCityId] = useState(initialMasterCity?.id || '');
+  const [formAreaId, setFormAreaId] = useState(initialPrimaryArea?.id || '');
+  const [formAreasOfOperation, setFormAreasOfOperation] = useState<string[]>(initialPrimaryArea?.id ? [initialPrimaryArea.id] : []);
 
   // Review submission state
   const [newRating, setNewRating] = useState(5);
@@ -406,6 +440,8 @@ export default function WebPortal({
   const [filterPaymentMethod, setFilterPaymentMethod] = useState('all');
   const [filterExperience, setFilterExperience] = useState<'all' | '5' | '10'>('all');
   const [sortBy, setSortBy] = useState<'recommended' | 'popular' | 'rating' | 'nearest' | 'newest'>('recommended');
+  const [resultsViewMode, setResultsViewMode] = useState<'grid' | 'map'>('grid');
+  const [activeMapBusinessId, setActiveMapBusinessId] = useState<string | null>(null);
 
   // Merchant Hub Grow Desk workspace state
   const [activeSellerBizId, setActiveSellerBizId] = useState('s1');
@@ -433,11 +469,11 @@ export default function WebPortal({
   const [communityTitle, setCommunityTitle] = useState('');
   const [communityBody, setCommunityBody] = useState('');
   const [communitySection, setCommunitySection] = useState<'qna' | 'deals' | 'recommendations' | 'sponsored'>('qna');
-  const [communityTags, setCommunityTags] = useState('monsoon, Roadpali');
+  const [communityTags, setCommunityTags] = useState(`monsoon, ${initialMasterLocality?.name.split(',')[0] || 'Local Area'}`);
   const [activeLeadAd, setActiveLeadAd] = useState<ListingAd | null>(null);
   const [leadName, setLeadName] = useState('');
   const [leadMobile, setLeadMobile] = useState('');
-  const [leadPincode, setLeadPincode] = useState(savedPincode || '410218');
+  const [leadPincode, setLeadPincode] = useState(savedPincode || initialPrimaryArea?.pincode || '');
   const [featuredPage, setFeaturedPage] = useState(1);
   const [regularPage, setRegularPage] = useState(1);
   const [communityPage, setCommunityPage] = useState(1);
@@ -450,6 +486,7 @@ export default function WebPortal({
   const [viewAllModal, setViewAllModal] = useState<ViewAllModalState | null>(null);
   const [isResultsPage, setIsResultsPage] = useState(false);
   const [isSearchInputFocused, setIsSearchInputFocused] = useState(false);
+  const trackedAdImpressionIdsRef = useRef<Set<string>>(new Set());
   const [resolvedHomepagePayload, setResolvedHomepagePayload] = useState<ResolvedHomepagePayload | null>(null);
   const [resolvedHomepageSource, setResolvedHomepageSource] = useState<'published_snapshot' | 'live_resolver' | 'legacy_fallback'>('legacy_fallback');
   const [resolvedHomepageHydrated, setResolvedHomepageHydrated] = useState(false);
@@ -507,6 +544,45 @@ export default function WebPortal({
   }, [savedPincode]);
 
   useEffect(() => {
+    const selectedIds = activeLocalityId
+      .split(',')
+      .map((id) => id.trim())
+      .filter(Boolean);
+    const activeMasterLocality =
+      MASTER_LOCALITIES.find((locality) => locality.id === selectedIds[0]) ||
+      MASTER_LOCALITIES.find((locality) => locality.id === activeLocalityId) ||
+      MASTER_LOCALITIES.find((locality) => locality.id === localities[0]?.id);
+    if (!activeMasterLocality) return;
+    const activeMasterCity = MASTER_CITIES.find((city) => city.id === activeMasterLocality.cityId);
+    const activeMasterState = activeMasterCity
+      ? MASTER_STATES.find((state) => state.id === activeMasterCity.stateId)
+      : undefined;
+    const activeAreas = MASTER_AREAS.filter((area) => area.localityId === activeMasterLocality.id);
+    const selectedAreaStillValid = activeAreas.some((area) => area.id === formAreaId);
+    const nextPrimaryArea = selectedAreaStillValid
+      ? activeAreas.find((area) => area.id === formAreaId)
+      : activeAreas[0];
+
+    if (activeMasterState?.id && activeMasterState.id !== formStateId) {
+      setFormStateId(activeMasterState.id);
+    }
+    if (activeMasterCity?.id && activeMasterCity.id !== formCityId) {
+      setFormCityId(activeMasterCity.id);
+    }
+    if ((nextPrimaryArea?.id || '') !== formAreaId) {
+      setFormAreaId(nextPrimaryArea?.id || '');
+    }
+    setFormAreasOfOperation((prev) => {
+      const nextAreas = prev.filter((areaId) => activeAreas.some((area) => area.id === areaId));
+      if (nextAreas.length > 0) return nextAreas;
+      return nextPrimaryArea?.id ? [nextPrimaryArea.id] : [];
+    });
+    if (!/^\d{6}$/.test(listingPincode)) {
+      setListingPincode(savedPincode || nextPrimaryArea?.pincode || '');
+    }
+  }, [activeLocalityId, formAreaId, formCityId, formStateId, listingPincode, localities, savedPincode]);
+
+  useEffect(() => {
     const areaPincode = MASTER_AREAS.find((area) => area.id === formAreaId)?.pincode;
     if (!areaPincode) return;
     if (!/^\d{6}$/.test(listingPincode)) {
@@ -528,13 +604,20 @@ export default function WebPortal({
     .split(',')
     .map((id) => id.trim())
     .filter(Boolean);
-  const browsingLocalityIds = selectedLocalityIds.includes('roadpali')
-    ? Array.from(new Set([...selectedLocalityIds, 'kalamboli']))
-    : selectedLocalityIds;
+  const browsingLocalityIds = selectedLocalityIds;
   const currentLocality =
     localities.find((l) => l.id === selectedLocalityIds[0]) ||
     localities.find((l) => l.id === activeLocalityId) ||
     localities[0];
+  const currentLocalityMaster =
+    MASTER_LOCALITIES.find((locality) => locality.id === currentLocality?.id) ||
+    MASTER_LOCALITIES.find((locality) => locality.slug === currentLocality?.slug) ||
+    MASTER_LOCALITIES.find((locality) => locality.id === selectedLocalityIds[0]);
+  const nearbyCityLocalities = currentLocalityMaster
+    ? MASTER_LOCALITIES
+        .filter((locality) => locality.cityId === currentLocalityMaster.cityId && locality.id !== currentLocalityMaster.id)
+        .slice(0, 6)
+    : [];
   const selectedLocalityMappedPincodes = localityMappedPincodes.length > 0
     ? localityMappedPincodes
     : pincodeMappings
@@ -544,12 +627,14 @@ export default function WebPortal({
     .split(',')
     .map((id) => id.trim())
     .filter(Boolean)
-    .map((id) => {
-      const localityName = localities.find((l) => l.id === id)?.name || id;
-      if (id === 'roadpali') return 'Roadpali & Kalamboli';
-      return localityName;
-    })
+    .map((id) => localities.find((l) => l.id === id)?.name || id)
     .join(', ');
+  const currentLocalityLabel = currentLocality?.name.split(',')[0] || 'your area';
+  const recentSearchStorageKey = `localsy:recent-searches:${currentLocality?.id || 'global'}`;
+  const communityHashtag = `#${slugifyForUrl(currentLocalityLabel || 'community').replace(/-/g, '_')}_community`;
+  const aiRecommendationPool = businesses
+    .filter((business) => business.status === 'approved')
+    .filter((business) => browsingLocalityIds.length === 0 || browsingLocalityIds.includes(business.localityId));
   const todayIso = new Date().toISOString().slice(0, 10);
   const hasResolvedHomepagePayload = resolvedHomepagePayload !== null;
   const cmsHeroBanners = hasResolvedHomepagePayload
@@ -595,6 +680,26 @@ export default function WebPortal({
     : null;
   const currentLocalitySlug = currentLocality.slug || currentLocality.id;
   const currentDeviceTarget: 'mobile' | 'desktop' = typeof window !== 'undefined' && window.innerWidth < 768 ? 'mobile' : 'desktop';
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(recentSearchStorageKey);
+      if (!raw) {
+        setRecentSearches([]);
+        return;
+      }
+      const parsed = JSON.parse(raw);
+      const next = Array.isArray(parsed)
+        ? parsed
+            .map((entry) => String(entry || '').trim())
+            .filter(Boolean)
+            .slice(0, 6)
+        : [];
+      setRecentSearches(next);
+    } catch {
+      setRecentSearches([]);
+    }
+  }, [recentSearchStorageKey]);
 
   useEffect(() => {
     if (!apiConfiguration?.resolvedHomepageEndpoint || !currentLocality?.id) {
@@ -660,6 +765,19 @@ export default function WebPortal({
     if (categoryId && categoryId !== 'all') return getCategoryById(categoryId)?.name || categoryId;
     return 'All';
   };
+  const rememberRecentSearch = (query: string) => {
+    const trimmedQuery = String(query || '').trim();
+    if (!trimmedQuery) return;
+    setRecentSearches((prev) => {
+      const next = [trimmedQuery, ...prev.filter((entry) => entry.toLowerCase() !== trimmedQuery.toLowerCase())].slice(0, 6);
+      try {
+        window.localStorage.setItem(recentSearchStorageKey, JSON.stringify(next));
+      } catch {
+        // Ignore storage failures in private or blocked contexts.
+      }
+      return next;
+    });
+  };
   const buildSearchResultsRoutePath = (
     categoryId = selectedCategory,
     subcategoryId = selectedSubcategory,
@@ -682,14 +800,28 @@ export default function WebPortal({
     if (`${window.location.pathname}${window.location.search}` === nextPath) return;
     window.history.pushState({}, '', nextPath);
   };
-  const openResultsPage = () => {
+  const openResultsFromSearch = (
+    categoryId = selectedCategory,
+    subcategoryId = selectedSubcategory,
+    query = searchQuery
+  ) => {
+    const nextCategory = categoryId || 'all';
+    const nextSubcategory = nextCategory === 'all' ? 'all' : (subcategoryId || 'all');
+    const nextQuery = String(query || '').trim();
     setActivePortalTab('listings');
+    setSelectedCategory(nextCategory);
+    setSelectedSubcategory(nextSubcategory);
+    setSearchQuery(nextQuery);
     setSelectedBiz(null);
     setIsResultsPage(true);
-    pushHistoryIfNeeded(buildSearchResultsRoutePath(selectedCategory, selectedSubcategory, searchQuery));
+    rememberRecentSearch(getSearchResultsKeyword(nextCategory, nextQuery));
+    pushHistoryIfNeeded(buildSearchResultsRoutePath(nextCategory, nextSubcategory, nextQuery));
     window.requestAnimationFrame(() => {
       document.getElementById('results-page-top')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
+  };
+  const openResultsPage = () => {
+    openResultsFromSearch(selectedCategory, selectedSubcategory, searchQuery);
   };
   const openHomePage = () => {
     setIsResultsPage(false);
@@ -706,15 +838,7 @@ export default function WebPortal({
     const categoryKeyword = subcategoryId !== 'all'
       ? getSubcategoryById(subcategoryId)?.name || getCategoryById(categoryId)?.name || categoryId
       : getCategoryById(categoryId)?.name || (categoryId === 'all' ? '' : categoryId);
-    setSelectedCategory(categoryId);
-    setSelectedSubcategory(categoryId === 'all' ? 'all' : subcategoryId);
-    setSearchQuery(categoryKeyword);
-    setSelectedBiz(null);
-    setIsResultsPage(true);
-    pushHistoryIfNeeded(buildSearchResultsRoutePath(categoryId, categoryId === 'all' ? 'all' : subcategoryId, categoryKeyword));
-    window.requestAnimationFrame(() => {
-      document.getElementById('results-page-top')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
+    openResultsFromSearch(categoryId, categoryId === 'all' ? 'all' : subcategoryId, categoryKeyword);
   };
   const handleCategoryShortcut = (categoryId: string, subcategoryId = 'all') => {
     openResultsForCategory(categoryId, subcategoryId);
@@ -801,6 +925,25 @@ export default function WebPortal({
   }, [selectedBiz?.id]);
 
   useEffect(() => {
+    if (resultsViewMode === 'map' && searchResultMapBusinesses.length === 0) {
+      setResultsViewMode('grid');
+    }
+  }, [resultsViewMode, searchResultMapBusinesses.length]);
+
+  useEffect(() => {
+    if (pagedSearchResultBusinesses.length === 0) {
+      setActiveMapBusinessId(null);
+      return;
+    }
+    const firstMappedBusiness = pagedSearchResultBusinesses.find((business) => business.gpsCoordinates)?.id || null;
+    setActiveMapBusinessId((prev) => (
+      prev && pagedSearchResultBusinesses.some((business) => business.id === prev)
+        ? prev
+        : firstMappedBusiness
+    ));
+  }, [pagedSearchResultBusinesses]);
+
+  useEffect(() => {
     const interval = window.setInterval(() => {
       setHomepageRotationTick((value) => value + 1);
     }, 3000);
@@ -863,6 +1006,16 @@ export default function WebPortal({
     }
   }, [uploadedImageTag, searchMode, onLogAuditEvent, activeLocalityId, isResultsPage]);
 
+  useEffect(() => {
+    if (!onLogAuditEvent) return;
+    if (!isResultsPage || !normalizedActiveSearch || searchResultBusinesses.length > 0) return;
+    onLogAuditEvent(
+      'search',
+      'No-result search',
+      `Zone: "${activeLocalityId}" | Query: "${activeSearchText}" | Category: "${selectedCategory}"`
+    );
+  }, [activeLocalityId, activeSearchText, isResultsPage, normalizedActiveSearch, onLogAuditEvent, searchResultBusinesses.length, selectedCategory]);
+
   const handleNextSlide = () => {
     setCarouselIndex(prev => (prev + 1) % carouselImages.length);
   };
@@ -912,15 +1065,66 @@ export default function WebPortal({
     );
     setTimeout(() => {
       setAiIsResponding(false);
+      const normalizedQuery = aiSearchQuery.trim().toLowerCase();
+      const queryTokens = normalizedQuery.split(/\s+/).filter(Boolean);
+      const hintGroups = [
+        ['hair', 'salon', 'groom', 'cut', 'barber', 'beauty'],
+        ['academy', 'spa', 'wellness', 'therapy'],
+        ['veg', 'food', 'dosa', 'restaurant', 'cafe', 'tiffin'],
+      ];
+      const matchedHints = hintGroups.find((group) => group.some((token) => normalizedQuery.includes(token))) || queryTokens;
+      const buildSearchHaystack = (business: Business) => [
+        business.name,
+        business.description,
+        business.tags.join(' '),
+        getCategoryById(business.categoryId)?.name || '',
+        getSubcategoryById(business.subcategoryId)?.name || '',
+      ].join(' ').toLowerCase();
+      const sortBusinessesByQuality = (items: Business[]) => (
+        [...items].sort((a, b) => (b.rating - a.rating) || (b.reviewCount - a.reviewCount) || a.name.localeCompare(b.name))
+      );
+      const directMatches = sortBusinessesByQuality(
+        aiRecommendationPool.filter((business) => {
+          const haystack = buildSearchHaystack(business);
+          return queryTokens.some((token) => haystack.includes(token));
+        })
+      );
+      const hintMatches = sortBusinessesByQuality(
+        aiRecommendationPool.filter((business) => {
+          const haystack = buildSearchHaystack(business);
+          return matchedHints.some((hint) => haystack.includes(hint));
+        })
+      );
+      const recommendedBusiness = directMatches[0] || hintMatches[0];
+
+      if (recommendedBusiness) {
+        const areaLabel = MASTER_AREAS.find((area) => area.id === recommendedBusiness.areaId)?.name
+          || localities.find((locality) => locality.id === recommendedBusiness.localityId)?.name.split(',')[0]
+          || currentLocalityLabel;
+        const categoryLabel = getSubcategoryById(recommendedBusiness.subcategoryId)?.name
+          || getCategoryById(recommendedBusiness.categoryId)?.name
+          || 'local services';
+        const summaryText = recommendedBusiness.description.trim().split(/[.!?]/)[0]?.trim() || `Trusted ${categoryLabel.toLowerCase()} provider`;
+        const ratingText = recommendedBusiness.rating > 0
+          ? ` Rated ${recommendedBusiness.rating.toFixed(1)} star from ${recommendedBusiness.reviewCount} reviews.`
+          : '';
+        setAiResponseText(`AI Recommendation: Try "${recommendedBusiness.name}" in ${areaLabel}. ${summaryText}.${ratingText}`);
+        return;
+      }
+
+      if (queryTokens.length > 0) {
+        setAiResponseText(`AI Recommendation: For "${aiSearchQuery}", we scanned verified businesses in ${currentLocalityLabel}. Try a broader keyword like salon, clinic, restaurant, electrician, or tutor to surface the best local matches.`);
+        return;
+      }
       const q = aiSearchQuery.toLowerCase();
       if (q.includes('hair') || q.includes('salon') || q.includes('groom') || q.includes('cut')) {
-        setAiResponseText(`✨ AI Recommendation: I highly recommend "5 Elements | Family Salon" in Sector 17, Roadpali. They offer premium family styling packages, organic hair spa treatments, and maintain a stellar 4.9★ rating based on verified customer feedback.`);
+        setAiResponseText(`AI Recommendation: Search verified salons and grooming providers in ${currentLocalityLabel} for the strongest local matches.`);
       } else if (q.includes('academy') || q.includes('spa') || q.includes('majestic')) {
-        setAiResponseText(`✨ AI Recommendation: Look no further than "Majestic Salon Spa & Academy" in Sector 11, Kalamboli. Managed by Priya Shinde, they hold standard certified beauty training programs and luxury therapeutic bridal therapies.`);
+        setAiResponseText(`AI Recommendation: Explore verified wellness, academy, and spa listings in ${currentLocalityLabel} to compare the best nearby options.`);
       } else if (q.includes('veg') || q.includes('food') || q.includes('dosa') || q.includes('utsav')) {
-        setAiResponseText(`✨ AI Recommendation: "Utsav Grand Pure Veg Restaurant" on Sector 17, Roadpali is the finest pure vegetarian choice! Delivers outstanding Podi Dosa plates and North Indian paneer delicacies in a dynamic family lounge.`);
+        setAiResponseText(`AI Recommendation: Browse verified restaurants and food providers in ${currentLocalityLabel} to compare trusted nearby choices.`);
       } else {
-        setAiResponseText(`✨ AI Recommendation: For your query "${aiSearchQuery}", we scanned the active regional directory coords for Roadpali and found high-quality options. Try checking "Barberry Bliss Family Salon" or filters under "Salons & Wellness"!`);
+        setAiResponseText(`AI Recommendation: For "${aiSearchQuery}", try refining your search with a business type, category, or service keyword to surface the best matches in ${currentLocalityLabel}.`);
       }
     }, 1200);
   };
@@ -1000,20 +1204,11 @@ export default function WebPortal({
       : selectedLocalityMappedPincodes.includes(businessPincode);
     return browsingLocalityIds.includes(b.localityId) && b.status === 'approved' && matchesMappedPincode;
   });
+  const activeSearchText = (searchMode === 'voice' && voiceTranscript) ? voiceTranscript : (isResultsPage ? deferredSearchQuery : '');
+  const normalizedActiveSearch = normalizeSearchText(activeSearchText);
 
   const filteredBusinesses = approvedInLocality.filter(b => {
-    // Determine query to match
-    const activeText = (searchMode === 'voice' && voiceTranscript) ? voiceTranscript : (isResultsPage ? deferredSearchQuery : '');
-    const normalizedSearch = activeText.trim().toLowerCase();
-    const normalizedName = String(b.name || '').toLowerCase();
-    const normalizedDescription = String(b.description || '').toLowerCase();
-    const normalizedTags = Array.isArray(b.tags) ? b.tags : [];
-    const matchesSearch = !normalizedSearch ||
-                          normalizedName.includes(normalizedSearch) ||
-                          normalizedDescription.includes(normalizedSearch) ||
-                          normalizedTags.some((tag) => String(tag || '').toLowerCase().includes(normalizedSearch)) ||
-                          getBusinessCategoryLabel(b).toLowerCase().includes(normalizedSearch) ||
-                          getBusinessSubcategoryLabel(b).toLowerCase().includes(normalizedSearch);
+    const matchesSearch = matchesBusinessSearch(b, normalizedActiveSearch);
     
     // Check if matching primary category
     const matchesCategory = selectedCategory === 'all' || b.categoryId === selectedCategory;
@@ -1052,18 +1247,14 @@ export default function WebPortal({
 
     return matchesSearch && matchesCategory && matchesSubcategory && matchesDistance && matchesRating && matchesOpenNow && matchesPrice && matchesDelivery && matchesOffers && matchesVerified && matchesLanguage && matchesPayment && matchesExperience;
   });
+  const dedupedFilteredBusinesses = dedupeBusinessesForExperience(filteredBusinesses, normalizedActiveSearch, 'results');
 
   // Apply sorting rules
-  const sortedBusinesses = [...filteredBusinesses].sort((a, b) => {
+  const sortedBusinesses = [...dedupedFilteredBusinesses].sort((a, b) => {
     if (sortBy === 'recommended') {
-      // Sponsored/CPC bids, then featured status, then top rating
-      if (resolvedSponsoredBusinessIds.has(a.id) && !resolvedSponsoredBusinessIds.has(b.id)) return -1;
-      if (!resolvedSponsoredBusinessIds.has(a.id) && resolvedSponsoredBusinessIds.has(b.id)) return 1;
-      if (a.isSponsored && !b.isSponsored) return -1;
-      if (!a.isSponsored && b.isSponsored) return 1;
-      if (a.featured && !b.featured) return -1;
-      if (!a.featured && b.featured) return 1;
-      return b.rating - a.rating;
+      const scoreDiff = getBusinessRecommendedScore(b, normalizedActiveSearch, 'results') - getBusinessRecommendedScore(a, normalizedActiveSearch, 'results');
+      if (scoreDiff !== 0) return scoreDiff;
+      return (b.reviewCount - a.reviewCount) || b.name.localeCompare(a.name);
     }
     if (sortBy === 'popular') {
       return b.reviewCount - a.reviewCount;
@@ -1079,14 +1270,10 @@ export default function WebPortal({
     }
     return 0;
   });
-  const homepageSortedBusinesses = [...approvedInLocality].sort((a, b) => {
-    if (resolvedSponsoredBusinessIds.has(a.id) && !resolvedSponsoredBusinessIds.has(b.id)) return -1;
-    if (!resolvedSponsoredBusinessIds.has(a.id) && resolvedSponsoredBusinessIds.has(b.id)) return 1;
-    if (a.isSponsored && !b.isSponsored) return -1;
-    if (!a.isSponsored && b.isSponsored) return 1;
-    if (a.featured && !b.featured) return -1;
-    if (!a.featured && b.featured) return 1;
-    return b.rating - a.rating;
+  const homepageSortedBusinesses = dedupeBusinessesForExperience(approvedInLocality, '', 'homepage').sort((a, b) => {
+    const scoreDiff = getBusinessRecommendedScore(b, '', 'homepage') - getBusinessRecommendedScore(a, '', 'homepage');
+    if (scoreDiff !== 0) return scoreDiff;
+    return (b.reviewCount - a.reviewCount) || b.name.localeCompare(a.name);
   });
   const defaultHeroStatCards = [
     { label: 'Happy Users', value: '15K+', Icon: Users, className: 'text-indigo-600 bg-indigo-50' },
@@ -1142,13 +1329,58 @@ export default function WebPortal({
     (safeSearchResultPage - 1) * REGULAR_PAGE_SIZE,
     safeSearchResultPage * REGULAR_PAGE_SIZE
   );
+  const searchResultMapBusinesses = pagedSearchResultBusinesses.filter((business) => (
+    business.gpsCoordinates &&
+    Number.isFinite(business.gpsCoordinates.lat) &&
+    Number.isFinite(business.gpsCoordinates.lng)
+  ));
+  const searchResultMapBounds = useMemo(() => {
+    if (searchResultMapBusinesses.length === 0) return null;
+    const latitudes = searchResultMapBusinesses.map((business) => business.gpsCoordinates!.lat);
+    const longitudes = searchResultMapBusinesses.map((business) => business.gpsCoordinates!.lng);
+    return {
+      minLat: Math.min(...latitudes),
+      maxLat: Math.max(...latitudes),
+      minLng: Math.min(...longitudes),
+      maxLng: Math.max(...longitudes),
+    };
+  }, [searchResultMapBusinesses]);
+  const projectSearchResultMapPoint = (business: Business) => {
+    if (!business.gpsCoordinates || !searchResultMapBounds) return { x: 50, y: 50 };
+    const { minLat, maxLat, minLng, maxLng } = searchResultMapBounds;
+    const latRange = Math.max(0.01, maxLat - minLat);
+    const lngRange = Math.max(0.01, maxLng - minLng);
+    return {
+      x: 10 + (((business.gpsCoordinates.lng - minLng) / lngRange) * 80),
+      y: 12 + (((maxLat - business.gpsCoordinates.lat) / latRange) * 72),
+    };
+  };
+  const activeMapBusiness = searchResultMapBusinesses.find((business) => business.id === activeMapBusinessId) || searchResultMapBusinesses[0] || null;
   const searchSuggestions: SearchSuggestion[] = [
+    ...recentSearches.map((query, index) => ({
+      id: `recent-${index}-${slugifyForUrl(query)}`,
+      type: 'recent' as const,
+      displayValue: query,
+      queryValue: query,
+      metaLabel: 'Recent search'
+    })),
+    ...[
+      { id: 'intent-home-baker', displayValue: 'Home Bakers', queryValue: 'home baker', categoryId: 'food-restaurants', subcategoryId: 'bakeries', metaLabel: 'Intent shortcut' },
+      { id: 'intent-tiffin', displayValue: 'Tiffin Services', queryValue: 'tiffin service', categoryId: 'food-restaurants', subcategoryId: 'tiffin-services', metaLabel: 'Intent shortcut' },
+      { id: 'intent-hospital', displayValue: 'Hospitals Nearby', queryValue: 'hospital', categoryId: 'health-medical', subcategoryId: 'hospitals', metaLabel: 'Essential service' },
+      { id: 'intent-clinic', displayValue: 'Clinics Nearby', queryValue: 'clinic', categoryId: 'health-medical', subcategoryId: 'clinics', metaLabel: 'Essential service' },
+      { id: 'intent-bank', displayValue: 'Banks & ATM', queryValue: 'bank atm', metaLabel: 'Essential service' }
+    ].map((suggestion) => ({
+      ...suggestion,
+      type: 'intent' as const
+    })),
     ...BUSINESS_CATEGORIES.map((category) => ({
       id: `category-${category.id}`,
       type: 'category' as const,
       displayValue: category.name,
       queryValue: category.name,
       categoryId: category.id,
+      metaLabel: 'Category'
     })),
     ...BUSINESS_SUBCATEGORIES.map((subcategory) => ({
       id: `subcategory-${subcategory.id}`,
@@ -1157,6 +1389,15 @@ export default function WebPortal({
       queryValue: subcategory.name,
       categoryId: subcategory.categoryId,
       subcategoryId: subcategory.id,
+      metaLabel: 'Subcategory'
+    })),
+    ...nearbyCityLocalities.map((locality) => ({
+      id: `locality-${locality.id}`,
+      type: 'locality' as const,
+      displayValue: locality.name,
+      queryValue: locality.name.split(',')[0] || locality.name,
+      localityId: locality.id,
+      metaLabel: 'Nearby locality'
     })),
     ...approvedInLocality.map((business) => {
       const categoryLabel = getBusinessCategoryLabel(business);
@@ -1172,29 +1413,42 @@ export default function WebPortal({
         categoryId: business.categoryId || undefined,
         subcategoryId: business.subcategoryId || undefined,
         businessId: business.id,
+        metaLabel: getBusinessRecognitionBadges(business)[0]?.label || 'Business',
       };
     }),
   ];
   const filteredSearchSuggestions = useMemo<SearchSuggestion[]>(() => {
-    const normalizedQuery = searchQuery.trim().toLowerCase();
+    const normalizedQuery = normalizeSearchText(searchQuery);
     if (!normalizedQuery) return [];
-    const categoryMatches = searchSuggestions.filter((suggestion) => (
-      (suggestion.type === 'category' || suggestion.type === 'subcategory') &&
-      suggestion.displayValue.toLowerCase().includes(normalizedQuery)
-    ));
-    if (categoryMatches.length > 0) {
-      return categoryMatches.slice(0, 8);
-    }
     return searchSuggestions
-      .filter((suggestion) => (
-        suggestion.type === 'business' &&
-        (
-          suggestion.queryValue.toLowerCase().includes(normalizedQuery) ||
-          suggestion.displayValue.toLowerCase().includes(normalizedQuery)
-        )
-      ))
+      .map((suggestion) => {
+        const normalizedDisplay = normalizeSearchText(suggestion.displayValue);
+        const normalizedValue = normalizeSearchText(suggestion.queryValue);
+        let score = 0;
+
+        if (normalizedDisplay === normalizedQuery || normalizedValue === normalizedQuery) score += 140;
+        else if (normalizedDisplay.startsWith(normalizedQuery) || normalizedValue.startsWith(normalizedQuery)) score += 110;
+        else if (normalizedDisplay.includes(normalizedQuery) || normalizedValue.includes(normalizedQuery)) score += 72;
+
+        tokenizeSearchText(normalizedQuery).forEach((token) => {
+          if (normalizedDisplay.includes(token) || normalizedValue.includes(token)) score += 18;
+        });
+
+        if (suggestion.type === 'intent') score += 12;
+        if (suggestion.type === 'business') score += 10;
+        if (suggestion.type === 'recent') score += 8;
+        if (suggestion.type === 'locality') score += 14;
+        if (isHomeBusinessIntent(normalizedQuery) && suggestion.queryValue.toLowerCase().includes('home')) score += 24;
+        if (isCivicIntent(normalizedQuery) && /hospital|clinic|bank|blood|police/.test(normalizedDisplay)) score += 24;
+
+        return { suggestion, score };
+      })
+      .filter((entry) => entry.score > 0)
+      .sort((a, b) => b.score - a.score || a.suggestion.displayValue.localeCompare(b.suggestion.displayValue))
+      .map((entry) => entry.suggestion)
       .slice(0, 8);
   }, [searchQuery, searchSuggestions]);
+  const topSearchSuggestion = filteredSearchSuggestions[0] || null;
   const shouldShowSearchSuggestions = (
     searchMode === 'keyword' &&
     isSearchInputFocused &&
@@ -1224,6 +1478,26 @@ export default function WebPortal({
     (safeCrmPage - 1) * CRM_PAGE_SIZE,
     safeCrmPage * CRM_PAGE_SIZE
   );
+  const noResultsSuggestedCategories = BUSINESS_CATEGORIES
+    .map((category) => {
+      const listingCount = approvedInLocality.filter((business) => business.categoryId === category.id).length;
+      let score = listingCount;
+      if (isCivicIntent(normalizedActiveSearch) && category.id === 'health-medical') score += 20;
+      if (isHomeBusinessIntent(normalizedActiveSearch) && category.id === 'food-restaurants') score += 18;
+      if (selectedCategory !== 'all' && category.id === selectedCategory) score -= 10;
+      return { category, listingCount, score };
+    })
+    .filter((entry) => entry.listingCount > 0)
+    .sort((a, b) => b.score - a.score || b.listingCount - a.listingCount)
+    .slice(0, 4);
+  const noResultsFallbackBusinesses = homepageSortedBusinesses
+    .filter((business) => {
+      if (isCivicIntent(normalizedActiveSearch)) return isEssentialCommunityService(business);
+      if (isHomeBusinessIntent(normalizedActiveSearch)) return isHomeBasedBusiness(business);
+      if (selectedCategory !== 'all') return business.categoryId === selectedCategory;
+      return true;
+    })
+    .slice(0, 4);
   const activeMerchantLeads = adLeads.filter((lead) => lead.sellerBusinessId === activeSellerBizId);
   const merchantLeadsTotalPages = Math.max(1, Math.ceil(activeMerchantLeads.length / LEADS_PAGE_SIZE));
   const safeMerchantLeadsPage = Math.min(merchantLeadsPage, merchantLeadsTotalPages);
@@ -1265,6 +1539,7 @@ export default function WebPortal({
   };
   const activeListingAds = cmsListingAds.filter((ad) => {
     if (!ad.isActive) return false;
+    if (!['approved', 'live'].includes(ad.workflowStatus || 'draft')) return false;
     if (!matchesDateWindow(ad.startDate, ad.endDate)) return false;
     return matchesTargeting(ad.localityIds, ad.pincodes);
   });
@@ -1451,18 +1726,385 @@ export default function WebPortal({
     return getSubcategoryById(biz.subcategoryId)?.name || biz.sourceSubcategoryLabel || getBusinessCategoryLabel(biz);
   }
 
-  const applySearchSuggestion = (suggestion: SearchSuggestion) => {
+  const normalizeSearchText = (value: string) => {
+    const replacements: Array<[RegExp, string]> = [
+      [/\bdr\b/g, 'doctor'],
+      [/\bdocter\b|\bdocotor\b|\bdaktar\b|\bdaaktar\b/g, 'doctor'],
+      [/\bdavakhana\b|\bdawakhaana\b/g, 'clinic'],
+      [/\brugnalaya\b|\baspatal\b|\bhospitol\b/g, 'hospital'],
+      [/\bbloodbank\b/g, 'blood bank'],
+      [/\bpolice stn\b|\bpolice chowki\b/g, 'police station'],
+      [/\bgharghuti\b|\bgharguti\b|\bghar ka khana\b|\bhome made\b/g, 'home food'],
+      [/\bghar ka tiffin\b|\bdabba\b/g, 'tiffin'],
+      [/\bmahila udyog\b|\bwomen owned\b|\bwoman owned\b/g, 'women-led'],
+      [/\bmedikal\b/g, 'medical'],
+      [/डॉक्टर|डाक्टर|डॉ/g, 'doctor'],
+      [/अस्पताल|हॉस्पिटल|रुग्णालय/g, 'hospital'],
+      [/क्लिनिक|दवाखाना/g, 'clinic'],
+      [/ब्लड बैंक/g, 'blood bank'],
+      [/पुलिस|पोलीस/g, 'police'],
+      [/बैंक|एटीएम/g, 'bank atm'],
+      [/घरगुती|घर का खाना|घरीलू खाना/g, 'home food'],
+      [/टिफिन|डब्बा/g, 'tiffin'],
+      [/प्लंबर|नल/g, 'plumber'],
+      [/इलेक्ट्रीशियन|बिजली/g, 'electrician'],
+    ];
+
+    let normalized = String(value || '')
+      .toLowerCase()
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, ' ');
+
+    replacements.forEach(([pattern, replacement]) => {
+      normalized = normalized.replace(pattern, ` ${replacement} `);
+    });
+
+    return normalized
+      .replace(/&/g, ' and ')
+      .replace(/[^a-z0-9\s-]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  };
+
+  const tokenizeSearchText = (value: string) => normalizeSearchText(value).split(/[\s,/-]+/).filter(Boolean);
+
+  const getBusinessSearchDocument = (biz: Business) => {
+    const areaName = getBusinessAreaName(biz);
+    const localityName = localities.find((locality) => locality.id === biz.localityId)?.name || '';
+    const cityName = MASTER_CITIES.find((city) => city.id === biz.cityId)?.name || '';
+    const stateName = MASTER_STATES.find((state) => state.id === biz.stateId)?.name || '';
+    return [
+      biz.name,
+      biz.description,
+      biz.address,
+      areaName,
+      localityName,
+      cityName,
+      stateName,
+      biz.pincode,
+      getBusinessCategoryLabel(biz),
+      getBusinessSubcategoryLabel(biz),
+      biz.isHomeBased ? 'home business homemade home kitchen' : '',
+      biz.isWomenLed ? 'women-led women owned housewife' : '',
+      biz.isPublicService ? 'public service civic essential emergency' : '',
+      ...(Array.isArray(biz.tags) ? biz.tags : [])
+    ]
+      .filter(Boolean)
+      .join(' ');
+  };
+
+  const isHomeBusinessIntent = (query: string) => {
+    const normalizedQuery = normalizeSearchText(query);
+    return [
+      'home baker',
+      'home baking',
+      'homemade',
+      'made at home',
+      'home kitchen',
+      'housewife',
+      'tiffin',
+      'home chef'
+    ].some((keyword) => normalizedQuery.includes(keyword));
+  };
+
+  const isCivicIntent = (query: string) => {
+    const normalizedQuery = normalizeSearchText(query);
+    return [
+      'hospital',
+      'clinic',
+      'doctor',
+      'blood bank',
+      'ambulance',
+      'police',
+      'ngo',
+      'charity',
+      'foundation',
+      'bank',
+      'atm'
+    ].some((keyword) => normalizedQuery.includes(keyword));
+  };
+
+  const isHomeBasedBusiness = (biz: Business) => {
+    if (biz.isHomeBased) return true;
+    const document = getBusinessSearchDocument(biz);
+    return [
+      'home baker',
+      'home baking',
+      'home kitchen',
+      'homemade',
+      'made at home',
+      'tiffin',
+      'housewife',
+      'women-led',
+      'women owned',
+      'woman owned'
+    ].some((keyword) => document.includes(keyword));
+  };
+
+  const isWomenLedHomeBusiness = (biz: Business) => {
+    if (biz.isWomenLed) return true;
+    const document = getBusinessSearchDocument(biz);
+    return isHomeBasedBusiness(biz) && [
+      'women-led',
+      'women led',
+      'women owned',
+      'woman owned',
+      'housewife',
+      'lady entrepreneur'
+    ].some((keyword) => document.includes(keyword));
+  };
+
+  const isEssentialCommunityService = (biz: Business) => {
+    if (biz.isPublicService) return true;
+    const document = getBusinessSearchDocument(biz);
+    return [
+      'hospital',
+      'clinic',
+      'blood bank',
+      'ambulance',
+      'police',
+      'bank',
+      'atm',
+      'ngo',
+      'charity',
+      'foundation',
+      'public service',
+      'government'
+    ].some((keyword) => document.includes(keyword));
+  };
+
+  const getBusinessRecognitionBadges = (biz: Business) => {
+    const badges: Array<{ label: string; className: string; Icon: PortalIcon }> = [];
+    if (isWomenLedHomeBusiness(biz)) {
+      badges.push({
+        label: 'Women-led Home Business',
+        className: 'border-rose-200 bg-rose-50 text-rose-700',
+        Icon: Home
+      });
+    } else if (isHomeBasedBusiness(biz)) {
+      badges.push({
+        label: 'Home Business',
+        className: 'border-amber-200 bg-amber-50 text-amber-700',
+        Icon: ChefHat
+      });
+    }
+    if (isEssentialCommunityService(biz)) {
+      badges.push({
+        label: 'Essential Service',
+        className: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+        Icon: HeartPulse
+      });
+    }
+    return badges.slice(0, 2);
+  };
+
+  const renderBusinessRecognitionBadges = (biz: Business, compact = false) => {
+    const badges = getBusinessRecognitionBadges(biz);
+    if (badges.length === 0) return null;
+    return (
+      <div className={`flex flex-wrap gap-1.5 ${compact ? '' : 'pt-1'}`}>
+        {badges.map(({ label, className, Icon }) => (
+          <span
+            key={`${biz.id}-${label}`}
+            className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 font-semibold ${compact ? 'text-[10px]' : 'text-[11px]'} ${className}`}
+          >
+            <Icon className={compact ? 'h-3 w-3' : 'h-3.5 w-3.5'} />
+            <span>{label}</span>
+          </span>
+        ))}
+      </div>
+    );
+  };
+
+  const getBusinessQueryRelevanceScore = (biz: Business, query: string) => {
+    const normalizedQuery = normalizeSearchText(query);
+    if (!normalizedQuery) return 35;
+
+    const tokens = tokenizeSearchText(normalizedQuery);
+    const businessName = normalizeSearchText(biz.name);
+    const categoryLabel = normalizeSearchText(getBusinessCategoryLabel(biz));
+    const subcategoryLabel = normalizeSearchText(getBusinessSubcategoryLabel(biz));
+    const document = getBusinessSearchDocument(biz);
+    let score = 0;
+
+    if (businessName === normalizedQuery) score += 140;
+    else if (businessName.startsWith(normalizedQuery)) score += 100;
+    else if (businessName.includes(normalizedQuery)) score += 72;
+
+    if (subcategoryLabel === normalizedQuery) score += 84;
+    else if (subcategoryLabel.includes(normalizedQuery)) score += 54;
+
+    if (categoryLabel === normalizedQuery) score += 68;
+    else if (categoryLabel.includes(normalizedQuery)) score += 40;
+
+    if (document.includes(normalizedQuery)) score += 26;
+
+    tokens.forEach((token) => {
+      if (businessName.includes(token)) score += 15;
+      else if (subcategoryLabel.includes(token)) score += 12;
+      else if (categoryLabel.includes(token)) score += 10;
+      else if (document.includes(token)) score += 6;
+    });
+
+    return score;
+  };
+
+  const matchesBusinessSearch = (biz: Business, query: string) => {
+    const normalizedQuery = normalizeSearchText(query);
+    if (!normalizedQuery) return true;
+    return getBusinessQueryRelevanceScore(biz, normalizedQuery) > 0;
+  };
+
+  const getBusinessRecommendedScore = (biz: Business, query: string, pageType: 'homepage' | 'results') => {
+    let score = 0;
+    score += getBusinessQueryRelevanceScore(biz, query);
+
+    if (biz.localityId === currentLocality.id) score += 24;
+    else if (browsingLocalityIds.includes(biz.localityId)) score += 10;
+
+    if (biz.verifiedBadge) score += 18;
+    if (biz.kycStatus === 'verified') score += 12;
+    if (biz.govRegistered) score += 8;
+
+    score += Math.min(24, biz.rating * 5);
+    score += Math.min(18, (biz.reviewCount || 0) * 0.35);
+    score += Math.min(8, ((biz.customerSatisfaction || 0) / 100) * 8);
+    score += Math.min(6, ((biz.repeatCustomerScore || 0) / 100) * 6);
+
+    if ((biz.description || '').trim().length >= 60) score += 5;
+    if ((biz.phone || '').replace(/\D/g, '').length >= 10) score += 4;
+    if ((biz.website || '').trim()) score += 2;
+    if (biz.responseTime) score += 3;
+
+    if (isHomeBusinessIntent(query) && isHomeBasedBusiness(biz)) score += 26;
+    if (isCivicIntent(query) && isEssentialCommunityService(biz)) score += 24;
+
+    if (pageType === 'results') {
+      if (resolvedSponsoredBusinessIds.has(biz.id)) score += 16;
+      if (biz.isSponsored) score += 10;
+      if (biz.featured) score += 8;
+    } else {
+      if (resolvedSponsoredBusinessIds.has(biz.id)) score += 12;
+      if (biz.isSponsored) score += 8;
+      if (biz.featured) score += 8;
+    }
+
+    const daysSinceCreated = Math.max(0, (Date.now() - new Date(biz.createdAt).getTime()) / (1000 * 60 * 60 * 24));
+    if (Number.isFinite(daysSinceCreated)) {
+      score += Math.max(0, 8 - Math.min(8, daysSinceCreated / 30));
+    }
+
+    return score;
+  };
+
+  const getBusinessCanonicalKey = (biz: Business) => {
+    const normalizedPhone = String(biz.phone || '').replace(/\D/g, '').slice(-10);
+    const normalizedPincode = biz.pincode || MASTER_AREAS.find((area) => area.id === biz.areaId)?.pincode || '';
+    const normalizedAddress = normalizeSearchText(`${biz.address} ${getBusinessAreaName(biz)}`).split(' ').slice(0, 6).join(' ');
+    return [
+      normalizeSearchText(biz.name),
+      normalizedPhone || normalizedAddress || biz.id,
+      normalizedPincode || biz.areaId || 'no-pin',
+      biz.localityId,
+    ].join('|');
+  };
+
+  const dedupeBusinessesForExperience = (items: Business[], query: string, pageType: 'homepage' | 'results') => {
+    const deduped = new Map<string, Business>();
+    items.forEach((business) => {
+      const key = getBusinessCanonicalKey(business);
+      const existing = deduped.get(key);
+      if (!existing) {
+        deduped.set(key, business);
+        return;
+      }
+
+      const existingScore = getBusinessRecommendedScore(existing, query, pageType);
+      const incomingScore = getBusinessRecommendedScore(business, query, pageType);
+      if (incomingScore > existingScore) {
+        deduped.set(key, business);
+      }
+    });
+    return Array.from(deduped.values());
+  };
+
+  const applySearchSuggestionPreview = (suggestion: SearchSuggestion) => {
     setSearchQuery(suggestion.queryValue);
-    setSelectedCategory(suggestion.categoryId || 'all');
-    setSelectedSubcategory(suggestion.subcategoryId || 'all');
+    if (suggestion.categoryId) {
+      setSelectedCategory(suggestion.categoryId);
+      setSelectedSubcategory(suggestion.subcategoryId || 'all');
+      return;
+    }
+    if (suggestion.subcategoryId) {
+      const parentCategoryId = getSubcategoryById(suggestion.subcategoryId)?.categoryId || 'all';
+      setSelectedCategory(parentCategoryId);
+      setSelectedSubcategory(suggestion.subcategoryId);
+    }
+  };
+
+  const handleSearchInputKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    const cursorAtEnd = (event.currentTarget.selectionStart ?? event.currentTarget.value.length) === event.currentTarget.value.length;
+    const normalizedTypedQuery = normalizeSearchText(searchQuery);
+    const normalizedTopQuery = normalizeSearchText(topSearchSuggestion?.queryValue || '');
+    const canCompleteTopSuggestion = Boolean(
+      topSearchSuggestion &&
+      cursorAtEnd &&
+      normalizedTypedQuery &&
+      normalizedTopQuery &&
+      normalizedTopQuery !== normalizedTypedQuery &&
+      normalizedTopQuery.startsWith(normalizedTypedQuery)
+    );
+
+    if ((event.key === 'Tab' || event.key === 'ArrowRight') && canCompleteTopSuggestion) {
+      event.preventDefault();
+      applySearchSuggestionPreview(topSearchSuggestion!);
+      return;
+    }
+
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      openResultsPage();
+    }
+  };
+
+  const applySearchSuggestion = (suggestion: SearchSuggestion) => {
+    const nextCategory = suggestion.categoryId || 'all';
+    const nextSubcategory = suggestion.subcategoryId || 'all';
+    const nextQuery = suggestion.queryValue;
+    setSearchQuery(nextQuery);
+    setSelectedCategory(nextCategory);
+    setSelectedSubcategory(nextSubcategory);
     setIsSearchInputFocused(false);
+    onLogAuditEvent?.(
+      'search',
+      'Selected autosuggest suggestion',
+      `Type: "${suggestion.type}" | Value: "${suggestion.displayValue}" | Locality: "${currentLocality.id}"`
+    );
+
+    if (suggestion.type === 'locality' && suggestion.localityId) {
+      onLocalityChange(suggestion.localityId);
+      return;
+    }
+
+    if (suggestion.businessId) {
+      rememberRecentSearch(nextQuery);
+      const business = businesses.find((entry) => entry.id === suggestion.businessId);
+      if (business) {
+        openBusinessDetails(business);
+        return;
+      }
+    }
+
+    if (suggestion.type === 'recent' || suggestion.type === 'intent' || suggestion.type === 'category' || suggestion.type === 'subcategory') {
+      openResultsFromSearch(nextCategory, nextSubcategory, nextQuery);
+    }
   };
 
   const renderSearchSuggestions = () => {
     if (!shouldShowSearchSuggestions) return null;
     return (
       <div className="absolute left-0 right-0 top-full z-30 mt-2 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
-        {filteredSearchSuggestions.map((suggestion) => (
+        {filteredSearchSuggestions.map((suggestion, index) => (
           <button
             key={suggestion.id}
             type="button"
@@ -1473,13 +2115,28 @@ export default function WebPortal({
             className="flex w-full items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 text-left text-sm text-slate-700 transition hover:bg-indigo-50 hover:text-indigo-700 last:border-b-0"
           >
             <div className="min-w-0">
-              <div className="truncate font-medium">{suggestion.displayValue}</div>
+              <div className="flex items-center gap-2">
+                <div className="truncate font-medium">{suggestion.displayValue}</div>
+                {index === 0 && (
+                  <span className="inline-flex rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-indigo-700">
+                    Tab to complete
+                  </span>
+                )}
+              </div>
               <div className="mt-0.5 text-[11px] uppercase tracking-wide text-slate-400">
-                {suggestion.type === 'business'
-                  ? 'Business'
-                  : suggestion.type === 'subcategory'
-                    ? 'Subcategory'
-                    : 'Category'}
+                {suggestion.metaLabel || (
+                  suggestion.type === 'business'
+                    ? 'Business'
+                    : suggestion.type === 'locality'
+                      ? 'Nearby locality'
+                      : suggestion.type === 'recent'
+                        ? 'Recent search'
+                    : suggestion.type === 'subcategory'
+                      ? 'Subcategory'
+                      : suggestion.type === 'intent'
+                        ? 'Intent shortcut'
+                        : 'Category'
+                )}
               </div>
             </div>
             <Search className="h-3.5 w-3.5 flex-shrink-0 text-slate-300" />
@@ -1523,6 +2180,12 @@ export default function WebPortal({
       : `${biz.address}, ${getBusinessAreaName(biz)}`;
     window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(destination)}`, '_blank', 'noopener,noreferrer');
   };
+  const openBusinessDirectionsDirect = (biz: Business) => {
+    const destination = biz.gpsCoordinates
+      ? `${biz.gpsCoordinates.lat},${biz.gpsCoordinates.lng}`
+      : `${biz.address}, ${getBusinessAreaName(biz)}`;
+    window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(destination)}`, '_blank', 'noopener,noreferrer');
+  };
 
   const handlePrimaryBusinessAction = (biz: Business, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -1540,6 +2203,11 @@ export default function WebPortal({
       openBusinessDetails(biz);
       return;
     }
+    onLogAuditEvent?.(
+      'contact_view',
+      'Opened WhatsApp intent',
+      `Business: "${biz.name}" | Locality: "${biz.localityId}" | Phone suffix: "${phoneDigits.slice(-4)}"`
+    );
     window.open(
       `https://wa.me/91${phoneDigits}?text=${encodeURIComponent(`Hi ${biz.name}, I found your service on Localisy.`)}`,
       '_blank',
@@ -1613,6 +2281,8 @@ export default function WebPortal({
                 <Heart className={`h-4 w-4 ${isBusinessSaved(biz.id) ? 'fill-current' : ''}`} />
               </button>
             </div>
+
+            {renderBusinessRecognitionBadges(biz, true)}
 
             <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
               <span className="inline-flex items-center gap-1 font-semibold text-amber-600" title="Google Ratings">
@@ -1714,6 +2384,7 @@ export default function WebPortal({
           <div className="truncate text-xs font-medium text-slate-500">
             {getBusinessCategoryLabel(biz)}
           </div>
+          {renderBusinessRecognitionBadges(biz, true)}
           {!showImage && (badgeLabel || biz.isSponsored) && (
             <span className="inline-flex rounded-md bg-indigo-600 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-white">
               {badgeLabel || 'Sponsored'}
@@ -1756,6 +2427,11 @@ export default function WebPortal({
   const shouldShowListingResultImage = (biz: Business) => biz.isSponsored === true;
 
   const handleListingAdAction = (ad: ListingAd) => {
+    onTrackListingAdInteraction?.({
+      adId: ad.id,
+      type: 'click',
+      context: ad.placementKey || (isResultsPage ? 'listing_results' : 'homepage')
+    });
     if (ad.actionType === 'landing_page') {
       if (ad.targetUrl) {
         window.open(ad.targetUrl, '_blank', 'noopener,noreferrer');
@@ -1789,6 +2465,11 @@ export default function WebPortal({
       name: leadName.trim(),
       mobile: mobile.slice(-10),
       pincode: leadPincode
+    });
+    onTrackListingAdInteraction?.({
+      adId: activeLeadAd.id,
+      type: 'lead',
+      context: activeLeadAd.placementKey || (isResultsPage ? 'listing_results' : 'homepage')
     });
     setLeadName('');
     setLeadMobile('');
@@ -1849,6 +2530,7 @@ export default function WebPortal({
             )}
           </div>
           <h4 className="line-clamp-2 min-h-[2.75rem] break-words text-sm font-bold leading-5 text-slate-900 lg:text-base">{biz.name}</h4>
+          {renderBusinessRecognitionBadges(biz, true)}
           <div className="flex min-w-0 items-center gap-2 text-xs text-slate-500">
             <span className="inline-flex items-center gap-1 font-semibold text-amber-600" title="Google Ratings">
               <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
@@ -2149,12 +2831,7 @@ export default function WebPortal({
                       onChange={(e) => setSearchQuery(e.target.value)}
                       onFocus={() => setIsSearchInputFocused(true)}
                       onBlur={() => window.setTimeout(() => setIsSearchInputFocused(false), 120)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          openResultsPage();
-                        }
-                      }}
+                      onKeyDown={handleSearchInputKeyDown}
                       placeholder="Search businesses, services..."
                       className="h-12 w-full rounded-xl border border-transparent bg-white pl-10 pr-3 text-sm font-medium text-slate-800 outline-none placeholder:text-slate-400 focus:border-indigo-200 focus:bg-indigo-50/30"
                     />
@@ -2249,12 +2926,7 @@ export default function WebPortal({
                   onChange={(e) => setSearchQuery(e.target.value)}
                   onFocus={() => setIsSearchInputFocused(true)}
                   onBlur={() => window.setTimeout(() => setIsSearchInputFocused(false), 120)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      openResultsPage();
-                    }
-                  }}
+                  onKeyDown={handleSearchInputKeyDown}
                   placeholder="Search businesses, services, products..."
                   className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
@@ -2953,13 +3625,14 @@ export default function WebPortal({
     );
   };
 
-  const fallbackSectionTemplates = homepageDefaultsConfig?.sectionTemplates || (DEFAULT_HOMEPAGE_SECTION_TEMPLATES as HomepageSection[]);
+  const fallbackSectionTemplates = homepageDefaultsConfig?.sectionTemplates
+    || (Array.isArray(HOMEPAGE_DEFAULTS_BOOTSTRAP.sectionTemplates) ? HOMEPAGE_DEFAULTS_BOOTSTRAP.sectionTemplates as HomepageSection[] : []);
   const homepageSectionsToRender: HomepageSection[] = activeHomepageSections.length > 0 ? activeHomepageSections : fallbackSectionTemplates.map((section, index) => ({
     ...section,
     id: `fallback_${section.id || section.sectionType || index + 1}`,
   }));
   const shouldUseFallbackAds = !shouldDeferResolvedListingAds && resolvedHomepageSource === 'legacy_fallback' && activeListingAds.length === 0;
-  const fallbackSidebarAds: ListingAd[] = (homepageDefaultsConfig?.fallbackListingAds || (DEFAULT_FALLBACK_LISTING_AD_TEMPLATES as Array<Record<string, unknown>>)).map((ad, index) => ({
+  const fallbackSidebarAds: ListingAd[] = (homepageDefaultsConfig?.fallbackListingAds || (Array.isArray(HOMEPAGE_DEFAULTS_BOOTSTRAP.fallbackListingAds) ? HOMEPAGE_DEFAULTS_BOOTSTRAP.fallbackListingAds : []) as Array<Record<string, unknown>>).map((ad, index) => ({
     id: String(ad.id || `fallback_ad_${index + 1}`),
     title: String(ad.title || 'Fallback Ad'),
     description: String(ad.description || ''),
@@ -2981,17 +3654,114 @@ export default function WebPortal({
     mobileRowPosition: Number.isFinite(Number(ad.mobileRowPosition)) ? Number(ad.mobileRowPosition) : 3,
     isActive: true
   }));
-  const homepageAdInventory = shouldUseFallbackAds ? [...activeListingAds, ...fallbackSidebarAds] : activeListingAds;
-  const desktopSidebarAds = homepageAdInventory
+  const getAdCtr = (ad: ListingAd) => {
+    const impressions = Number(ad.impressions || 0);
+    const clicks = Number(ad.clicks || 0);
+    if (impressions <= 0 || clicks <= 0) return 0;
+    return clicks / impressions;
+  };
+  const hashDeliverySeed = (value: string) => {
+    let hash = 0;
+    for (let index = 0; index < value.length; index += 1) {
+      hash = ((hash << 5) - hash) + value.charCodeAt(index);
+      hash |= 0;
+    }
+    return Math.abs(hash);
+  };
+  const getAdDeliveryScore = (ad: ListingAd, contextKey: string) => {
+    const ctr = getAdCtr(ad);
+    const impressions = Number(ad.impressions || 0);
+    const clicks = Number(ad.clicks || 0);
+    const leads = Number(ad.leadCount || 0);
+    const plannedBudget = Number(ad.plannedBudget || 0);
+    const spentBudget = Number(ad.spentBudget || 0);
+    const budgetRemainingRatio = plannedBudget > 0 ? Math.max(0, (plannedBudget - spentBudget) / plannedBudget) : 1;
+    const placementKey = ad.placementKey || '';
+    const categoryIds = ad.categoryIds || [];
+    const tagText = (ad.tags || []).join(' ').toLowerCase();
+
+    let score = 0;
+    if (ad.workflowStatus === 'live') score += 40;
+    else if (ad.workflowStatus === 'approved') score += 28;
+    else if (ad.workflowStatus === 'scheduled') score += 20;
+    else if (ad.workflowStatus === 'paused') score -= 40;
+
+    if (placementKey.includes(contextKey)) score += 18;
+    else if (contextKey.startsWith('homepage') && placementKey.includes('homepage')) score += 10;
+    else if (contextKey.includes('listing') && placementKey.includes('listing')) score += 10;
+
+    if (selectedCategory !== 'all' && categoryIds.includes(selectedCategory)) score += 18;
+    if (selectedSubcategory !== 'all' && tagText.includes(selectedSubcategory.replace(/-/g, ' '))) score += 10;
+
+    if (plannedBudget > 0 && spentBudget >= plannedBudget) score -= 140;
+    else score += budgetRemainingRatio * 22;
+
+    if (ad.billingModel === 'cpc') score += Number(ad.cpcBid || 0) * 0.9;
+    if (ad.billingModel === 'lead') score += leads * 5;
+
+    if ((ad.rotationMode || 'even') === 'weighted') {
+      score += ctr * 420;
+      score += leads * 9;
+      score += Math.max(0, 32 - (impressions / 120));
+    } else if ((ad.rotationMode || 'even') === 'random') {
+      score += hashDeliverySeed(`${homepageRotationTick}:${ad.id}:${contextKey}`) % 100;
+    } else {
+      score += Math.max(0, 40 - (impressions / 80));
+      score += Math.max(0, 12 - clicks);
+    }
+
+    return score;
+  };
+  const rankAdsForDelivery = (ads: ListingAd[], contextKey: string) => (
+    ads
+      .slice()
+      .sort((left, right) => (
+        getAdDeliveryScore(right, contextKey) - getAdDeliveryScore(left, contextKey) ||
+        Date.parse(right.reviewedAt || right.submittedAt || right.startDate || todayIso) - Date.parse(left.reviewedAt || left.submittedAt || left.startDate || todayIso) ||
+        left.title.localeCompare(right.title)
+      ))
+  );
+  const homepageAdInventory = rankAdsForDelivery(
+    shouldUseFallbackAds ? [...activeListingAds, ...fallbackSidebarAds] : activeListingAds,
+    isResultsPage ? 'listing_results' : 'homepage'
+  );
+  const desktopSidebarAds = rankAdsForDelivery(homepageAdInventory, 'homepage_sidebar')
     .filter((ad) => (ad.deviceTarget || 'all') !== 'mobile')
     .slice(0, 4);
-  const contextualListingAds = getAdsForBusinessContext(sortedBusinesses, homepageAdInventory);
+  const contextualListingAds = rankAdsForDelivery(getAdsForBusinessContext(sortedBusinesses, homepageAdInventory), 'listing_results');
   const desktopResultAds = contextualListingAds.filter((ad) => (ad.deviceTarget || 'all') !== 'mobile');
   const mobileResultAds = contextualListingAds.filter((ad) => (ad.deviceTarget || 'all') !== 'desktop');
-  const mobileInlineAds = homepageAdInventory
+  const mobileInlineAds = rankAdsForDelivery(homepageAdInventory, 'mobile_inline')
     .filter((ad) => (ad.deviceTarget || 'all') !== 'desktop')
     .filter((ad) => (ad.mobileRowPosition || 0) > 0)
-    .sort((a, b) => (a.mobileRowPosition || 0) - (b.mobileRowPosition || 0));
+    .sort((a, b) => (a.mobileRowPosition || 0) - (b.mobileRowPosition || 0) || (getAdDeliveryScore(b, 'mobile_inline') - getAdDeliveryScore(a, 'mobile_inline')));
+  useEffect(() => {
+    if (!onTrackListingAdInteraction) return;
+    const visibleAds = [
+      ...homepageAdInventory,
+      ...desktopSidebarAds,
+      ...desktopResultAds,
+      ...mobileResultAds,
+      ...mobileInlineAds
+    ];
+    visibleAds.forEach((ad) => {
+      if (trackedAdImpressionIdsRef.current.has(ad.id)) return;
+      trackedAdImpressionIdsRef.current.add(ad.id);
+      onTrackListingAdInteraction({
+        adId: ad.id,
+        type: 'impression',
+        context: ad.placementKey || (isResultsPage ? 'listing_results' : 'homepage')
+      });
+    });
+  }, [
+    desktopResultAds,
+    desktopSidebarAds,
+    homepageAdInventory,
+    isResultsPage,
+    mobileInlineAds,
+    mobileResultAds,
+    onTrackListingAdInteraction
+  ]);
   const scrollToPublicSearch = () => {
     const target = document.getElementById('public-listing-search');
     if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -3419,12 +4189,7 @@ export default function WebPortal({
                     }}
                     onFocus={() => setIsSearchInputFocused(true)}
                     onBlur={() => window.setTimeout(() => setIsSearchInputFocused(false), 120)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        openResultsPage();
-                      }
-                    }}
+                    onKeyDown={handleSearchInputKeyDown}
                     placeholder="Search businesses, tags, services..."
                     className="w-full rounded-xl border border-slate-200 bg-slate-50 py-3 pl-9 pr-3 text-sm font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
@@ -3619,7 +4384,7 @@ export default function WebPortal({
                     onChange={(e) => setFilterDistance(e.target.value as any)}
                     className="w-full p-2 bg-white rounded-lg border border-slate-200 focus:outline-none text-[11px]"
                   >
-                    <option value="all">Any range (Roadpali Zone)</option>
+                    <option value="all">Any range (selected locality)</option>
                     <option value="1">Within 1.0 km</option>
                     <option value="2">Within 2.0 km</option>
                     <option value="5">Within 5.0 km</option>
@@ -3950,20 +4715,75 @@ export default function WebPortal({
 
             {/* Standard Approved Listings Segment */}
             <div className="space-y-3">
-              <h3 className="text-xs font-bold font-mono text-slate-400 tracking-widest uppercase mb-1">
-                Active Verified Listings Directory ({searchResultBusinesses.length})
-              </h3>
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <h3 className="mb-1 text-xs font-bold font-mono uppercase tracking-widest text-slate-400">
+                  Active Verified Listings Directory ({searchResultBusinesses.length})
+                </h3>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-mono font-semibold text-slate-500">
+                    {searchResultMapBusinesses.length > 0
+                      ? `${searchResultMapBusinesses.length} mapped on this page`
+                      : 'Map view available when GPS is present'}
+                  </span>
+                  <div className="inline-flex rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
+                    <button
+                      type="button"
+                      onClick={() => setResultsViewMode('grid')}
+                      className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                        resultsViewMode === 'grid'
+                          ? 'bg-indigo-600 text-white'
+                          : 'text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      <Grid3X3 className="h-3.5 w-3.5" />
+                      <span>Grid</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (searchResultMapBusinesses.length > 0) setResultsViewMode('map');
+                      }}
+                      disabled={searchResultMapBusinesses.length === 0}
+                      className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                        resultsViewMode === 'map'
+                          ? 'bg-emerald-600 text-white'
+                          : 'text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45'
+                      }`}
+                    >
+                      <MapPin className="h-3.5 w-3.5" />
+                      <span>Map</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
 
               {searchResultBusinesses.length === 0 ? (
-                <div className="text-center py-16 bg-white rounded-2xl border border-dashed border-slate-200 p-8">
-                  <Compass className="w-12 h-12 text-slate-300 mx-auto mb-3 animate-spin" style={{ animationDuration: '6s' }} />
-                  <p className="text-base font-bold text-slate-850">No verified businesses found matching criteria</p>
-                  <p className="mt-1 max-w-sm mx-auto text-xs text-slate-500">
-                    Adjust search queries or refine your category keywords above to discover matching merchants.
-                  </p>
-                </div>
+                <NoResultsState
+                  noResultsSuggestedCategories={noResultsSuggestedCategories}
+                  nearbyCityLocalities={nearbyCityLocalities}
+                  noResultsFallbackBusinesses={noResultsFallbackBusinesses}
+                  openResultsForCategory={openResultsForCategory}
+                  onLocalityChange={onLocalityChange}
+                  openBusinessDetails={openBusinessDetails}
+                  renderCompactBusinessRow={renderCompactBusinessRow}
+                  shouldShowListingResultImage={shouldShowListingResultImage}
+                  getBusinessSubcategoryLabel={getBusinessSubcategoryLabel}
+                  renderBusinessRecognitionBadges={renderBusinessRecognitionBadges}
+                />
               ) : (
-                (
+                resultsViewMode === 'map' && searchResultMapBusinesses.length > 0 ? (
+                  <ResultsMapView
+                    businesses={searchResultMapBusinesses}
+                    selectedLocalityName={selectedLocalityNames || currentLocality.name}
+                    activeBusinessId={activeMapBusinessId}
+                    onSetActiveBusinessId={setActiveMapBusinessId}
+                    projectSearchResultMapPoint={projectSearchResultMapPoint}
+                    openBusinessDetails={openBusinessDetails}
+                    openBusinessDirections={openBusinessDirectionsDirect}
+                    renderBusinessRecognitionBadges={renderBusinessRecognitionBadges}
+                    getBusinessSubcategoryLabel={getBusinessSubcategoryLabel}
+                  />
+                ) : (
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
                     {pagedSearchResultBusinesses.map((biz, index) => {
                       const hasViewed = viewedBusinessIds.includes(biz.id);
@@ -4030,6 +4850,7 @@ export default function WebPortal({
                                 <p className="line-clamp-2 text-xs italic leading-relaxed text-slate-500">
                                   &quot;{biz.description}&quot;
                                 </p>
+                                {renderBusinessRecognitionBadges(biz, true)}
                               </div>
                             </div>
 
@@ -4131,7 +4952,7 @@ export default function WebPortal({
             <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
                 <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-1.5 font-sans">
-                  <span className="text-emerald-500">🤝</span> Roadpali Citizens Forum Hub
+                  <span className="text-emerald-500">🤝</span> {currentLocalityLabel} Citizens Forum Hub
                 </h3>
                 <span className="text-xs text-slate-400 font-mono">Sharded Community Channel</span>
               </div>
@@ -4175,7 +4996,7 @@ export default function WebPortal({
                     <div className="flex items-center justify-between pt-2 border-t border-slate-200/55 flex-wrap gap-2 text-[11px] font-mono">
                       <div className="flex items-center gap-1.5 text-slate-500">
                         <span className="bg-white border border-slate-200 px-1.5 py-0.5 rounded text-[9px] font-mono text-slate-500">
-                          #roadpali_citizens
+                          {communityHashtag}
                         </span>
                         <span className="bg-white border border-slate-200 px-1.5 py-0.5 rounded text-[9px] font-mono text-slate-500">
                           #verified_ops
@@ -5629,7 +6450,7 @@ export default function WebPortal({
                     maxLength={6}
                     value={listingPincode}
                     onChange={(e) => setListingPincode(e.target.value.replace(/\D/g, ''))}
-                    placeholder="e.g. 410218"
+                    placeholder="e.g. 400001"
                     className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500 font-mono"
                   />
                 </div>
