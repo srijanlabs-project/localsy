@@ -16,11 +16,13 @@ type NearbyLocality = {
 };
 
 type NoResultsStateProps = {
+  activeSearchLabel?: string;
   noResultsSuggestedCategories: SuggestedCategory[];
   nearbyCityLocalities: NearbyLocality[];
   noResultsFallbackBusinesses: Business[];
   openResultsForCategory: (categoryId: string, subcategoryId?: string) => void;
   onLocalityChange: (localityId: string) => void;
+  onOpenRecommendationRequest: () => void;
   openBusinessDetails: (business: Business) => void;
   renderCompactBusinessRow: (
     business: Business,
@@ -37,11 +39,13 @@ type NoResultsStateProps = {
 };
 
 export default function NoResultsState({
+  activeSearchLabel,
   noResultsSuggestedCategories,
   nearbyCityLocalities,
   noResultsFallbackBusinesses,
   openResultsForCategory,
   onLocalityChange,
+  onOpenRecommendationRequest,
   openBusinessDetails,
   renderCompactBusinessRow,
   shouldShowListingResultImage,
@@ -56,6 +60,19 @@ export default function NoResultsState({
         <p className="mx-auto mt-1 max-w-md text-xs text-slate-500">
           Try a broader keyword, switch locality, or jump into one of the suggested categories below.
         </p>
+        {activeSearchLabel && (
+          <p className="mx-auto mt-2 max-w-lg text-[11px] text-slate-400">
+            Search query: <span className="font-semibold text-slate-600">{activeSearchLabel}</span>
+          </p>
+        )}
+        <button
+          type="button"
+          onClick={onOpenRecommendationRequest}
+          className="mt-4 inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100"
+        >
+          <Compass className="h-3.5 w-3.5" />
+          <span>Request Human Recommendation</span>
+        </button>
       </div>
 
       {noResultsSuggestedCategories.length > 0 && (

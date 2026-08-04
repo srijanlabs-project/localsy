@@ -4,6 +4,8 @@ import { getCategoryById, getSubcategoryById } from '../../categoryMaster';
 
 type ImportPreviewRow = {
   rowNumber: number;
+  listingId?: string;
+  googlePlaceId?: string;
   businessName: string;
   normalizedPhone: string;
   resolvedPincode: string;
@@ -26,7 +28,12 @@ type BulkUploadWorkspaceProps = {
   pagedImportPreview: ImportPreviewRow[];
   safeImportPreviewPage: number;
   importPreviewTotalPages: number;
+  importChunkLimit: number;
+  parsedRowCount: number;
+  suggestedChunkCount: number;
+  chunkLimitExceeded: boolean;
   onCsvFileSelected: (file: File) => void;
+  onDownloadPreviewCsv: () => void;
   onDownloadFailedCsv: () => void;
   onApplyImportPreview: () => void;
   onPreviousPage: () => void;
@@ -40,7 +47,12 @@ export default function BulkUploadWorkspace({
   pagedImportPreview,
   safeImportPreviewPage,
   importPreviewTotalPages,
+  importChunkLimit,
+  parsedRowCount,
+  suggestedChunkCount,
+  chunkLimitExceeded,
   onCsvFileSelected,
+  onDownloadPreviewCsv,
   onDownloadFailedCsv,
   onApplyImportPreview,
   onPreviousPage,
@@ -54,8 +66,17 @@ export default function BulkUploadWorkspace({
     <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-3">
       <h3 className="text-md font-bold text-slate-950">Bulk Import Businesses (CSV)</h3>
       <p className="text-xs text-slate-500">
-        Upload CSV with columns: Business Name, Address, optional Area / Area ID, optional Locality / Locality ID, City, State, PIN, Mobile, Rating, Reviews, Services, Category, Subcategory, Latitude, Longitude. Missing Area will not block import as long as Locality or a mapped 6-digit PIN can resolve the listing. Invalid category/subcategory values are not auto-guessed; those listings go to the taxonomy mapping queue.
+        Upload CSV with columns: Localisy Listing ID, Google Place ID, Image URL, Logo URL, Cover Image URL, Gallery URLs, Business Name, Address, optional Area / Area ID, optional Locality / Locality ID, City, State, PIN, Mobile, Rating, Reviews, Services, Category, Subcategory, Latitude, Longitude. Localisy Listing ID is mandatory for the catalogue, and if the sheet leaves it blank the system will auto-generate one during preview. Missing Area will not block import as long as Locality or a mapped 6-digit PIN can resolve the listing. Invalid category/subcategory values are not auto-guessed; those listings go to the taxonomy mapping queue.
       </p>
+      <div className="rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2 text-[11px] text-indigo-900">
+        Bulk import is now optimized for rollout batches of up to <span className="font-bold">{importChunkLimit.toLocaleString()}</span> listings per CSV.
+        {parsedRowCount > 0 && (
+          <span className="block pt-1 text-indigo-700">
+            Current file rows detected: <span className="font-bold">{parsedRowCount.toLocaleString()}</span>
+            {suggestedChunkCount > 1 ? ` | Recommended chunks: ${suggestedChunkCount}` : ''}
+          </span>
+        )}
+      </div>
 
       <input
         type="file"
@@ -68,7 +89,11 @@ export default function BulkUploadWorkspace({
       />
 
       {importResult && (
-        <div className="text-xs bg-emerald-50 border border-emerald-100 text-emerald-800 rounded-lg px-3 py-2">
+        <div className={`text-xs rounded-lg px-3 py-2 border ${
+          chunkLimitExceeded
+            ? 'border-amber-200 bg-amber-50 text-amber-900'
+            : 'border-emerald-100 bg-emerald-50 text-emerald-800'
+        }`}>
           {importResult}
         </div>
       )}
@@ -88,6 +113,13 @@ export default function BulkUploadWorkspace({
               </span>
             </div>
             <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={onDownloadPreviewCsv}
+                className="text-[10px] bg-white border border-slate-200 text-slate-700 px-3 py-1.5 rounded-lg font-bold hover:bg-slate-50"
+              >
+                Export Preview CSV
+              </button>
               {failedCount > 0 && (
                 <button
                   type="button"
@@ -113,6 +145,8 @@ export default function BulkUploadWorkspace({
               <thead className="bg-slate-50 sticky top-0">
                 <tr className="uppercase font-mono text-slate-400">
                   <th className="p-2">Row</th>
+                  <th className="p-2">Listing ID</th>
+                  <th className="p-2">Google Place ID</th>
                   <th className="p-2">Business</th>
                   <th className="p-2">Phone</th>
                   <th className="p-2">Pincode</th>
@@ -127,6 +161,8 @@ export default function BulkUploadWorkspace({
                 {pagedImportPreview.map((row) => (
                   <tr key={`${row.rowNumber}-${row.businessName}`} className="hover:bg-slate-50/60">
                     <td className="p-2 font-mono">{row.rowNumber}</td>
+                    <td className="p-2 font-mono text-slate-800">{row.listingId || '-'}</td>
+                    <td className="p-2 font-mono">{row.googlePlaceId || '-'}</td>
                     <td className="p-2 font-semibold text-slate-800">{row.businessName}</td>
                     <td className="p-2 font-mono">{row.normalizedPhone || 'Not provided'}</td>
                     <td className="p-2 font-mono">{row.resolvedPincode || '-'}</td>

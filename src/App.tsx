@@ -10,6 +10,7 @@ import happyBusinessLogo from './assets/happy-business-logo.png';
 import homepageDefaultsBootstrap from '../homepage-defaults-config.json';
 import localityRoutingBootstrap from '../locality-routing-config.json';
 import seoDiscoveryBootstrap from '../seo-discovery-config.json';
+import businessesBootstrap from '../businesses.json';
 import reviewsBootstrap from '../reviews.json';
 import crmContactsBootstrap from '../crm-contacts.json';
 import { 
@@ -27,326 +28,28 @@ import {
   resolveMasterCategoryId
 } from './categoryMaster';
 import { MASTER_AREAS, MASTER_CITIES, MASTER_LOCALITIES, MASTER_STATES, setGeographyCatalog } from './geographyMaster';
+import {
+  buildBusinessTags,
+  buildGuestUserSession,
+  buildLocalityGeoCentersFromBusinesses,
+  getBuyerStateScopeKey,
+  getDistanceInKm,
+  isBusinessTaxonomyMapped,
+  isStoredBusinessLike,
+  isStoredLocalityLike,
+  mergeBusinessCollections,
+  mergeBuyerStateSnapshots,
+  normalizeBuyerStateSnapshot,
+  normalizeStoredBusiness,
+  normalizeStoredCrmContact,
+  normalizeStoredReview,
+  readGuestBuyerStateSnapshotFromStorage,
+  splitTagSource,
+  uniqueTags,
+} from './services/app/runtimeState';
+import { getSellerPageSlug } from './services/webportal/publicExperience';
 
 const PUBLIC_SITE_ORIGIN = 'https://www.localisy.in';
-
-const toRadians = (value: number) => (value * Math.PI) / 180;
-const getDistanceInKm = (from: { lat: number; lng: number }, to: { lat: number; lng: number }) => {
-  const earthRadiusKm = 6371;
-  const deltaLat = toRadians(to.lat - from.lat);
-  const deltaLng = toRadians(to.lng - from.lng);
-  const a = (
-    Math.sin(deltaLat / 2) ** 2 +
-    Math.cos(toRadians(from.lat)) * Math.cos(toRadians(to.lat)) * Math.sin(deltaLng / 2) ** 2
-  );
-  return earthRadiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-};
-
-const isStoredLocalityLike = (value: unknown): value is Locality => {
-  if (!value || typeof value !== 'object') return false;
-  const candidate = value as Partial<Locality>;
-  return (
-    typeof candidate.id === 'string' &&
-    candidate.id.trim().length > 0 &&
-    typeof candidate.name === 'string' &&
-    candidate.name.trim().length > 0
-  );
-};
-
-const isStoredBusinessLike = (value: unknown): value is Business => {
-  if (!value || typeof value !== 'object') return false;
-  const candidate = value as Partial<Business>;
-  return (
-    typeof candidate.id === 'string' &&
-    candidate.id.trim().length > 0 &&
-    typeof candidate.name === 'string' &&
-    candidate.name.trim().length > 0 &&
-    typeof candidate.localityId === 'string' &&
-    candidate.localityId.trim().length > 0
-  );
-};
-
-const buildLocalityGeoCentersFromBusinesses = (localities: Locality[], businesses: Business[]) => {
-  const totals = new Map<string, { lat: number; lng: number; count: number }>();
-  businesses.forEach((business) => {
-    const coords = business.gpsCoordinates;
-    if (!coords || !Number.isFinite(coords.lat) || !Number.isFinite(coords.lng)) return;
-    if (!localities.some((locality) => locality.id === business.localityId)) return;
-    const existing = totals.get(business.localityId) || { lat: 0, lng: 0, count: 0 };
-    existing.lat += coords.lat;
-    existing.lng += coords.lng;
-    existing.count += 1;
-    totals.set(business.localityId, existing);
-  });
-
-  return localities.reduce<Record<string, { lat: number; lng: number }>>((acc, locality) => {
-    const total = totals.get(locality.id);
-    if (!total || total.count === 0) return acc;
-    acc[locality.id] = {
-      lat: total.lat / total.count,
-      lng: total.lng / total.count,
-    };
-    return acc;
-  }, {});
-};
-
-const resolveBusinessPincode = (business: Business): string => {
-  if (business.pincode && /^\d{6}$/.test(business.pincode)) return business.pincode;
-  return MASTER_AREAS.find((area) => area.id === business.areaId)?.pincode || '';
-};
-
-const splitTagSource = (value: string) => (
-  String(value || '')
-    .split(/[|,/]+/)
-    .map((entry) => entry.trim())
-    .filter(Boolean)
-);
-
-const uniqueTags = (...groups: Array<Array<string | undefined>>) => {
-  const seen = new Set<string>();
-  const tags: string[] = [];
-  groups.flat().forEach((entry) => {
-    const trimmed = String(entry || '').trim();
-    if (!trimmed) return;
-    const key = trimmed.toLowerCase();
-    if (seen.has(key)) return;
-    seen.add(key);
-    tags.push(trimmed);
-  });
-  return tags.slice(0, 25);
-};
-
-const isValidCategoryId = (categoryId: string) => BUSINESS_CATEGORIES.some((category) => category.id === categoryId);
-const isValidSubcategoryId = (categoryId: string, subcategoryId: string) => BUSINESS_SUBCATEGORIES.some((subcategory) => (
-  subcategory.categoryId === categoryId && subcategory.id === subcategoryId
-));
-
-const buildBusinessTags = (business: Partial<Business>) => {
-  const mappedCategoryName = getCategoryById(business.categoryId || '')?.name || '';
-  const mappedSubcategoryName = getSubcategoryById(business.subcategoryId || '')?.name || '';
-  return uniqueTags(
-    Array.isArray(business.tags) ? business.tags : [],
-    splitTagSource(business.sourceCategoryLabel || ''),
-    splitTagSource(business.sourceSubcategoryLabel || ''),
-    splitTagSource(business.description || ''),
-    [
-      business.categoryId,
-      business.subcategoryId,
-      mappedCategoryName,
-      mappedSubcategoryName,
-    ],
-  );
-};
-
-const isBusinessTaxonomyMapped = (business: Partial<Business>) => (
-  isValidCategoryId(business.categoryId || '') &&
-  isValidSubcategoryId(business.categoryId || '', business.subcategoryId || '')
-);
-
-const normalizeBusinessTaxonomy = (business: Business): Business => {
-  const categoryId = resolveMasterCategoryId(business.categoryId || '');
-  const validCategory = isValidCategoryId(categoryId);
-  const validSubcategory = isValidSubcategoryId(categoryId, business.subcategoryId || '');
-  const shouldDefaultSubcategory = validCategory && !validSubcategory && !String(business.sourceSubcategoryLabel || '').trim();
-  const normalizedCategoryId = validCategory ? categoryId : '';
-  const normalizedSubcategoryId = validCategory
-    ? (
-        validSubcategory
-          ? (business.subcategoryId || '')
-          : (shouldDefaultSubcategory ? resolveDefaultSubcategoryId(categoryId) : '')
-      )
-    : '';
-  return {
-    ...business,
-    categoryId: normalizedCategoryId,
-    subcategoryId: normalizedSubcategoryId,
-    taxonomyMapped: normalizedCategoryId !== '' && normalizedSubcategoryId !== '',
-    pincode: resolveBusinessPincode({ ...business, categoryId: normalizedCategoryId }),
-    tags: buildBusinessTags({
-      ...business,
-      categoryId: normalizedCategoryId,
-      subcategoryId: normalizedSubcategoryId,
-    })
-  };
-};
-
-const normalizeStoredBusiness = (business: Business): Business => {
-  const sanitizedBusiness: Business = {
-    ...business,
-    name: String(business.name || '').trim(),
-    categoryId: String(business.categoryId || '').trim(),
-    subcategoryId: String(business.subcategoryId || '').trim(),
-    sourceCategoryLabel: business.sourceCategoryLabel ? String(business.sourceCategoryLabel).trim() : undefined,
-    sourceSubcategoryLabel: business.sourceSubcategoryLabel ? String(business.sourceSubcategoryLabel).trim() : undefined,
-    address: String(business.address || '').trim(),
-    phone: String(business.phone || '').trim(),
-    website: String(business.website || '').trim(),
-    description: String(business.description || '').trim(),
-    tags: Array.isArray(business.tags)
-      ? business.tags.map((tag) => String(tag || '').trim()).filter(Boolean)
-      : [],
-    hours: typeof business.hours === 'string' ? business.hours : '',
-    areasOfOperation: Array.isArray(business.areasOfOperation)
-      ? business.areasOfOperation.map((areaId) => String(areaId || '').trim()).filter(Boolean)
-      : [],
-    languagesSpoken: Array.isArray(business.languagesSpoken)
-      ? business.languagesSpoken.map((language) => String(language || '').trim()).filter(Boolean)
-      : undefined,
-    paymentMethods: Array.isArray(business.paymentMethods)
-      ? business.paymentMethods.map((method) => String(method || '').trim()).filter(Boolean)
-      : undefined,
-    duplicateReviewStatus: ['pending', 'merged', 'separate'].includes(String(business.duplicateReviewStatus || ''))
-      ? business.duplicateReviewStatus
-      : undefined,
-    mergedIntoBusinessId: business.mergedIntoBusinessId ? String(business.mergedIntoBusinessId).trim() : undefined,
-    sourceLineage: Array.isArray(business.sourceLineage)
-      ? business.sourceLineage.map((entry) => String(entry || '').trim()).filter(Boolean)
-      : undefined,
-  };
-  const normalized = normalizeBusinessTaxonomy(sanitizedBusiness);
-  const isUploadedListing =
-    normalized.id.startsWith('csv_') ||
-    normalized.id.startsWith('b_dynamic_') ||
-    normalized.ownerName === 'Imported via CSV';
-
-  return isUploadedListing && normalized.status === 'pending'
-    ? { ...normalized, status: 'approved' }
-    : normalized;
-};
-
-const normalizeStoredReview = (review: Review): Review => ({
-  ...review,
-  id: String(review.id || '').trim(),
-  businessId: String(review.businessId || '').trim(),
-  userName: String(review.userName || '').trim(),
-  userPhone: String(review.userPhone || '').trim(),
-  rating: Number.isFinite(Number(review.rating)) ? Math.max(1, Math.min(5, Number(review.rating))) : 5,
-  comment: String(review.comment || '').trim(),
-  createdAt: String(review.createdAt || new Date().toISOString()),
-  verifiedByOtp: Boolean(review.verifiedByOtp),
-  photoUrl: review.photoUrl ? String(review.photoUrl).trim() : undefined,
-  videoUrl: review.videoUrl ? String(review.videoUrl).trim() : undefined,
-  isVerifiedPurchase: review.isVerifiedPurchase === true,
-  helpfulVotes: Number.isFinite(Number(review.helpfulVotes)) ? Number(review.helpfulVotes) : undefined,
-  reported: review.reported === true,
-  reportReason: review.reportReason ? String(review.reportReason).trim() : undefined,
-});
-
-const normalizeStoredCrmContact = (contact: CRMContact): CRMContact => ({
-  ...contact,
-  id: String(contact.id || '').trim(),
-  businessId: String(contact.businessId || '').trim(),
-  name: String(contact.name || '').trim(),
-  phone: String(contact.phone || '').trim(),
-  email: contact.email ? String(contact.email).trim() : undefined,
-  lastInteraction: String(contact.lastInteraction || new Date().toISOString()),
-  followUpNotes: contact.followUpNotes ? String(contact.followUpNotes).trim() : undefined,
-  totalSpent: Number.isFinite(Number(contact.totalSpent)) ? Number(contact.totalSpent) : undefined,
-  ordersCount: Number.isFinite(Number(contact.ordersCount)) ? Number(contact.ordersCount) : undefined,
-  loyaltyPoints: Number.isFinite(Number(contact.loyaltyPoints)) ? Number(contact.loyaltyPoints) : undefined,
-});
-
-const normalizeBuyerActivityEvent = (event: BuyerActivityEvent): BuyerActivityEvent => ({
-  ...event,
-  id: String(event.id || '').trim(),
-  actionType: ['saved_listing', 'unsaved_listing', 'contact_unlock', 'review_submitted'].includes(String(event.actionType || ''))
-    ? event.actionType
-    : 'saved_listing',
-  businessId: event.businessId ? String(event.businessId).trim() : undefined,
-  createdAt: String(event.createdAt || new Date().toISOString()),
-  title: String(event.title || '').trim(),
-  detail: event.detail ? String(event.detail).trim() : undefined,
-});
-
-const normalizeBuyerStateSnapshot = (value?: Partial<BuyerStateSnapshot> | null): BuyerStateSnapshot => ({
-  viewedBusinessIds: Array.isArray(value?.viewedBusinessIds)
-    ? Array.from(new Set(value.viewedBusinessIds.map((entry) => String(entry || '').trim()).filter(Boolean)))
-    : [],
-  savedBusinessIds: Array.isArray(value?.savedBusinessIds)
-    ? Array.from(new Set(value.savedBusinessIds.map((entry) => String(entry || '').trim()).filter(Boolean)))
-    : [],
-  buyerActivityEvents: Array.isArray(value?.buyerActivityEvents)
-    ? value.buyerActivityEvents
-        .map(normalizeBuyerActivityEvent)
-        .filter((event) => event.id && event.title)
-        .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
-        .slice(0, 50)
-    : [],
-});
-
-const mergeBuyerStateSnapshots = (base: BuyerStateSnapshot, incoming: BuyerStateSnapshot): BuyerStateSnapshot => {
-  const mergedViewed = Array.from(new Set([...(incoming.viewedBusinessIds || []), ...(base.viewedBusinessIds || [])]));
-  const mergedSaved = Array.from(new Set([...(incoming.savedBusinessIds || []), ...(base.savedBusinessIds || [])]));
-  const eventMap = new Map<string, BuyerActivityEvent>();
-  [...(incoming.buyerActivityEvents || []), ...(base.buyerActivityEvents || [])]
-    .map(normalizeBuyerActivityEvent)
-    .forEach((event) => {
-      const key = event.id || `${event.actionType}|${event.businessId || ''}|${event.title}|${event.createdAt}`;
-      if (!eventMap.has(key)) {
-        eventMap.set(key, event);
-      }
-    });
-  return normalizeBuyerStateSnapshot({
-    viewedBusinessIds: mergedViewed,
-    savedBusinessIds: mergedSaved,
-    buyerActivityEvents: Array.from(eventMap.values()),
-  });
-};
-
-const DEFAULT_GUEST_VIEWED_BUSINESS_IDS = ['s1'];
-
-const buildGuestUserSession = (): UserSession => ({
-  role: 'buyer',
-  userType: 'buyer',
-  userName: 'Anonymous Guest Explorer',
-  userId: undefined,
-  userPhone: undefined,
-  email: undefined,
-  authToken: undefined,
-  contactUnlockToken: undefined,
-  sellerBusinessId: undefined,
-  isAuthenticated: false,
-});
-
-const readGuestBuyerStateSnapshotFromStorage = (): BuyerStateSnapshot => {
-  try {
-    const viewedBusinessIds = localStorage.getItem('yp_viewed_bizs');
-    const savedBusinessIds = localStorage.getItem('yp_saved_business_ids');
-    const buyerActivityEvents = localStorage.getItem('yp_buyer_activity_events');
-    const normalized = normalizeBuyerStateSnapshot({
-      viewedBusinessIds: viewedBusinessIds ? JSON.parse(viewedBusinessIds) : DEFAULT_GUEST_VIEWED_BUSINESS_IDS,
-      savedBusinessIds: savedBusinessIds ? JSON.parse(savedBusinessIds) : [],
-      buyerActivityEvents: buyerActivityEvents ? JSON.parse(buyerActivityEvents) : [],
-    });
-    return normalized.viewedBusinessIds.length > 0
-      ? normalized
-      : normalizeBuyerStateSnapshot({
-          ...normalized,
-          viewedBusinessIds: DEFAULT_GUEST_VIEWED_BUSINESS_IDS,
-        });
-  } catch {
-    return normalizeBuyerStateSnapshot({
-      viewedBusinessIds: DEFAULT_GUEST_VIEWED_BUSINESS_IDS,
-    });
-  }
-};
-
-const getBuyerStateScopeKey = (session: UserSession, config: ApiConfiguration) => {
-  if (!(session.isAuthenticated && session.authToken && config.syncMode === 'api' && config.buyerStateEndpoint)) {
-    return 'guest';
-  }
-  const normalizedUserId = String(session.userId || '').trim();
-  const normalizedEmail = String(session.email || '').trim().toLowerCase();
-  const normalizedPhone = String(session.userPhone || '').replace(/\D/g, '');
-  return `auth:${normalizedUserId || normalizedEmail || normalizedPhone || 'authenticated'}`;
-};
-
-const mergeBusinessCollections = (base: Business[], incoming: Business[]): Business[] => {
-  const merged = new Map<string, Business>();
-  base.forEach((business) => merged.set(business.id, normalizeStoredBusiness(business)));
-  incoming.forEach((business) => merged.set(business.id, normalizeStoredBusiness(business)));
-  return Array.from(merged.values());
-};
 
 type LocalityCategoryLink = {
   id: string;
@@ -387,6 +90,7 @@ const slugifyForUrl = (value: string) => value
 const HOMEPAGE_DEFAULTS_BOOTSTRAP = homepageDefaultsBootstrap as Partial<HomepageDefaultsConfigState>;
 const LOCALITY_ROUTING_BOOTSTRAP = localityRoutingBootstrap as Partial<LocalityRoutingConfigState>;
 const SEO_DISCOVERY_BOOTSTRAP = seoDiscoveryBootstrap as Partial<SeoDiscoveryConfigState>;
+const BUSINESSES_BOOTSTRAP = Array.isArray(businessesBootstrap) ? businessesBootstrap as Business[] : [];
 const REVIEWS_BOOTSTRAP = Array.isArray(reviewsBootstrap) ? reviewsBootstrap as Review[] : [];
 const CRM_CONTACTS_BOOTSTRAP = Array.isArray(crmContactsBootstrap) ? crmContactsBootstrap as CRMContact[] : [];
 
@@ -1512,6 +1216,9 @@ const LocalityLandingUiV1 = lazy(() => import('./components/ux/LocalityLandingUi
 const CityDirectoryUiV1 = lazy(() => import('./components/ux/CityDirectoryUiV1'));
 const CategoryResultsUiV1 = lazy(() => import('./components/ux/CategoryResultsUiV1'));
 const ListingDetailUiV1 = lazy(() => import('./components/ux/ListingDetailUiV1'));
+const NationalDirectoryPage = lazy(() => import('./components/webportal/NationalDirectoryPage'));
+const SellerShowcasePage = lazy(() => import('./components/webportal/SellerShowcasePage'));
+const BULK_IMPORT_CHUNK_SIZE = 3000;
 
 export default function App() {
   const PRODUCTION_MODE = true;
@@ -1586,7 +1293,7 @@ export default function App() {
 
   const [businesses, setBusinesses] = useState<Business[]>(() => {
     if (!shouldBootstrapManagedStateFromLocal) {
-      return [];
+      return BUSINESSES_BOOTSTRAP.map(normalizeStoredBusiness);
     }
     const saved = localStorage.getItem('yp_businesses');
     if (saved) {
@@ -1623,7 +1330,7 @@ export default function App() {
         // Fall through
       }
     }
-    return [];
+    return BUSINESSES_BOOTSTRAP.map(normalizeStoredBusiness);
   });
 
   const [reviews, setReviews] = useState<Review[]>(() => {
@@ -1754,6 +1461,12 @@ export default function App() {
   const [urlFilterNonce, setUrlFilterNonce] = useState(0);
   const [urlSelectedBusinessId, setUrlSelectedBusinessId] = useState<string | null>(null);
   const [urlSelectionNonce, setUrlSelectionNonce] = useState(0);
+  const [liveExperienceRoute, setLiveExperienceRoute] = useState<
+    { page: 'locality' } |
+    { page: 'city'; cityId: string } |
+    { page: 'national' } |
+    { page: 'seller'; sellerBusinessId: string }
+  >({ page: 'locality' });
 
   const [localityCategoryLinks, setLocalityCategoryLinks] = useState<LocalityCategoryLink[]>(() => {
     if (!shouldBootstrapManagedStateFromLocal) {
@@ -2295,6 +2008,10 @@ export default function App() {
     return readGuestBuyerStateSnapshotFromStorage().savedBusinessIds;
   });
 
+  const [compareBusinessIds, setCompareBusinessIds] = useState<string[]>(() => {
+    return readGuestBuyerStateSnapshotFromStorage().compareBusinessIds;
+  });
+
   const [buyerActivityEvents, setBuyerActivityEvents] = useState<BuyerActivityEvent[]>(() => {
     return readGuestBuyerStateSnapshotFromStorage().buyerActivityEvents;
   });
@@ -2410,6 +2127,7 @@ export default function App() {
   const buildCurrentBuyerStateSnapshot = (): BuyerStateSnapshot => normalizeBuyerStateSnapshot({
     viewedBusinessIds,
     savedBusinessIds,
+    compareBusinessIds,
     buyerActivityEvents,
   });
 
@@ -2766,6 +2484,14 @@ export default function App() {
 
   useEffect(() => {
     if (canUseManagedBuyerState) {
+      localStorage.removeItem('yp_compare_business_ids');
+      return;
+    }
+    localStorage.setItem('yp_compare_business_ids', JSON.stringify(compareBusinessIds));
+  }, [canUseManagedBuyerState, compareBusinessIds]);
+
+  useEffect(() => {
+    if (canUseManagedBuyerState) {
       localStorage.removeItem('yp_buyer_activity_events');
       return;
     }
@@ -2870,6 +2596,7 @@ export default function App() {
         const guestBuyerState = readGuestBuyerStateSnapshotFromStorage();
         setViewedBusinessIds(guestBuyerState.viewedBusinessIds);
         setSavedBusinessIds(guestBuyerState.savedBusinessIds);
+        setCompareBusinessIds(guestBuyerState.compareBusinessIds);
         setBuyerActivityEvents(guestBuyerState.buyerActivityEvents);
       }
       return undefined;
@@ -2887,6 +2614,7 @@ export default function App() {
     if (previousScopeKey !== 'guest' && previousScopeKey !== buyerStateScopeKey) {
       setViewedBusinessIds([]);
       setSavedBusinessIds([]);
+      setCompareBusinessIds([]);
       setBuyerActivityEvents([]);
     }
 
@@ -2905,6 +2633,7 @@ export default function App() {
         buyerStateLoadedRef.current = true;
         setViewedBusinessIds(mergedBuyerState.viewedBusinessIds);
         setSavedBusinessIds(mergedBuyerState.savedBusinessIds);
+        setCompareBusinessIds(mergedBuyerState.compareBusinessIds);
         setBuyerActivityEvents(mergedBuyerState.buyerActivityEvents);
         if (JSON.stringify(mergedBuyerState) !== JSON.stringify(remoteBuyerState)) {
           persistBuyerStateToServer(mergedBuyerState);
@@ -2925,7 +2654,7 @@ export default function App() {
       return;
     }
     persistBuyerStateToServer(buildCurrentBuyerStateSnapshot());
-  }, [buyerActivityEvents, canUseManagedBuyerState, savedBusinessIds, viewedBusinessIds]);
+  }, [buyerActivityEvents, canUseManagedBuyerState, compareBusinessIds, savedBusinessIds, viewedBusinessIds]);
 
   useEffect(() => {
     logAuditEvent('data_entry', 'Active locality changed', `Locality switched to: ${activeLocalityId}`);
@@ -2949,9 +2678,35 @@ export default function App() {
       let resolvedSearch: string | null = null;
       let resolvedBusinessId: string | null = null;
       let shouldOpenSearchResults = false;
+      let nextExperienceRoute: { page: 'locality' } | { page: 'city'; cityId: string } | { page: 'national' } | { page: 'seller'; sellerBusinessId: string } = { page: 'locality' };
+
+      if (pathSegments[0] === 'national') {
+        nextExperienceRoute = { page: 'national' };
+      }
+      if (pathSegments[0] === 'city' && pathSegments[1]) {
+        const matchedCity = MASTER_CITIES.find((city) => slugifyForUrl(city.name) === pathSegments[1] || city.id === pathSegments[1]);
+        if (matchedCity) {
+          nextExperienceRoute = { page: 'city', cityId: matchedCity.id };
+          const firstLocalityInCity = localities.find((locality) => locality.name.toLowerCase().includes(matchedCity.name.toLowerCase()));
+          if (firstLocalityInCity) {
+            resolvedLocalityId = firstLocalityInCity.id;
+          }
+        }
+      }
+      if (pathSegments[0] === 'seller' && pathSegments[1]) {
+        const matchedBusiness = businesses.find((business) => (
+          getSellerPageSlug(normalizeStoredBusiness(business)) === pathSegments[1] ||
+          String(business.slug || '').toLowerCase() === pathSegments[1] ||
+          business.id.toLowerCase() === pathSegments[1]
+        ));
+        if (matchedBusiness) {
+          nextExperienceRoute = { page: 'seller', sellerBusinessId: matchedBusiness.id };
+          resolvedLocalityId = matchedBusiness.localityId;
+        }
+      }
 
       let scopedSegments = pathSegments;
-      if (pathSegments.length > 0) {
+      if (pathSegments.length > 0 && nextExperienceRoute.page === 'locality') {
         const localitySegment = pathSegments[0];
         const matchedLocality = localities.find((locality) => (
           locality.id === localitySegment || locality.slug === localitySegment
@@ -3033,6 +2788,7 @@ export default function App() {
         setShowPincodeModal(false);
       }
 
+      setLiveExperienceRoute(nextExperienceRoute);
       setUrlCategoryFilter(resolvedCategoryId);
       setUrlSearchFilter(resolvedSearch || null);
       setUrlIsSearchResults(shouldOpenSearchResults);
@@ -3205,6 +2961,39 @@ export default function App() {
       title: wasSaved ? 'Removed saved listing' : 'Saved listing',
       detail: `${businessName} in ${businessCategory}`,
     });
+  };
+
+  const handleToggleComparedBusiness = (businessId: string) => {
+    const business = businesses.find((item) => item.id === businessId);
+    const businessName = business?.name || 'Listing';
+    const businessCategory = business?.sourceSubcategoryLabel || business?.sourceCategoryLabel || 'local category';
+    const wasCompared = compareBusinessIds.includes(businessId);
+
+    if (!wasCompared && compareBusinessIds.length >= 3) {
+      return {
+        allowed: false,
+        active: false,
+        reason: 'You can compare up to 3 listings at a time.',
+      };
+    }
+
+    setCompareBusinessIds((prev) => (
+      wasCompared
+        ? prev.filter((id) => id !== businessId)
+        : [...prev, businessId]
+    ));
+
+    appendBuyerActivityEvent({
+      actionType: wasCompared ? 'uncompare_listing' : 'compare_listing',
+      businessId,
+      title: wasCompared ? 'Removed listing from compare' : 'Added listing to compare',
+      detail: `${businessName} in ${businessCategory}`,
+    });
+
+    return {
+      allowed: true,
+      active: !wasCompared,
+    };
   };
 
   // Actions
@@ -5244,7 +5033,7 @@ export default function App() {
     const newBiz: Business = {
       ...normalizedInput,
       id: `b_dynamic_${Date.now()}`,
-      status: 'approved',
+      status: 'pending',
       rating: 0,
       reviewCount: 0,
       createdAt: new Date().toISOString(),
@@ -5255,7 +5044,7 @@ export default function App() {
       persistBusinessesToServer(next);
       return next;
     });
-    logAuditEvent('data_entry', `Submitted registration request for new business: "${appData.name}"`, `Owner/Proprietor: ${appData.ownerName} | Ph: ${appData.phone} | Shard Locality: ${normalizedInput.localityId}`);
+    logAuditEvent('data_entry', `Submitted registration request for new business: "${appData.name}"`, `Owner/Proprietor: ${appData.ownerName} | Ph: ${appData.phone} | Shard Locality: ${normalizedInput.localityId} | Status: pending`);
   };
 
   // Allow Admins, Moderators, Sellers, and Data Operators to directly modify listings
@@ -5759,6 +5548,12 @@ export default function App() {
   }, [localities, pincodeMappings, localityCategoryLinks]);
 
   const handleBulkImportBusinesses = (rows: Array<{
+    listingId?: string;
+    googlePlaceId?: string;
+    imageUrl?: string;
+    logoUrl?: string;
+    coverImageUrl?: string;
+    galleryUrls?: string;
     businessName: string;
     address: string;
     area: string;
@@ -5785,6 +5580,15 @@ export default function App() {
     taxonomyMapped?: boolean;
     tags?: string[];
   }>) => {
+    if (rows.length > BULK_IMPORT_CHUNK_SIZE) {
+      logAuditEvent(
+        'data_entry',
+        'CSV import blocked',
+        `Rows received: ${rows.length} | Allowed chunk size: ${BULK_IMPORT_CHUNK_SIZE}`
+      );
+      return { imported: 0, skipped: rows.length };
+    }
+
     let imported = 0;
     let skipped = 0;
 
@@ -5793,11 +5597,20 @@ export default function App() {
       const normalizePhone = (phone: string) => phone.replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '');
       const getBusinessPincode = (b: Business) => b.pincode || MASTER_AREAS.find(a => a.id === b.areaId)?.pincode || '';
       const normalizeImportGeoLookup = (value: string) => slugifyForUrl(String(value || ''));
+      const parseGalleryUrls = (value: string | undefined) => String(value || '')
+        .split(/[|,]+/)
+        .map((entry) => entry.trim())
+        .filter(Boolean);
 
       for (const row of rows) {
         const phone = row.mobile && row.mobile !== '—' ? (row.mobile.startsWith('+91') ? row.mobile : `+91 ${row.mobile}`) : '';
         const name = row.businessName.trim();
+        const normalizedListingId = String(row.listingId || '').trim();
         if (!name) {
+          skipped++;
+          continue;
+        }
+        if (!normalizedListingId) {
           skipped++;
           continue;
         }
@@ -5860,6 +5673,7 @@ export default function App() {
         }
         const existingIndex = next.findIndex((b) => (
           (row.existingBusinessId && b.id === row.existingBusinessId) ||
+          b.id === normalizedListingId ||
           (
             b.name.trim().toLowerCase() === name.toLowerCase() &&
             normalizedPhone.length > 0 &&
@@ -5870,8 +5684,15 @@ export default function App() {
         ));
 
         if (row.importAction === 'update' && existingIndex >= 0) {
+          const parsedGalleryUrls = parseGalleryUrls(row.galleryUrls);
           next[existingIndex] = normalizeStoredBusiness({
             ...next[existingIndex],
+            id: normalizedListingId,
+            googlePlaceId: row.googlePlaceId || next[existingIndex].googlePlaceId,
+            imageUrl: row.imageUrl || next[existingIndex].imageUrl,
+            logoUrl: row.logoUrl || next[existingIndex].logoUrl,
+            coverImageUrl: row.coverImageUrl || next[existingIndex].coverImageUrl,
+            galleryUrls: parsedGalleryUrls.length > 0 ? parsedGalleryUrls : next[existingIndex].galleryUrls,
             name,
             categoryId: row.categoryId || '',
             subcategoryId: row.subcategoryId || '',
@@ -5908,8 +5729,14 @@ export default function App() {
           continue;
         }
 
+        const parsedGalleryUrls = parseGalleryUrls(row.galleryUrls);
         next.unshift(normalizeStoredBusiness({
-          id: `csv_${Date.now()}_${Math.floor(Math.random() * 100000)}`,
+          id: normalizedListingId,
+          googlePlaceId: row.googlePlaceId || undefined,
+          imageUrl: row.imageUrl || '',
+          logoUrl: row.logoUrl || undefined,
+          coverImageUrl: row.coverImageUrl || undefined,
+          galleryUrls: parsedGalleryUrls.length > 0 ? parsedGalleryUrls : undefined,
           name,
           categoryId: row.categoryId || '',
           subcategoryId: row.subcategoryId || '',
@@ -5928,7 +5755,6 @@ export default function App() {
           description: row.services || 'Business imported from CSV.',
           rating: Number.isFinite(rating) ? rating : 0,
           reviewCount,
-          imageUrl: '',
           featured: false,
           status: 'approved',
           createdAt: new Date().toISOString(),
@@ -6154,6 +5980,69 @@ export default function App() {
       ? `/ui/listing-detail-v1?${params.toString()}`
       : '/ui/listing-detail-v1';
     window.history.pushState({}, '', nextPath);
+  };
+  const handleOpenLiveCityPage = (localityId?: string) => {
+    const targetLocalityId = localityId || activeLocality?.id || activeLocalityId || defaultLocalityId || localities[0]?.id || '';
+    const targetLocality = localities.find((locality) => locality.id === targetLocalityId) || activeLocality || localities[0];
+    const matchedCity = MASTER_CITIES.find((city) => city.id === targetLocality?.cityId);
+    if (targetLocality?.id) {
+      setActiveLocalityId(targetLocality.id);
+    }
+    setActiveViewWithAudit('web');
+    if (matchedCity) {
+      window.history.pushState({}, '', `/city/${slugifyForUrl(matchedCity.name)}`);
+    }
+  };
+  const handleOpenNationalPage = () => {
+    setActiveViewWithAudit('web');
+    window.history.pushState({}, '', '/national');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  };
+  const handleOpenLiveSellerPage = (businessId: string) => {
+    const business = businesses.find((entry) => entry.id === businessId);
+    if (!business) return;
+    setActiveViewWithAudit('web');
+    setActiveLocalityId(business.localityId);
+    window.history.pushState({}, '', `/seller/${getSellerPageSlug(normalizeStoredBusiness(business))}`);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  };
+  const handleOpenLiveListingPage = (businessId: string, localityId?: string) => {
+    const business = businesses.find((entry) => entry.id === businessId);
+    const targetLocalityId = localityId || business?.localityId || activeLocality?.id || activeLocalityId || defaultLocalityId || localities[0]?.id || '';
+    if (targetLocalityId) {
+      setActiveLocalityId(targetLocalityId);
+    }
+    setActiveViewWithAudit('web');
+    const localityPath = buildLocalityPath(targetLocalityId);
+    const nextPath = `${localityPath}?biz=${encodeURIComponent(businessId)}`;
+    window.history.pushState({}, '', nextPath);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  };
+  const handleClaimListingLead = (businessId: string) => {
+    const business = businesses.find((entry) => entry.id === businessId);
+    if (business?.localityId) {
+      setActiveLocalityId(business.localityId);
+    }
+    setActiveViewWithAudit('web');
+    const targetPath = `${buildLocalityPath(business?.localityId || activeLocalityId)}?biz=${encodeURIComponent(businessId)}`;
+    window.history.pushState({}, '', targetPath);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    window.setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('localsy:open-business-application'));
+    }, 200);
+  };
+  const handleContactSalesLead = (businessId: string) => {
+    const business = businesses.find((entry) => entry.id === businessId);
+    if (business?.localityId) {
+      setActiveLocalityId(business.localityId);
+    }
+    setActiveViewWithAudit('web');
+    const targetPath = business?.localityId ? buildLocalityPath(business.localityId) : buildLocalityPath(activeLocalityId);
+    window.history.pushState({}, '', targetPath);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    window.setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('localsy:open-business-application'));
+    }, 200);
   };
   const handleSearchShortcut = () => {
     const searchForm = document.getElementById('public-listing-search');
@@ -6722,53 +6611,112 @@ export default function App() {
 
         {activeView === 'web' && (
           <Suspense fallback={<div className="text-xs text-slate-500">Loading public directory...</div>}>
-            <WebPortal 
-              localities={localities}
-              businesses={businesses}
-              categories={portalCategories}
-              reviews={reviews}
-              activeLocalityId={activeLocalityId}
-              pincodeMappings={pincodeMappings}
-              localityMappedPincodes={mappedPincodesForActiveLocality}
-              savedPincode={savedPincode}
-              initialCategoryFilter={urlCategoryFilter}
-              initialSearchFilter={urlSearchFilter}
-              initialResultsPage={urlIsSearchResults}
-              filterNonce={urlFilterNonce}
-              initialSelectedBusinessId={urlSelectedBusinessId}
-              selectionNonce={urlSelectionNonce}
-              onLocalityChange={setActiveLocalityId}
-              userSession={userSession}
-              onUserSessionChange={setUserSession}
-              viewedBusinessIds={viewedBusinessIds}
-              savedBusinessIds={savedBusinessIds}
-              onToggleSavedBusiness={handleToggleSavedBusiness}
-              buyerActivityEvents={buyerActivityEvents}
-              onUnlockBusinessContact={handleRegisterContactView}
-              onSubmitApplication={handleSubmitApplication}
-              onUpdateBusiness={handleUpdateBusiness}
-              onAddReview={handleAddReview}
-              listingAds={listingAds}
-              adLeads={adLeads}
-              heroBanners={heroBanners}
-              homepageLayouts={homepageLayouts}
-              homepageDefaultsConfig={homepageDefaultsConfig}
-              apiConfiguration={apiConfiguration}
-              onSubmitAdLead={handleSubmitAdLead}
-              onTrackListingAdInteraction={handleTrackListingAdInteraction}
-              urlCategoryFilter={urlCategoryFilter}
-              urlSubcategoryFilter={urlSubcategoryFilter}
-              urlFilterNonce={urlFilterNonce}
-              
-              communityItems={communityItems}
-              onAddCommunityItem={handleAddCommunityItem}
-              crmContacts={crmContacts}
-              onAddCRMContact={handleAddCRMContact}
-              onUpdateCRMContact={handleUpdateCRMContact}
-              coupons={coupons}
-              onAddCoupon={handleAddCoupon}
-              onLogAuditEvent={logAuditEvent}
-            />
+            {liveExperienceRoute.page === 'national' ? (
+              <NationalDirectoryPage
+                businesses={businesses}
+                categories={portalCategories.filter((category) => category.id !== 'all')}
+                localities={localities}
+                onOpenLivePortal={handleMainLogoHome}
+                onOpenLocalityPage={(localityId) => {
+                  setActiveViewWithAudit('web');
+                  window.history.pushState({}, '', buildLocalityPath(localityId));
+                  window.dispatchEvent(new PopStateEvent('popstate'));
+                }}
+                onOpenCategoryPage={(categoryId, localityId) => {
+                  const targetLocalityId = localityId || activeLocalityId || defaultLocalityId || localities[0]?.id || '';
+                  setActiveViewWithAudit('web');
+                  window.history.pushState({}, '', `${buildLocalityPath(targetLocalityId)}?category=${encodeURIComponent(categoryId)}`);
+                  window.dispatchEvent(new PopStateEvent('popstate'));
+                }}
+                onOpenListingPage={handleOpenLiveListingPage}
+              />
+            ) : liveExperienceRoute.page === 'city' ? (
+              <CityDirectoryUiV1
+                activeLocalityId={activeLocalityId}
+                businesses={businesses}
+                categories={portalCategories.filter((category) => category.id !== 'all')}
+                localities={localities}
+                onOpenLivePortal={handleMainLogoHome}
+                onOpenLocalityPage={(localityId) => {
+                  setActiveViewWithAudit('web');
+                  window.history.pushState({}, '', buildLocalityPath(localityId));
+                  window.dispatchEvent(new PopStateEvent('popstate'));
+                }}
+                onOpenCategoryPage={(categoryId, localityId) => {
+                  const targetLocalityId = localityId || activeLocalityId || defaultLocalityId || localities[0]?.id || '';
+                  setActiveViewWithAudit('web');
+                  window.history.pushState({}, '', `${buildLocalityPath(targetLocalityId)}?category=${encodeURIComponent(categoryId)}`);
+                  window.dispatchEvent(new PopStateEvent('popstate'));
+                }}
+                onOpenListingPage={handleOpenLiveListingPage}
+              />
+            ) : liveExperienceRoute.page === 'seller' ? (
+              <SellerShowcasePage
+                businessId={liveExperienceRoute.sellerBusinessId}
+                businesses={businesses}
+                localities={localities}
+                listingAds={listingAds}
+                adLeads={adLeads}
+                onOpenListingPage={handleOpenLiveListingPage}
+                onOpenLocalityPage={(localityId) => {
+                  setActiveViewWithAudit('web');
+                  window.history.pushState({}, '', buildLocalityPath(localityId));
+                  window.dispatchEvent(new PopStateEvent('popstate'));
+                }}
+                onClaimListing={handleClaimListingLead}
+                onContactSales={handleContactSalesLead}
+              />
+            ) : (
+              <WebPortal 
+                localities={localities}
+                businesses={businesses}
+                categories={portalCategories}
+                reviews={reviews}
+                activeLocalityId={activeLocalityId}
+                pincodeMappings={pincodeMappings}
+                localityMappedPincodes={mappedPincodesForActiveLocality}
+                savedPincode={savedPincode}
+                initialCategoryFilter={urlCategoryFilter}
+                initialSearchFilter={urlSearchFilter}
+                initialResultsPage={urlIsSearchResults}
+                filterNonce={urlFilterNonce}
+                initialSelectedBusinessId={urlSelectedBusinessId}
+                selectionNonce={urlSelectionNonce}
+                onLocalityChange={setActiveLocalityId}
+                userSession={userSession}
+                onUserSessionChange={setUserSession}
+                viewedBusinessIds={viewedBusinessIds}
+                savedBusinessIds={savedBusinessIds}
+                compareBusinessIds={compareBusinessIds}
+                onToggleSavedBusiness={handleToggleSavedBusiness}
+                onToggleComparedBusiness={handleToggleComparedBusiness}
+                buyerActivityEvents={buyerActivityEvents}
+                onUnlockBusinessContact={handleRegisterContactView}
+                onSubmitApplication={handleSubmitApplication}
+                onUpdateBusiness={handleUpdateBusiness}
+                onAddReview={handleAddReview}
+                listingAds={listingAds}
+                adLeads={adLeads}
+                heroBanners={heroBanners}
+                homepageLayouts={homepageLayouts}
+                homepageDefaultsConfig={homepageDefaultsConfig}
+                apiConfiguration={apiConfiguration}
+                onSubmitAdLead={handleSubmitAdLead}
+                onTrackListingAdInteraction={handleTrackListingAdInteraction}
+                urlCategoryFilter={urlCategoryFilter}
+                urlSubcategoryFilter={urlSubcategoryFilter}
+                urlFilterNonce={urlFilterNonce}
+                
+                communityItems={communityItems}
+                onAddCommunityItem={handleAddCommunityItem}
+                crmContacts={crmContacts}
+                onAddCRMContact={handleAddCRMContact}
+                onUpdateCRMContact={handleUpdateCRMContact}
+                coupons={coupons}
+                onAddCoupon={handleAddCoupon}
+                onLogAuditEvent={logAuditEvent}
+              />
+            )}
           </Suspense>
         )}
 

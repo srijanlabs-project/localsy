@@ -4,7 +4,6 @@ import {
   Trash2, PlusCircle, Check, Database, Eye, Server, RefreshCw, MapPin, Copy, ChevronUp, ChevronDown, ChevronRight
 } from 'lucide-react';
 import { Locality, Business, SubdomainMapping, UserSession, AuditEvent, ListingAd, HeroBanner, HeroBannerStat, AdLead, MarketingCoupon, HomepageLayout, HomepageSection, HomepageSectionType, ApiConfiguration, CommunityItem, ScalableHomepageConfigState, ScalableHomepageTemplate, ScalableHomepageAssignment, ScalableCampaign, ScalableCampaignType, ResolvedHomepagePayload, BusinessTaxonomyState, SeoDiscoveryConfigState, GeographyConfigState, HomepageDefaultsConfigState, ResolvedHomepagePublishRequest, ResolvedHomepagePublishContext, ResolvedHomepageSnapshotDeleteRequest, ScalableLegacyOwnershipSummary } from '../types';
-import homepageDefaultsBootstrap from '../../homepage-defaults-config.json';
 import { MASTER_AREAS, MASTER_CITIES, MASTER_LOCALITIES, MASTER_STATES } from '../geographyMaster';
 import { getMediaProxyUrl } from '../utils/mediaUrl';
 import BusinessTaxonomyManager from './BusinessTaxonomyManager';
@@ -17,11 +16,19 @@ import AdvertiserCreativeFormPanel from './admin/AdvertiserCreativeFormPanel';
 import BulkUploadWorkspace from './admin/BulkUploadWorkspace';
 import DataAuditWorkspace from './admin/DataAuditWorkspace';
 import { type DuplicateReviewCandidate } from './admin/DuplicateReviewQueue';
+import EditableHomepageSectionCard from './admin/EditableHomepageSectionCard';
 import HeroBannerManagerPanel from './admin/HeroBannerManagerPanel';
 import ListingStatusWorkspace, { type ListingStatusFilter } from './admin/ListingStatusWorkspace';
 import ModerationQueue from './admin/ModerationQueue';
 import OffersManagerPanel from './admin/OffersManagerPanel';
 import TaxonomyMappingWorkspace from './admin/TaxonomyMappingWorkspace';
+import {
+  InlineAreaCreator,
+  InlineSubcategoryCreator,
+  OrderedCategoryPicker,
+  OrderedSelectionPicker,
+  type OrderedSelectionOption,
+} from './admin/AdminConsoleSharedControls';
 import {
   BUSINESS_CATEGORIES,
   BUSINESS_SUBCATEGORIES,
@@ -30,8 +37,22 @@ import {
   getSubcategoryById,
   resolveDefaultSubcategoryId
 } from '../categoryMaster';
-
-const HOMEPAGE_DEFAULTS_BOOTSTRAP = homepageDefaultsBootstrap as Partial<HomepageDefaultsConfigState>;
+import {
+  buildHeroStatDraftsFromTemplates,
+  buildListingTags,
+  buildUniqueAdminId,
+  getBusinessTaxonomyLabel,
+  getFutureDateIso,
+  getHeroBannerDraftDefaults,
+  getPublicLocalityUrl,
+  getScalableEntityOwnershipPresentation,
+  isBusinessTaxonomyMapped,
+  isLegacyManagedScalableEntity,
+  readFileAsDataUrl,
+  slugifyAdminValue,
+  slugifyForPath,
+  type HeroStatDraft,
+} from '../services/admin/adminConsoleUtils';
 
 interface AdminConsoleProps {
   localities: Locality[];
@@ -134,6 +155,12 @@ interface AdminConsoleProps {
 }
 
 type BulkImportRow = {
+  listingId?: string;
+  googlePlaceId?: string;
+  imageUrl?: string;
+  logoUrl?: string;
+  coverImageUrl?: string;
+  galleryUrls?: string;
   businessName: string;
   address: string;
   area: string;
@@ -189,151 +216,6 @@ type LocalityCategoryLink = {
   slug: string;
 };
 
-type HeroStatDraft = {
-  enabled: boolean;
-  label: string;
-  value: string;
-  localityIds: string;
-  pincodes: string;
-};
-
-const slugifyForPath = (value: string) => value
-  .toLowerCase()
-  .trim()
-  .replace(/&/g, ' and ')
-  .replace(/[^a-z0-9]+/g, '-')
-  .replace(/^-+|-+$/g, '');
-
-const readFileAsDataUrl = (file: File) => new Promise<string>((resolve, reject) => {
-  const reader = new FileReader();
-  reader.onload = () => resolve(String(reader.result || ''));
-  reader.onerror = () => reject(new Error('Failed to read image file'));
-  reader.readAsDataURL(file);
-});
-
-const splitTagSource = (value: string) => (
-  String(value || '')
-    .split(/[|,/]+/)
-    .map((entry) => entry.trim())
-    .filter(Boolean)
-);
-
-const getFutureDateIso = (durationDays: number) => {
-  const target = new Date();
-  target.setDate(target.getDate() + Math.max(1, durationDays));
-  return target.toISOString().slice(0, 10);
-};
-
-const buildHeroStatDraftsFromTemplates = (heroStatTemplates?: HeroBannerStat[]): HeroStatDraft[] => {
-  const templates = Array.isArray(heroStatTemplates) && heroStatTemplates.length > 0
-    ? heroStatTemplates
-    : ((Array.isArray(HOMEPAGE_DEFAULTS_BOOTSTRAP.heroStatTemplates) ? HOMEPAGE_DEFAULTS_BOOTSTRAP.heroStatTemplates : []) as HeroBannerStat[]);
-  return templates.map((stat) => ({
-    enabled: stat.enabled ?? true,
-    label: String(stat.label || '').trim(),
-    value: String(stat.value || '').trim(),
-    localityIds: (stat.localityIds || []).join(', '),
-    pincodes: (stat.pincodes || []).join(', '),
-  }));
-};
-
-const getScalableEntityMetadataSource = (metadata?: Record<string, unknown>) => String(metadata?.source || metadata?.updatedFrom || '').trim();
-
-const isScalableEntityDetachedFromLegacySync = (metadata?: Record<string, unknown>) => Boolean(metadata?.detachedFromLegacySync);
-
-const isLegacyManagedScalableEntity = (metadata?: Record<string, unknown>) => (
-  getScalableEntityMetadataSource(metadata).startsWith('legacy_') && !isScalableEntityDetachedFromLegacySync(metadata)
-);
-
-const getScalableEntityOwnershipPresentation = (metadata?: Record<string, unknown>) => {
-  const source = getScalableEntityMetadataSource(metadata);
-  if (isScalableEntityDetachedFromLegacySync(metadata)) {
-    return {
-      label: 'Detached',
-      detail: source || 'protected from legacy sync',
-      className: 'border-amber-200 bg-amber-50 text-amber-800',
-    };
-  }
-  if (source.startsWith('legacy_')) {
-    return {
-      label: 'Legacy Sync',
-      detail: source.replace(/^legacy_/, '') || 'legacy-managed',
-      className: 'border-sky-200 bg-sky-50 text-sky-800',
-    };
-  }
-  return {
-    label: 'Scalable Owned',
-    detail: source || 'admin-managed',
-    className: 'border-emerald-200 bg-emerald-50 text-emerald-800',
-  };
-};
-
-const getHeroBannerDraftDefaults = (config?: HomepageDefaultsConfigState) => ({
-  ctaLabel: String(config?.heroBannerDraftDefaults?.ctaLabel || HOMEPAGE_DEFAULTS_BOOTSTRAP.heroBannerDraftDefaults?.ctaLabel || 'Explore Businesses').trim() || String(HOMEPAGE_DEFAULTS_BOOTSTRAP.heroBannerDraftDefaults?.ctaLabel || 'Explore Businesses'),
-  ctaType: config?.heroBannerDraftDefaults?.ctaType || HOMEPAGE_DEFAULTS_BOOTSTRAP.heroBannerDraftDefaults?.ctaType || 'search_category',
-  ctaTarget: String(config?.heroBannerDraftDefaults?.ctaTarget || HOMEPAGE_DEFAULTS_BOOTSTRAP.heroBannerDraftDefaults?.ctaTarget || 'all').trim() || String(HOMEPAGE_DEFAULTS_BOOTSTRAP.heroBannerDraftDefaults?.ctaTarget || 'all'),
-  durationDays: Math.max(1, Number(config?.heroBannerDraftDefaults?.durationDays || HOMEPAGE_DEFAULTS_BOOTSTRAP.heroBannerDraftDefaults?.durationDays || 30)),
-});
-
-const buildListingTags = (...sources: Array<string | string[] | undefined>) => {
-  const seen = new Set<string>();
-  const tags: string[] = [];
-  sources.forEach((source) => {
-    const values = Array.isArray(source)
-      ? source
-      : splitTagSource(String(source || ''));
-    values.forEach((value) => {
-      const trimmed = String(value || '').trim();
-      if (!trimmed) return;
-      const key = trimmed.toLowerCase();
-      if (seen.has(key)) return;
-      seen.add(key);
-      tags.push(trimmed);
-    });
-  });
-  return tags.slice(0, 25);
-};
-
-const isBusinessTaxonomyMapped = (business: Pick<Business, 'categoryId' | 'subcategoryId'> | { categoryId?: string; subcategoryId?: string }) => (
-  BUSINESS_CATEGORIES.some((category) => category.id === String(business.categoryId || '')) &&
-  BUSINESS_SUBCATEGORIES.some((subcategory) => (
-    subcategory.categoryId === String(business.categoryId || '') &&
-    subcategory.id === String(business.subcategoryId || '')
-  ))
-);
-
-const getBusinessTaxonomyLabel = (business: Pick<Business, 'categoryId' | 'subcategoryId'> & { sourceCategoryLabel?: string; sourceSubcategoryLabel?: string }) => {
-  const mappedCategory = getCategoryById(business.categoryId || '')?.name;
-  const mappedSubcategory = getSubcategoryById(business.subcategoryId || '')?.name;
-  return {
-    category: mappedCategory || business.sourceCategoryLabel || business.categoryId || 'Unmapped',
-    subcategory: mappedSubcategory || business.sourceSubcategoryLabel || business.subcategoryId || 'Unmapped',
-  };
-};
-
-const getPublicLocalityUrl = (locality?: Locality | null) => {
-  const localitySlug = locality?.slug || locality?.id || '';
-  return localitySlug ? `https://www.localisy.in/${localitySlug}` : 'https://www.localisy.in';
-};
-
-const slugifyAdminValue = (value: string) => value
-  .toLowerCase()
-  .trim()
-  .replace(/&/g, ' and ')
-  .replace(/[^a-z0-9]+/g, '-')
-  .replace(/^-+|-+$/g, '');
-
-const buildUniqueAdminId = (seed: string, takenIds: Set<string>) => {
-  const baseId = slugifyAdminValue(seed);
-  if (!baseId) return '';
-  if (!takenIds.has(baseId)) return baseId;
-  let suffix = 2;
-  while (takenIds.has(`${baseId}-${suffix}`)) {
-    suffix += 1;
-  }
-  return `${baseId}-${suffix}`;
-};
-
 type AdminWorkspaceTab = 'moderation' | 'listing-status' | 'bulk-upload' | 'taxonomy-mapping' | 'data-audit';
 type AdminConsoleSurface = 'admin' | 'operations';
 type AdminOperationsSection = 'listings' | 'homepage' | 'campaigns' | 'geography' | 'content' | 'platform';
@@ -342,442 +224,7 @@ type PlatformConfigSubtab = 'api' | 'taxonomy' | 'geography' | 'defaults' | 'seo
 type GeographyWorkspaceSubtab = 'localities' | 'routing' | 'links';
 type CampaignWorkspaceSubtab = 'offers' | 'ads' | 'leads';
 
-type InlineSubcategoryCreatorProps = {
-  categoryId: string;
-  disabled?: boolean;
-  canCreate: boolean;
-  onAssign: (subcategoryId: string) => void;
-  onCreate: (categoryId: string, name: string) => Promise<string | null>;
-};
-
-function InlineSubcategoryCreator({
-  categoryId,
-  disabled,
-  canCreate,
-  onAssign,
-  onCreate,
-}: InlineSubcategoryCreatorProps) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [name, setName] = useState('');
-  const [isSaving, setIsSaving] = useState(false);
-  const [errorText, setErrorText] = useState('');
-
-  if (!canCreate) return null;
-
-  return (
-    <div className="space-y-1">
-      <button
-        type="button"
-        disabled={!categoryId || disabled}
-        onClick={() => {
-          setIsOpen((previous) => !previous);
-          setErrorText('');
-        }}
-        className="inline-flex items-center gap-1 rounded-md border border-dashed border-indigo-300 bg-indigo-50 px-2 py-1 text-[10px] font-bold text-indigo-700 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
-      >
-        <PlusCircle className="h-3 w-3" />
-        <span>Create subcategory</span>
-      </button>
-
-      {isOpen && (
-        <div className="flex flex-wrap items-center gap-2">
-          <input
-            value={name}
-            disabled={isSaving || disabled}
-            onChange={(event) => setName(event.target.value)}
-            placeholder="New subcategory name"
-            className="min-w-[12rem] flex-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px]"
-          />
-          <button
-            type="button"
-            disabled={!name.trim() || isSaving || disabled}
-            onClick={async () => {
-              setIsSaving(true);
-              setErrorText('');
-              try {
-                const nextSubcategoryId = await onCreate(categoryId, name);
-                if (nextSubcategoryId) {
-                  onAssign(nextSubcategoryId);
-                  setName('');
-                  setIsOpen(false);
-                }
-              } catch (error) {
-                setErrorText(error instanceof Error ? error.message : 'Failed to create subcategory.');
-              } finally {
-                setIsSaving(false);
-              }
-            }}
-            className="rounded-md bg-indigo-600 px-2.5 py-1 text-[10px] font-bold text-white disabled:opacity-50"
-          >
-            {isSaving ? 'Saving...' : 'Save'}
-          </button>
-          <button
-            type="button"
-            disabled={isSaving}
-            onClick={() => {
-              setIsOpen(false);
-              setName('');
-              setErrorText('');
-            }}
-            className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-bold text-slate-700"
-          >
-            Cancel
-          </button>
-        </div>
-      )}
-
-      {errorText && (
-        <div className="text-[10px] text-rose-600">{errorText}</div>
-      )}
-    </div>
-  );
-}
-
-type InlineAreaCreatorProps = {
-  localityId: string;
-  initialPincode?: string;
-  disabled?: boolean;
-  canCreate: boolean;
-  onAssign: (areaId: string, areaName: string, pincode: string) => void;
-  onCreate: (localityId: string, name: string, pincode: string) => Promise<string | null>;
-};
-
-function InlineAreaCreator({
-  localityId,
-  initialPincode = '',
-  disabled,
-  canCreate,
-  onAssign,
-  onCreate,
-}: InlineAreaCreatorProps) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [name, setName] = useState('');
-  const [pincode, setPincode] = useState(initialPincode);
-  const [isSaving, setIsSaving] = useState(false);
-  const [errorText, setErrorText] = useState('');
-
-  useEffect(() => {
-    setPincode(initialPincode);
-  }, [initialPincode]);
-
-  if (!canCreate) return null;
-
-  return (
-    <div className="space-y-1">
-      <button
-        type="button"
-        disabled={!localityId || disabled}
-        onClick={() => {
-          setIsOpen((previous) => !previous);
-          setErrorText('');
-        }}
-        className="inline-flex items-center gap-1 rounded-md border border-dashed border-emerald-300 bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
-      >
-        <PlusCircle className="h-3 w-3" />
-        <span>Create area</span>
-      </button>
-
-      {isOpen && (
-        <div className="space-y-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <input
-              value={name}
-              disabled={isSaving || disabled}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="New area name"
-              className="min-w-[12rem] flex-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px]"
-            />
-            <input
-              value={pincode}
-              disabled={isSaving || disabled}
-              maxLength={6}
-              onChange={(event) => setPincode(event.target.value.replace(/\D/g, '').slice(0, 6))}
-              placeholder="Pincode"
-              className="w-28 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-mono"
-            />
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              disabled={!name.trim() || pincode.length !== 6 || isSaving || disabled}
-              onClick={async () => {
-                setIsSaving(true);
-                setErrorText('');
-                try {
-                  const nextAreaId = await onCreate(localityId, name, pincode);
-                  if (nextAreaId) {
-                    onAssign(nextAreaId, name.trim(), pincode);
-                    setName('');
-                    setIsOpen(false);
-                  }
-                } catch (error) {
-                  setErrorText(error instanceof Error ? error.message : 'Failed to create area.');
-                } finally {
-                  setIsSaving(false);
-                }
-              }}
-              className="rounded-md bg-emerald-600 px-2.5 py-1 text-[10px] font-bold text-white disabled:opacity-50"
-            >
-              {isSaving ? 'Saving...' : 'Save'}
-            </button>
-            <button
-              type="button"
-              disabled={isSaving}
-              onClick={() => {
-                setIsOpen(false);
-                setName('');
-                setPincode(initialPincode);
-                setErrorText('');
-              }}
-              className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-bold text-slate-700"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-
-      {errorText && (
-        <div className="text-[10px] text-rose-600">{errorText}</div>
-      )}
-    </div>
-  );
-}
-
-type OrderedCategoryPickerProps = {
-  label: string;
-  selectedIds: string[];
-  onChange: (nextIds: string[]) => void;
-  helperText?: string;
-};
-
-function OrderedCategoryPicker({
-  label,
-  selectedIds,
-  onChange,
-  helperText = 'Use the order below to control how this section appears on the page.'
-}: OrderedCategoryPickerProps) {
-  const [newCategoryId, setNewCategoryId] = useState(() => (
-    BUSINESS_CATEGORIES.find((category) => !selectedIds.includes(category.id))?.id
-    || BUSINESS_CATEGORIES[0]?.id
-    || ''
-  ));
-
-  const selectedCategories = selectedIds
-    .map((categoryId) => getCategoryById(categoryId))
-    .filter(Boolean) as (typeof BUSINESS_CATEGORIES)[number][];
-
-  const availableCategories = BUSINESS_CATEGORIES.filter((category) => !selectedIds.includes(category.id));
-
-  useEffect(() => {
-    if (availableCategories.some((category) => category.id === newCategoryId)) return;
-    const nextAvailable = availableCategories[0]?.id || BUSINESS_CATEGORIES[0]?.id || '';
-    setNewCategoryId(nextAvailable);
-  }, [availableCategories, newCategoryId]);
-
-  const addCategory = () => {
-    if (!newCategoryId || selectedIds.includes(newCategoryId)) return;
-    onChange([...selectedIds, newCategoryId]);
-  };
-
-  const moveCategory = (categoryId: string, direction: 'up' | 'down') => {
-    const currentIndex = selectedIds.indexOf(categoryId);
-    if (currentIndex < 0) return;
-    const nextIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
-    if (nextIndex < 0 || nextIndex >= selectedIds.length) return;
-    const nextIds = [...selectedIds];
-    [nextIds[currentIndex], nextIds[nextIndex]] = [nextIds[nextIndex], nextIds[currentIndex]];
-    onChange(nextIds);
-  };
-
-  const removeCategory = (categoryId: string) => {
-    onChange(selectedIds.filter((id) => id !== categoryId));
-  };
-
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white p-3">
-      <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <div className="text-[11px] font-semibold text-slate-700">{label}</div>
-          <div className="text-[10px] text-slate-500">{helperText}</div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <select
-            value={newCategoryId}
-            onChange={(e) => setNewCategoryId(e.target.value)}
-            className="min-w-[160px] rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px]"
-          >
-            {(availableCategories.length > 0 ? availableCategories : BUSINESS_CATEGORIES).map((category) => (
-              <option key={category.id} value={category.id} disabled={selectedIds.includes(category.id)}>
-                {category.name}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            onClick={addCategory}
-            disabled={!newCategoryId || selectedIds.includes(newCategoryId)}
-            className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-[11px] font-bold text-indigo-700 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <PlusCircle className="h-3.5 w-3.5" />
-            Add
-          </button>
-        </div>
-      </div>
-
-      {selectedCategories.length > 0 ? (
-        <div className="space-y-2">
-          {selectedCategories.map((category, index) => (
-            <div
-              key={category.id}
-              className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
-            >
-              <div className="min-w-0">
-                <div className="truncate text-[11px] font-semibold text-slate-800">{index + 1}. {category.name}</div>
-                <div className="truncate text-[10px] text-slate-500">{category.id}</div>
-              </div>
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => moveCategory(category.id, 'up')}
-                  disabled={index === 0}
-                  className="rounded border border-slate-200 bg-white p-1.5 text-slate-600 disabled:cursor-not-allowed disabled:opacity-40"
-                  title="Move category up"
-                >
-                  <ChevronUp className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => moveCategory(category.id, 'down')}
-                  disabled={index === selectedCategories.length - 1}
-                  className="rounded border border-slate-200 bg-white p-1.5 text-slate-600 disabled:cursor-not-allowed disabled:opacity-40"
-                  title="Move category down"
-                >
-                  <ChevronDown className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => removeCategory(category.id)}
-                  className="rounded border border-rose-200 bg-rose-50 p-1.5 text-rose-700"
-                  title="Remove category"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-[11px] text-slate-500">
-          No categories selected yet. Add one to define how this section should render.
-        </div>
-      )}
-    </div>
-  );
-}
-
-type OrderedSelectionOption = {
-  id: string;
-  label: string;
-  meta?: string;
-};
-
-type OrderedSelectionPickerProps = {
-  label: string;
-  selectedIds: string[];
-  options: OrderedSelectionOption[];
-  onChange: (nextIds: string[]) => void;
-  helperText?: string;
-  emptyText?: string;
-};
-
-function OrderedSelectionPicker({
-  label,
-  selectedIds,
-  options,
-  onChange,
-  helperText = 'Select a value, click Add, and remove it from the selected list when it is no longer needed.',
-  emptyText = 'No values selected yet.'
-}: OrderedSelectionPickerProps) {
-  const availableOptions = options.filter((option) => !selectedIds.includes(option.id));
-  const [draftId, setDraftId] = useState(availableOptions[0]?.id || options[0]?.id || '');
-
-  useEffect(() => {
-    if (availableOptions.some((option) => option.id === draftId)) return;
-    setDraftId(availableOptions[0]?.id || options[0]?.id || '');
-  }, [availableOptions, draftId, options]);
-
-  const selectedOptions = selectedIds
-    .map((id) => options.find((option) => option.id === id) || { id, label: id })
-    .filter(Boolean);
-
-  const addSelection = () => {
-    if (!draftId || selectedIds.includes(draftId)) return;
-    onChange([...selectedIds, draftId]);
-  };
-
-  const removeSelection = (id: string) => {
-    onChange(selectedIds.filter((selectedId) => selectedId !== id));
-  };
-
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white p-3">
-      <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <div className="text-[11px] font-semibold text-slate-700">{label}</div>
-          <div className="text-[10px] text-slate-500">{helperText}</div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <select
-            value={draftId}
-            onChange={(e) => setDraftId(e.target.value)}
-            className="min-w-[190px] rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px]"
-          >
-            {(availableOptions.length > 0 ? availableOptions : options).map((option) => (
-              <option key={option.id} value={option.id} disabled={selectedIds.includes(option.id)}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            onClick={addSelection}
-            disabled={!draftId || selectedIds.includes(draftId)}
-            className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-[11px] font-bold text-indigo-700 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <PlusCircle className="h-3.5 w-3.5" />
-            Add
-          </button>
-        </div>
-      </div>
-
-      {selectedOptions.length > 0 ? (
-        <div className="space-y-2">
-          {selectedOptions.map((option, index) => (
-            <div key={`${option.id}-${index}`} className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-              <div className="min-w-0">
-                <div className="truncate text-[11px] font-semibold text-slate-800">{index + 1}. {option.label}</div>
-                {option.meta && <div className="truncate text-[10px] text-slate-500">{option.meta}</div>}
-              </div>
-              <button
-                type="button"
-                onClick={() => removeSelection(option.id)}
-                className="rounded border border-rose-200 bg-rose-50 p-1.5 text-rose-700"
-                title="Remove"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-[11px] text-slate-500">
-          {emptyText}
-        </div>
-      )}
-    </div>
-  );
-}
+const BULK_IMPORT_CHUNK_SIZE = 3000;
 
 export default function AdminConsole({
   localities,
@@ -869,6 +316,9 @@ export default function AdminConsole({
   const [editedHrs, setEditedHrs] = useState<Record<string, string>>({});
   const [importResult, setImportResult] = useState<string>('');
   const [importPreview, setImportPreview] = useState<ImportPreviewRow[]>([]);
+  const [parsedImportRowCount, setParsedImportRowCount] = useState(0);
+  const [suggestedImportChunkCount, setSuggestedImportChunkCount] = useState(1);
+  const [isImportChunkLimitExceeded, setIsImportChunkLimitExceeded] = useState(false);
   const [consoleSurface, setConsoleSurface] = useState<AdminConsoleSurface>('admin');
   const [adminWorkspaceTab, setAdminWorkspaceTab] = useState<AdminWorkspaceTab>('moderation');
   const [listingStatusFilter, setListingStatusFilter] = useState<ListingStatusFilter>('all');
@@ -2094,56 +1544,86 @@ export default function AdminConsole({
     };
   };
 
-  const buildImportPreview = (rows: BulkImportRow[]) => rows.map((row, idx): ImportPreviewRow => {
-    const errors: string[] = [];
-    const normalizedPhone = normalizePhone(row.mobile);
-    const geographyResolution = resolveImportGeography(row);
-    const resolvedPincode = geographyResolution.resolvedPincode;
-    const resolvedLocalityId = geographyResolution.resolvedLocalityId;
-    const categoryId = resolveCategoryFromImport(row.category);
-    const subcategoryId = resolveSubcategoryFromImport(row.subcategory, categoryId);
-    const requiresTaxonomyMapping = !isBusinessTaxonomyMapped({ categoryId, subcategoryId });
-    const taxonomyStatusLabel = !String(row.category || '').trim()
-      ? 'Category missing - send to mapping queue'
-      : !categoryId
-        ? `Category "${row.category}" not found in master data`
-        : !String(row.subcategory || '').trim()
-          ? 'Subcategory missing - send to mapping queue'
-          : !subcategoryId
-            ? `Subcategory "${row.subcategory}" not found under selected category`
-            : 'Mapped to master taxonomy';
-    const tagPayload = buildListingTags(
-      row.services || '',
-      row.category || '',
-      row.subcategory || '',
-      getCategoryById(categoryId)?.name || '',
-      getSubcategoryById(subcategoryId)?.name || '',
-      normalizedPhone,
-      row.businessName
+  const buildImportPreview = (rows: BulkImportRow[]) => {
+    const reservedExistingIds = new Set(
+      businesses.map((business) => String(business.id || '').trim().toLowerCase()).filter(Boolean)
     );
+    const previewAssignedIds = new Map<string, number>();
 
-    if (!row.businessName.trim()) errors.push('Business Name is required.');
-    if (normalizedPhone.length > 0 && normalizedPhone.length !== 10) errors.push('Mobile must be blank or a valid 10-digit number.');
-    errors.push(...geographyResolution.errors);
-    if (resolvedLocalityId && !localities.some(l => l.id === resolvedLocalityId)) {
-      errors.push(`Mapped locality "${resolvedLocalityId}" does not exist.`);
-    }
-
-    const duplicate = businesses.find((biz) => {
-      const bizPincode = biz.pincode || MASTER_AREAS.find(a => a.id === biz.areaId)?.pincode || '';
-      return (
-        biz.name.trim().toLowerCase() === row.businessName.trim().toLowerCase() &&
-        normalizedPhone.length > 0 &&
-        normalizePhone(biz.phone) === normalizedPhone &&
-        bizPincode === resolvedPincode &&
-        biz.localityId === resolvedLocalityId
+    return rows.map((row, idx): ImportPreviewRow => {
+      const rowNumber = idx + 2;
+      const errors: string[] = [];
+      const normalizedPhone = normalizePhone(row.mobile);
+      const geographyResolution = resolveImportGeography(row);
+      const resolvedPincode = geographyResolution.resolvedPincode;
+      const resolvedLocalityId = geographyResolution.resolvedLocalityId;
+      const rawListingId = String(row.listingId || '').trim();
+      const generatedListingSeed = `${row.businessName || 'listing'}-${normalizedPhone || resolvedPincode || rowNumber}`;
+      const listingId = rawListingId || buildUniqueAdminId(`lst-${generatedListingSeed}`, new Set([
+        ...reservedExistingIds,
+        ...previewAssignedIds.keys(),
+      ]));
+      const normalizedListingId = String(listingId || '').trim();
+      const normalizedListingIdKey = normalizedListingId.toLowerCase();
+      const categoryId = resolveCategoryFromImport(row.category);
+      const subcategoryId = resolveSubcategoryFromImport(row.subcategory, categoryId);
+      const requiresTaxonomyMapping = !isBusinessTaxonomyMapped({ categoryId, subcategoryId });
+      const taxonomyStatusLabel = !String(row.category || '').trim()
+        ? 'Category missing - send to mapping queue'
+        : !categoryId
+          ? `Category "${row.category}" not found in master data`
+          : !String(row.subcategory || '').trim()
+            ? 'Subcategory missing - send to mapping queue'
+            : !subcategoryId
+              ? `Subcategory "${row.subcategory}" not found under selected category`
+              : 'Mapped to master taxonomy';
+      const tagPayload = buildListingTags(
+        row.services || '',
+        row.category || '',
+        row.subcategory || '',
+        getCategoryById(categoryId)?.name || '',
+        getSubcategoryById(subcategoryId)?.name || '',
+        normalizedPhone,
+        row.businessName
       );
-    });
 
-    const previewStatus: ImportPreviewRow['previewStatus'] = errors.length ? 'fail' : duplicate ? 'update' : 'ready';
-    return {
-      ...row,
-      rowNumber: idx + 2,
+      if (!row.businessName.trim()) errors.push('Business Name is required.');
+      if (!normalizedListingId) errors.push('Localisy Listing ID is required.');
+      if (normalizedPhone.length > 0 && normalizedPhone.length !== 10) errors.push('Mobile must be blank or a valid 10-digit number.');
+      errors.push(...geographyResolution.errors);
+      if (resolvedLocalityId && !localities.some((locality) => locality.id === resolvedLocalityId)) {
+        errors.push(`Mapped locality "${resolvedLocalityId}" does not exist.`);
+      }
+      const existingBusinessByListingId = normalizedListingIdKey
+        ? businesses.find((business) => String(business.id || '').trim().toLowerCase() === normalizedListingIdKey)
+        : undefined;
+      if (normalizedListingIdKey && previewAssignedIds.has(normalizedListingIdKey)) {
+        errors.push(`Localisy Listing ID "${normalizedListingId}" is duplicated in this upload sheet.`);
+      }
+
+      const duplicate = businesses.find((biz) => {
+        const bizPincode = biz.pincode || MASTER_AREAS.find((area) => area.id === biz.areaId)?.pincode || '';
+        return (
+          biz.name.trim().toLowerCase() === row.businessName.trim().toLowerCase() &&
+          normalizedPhone.length > 0 &&
+          normalizePhone(biz.phone) === normalizedPhone &&
+          bizPincode === resolvedPincode &&
+          biz.localityId === resolvedLocalityId
+        );
+      });
+      if (rawListingId && duplicate && existingBusinessByListingId && duplicate.id !== existingBusinessByListingId.id) {
+        errors.push(`Localisy Listing ID "${normalizedListingId}" belongs to another listing. Matching listing already exists as "${duplicate.id}".`);
+      }
+
+      const previewStatus: ImportPreviewRow['previewStatus'] = errors.length ? 'fail' : (existingBusinessByListingId || duplicate) ? 'update' : 'ready';
+      if (normalizedListingIdKey) {
+        previewAssignedIds.set(normalizedListingIdKey, rowNumber);
+      }
+      return {
+        ...row,
+        listingId: normalizedListingId,
+        googlePlaceId: String(row.googlePlaceId || '').trim() || undefined,
+      rowNumber,
       previewStatus,
       errors,
       normalizedPhone,
@@ -2151,18 +1631,19 @@ export default function AdminConsole({
       resolvedLocalityId,
       requiresTaxonomyMapping,
       taxonomyStatusLabel,
-      importAction: duplicate ? 'update' : 'create',
-      existingBusinessId: duplicate?.id,
+      importAction: (existingBusinessByListingId || duplicate) ? 'update' : 'create',
+      existingBusinessId: existingBusinessByListingId?.id || duplicate?.id,
       localityId: resolvedLocalityId,
       areaId: geographyResolution.areaId || '',
       categoryId,
       subcategoryId,
       sourceCategoryLabel: row.category?.trim() || undefined,
-      sourceSubcategoryLabel: row.subcategory?.trim() || undefined,
-      taxonomyMapped: !requiresTaxonomyMapping,
-      tags: tagPayload
-    };
-  });
+        sourceSubcategoryLabel: row.subcategory?.trim() || undefined,
+        taxonomyMapped: !requiresTaxonomyMapping,
+        tags: tagPayload
+      };
+    });
+  };
 
   const handleCsvImport = async (file: File) => {
     const text = await file.text();
@@ -2170,6 +1651,9 @@ export default function AdminConsole({
     if (lines.length < 2) {
       setImportResult('CSV appears empty or missing rows.');
       setImportPreview([]);
+      setParsedImportRowCount(0);
+      setSuggestedImportChunkCount(1);
+      setIsImportChunkLimitExceeded(false);
       return;
     }
     const headers = parseCsvLine(lines[0]).map((h) => h.toLowerCase());
@@ -2179,9 +1663,15 @@ export default function AdminConsole({
         const idx = headers.indexOf(name.toLowerCase());
         return idx >= 0 ? (cols[idx] || '') : '';
       };
-      return {
-        businessName: get('Business Name'),
-        address: get('Address'),
+        return {
+          listingId: get('Localisy Listing ID') || get('Listing ID') || get('LocalisyListingId') || get('ListingId'),
+          googlePlaceId: get('Google Place ID') || get('GooglePlaceId') || get('Place ID') || get('PlaceId'),
+          imageUrl: get('Image URL') || get('ImageUrl'),
+          logoUrl: get('Logo URL') || get('LogoUrl'),
+          coverImageUrl: get('Cover Image URL') || get('CoverImageUrl'),
+          galleryUrls: get('Gallery URLs') || get('GalleryUrls'),
+          businessName: get('Business Name'),
+          address: get('Address'),
         area: get('Area'),
         locality: get('Locality') || get('Locality Name'),
         localityId: get('Locality ID') || get('LocalityId'),
@@ -2200,7 +1690,21 @@ export default function AdminConsole({
       };
     }).filter((r) => r.businessName.trim());
 
+    setParsedImportRowCount(rows.length);
+    setSuggestedImportChunkCount(Math.max(1, Math.ceil(rows.length / BULK_IMPORT_CHUNK_SIZE)));
+
+    if (rows.length > BULK_IMPORT_CHUNK_SIZE) {
+      setImportPreview([]);
+      setImportPreviewPage(1);
+      setIsImportChunkLimitExceeded(true);
+      setImportResult(
+        `This CSV contains ${rows.length.toLocaleString()} listings. Please split it into ${Math.ceil(rows.length / BULK_IMPORT_CHUNK_SIZE)} files of up to ${BULK_IMPORT_CHUNK_SIZE.toLocaleString()} rows each before previewing or uploading.`
+      );
+      return;
+    }
+
     const preview = buildImportPreview(rows);
+    setIsImportChunkLimitExceeded(false);
     setImportPreview(preview);
     setImportPreviewPage(1);
     const ready = preview.filter(r => r.previewStatus === 'ready').length;
@@ -2213,6 +1717,10 @@ export default function AdminConsole({
   const handleApplyImportPreview = () => {
     if (!onBulkImportBusinesses) {
       setImportResult('Bulk import callback is not configured.');
+      return;
+    }
+    if (importPreview.length > BULK_IMPORT_CHUNK_SIZE) {
+      setImportResult(`This preview exceeds the ${BULK_IMPORT_CHUNK_SIZE.toLocaleString()} row rollout limit. Please split the CSV into smaller chunks first.`);
       return;
     }
     const validRows = importPreview.filter(r => r.previewStatus !== 'fail');
@@ -2229,16 +1737,57 @@ export default function AdminConsole({
 
   const downloadFailedImportCsv = () => {
     const failedRows = importPreview.filter(r => r.previewStatus === 'fail');
-    const header = ['Row', 'Business Name', 'Address', 'Area', 'Locality', 'Locality ID', 'Area ID', 'City', 'State', 'PIN', 'Mobile', 'Rating', 'Reviews', 'Services', 'Category', 'Subcategory', 'Latitude', 'Longitude', 'Error Details'];
+    const header = ['Row', 'Localisy Listing ID', 'Google Place ID', 'Image URL', 'Logo URL', 'Cover Image URL', 'Gallery URLs', 'Business Name', 'Address', 'Area', 'Locality', 'Locality ID', 'Area ID', 'City', 'State', 'PIN', 'Mobile', 'Rating', 'Reviews', 'Services', 'Category', 'Subcategory', 'Latitude', 'Longitude', 'Error Details'];
     const escapeCsv = (val: string | number) => `"${String(val ?? '').replace(/"/g, '""')}"`;
     const body = failedRows.map(r => [
-      r.rowNumber, r.businessName, r.address, r.area, r.locality || '', r.localityId || '', r.areaId || '', r.city, r.state, r.pin, r.mobile, r.rating, r.reviews, r.services, r.category || '', r.subcategory || '', r.latitude, r.longitude, r.errors.join('; ')
+      r.rowNumber, r.listingId || '', r.googlePlaceId || '', r.imageUrl || '', r.logoUrl || '', r.coverImageUrl || '', r.galleryUrls || '', r.businessName, r.address, r.area, r.locality || '', r.localityId || '', r.areaId || '', r.city, r.state, r.pin, r.mobile, r.rating, r.reviews, r.services, r.category || '', r.subcategory || '', r.latitude, r.longitude, r.errors.join('; ')
     ].map(escapeCsv).join(','));
     const blob = new Blob([[header.map(escapeCsv).join(','), ...body].join('\n')], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
     link.download = 'failed-business-imports.csv';
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const downloadImportPreviewCsv = () => {
+    const header = ['Row', 'Localisy Listing ID', 'Google Place ID', 'Image URL', 'Logo URL', 'Cover Image URL', 'Gallery URLs', 'Business Name', 'Address', 'Area', 'Locality', 'Locality ID', 'Area ID', 'City', 'State', 'PIN', 'Mobile', 'Rating', 'Reviews', 'Services', 'Category', 'Subcategory', 'Latitude', 'Longitude', 'Preview Status', 'Existing Business ID', 'Error Details'];
+    const escapeCsv = (val: string | number) => `"${String(val ?? '').replace(/"/g, '""')}"`;
+    const body = importPreview.map((row) => [
+      row.rowNumber,
+      row.listingId || '',
+      row.googlePlaceId || '',
+      row.imageUrl || '',
+      row.logoUrl || '',
+      row.coverImageUrl || '',
+      row.galleryUrls || '',
+      row.businessName,
+      row.address,
+      row.area,
+      row.locality || '',
+      row.localityId || '',
+      row.areaId || '',
+      row.city,
+      row.state,
+      row.pin,
+      row.mobile,
+      row.rating,
+      row.reviews,
+      row.services,
+      row.category || '',
+      row.subcategory || '',
+      row.latitude,
+      row.longitude,
+      row.previewStatus,
+      row.existingBusinessId || '',
+      row.errors.join('; ')
+    ].map(escapeCsv).join(','));
+    const blob = new Blob([[header.map(escapeCsv).join(','), ...body].join('\n')], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'listing-import-preview.csv';
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -4168,6 +3717,23 @@ export default function AdminConsole({
     }
   ) => {
     const isExpanded = expandedSectionCardIds.includes(section.id);
+    return (
+      <EditableHomepageSectionCard
+        section={section}
+        index={index}
+        isExpanded={isExpanded}
+        sectionTypeLabel={homepageSectionLabels[section.sectionType]}
+        localities={localities}
+        filteredBusinesses={filteredBusinesses}
+        parsePincodeList={parsePincodeList}
+        onToggleExpanded={() => toggleSectionCardExpanded(section.id)}
+        onMoveUp={handlers.onMoveUp}
+        onMoveDown={handlers.onMoveDown}
+        onDuplicate={handlers.onDuplicate}
+        onDelete={handlers.onDelete}
+        onUpdate={handlers.onUpdate}
+      />
+    );
     const targetingSummary = section.localityIds?.length
       ? `${section.localityIds.length} localit${section.localityIds.length === 1 ? 'y' : 'ies'}`
       : 'all localities';
@@ -4602,7 +4168,12 @@ export default function AdminConsole({
             pagedImportPreview={pagedImportPreview}
             safeImportPreviewPage={safeImportPreviewPage}
             importPreviewTotalPages={importPreviewTotalPages}
+            importChunkLimit={BULK_IMPORT_CHUNK_SIZE}
+            parsedRowCount={parsedImportRowCount}
+            suggestedChunkCount={suggestedImportChunkCount}
+            chunkLimitExceeded={isImportChunkLimitExceeded}
             onCsvFileSelected={handleCsvImport}
+            onDownloadPreviewCsv={downloadImportPreviewCsv}
             onDownloadFailedCsv={downloadFailedImportCsv}
             onApplyImportPreview={handleApplyImportPreview}
             onPreviousPage={() => setImportPreviewPage((prev) => Math.max(1, prev - 1))}

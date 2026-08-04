@@ -22,6 +22,23 @@ import NoResultsState from './webportal/NoResultsState';
 import ResultsMapView from './webportal/ResultsMapView';
 import { getBusinessImageUrl, getCategoryFallbackImage, hasUploadedBusinessImage } from '../utils/businessImage';
 import { getMediaProxyUrl } from '../utils/mediaUrl';
+import { getAdCtr as getAdCtrService, getAdDeliveryScore as getAdDeliveryScoreService, rankAdsForDelivery as rankAdsForDeliveryService } from '../services/webportal/adDelivery';
+import {
+  dedupeBusinessesForExperience as dedupeBusinessesForExperienceService,
+  filterSearchSuggestions,
+  getBusinessAreaName as getBusinessAreaNameService,
+  getBusinessCategoryLabel as getBusinessCategoryLabelService,
+  getBusinessRecommendedScore as getBusinessRecommendedScoreService,
+  getBusinessSubcategoryLabel as getBusinessSubcategoryLabelService,
+  isCivicIntent as isCivicIntentService,
+  isEssentialCommunityService as isEssentialCommunityServiceService,
+  isHomeBasedBusiness as isHomeBasedBusinessService,
+  isHomeBusinessIntent as isHomeBusinessIntentService,
+  isWomenLedHomeBusiness as isWomenLedHomeBusinessService,
+  matchesBusinessSearch as matchesBusinessSearchService,
+  type SearchSuggestion,
+} from '../services/webportal/businessDiscovery';
+import { getBusinessGallery } from '../services/webportal/publicExperience';
 import {
   BUSINESS_CATEGORIES,
   BUSINESS_SUBCATEGORIES,
@@ -198,18 +215,6 @@ type ViewAllModalState =
   | { kind: 'categories'; title: string; items: Array<{ id: string; name: string }> }
   | { kind: 'emergency'; title: string; items: Array<{ id: string; name: string }> };
 
-type SearchSuggestion = {
-  id: string;
-  type: 'category' | 'subcategory' | 'business' | 'intent' | 'locality' | 'recent';
-  displayValue: string;
-  queryValue: string;
-  categoryId?: string;
-  subcategoryId?: string;
-  businessId?: string;
-  localityId?: string;
-  metaLabel?: string;
-};
-
 function SwipeDots({ totalDots, activeIndex = 0, className = '' }: SwipeDotsProps) {
   if (totalDots <= 1) return null;
 
@@ -245,7 +250,9 @@ interface WebPortalProps {
   onUserSessionChange: (sess: UserSession) => void;
   viewedBusinessIds: string[];
   savedBusinessIds: string[];
+  compareBusinessIds: string[];
   onToggleSavedBusiness: (businessId: string) => void;
+  onToggleComparedBusiness: (businessId: string) => { allowed: boolean; active: boolean; reason?: string };
   buyerActivityEvents: BuyerActivityEvent[];
   onUnlockBusinessContact: (payload: { businessId: string; viewerName?: string; viewerPhone?: string; unlockToken?: string }) => Promise<boolean> | boolean;
   onSubmitApplication: (bizData: Omit<Business, 'id' | 'status' | 'createdAt' | 'rating' | 'reviewCount'>) => void;
@@ -294,7 +301,9 @@ export default function WebPortal({
   onUserSessionChange,
   viewedBusinessIds,
   savedBusinessIds,
+  compareBusinessIds,
   onToggleSavedBusiness,
+  onToggleComparedBusiness,
   buyerActivityEvents,
   onUnlockBusinessContact,
   onSubmitApplication,
@@ -430,6 +439,7 @@ export default function WebPortal({
 
   // Rich Discovery Filters
   const [filterDistance, setFilterDistance] = useState<'all' | '1' | '2' | '5'>('all');
+  const [filterCityId, setFilterCityId] = useState('all');
   const [filterRating, setFilterRating] = useState<0 | 4 | 4.5>(0);
   const [filterOpenNow, setFilterOpenNow] = useState(false);
   const [filterPriceRange, setFilterPriceRange] = useState<'all' | '₹' | '₹₹' | '₹₹₹' | '₹₹₹₹'>('all');
@@ -470,6 +480,14 @@ export default function WebPortal({
   const [communityBody, setCommunityBody] = useState('');
   const [communitySection, setCommunitySection] = useState<'qna' | 'deals' | 'recommendations' | 'sponsored'>('qna');
   const [communityTags, setCommunityTags] = useState(`monsoon, ${initialMasterLocality?.name.split(',')[0] || 'Local Area'}`);
+  const [recommendationRequestOpen, setRecommendationRequestOpen] = useState(false);
+  const [recommendationRequestName, setRecommendationRequestName] = useState(userSession.userName || '');
+  const [recommendationRequestPhone, setRecommendationRequestPhone] = useState(userSession.userPhone || '');
+  const [recommendationRequestPincode, setRecommendationRequestPincode] = useState(savedPincode || initialPrimaryArea?.pincode || '');
+  const [recommendationRequestNeed, setRecommendationRequestNeed] = useState('');
+  const [recommendationRequestNotes, setRecommendationRequestNotes] = useState('');
+  const [applyFormError, setApplyFormError] = useState('');
+  const [applyDuplicateBusinessId, setApplyDuplicateBusinessId] = useState<string | null>(null);
   const [activeLeadAd, setActiveLeadAd] = useState<ListingAd | null>(null);
   const [leadName, setLeadName] = useState('');
   const [leadMobile, setLeadMobile] = useState('');
@@ -794,7 +812,27 @@ export default function WebPortal({
     const locality = localities.find((entry) => entry.id === biz.localityId);
     const localitySlug = locality?.slug || biz.localityId;
     const seoSlug = SEO_INTENT_SLUG_BY_CATEGORY[biz.categoryId] || slugifyForUrl(biz.categoryId);
-    return `/${localitySlug}/${seoSlug}/${slugifyForUrl(biz.name)}-${biz.id}`;
+    return `/${localitySlug}/${seoSlug}/${biz.slug || `${slugifyForUrl(biz.name)}-${biz.id}`}`;
+  };
+  const buildAbsoluteListingUrl = (biz: Business) => {
+    const path = buildListingRoutePath(biz);
+    if (typeof window === 'undefined') return path;
+    return new URL(path, window.location.origin).toString();
+  };
+  const copyTextToClipboard = async (text: string) => {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+    const helper = document.createElement('textarea');
+    helper.value = text;
+    helper.setAttribute('readonly', 'true');
+    helper.style.position = 'absolute';
+    helper.style.left = '-9999px';
+    document.body.appendChild(helper);
+    helper.select();
+    document.execCommand('copy');
+    document.body.removeChild(helper);
   };
   const pushHistoryIfNeeded = (nextPath: string) => {
     if (`${window.location.pathname}${window.location.search}` === nextPath) return;
@@ -847,6 +885,45 @@ export default function WebPortal({
     setSelectedBiz(biz);
     pushHistoryIfNeeded(buildListingRoutePath(biz));
   };
+  const handleShareBusinessListing = async (biz: Business) => {
+    const listingUrl = buildAbsoluteListingUrl(biz);
+    const shareText = `${biz.name} on Localisy${getBusinessAreaName(biz) ? `, ${getBusinessAreaName(biz)}` : ''}`;
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: biz.name,
+          text: shareText,
+          url: listingUrl,
+        });
+      } else {
+        await copyTextToClipboard(listingUrl);
+        alert(`Listing link copied for "${biz.name}".`);
+      }
+      onLogAuditEvent?.(
+        'contact_view',
+        'Shared listing',
+        `Business: "${biz.name}" | URL: "${listingUrl}"`
+      );
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      try {
+        await copyTextToClipboard(listingUrl);
+        alert(`Listing link copied for "${biz.name}".`);
+      } catch {
+        alert('Unable to share listing right now.');
+      }
+    }
+  };
+  const handleShareBusinessToWhatsapp = (biz: Business) => {
+    const listingUrl = buildAbsoluteListingUrl(biz);
+    const message = `Check out ${biz.name} on Localisy: ${listingUrl}`;
+    onLogAuditEvent?.(
+      'contact_view',
+      'Shared listing to WhatsApp',
+      `Business: "${biz.name}" | URL: "${listingUrl}"`
+    );
+    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer');
+  };
   const closeBusinessDetails = () => {
     setSelectedBiz(null);
     pushHistoryIfNeeded(buildCategoryRoutePath(selectedCategory));
@@ -887,6 +964,7 @@ export default function WebPortal({
     searchMode,
     selectedCategory,
     selectedSubcategory,
+    filterCityId,
     sortBy,
     filterDistance,
     filterRating,
@@ -923,25 +1001,6 @@ export default function WebPortal({
   useEffect(() => {
     setReviewsPage(1);
   }, [selectedBiz?.id]);
-
-  useEffect(() => {
-    if (resultsViewMode === 'map' && searchResultMapBusinesses.length === 0) {
-      setResultsViewMode('grid');
-    }
-  }, [resultsViewMode, searchResultMapBusinesses.length]);
-
-  useEffect(() => {
-    if (pagedSearchResultBusinesses.length === 0) {
-      setActiveMapBusinessId(null);
-      return;
-    }
-    const firstMappedBusiness = pagedSearchResultBusinesses.find((business) => business.gpsCoordinates)?.id || null;
-    setActiveMapBusinessId((prev) => (
-      prev && pagedSearchResultBusinesses.some((business) => business.id === prev)
-        ? prev
-        : firstMappedBusiness
-    ));
-  }, [pagedSearchResultBusinesses]);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -1005,16 +1064,6 @@ export default function WebPortal({
       );
     }
   }, [uploadedImageTag, searchMode, onLogAuditEvent, activeLocalityId, isResultsPage]);
-
-  useEffect(() => {
-    if (!onLogAuditEvent) return;
-    if (!isResultsPage || !normalizedActiveSearch || searchResultBusinesses.length > 0) return;
-    onLogAuditEvent(
-      'search',
-      'No-result search',
-      `Zone: "${activeLocalityId}" | Query: "${activeSearchText}" | Category: "${selectedCategory}"`
-    );
-  }, [activeLocalityId, activeSearchText, isResultsPage, normalizedActiveSearch, onLogAuditEvent, searchResultBusinesses.length, selectedCategory]);
 
   const handleNextSlide = () => {
     setCarouselIndex(prev => (prev + 1) % carouselImages.length);
@@ -1164,6 +1213,69 @@ export default function WebPortal({
     alert("Discussion thread posted live on the locality bulletin board!");
   };
 
+  const activeSearchText = (searchMode === 'voice' && voiceTranscript) ? voiceTranscript : (isResultsPage ? deferredSearchQuery : '');
+  const normalizedActiveSearch = normalizeSearchText(activeSearchText);
+
+  const openRecommendationRequest = () => {
+    const seededNeed = activeSearchText.trim()
+      || searchQuery.trim()
+      || (selectedSubcategory !== 'all'
+        ? getSubcategoryById(selectedSubcategory)?.name || ''
+        : selectedCategory !== 'all'
+          ? getCategoryById(selectedCategory)?.name || ''
+          : '');
+    setRecommendationRequestName(userSession.userName || '');
+    setRecommendationRequestPhone(userSession.userPhone || '');
+    setRecommendationRequestPincode(savedPincode || listingPincode || initialPrimaryArea?.pincode || '');
+    setRecommendationRequestNeed(seededNeed);
+    setRecommendationRequestNotes('');
+    setRecommendationRequestOpen(true);
+  };
+
+  const handleRecommendationRequestSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const requesterName = recommendationRequestName.trim();
+    const requesterPhone = recommendationRequestPhone.replace(/\D/g, '').slice(-10);
+    const requestedNeed = recommendationRequestNeed.trim();
+    const categoryLabel = selectedSubcategory !== 'all'
+      ? getSubcategoryById(selectedSubcategory)?.name || selectedSubcategory
+      : selectedCategory !== 'all'
+        ? getCategoryById(selectedCategory)?.name || selectedCategory
+        : 'General search';
+
+    if (!requesterName || requesterPhone.length !== 10 || !/^\d{6}$/.test(recommendationRequestPincode) || !requestedNeed) {
+      alert('Please enter your name, 10-digit mobile number, 6-digit pincode, and what you are looking for.');
+      return;
+    }
+
+    const detailLines = [
+      `Need: ${requestedNeed}`,
+      `Search context: ${categoryLabel}`,
+      `Pincode: ${recommendationRequestPincode}`,
+      `Locality: ${currentLocality.name}`,
+      recommendationRequestNotes.trim() ? `Preferences: ${recommendationRequestNotes.trim()}` : '',
+    ].filter(Boolean);
+
+    onAddCommunityItem({
+      localityId: activeLocalityId,
+      type: 'recommendation',
+      title: `Need recommendation: ${requestedNeed}`,
+      content: detailLines.join(' | '),
+      authorName: requesterName,
+      authorPhone: requesterPhone,
+    });
+
+    onLogAuditEvent?.(
+      'data_entry',
+      'Submitted recommendation request',
+      `Need: "${requestedNeed}" | Locality: "${activeLocalityId}" | Pincode: "${recommendationRequestPincode}"`
+    );
+
+    setRecommendationRequestOpen(false);
+    setRecommendationRequestNotes('');
+    alert('Your recommendation request has been posted for local follow-up.');
+  };
+
   // Launch targeted multi-channel CRM customer campaign
   const handleRunCampaignSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1204,15 +1316,22 @@ export default function WebPortal({
       : selectedLocalityMappedPincodes.includes(businessPincode);
     return browsingLocalityIds.includes(b.localityId) && b.status === 'approved' && matchesMappedPincode;
   });
-  const activeSearchText = (searchMode === 'voice' && voiceTranscript) ? voiceTranscript : (isResultsPage ? deferredSearchQuery : '');
-  const normalizedActiveSearch = normalizeSearchText(activeSearchText);
-
+  const availableCityOptions = useMemo(() => {
+    const cityIds = Array.from(new Set(approvedInLocality.map((business) => business.cityId).filter(Boolean)));
+    return cityIds
+      .map((cityId) => ({
+        id: cityId,
+        name: MASTER_CITIES.find((city) => city.id === cityId)?.name || cityId,
+      }))
+      .sort((left, right) => left.name.localeCompare(right.name));
+  }, [approvedInLocality]);
   const filteredBusinesses = approvedInLocality.filter(b => {
     const matchesSearch = matchesBusinessSearch(b, normalizedActiveSearch);
     
     // Check if matching primary category
     const matchesCategory = selectedCategory === 'all' || b.categoryId === selectedCategory;
     const matchesSubcategory = selectedSubcategory === 'all' || b.subcategoryId === selectedSubcategory;
+    const matchesCity = filterCityId === 'all' || b.cityId === filterCityId;
 
     // Discovery Filter: Distance
     const matchesDistance = filterDistance === 'all' || (b.distance !== undefined && b.distance <= parseFloat(filterDistance));
@@ -1245,7 +1364,7 @@ export default function WebPortal({
     // Discovery Filter: Experience min years
     const matchesExperience = filterExperience === 'all' || (b.experienceYears !== undefined && b.experienceYears >= parseFloat(filterExperience));
 
-    return matchesSearch && matchesCategory && matchesSubcategory && matchesDistance && matchesRating && matchesOpenNow && matchesPrice && matchesDelivery && matchesOffers && matchesVerified && matchesLanguage && matchesPayment && matchesExperience;
+    return matchesSearch && matchesCategory && matchesSubcategory && matchesCity && matchesDistance && matchesRating && matchesOpenNow && matchesPrice && matchesDelivery && matchesOffers && matchesVerified && matchesLanguage && matchesPayment && matchesExperience;
   });
   const dedupedFilteredBusinesses = dedupeBusinessesForExperience(filteredBusinesses, normalizedActiveSearch, 'results');
 
@@ -1329,6 +1448,15 @@ export default function WebPortal({
     (safeSearchResultPage - 1) * REGULAR_PAGE_SIZE,
     safeSearchResultPage * REGULAR_PAGE_SIZE
   );
+  useEffect(() => {
+    if (!onLogAuditEvent) return;
+    if (!isResultsPage || !normalizedActiveSearch || searchResultBusinesses.length > 0) return;
+    onLogAuditEvent(
+      'search',
+      'No-result search',
+      `Zone: "${activeLocalityId}" | Query: "${activeSearchText}" | Category: "${selectedCategory}"`
+    );
+  }, [activeLocalityId, activeSearchText, isResultsPage, normalizedActiveSearch, onLogAuditEvent, searchResultBusinesses.length, selectedCategory]);
   const searchResultMapBusinesses = pagedSearchResultBusinesses.filter((business) => (
     business.gpsCoordinates &&
     Number.isFinite(business.gpsCoordinates.lat) &&
@@ -1356,6 +1484,26 @@ export default function WebPortal({
     };
   };
   const activeMapBusiness = searchResultMapBusinesses.find((business) => business.id === activeMapBusinessId) || searchResultMapBusinesses[0] || null;
+  useEffect(() => {
+    if (resultsViewMode === 'map' && searchResultMapBusinesses.length === 0) {
+      setResultsViewMode('grid');
+    }
+  }, [resultsViewMode, searchResultMapBusinesses.length]);
+  useEffect(() => {
+    if (pagedSearchResultBusinesses.length === 0) {
+      setActiveMapBusinessId(null);
+      return;
+    }
+    const firstMappedBusiness = pagedSearchResultBusinesses.find((business) => business.gpsCoordinates)?.id || null;
+    setActiveMapBusinessId((prev) => (
+      prev && pagedSearchResultBusinesses.some((business) => business.id === prev)
+        ? prev
+        : firstMappedBusiness
+    ));
+  }, [pagedSearchResultBusinesses]);
+  const applyDuplicateBusiness = applyDuplicateBusinessId
+    ? businesses.find((business) => business.id === applyDuplicateBusinessId) || null
+    : null;
   const searchSuggestions: SearchSuggestion[] = [
     ...recentSearches.map((query, index) => ({
       id: `recent-${index}-${slugifyForUrl(query)}`,
@@ -1417,37 +1565,10 @@ export default function WebPortal({
       };
     }),
   ];
-  const filteredSearchSuggestions = useMemo<SearchSuggestion[]>(() => {
-    const normalizedQuery = normalizeSearchText(searchQuery);
-    if (!normalizedQuery) return [];
-    return searchSuggestions
-      .map((suggestion) => {
-        const normalizedDisplay = normalizeSearchText(suggestion.displayValue);
-        const normalizedValue = normalizeSearchText(suggestion.queryValue);
-        let score = 0;
-
-        if (normalizedDisplay === normalizedQuery || normalizedValue === normalizedQuery) score += 140;
-        else if (normalizedDisplay.startsWith(normalizedQuery) || normalizedValue.startsWith(normalizedQuery)) score += 110;
-        else if (normalizedDisplay.includes(normalizedQuery) || normalizedValue.includes(normalizedQuery)) score += 72;
-
-        tokenizeSearchText(normalizedQuery).forEach((token) => {
-          if (normalizedDisplay.includes(token) || normalizedValue.includes(token)) score += 18;
-        });
-
-        if (suggestion.type === 'intent') score += 12;
-        if (suggestion.type === 'business') score += 10;
-        if (suggestion.type === 'recent') score += 8;
-        if (suggestion.type === 'locality') score += 14;
-        if (isHomeBusinessIntent(normalizedQuery) && suggestion.queryValue.toLowerCase().includes('home')) score += 24;
-        if (isCivicIntent(normalizedQuery) && /hospital|clinic|bank|blood|police/.test(normalizedDisplay)) score += 24;
-
-        return { suggestion, score };
-      })
-      .filter((entry) => entry.score > 0)
-      .sort((a, b) => b.score - a.score || a.suggestion.displayValue.localeCompare(b.suggestion.displayValue))
-      .map((entry) => entry.suggestion)
-      .slice(0, 8);
-  }, [searchQuery, searchSuggestions]);
+  const filteredSearchSuggestions = useMemo<SearchSuggestion[]>(
+    () => filterSearchSuggestions(searchQuery, searchSuggestions),
+    [searchQuery, searchSuggestions]
+  );
   const topSearchSuggestion = filteredSearchSuggestions[0] || null;
   const shouldShowSearchSuggestions = (
     searchMode === 'keyword' &&
@@ -1513,6 +1634,33 @@ export default function WebPortal({
     safeSellerWidgetLeadsPage * LEADS_PAGE_SIZE
   );
   const selectedBizReviews = selectedBiz ? reviews.filter((review) => review.businessId === selectedBiz.id) : [];
+  const relatedSelectedBusinesses = selectedBiz
+    ? businesses
+      .filter((business) => (
+        business.id !== selectedBiz.id &&
+        business.status === 'approved' &&
+        (
+          business.localityId === selectedBiz.localityId ||
+          business.categoryId === selectedBiz.categoryId ||
+          (!!selectedBiz.subcategoryId && business.subcategoryId === selectedBiz.subcategoryId)
+        )
+      ))
+      .map((business) => {
+        let score = getBusinessRecommendedScore(
+          business,
+          `${getBusinessCategoryLabel(selectedBiz)} ${getBusinessSubcategoryLabel(selectedBiz)} ${selectedBiz.tags?.join(' ') || ''}`.trim(),
+          'results'
+        );
+        if (business.localityId === selectedBiz.localityId) score += 18;
+        if (business.areaId === selectedBiz.areaId) score += 24;
+        if (business.categoryId === selectedBiz.categoryId) score += 20;
+        if (selectedBiz.subcategoryId && business.subcategoryId === selectedBiz.subcategoryId) score += 34;
+        return { business, score };
+      })
+      .sort((left, right) => right.score - left.score || right.business.rating - left.business.rating || left.business.name.localeCompare(right.business.name))
+      .slice(0, 3)
+      .map((entry) => entry.business)
+    : [];
   const reviewsTotalPages = Math.max(1, Math.ceil(selectedBizReviews.length / REVIEWS_PAGE_SIZE));
   const safeReviewsPage = Math.min(reviewsPage, reviewsTotalPages);
   const pagedSelectedBizReviews = selectedBizReviews.slice(
@@ -1712,21 +1860,17 @@ export default function WebPortal({
     return Math.min(pageCount - 1, Math.floor((homepageRotationTick % itemCount) / Math.max(1, visibleCount)));
   };
 
-  const getBusinessAreaName = (biz: Business) => {
-    const areaName = MASTER_AREAS.find((area) => area.id === biz.areaId)?.name;
-    if (areaName) return areaName;
-    return localities.find((locality) => locality.id === biz.localityId)?.name.split(',')[0] || 'Area not set';
-  };
+  const getBusinessAreaName = (biz: Business) => getBusinessAreaNameService(localities, biz);
 
   function getBusinessCategoryLabel(biz: Business) {
-    return getCategoryById(biz.categoryId)?.name || biz.sourceCategoryLabel || biz.categoryId || 'Local Service';
+    return getBusinessCategoryLabelService(biz);
   }
 
   function getBusinessSubcategoryLabel(biz: Business) {
-    return getSubcategoryById(biz.subcategoryId)?.name || biz.sourceSubcategoryLabel || getBusinessCategoryLabel(biz);
+    return getBusinessSubcategoryLabelService(biz);
   }
 
-  const normalizeSearchText = (value: string) => {
+  function normalizeSearchText(value: string) {
     const replacements: Array<[RegExp, string]> = [
       [/\bdr\b/g, 'doctor'],
       [/\bdocter\b|\bdocotor\b|\bdaktar\b|\bdaaktar\b/g, 'doctor'],
@@ -1764,116 +1908,29 @@ export default function WebPortal({
       .replace(/[^a-z0-9\s-]/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
-  };
+  }
 
-  const tokenizeSearchText = (value: string) => normalizeSearchText(value).split(/[\s,/-]+/).filter(Boolean);
+  function isHomeBusinessIntent(query: string) {
+    return isHomeBusinessIntentService(query);
+  }
 
-  const getBusinessSearchDocument = (biz: Business) => {
-    const areaName = getBusinessAreaName(biz);
-    const localityName = localities.find((locality) => locality.id === biz.localityId)?.name || '';
-    const cityName = MASTER_CITIES.find((city) => city.id === biz.cityId)?.name || '';
-    const stateName = MASTER_STATES.find((state) => state.id === biz.stateId)?.name || '';
-    return [
-      biz.name,
-      biz.description,
-      biz.address,
-      areaName,
-      localityName,
-      cityName,
-      stateName,
-      biz.pincode,
-      getBusinessCategoryLabel(biz),
-      getBusinessSubcategoryLabel(biz),
-      biz.isHomeBased ? 'home business homemade home kitchen' : '',
-      biz.isWomenLed ? 'women-led women owned housewife' : '',
-      biz.isPublicService ? 'public service civic essential emergency' : '',
-      ...(Array.isArray(biz.tags) ? biz.tags : [])
-    ]
-      .filter(Boolean)
-      .join(' ');
-  };
+  function isCivicIntent(query: string) {
+    return isCivicIntentService(query);
+  }
 
-  const isHomeBusinessIntent = (query: string) => {
-    const normalizedQuery = normalizeSearchText(query);
-    return [
-      'home baker',
-      'home baking',
-      'homemade',
-      'made at home',
-      'home kitchen',
-      'housewife',
-      'tiffin',
-      'home chef'
-    ].some((keyword) => normalizedQuery.includes(keyword));
-  };
+  function isHomeBasedBusiness(biz: Business) {
+    return isHomeBasedBusinessService(localities, biz);
+  }
 
-  const isCivicIntent = (query: string) => {
-    const normalizedQuery = normalizeSearchText(query);
-    return [
-      'hospital',
-      'clinic',
-      'doctor',
-      'blood bank',
-      'ambulance',
-      'police',
-      'ngo',
-      'charity',
-      'foundation',
-      'bank',
-      'atm'
-    ].some((keyword) => normalizedQuery.includes(keyword));
-  };
+  function isWomenLedHomeBusiness(biz: Business) {
+    return isWomenLedHomeBusinessService(localities, biz);
+  }
 
-  const isHomeBasedBusiness = (biz: Business) => {
-    if (biz.isHomeBased) return true;
-    const document = getBusinessSearchDocument(biz);
-    return [
-      'home baker',
-      'home baking',
-      'home kitchen',
-      'homemade',
-      'made at home',
-      'tiffin',
-      'housewife',
-      'women-led',
-      'women owned',
-      'woman owned'
-    ].some((keyword) => document.includes(keyword));
-  };
+  function isEssentialCommunityService(biz: Business) {
+    return isEssentialCommunityServiceService(localities, biz);
+  }
 
-  const isWomenLedHomeBusiness = (biz: Business) => {
-    if (biz.isWomenLed) return true;
-    const document = getBusinessSearchDocument(biz);
-    return isHomeBasedBusiness(biz) && [
-      'women-led',
-      'women led',
-      'women owned',
-      'woman owned',
-      'housewife',
-      'lady entrepreneur'
-    ].some((keyword) => document.includes(keyword));
-  };
-
-  const isEssentialCommunityService = (biz: Business) => {
-    if (biz.isPublicService) return true;
-    const document = getBusinessSearchDocument(biz);
-    return [
-      'hospital',
-      'clinic',
-      'blood bank',
-      'ambulance',
-      'police',
-      'bank',
-      'atm',
-      'ngo',
-      'charity',
-      'foundation',
-      'public service',
-      'government'
-    ].some((keyword) => document.includes(keyword));
-  };
-
-  const getBusinessRecognitionBadges = (biz: Business) => {
+  function getBusinessRecognitionBadges(biz: Business) {
     const badges: Array<{ label: string; className: string; Icon: PortalIcon }> = [];
     if (isWomenLedHomeBusiness(biz)) {
       badges.push({
@@ -1896,9 +1953,9 @@ export default function WebPortal({
       });
     }
     return badges.slice(0, 2);
-  };
+  }
 
-  const renderBusinessRecognitionBadges = (biz: Business, compact = false) => {
+  function renderBusinessRecognitionBadges(biz: Business, compact = false) {
     const badges = getBusinessRecognitionBadges(biz);
     if (badges.length === 0) return null;
     return (
@@ -1914,119 +1971,34 @@ export default function WebPortal({
         ))}
       </div>
     );
-  };
+  }
 
-  const getBusinessQueryRelevanceScore = (biz: Business, query: string) => {
-    const normalizedQuery = normalizeSearchText(query);
-    if (!normalizedQuery) return 35;
+  function matchesBusinessSearch(biz: Business, query: string) {
+    return matchesBusinessSearchService(localities, biz, query);
+  }
 
-    const tokens = tokenizeSearchText(normalizedQuery);
-    const businessName = normalizeSearchText(biz.name);
-    const categoryLabel = normalizeSearchText(getBusinessCategoryLabel(biz));
-    const subcategoryLabel = normalizeSearchText(getBusinessSubcategoryLabel(biz));
-    const document = getBusinessSearchDocument(biz);
-    let score = 0;
-
-    if (businessName === normalizedQuery) score += 140;
-    else if (businessName.startsWith(normalizedQuery)) score += 100;
-    else if (businessName.includes(normalizedQuery)) score += 72;
-
-    if (subcategoryLabel === normalizedQuery) score += 84;
-    else if (subcategoryLabel.includes(normalizedQuery)) score += 54;
-
-    if (categoryLabel === normalizedQuery) score += 68;
-    else if (categoryLabel.includes(normalizedQuery)) score += 40;
-
-    if (document.includes(normalizedQuery)) score += 26;
-
-    tokens.forEach((token) => {
-      if (businessName.includes(token)) score += 15;
-      else if (subcategoryLabel.includes(token)) score += 12;
-      else if (categoryLabel.includes(token)) score += 10;
-      else if (document.includes(token)) score += 6;
+  function getBusinessRecommendedScore(biz: Business, query: string, pageType: 'homepage' | 'results') {
+    return getBusinessRecommendedScoreService({
+      business: biz,
+      query,
+      pageType,
+      localities,
+      currentLocalityId: currentLocality.id,
+      browsingLocalityIds,
+      resolvedSponsoredBusinessIds
     });
+  }
 
-    return score;
-  };
-
-  const matchesBusinessSearch = (biz: Business, query: string) => {
-    const normalizedQuery = normalizeSearchText(query);
-    if (!normalizedQuery) return true;
-    return getBusinessQueryRelevanceScore(biz, normalizedQuery) > 0;
-  };
-
-  const getBusinessRecommendedScore = (biz: Business, query: string, pageType: 'homepage' | 'results') => {
-    let score = 0;
-    score += getBusinessQueryRelevanceScore(biz, query);
-
-    if (biz.localityId === currentLocality.id) score += 24;
-    else if (browsingLocalityIds.includes(biz.localityId)) score += 10;
-
-    if (biz.verifiedBadge) score += 18;
-    if (biz.kycStatus === 'verified') score += 12;
-    if (biz.govRegistered) score += 8;
-
-    score += Math.min(24, biz.rating * 5);
-    score += Math.min(18, (biz.reviewCount || 0) * 0.35);
-    score += Math.min(8, ((biz.customerSatisfaction || 0) / 100) * 8);
-    score += Math.min(6, ((biz.repeatCustomerScore || 0) / 100) * 6);
-
-    if ((biz.description || '').trim().length >= 60) score += 5;
-    if ((biz.phone || '').replace(/\D/g, '').length >= 10) score += 4;
-    if ((biz.website || '').trim()) score += 2;
-    if (biz.responseTime) score += 3;
-
-    if (isHomeBusinessIntent(query) && isHomeBasedBusiness(biz)) score += 26;
-    if (isCivicIntent(query) && isEssentialCommunityService(biz)) score += 24;
-
-    if (pageType === 'results') {
-      if (resolvedSponsoredBusinessIds.has(biz.id)) score += 16;
-      if (biz.isSponsored) score += 10;
-      if (biz.featured) score += 8;
-    } else {
-      if (resolvedSponsoredBusinessIds.has(biz.id)) score += 12;
-      if (biz.isSponsored) score += 8;
-      if (biz.featured) score += 8;
-    }
-
-    const daysSinceCreated = Math.max(0, (Date.now() - new Date(biz.createdAt).getTime()) / (1000 * 60 * 60 * 24));
-    if (Number.isFinite(daysSinceCreated)) {
-      score += Math.max(0, 8 - Math.min(8, daysSinceCreated / 30));
-    }
-
-    return score;
-  };
-
-  const getBusinessCanonicalKey = (biz: Business) => {
-    const normalizedPhone = String(biz.phone || '').replace(/\D/g, '').slice(-10);
-    const normalizedPincode = biz.pincode || MASTER_AREAS.find((area) => area.id === biz.areaId)?.pincode || '';
-    const normalizedAddress = normalizeSearchText(`${biz.address} ${getBusinessAreaName(biz)}`).split(' ').slice(0, 6).join(' ');
-    return [
-      normalizeSearchText(biz.name),
-      normalizedPhone || normalizedAddress || biz.id,
-      normalizedPincode || biz.areaId || 'no-pin',
-      biz.localityId,
-    ].join('|');
-  };
-
-  const dedupeBusinessesForExperience = (items: Business[], query: string, pageType: 'homepage' | 'results') => {
-    const deduped = new Map<string, Business>();
-    items.forEach((business) => {
-      const key = getBusinessCanonicalKey(business);
-      const existing = deduped.get(key);
-      if (!existing) {
-        deduped.set(key, business);
-        return;
-      }
-
-      const existingScore = getBusinessRecommendedScore(existing, query, pageType);
-      const incomingScore = getBusinessRecommendedScore(business, query, pageType);
-      if (incomingScore > existingScore) {
-        deduped.set(key, business);
-      }
+  function dedupeBusinessesForExperience(items: Business[], query: string, pageType: 'homepage' | 'results') {
+    return dedupeBusinessesForExperienceService(items, {
+      query,
+      pageType,
+      localities,
+      currentLocalityId: currentLocality.id,
+      browsingLocalityIds,
+      resolvedSponsoredBusinessIds
     });
-    return Array.from(deduped.values());
-  };
+  }
 
   const applySearchSuggestionPreview = (suggestion: SearchSuggestion) => {
     setSearchQuery(suggestion.queryValue);
@@ -2152,6 +2124,9 @@ export default function WebPortal({
   const buyerSavedBusinesses = savedBusinessIds
     .map((businessId) => businesses.find((business) => business.id === businessId) || null)
     .filter((business): business is Business => Boolean(business));
+  const buyerComparedBusinesses = compareBusinessIds
+    .map((businessId) => businesses.find((business) => business.id === businessId) || null)
+    .filter((business): business is Business => Boolean(business));
   const buyerViewedBusinesses = viewedBusinessIds
     .map((businessId) => businesses.find((business) => business.id === businessId) || null)
     .filter((business): business is Business => Boolean(business));
@@ -2172,6 +2147,14 @@ export default function WebPortal({
     onToggleSavedBusiness(biz.id);
   };
   const isBusinessSaved = (businessId: string) => savedBusinessIds.includes(businessId);
+  const handleCompareBusinessClick = (biz: Business, event: React.MouseEvent) => {
+    event.stopPropagation();
+    const result = onToggleComparedBusiness(biz.id);
+    if (!result.allowed && result.reason) {
+      alert(result.reason);
+    }
+  };
+  const isBusinessCompared = (businessId: string) => compareBusinessIds.includes(businessId);
 
   const openBusinessDirections = (biz: Business, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -2283,6 +2266,18 @@ export default function WebPortal({
             </div>
 
             {renderBusinessRecognitionBadges(biz, true)}
+            <button
+              type="button"
+              onClick={(e) => handleCompareBusinessClick(biz, e)}
+              className={`inline-flex w-full items-center justify-center gap-1 rounded-lg border px-3 py-2 text-xs font-semibold transition ${
+                isBusinessCompared(biz.id)
+                  ? 'border-indigo-200 bg-indigo-50 text-indigo-700'
+                  : 'border-slate-200 bg-white text-slate-600'
+              }`}
+            >
+              <CheckSquare className="h-3.5 w-3.5" />
+              <span>{isBusinessCompared(biz.id) ? 'Added to Compare' : 'Compare'}</span>
+            </button>
 
             <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
               <span className="inline-flex items-center gap-1 font-semibold text-amber-600" title="Google Ratings">
@@ -2385,6 +2380,18 @@ export default function WebPortal({
             {getBusinessCategoryLabel(biz)}
           </div>
           {renderBusinessRecognitionBadges(biz, true)}
+          <button
+            type="button"
+            onClick={(e) => handleCompareBusinessClick(biz, e)}
+            className={`inline-flex w-full items-center justify-center gap-1 rounded-lg border px-3 py-2 text-xs font-semibold transition ${
+              isBusinessCompared(biz.id)
+                ? 'border-indigo-200 bg-indigo-50 text-indigo-700'
+                : 'border-slate-200 bg-white text-slate-600'
+            }`}
+          >
+            <CheckSquare className="h-3.5 w-3.5" />
+            <span>{isBusinessCompared(biz.id) ? 'Added to Compare' : 'Compare'}</span>
+          </button>
           {!showImage && (badgeLabel || biz.isSponsored) && (
             <span className="inline-flex rounded-md bg-indigo-600 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-white">
               {badgeLabel || 'Sponsored'}
@@ -3426,19 +3433,65 @@ export default function WebPortal({
   // Trigger registration submission
   const handleApplySubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !address || formAreasOfOperation.length === 0 || !/^\d{6}$/.test(listingPincode)) {
-      alert("Please fill in required fields, including a valid 6-digit listing pincode.");
+    setApplyFormError('');
+    setApplyDuplicateBusinessId(null);
+
+    const trimmedName = name.trim();
+    const trimmedAddress = address.trim();
+    const trimmedDescription = description.trim();
+    const normalizedPhone = phone.replace(/\D/g, '').slice(-10);
+    const normalizedEmail = email.trim();
+
+    if (!trimmedName || !trimmedAddress || formAreasOfOperation.length === 0 || !/^\d{6}$/.test(listingPincode)) {
+      setApplyFormError('Please complete the required fields, including service areas and a valid 6-digit pincode.');
       return;
     }
 
-    // Determine featured state limit
-    const numFeaturedInLocalAndCat = businesses.filter(
-      b => selectedLocalityIds.includes(b.localityId) && b.categoryId === categoryId && b.featured && b.status === 'approved'
-    ).length;
+    if (!normalizedPhone && !normalizedEmail) {
+      setApplyFormError('Please provide at least one contact method: mobile number or email address.');
+      return;
+    }
+
+    if (normalizedPhone && normalizedPhone.length !== 10) {
+      setApplyFormError('Please enter a valid 10-digit mobile number.');
+      return;
+    }
+
+    if (!formAreaId || !formAreasOfOperation.includes(formAreaId)) {
+      setApplyFormError('Please choose a primary area and include it in the selected service areas.');
+      return;
+    }
+
+    if (trimmedDescription.length < 24) {
+      setApplyFormError('Please add a slightly richer business description so customers understand the service clearly.');
+      return;
+    }
+
+    const normalizedListingName = normalizeSearchText(trimmedName);
+    const duplicateBusiness = businesses.find((business) => {
+      const businessPhone = (business.phone || '').replace(/\D/g, '').slice(-10);
+      const businessPincode = business.pincode || MASTER_AREAS.find((area) => area.id === business.areaId)?.pincode || '';
+      const samePhone = Boolean(normalizedPhone && businessPhone && normalizedPhone === businessPhone);
+      const sameName = normalizeSearchText(business.name) === normalizedListingName;
+      const samePincode = Boolean(listingPincode && businessPincode === listingPincode);
+      const sameArea = business.areaId === formAreaId;
+      const sameLocalityScope = selectedLocalityIds.includes(business.localityId) || business.localityId === activeLocalityId;
+      return sameLocalityScope && (
+        (samePhone && samePincode) ||
+        (samePhone && sameName) ||
+        (sameName && (samePincode || sameArea))
+      );
+    });
+
+    if (duplicateBusiness) {
+      setApplyFormError(`A similar listing already exists for "${duplicateBusiness.name}". Please review the existing record instead of creating a duplicate.`);
+      setApplyDuplicateBusinessId(duplicateBusiness.id);
+      return;
+    }
 
     // Default dynamic properties
     const newBizData = {
-      name,
+      name: trimmedName,
       categoryId,
       subcategoryId,
       localityId: selectedLocalityIds[0] || activeLocalityId,
@@ -3447,17 +3500,24 @@ export default function WebPortal({
       areaId: formAreaId,
       pincode: listingPincode,
       areasOfOperation: formAreasOfOperation,
-      address,
-      phone,
-      email: email.trim() || undefined, // Email optional!
-      website: website || `https://${name.toLowerCase().replace(/\s+/g, '')}.in`,
-      description: description || `${name} is a certified local provider of premium local services.`,
+      address: trimmedAddress,
+      phone: normalizedPhone,
+      email: normalizedEmail || undefined,
+      website: website.trim(),
+      description: trimmedDescription,
       imageUrl: imageUrl.trim(),
-      featured: false, // Starts as standard approved, admins can toggle VIP status
-      tags: [categoryId, subcategoryId, 'Local', 'Indian-SME'],
+      featured: false,
+      tags: Array.from(new Set([
+        categoryId,
+        subcategoryId,
+        'Local',
+        'Indian-SME',
+        MASTER_AREAS.find((area) => area.id === formAreaId)?.name || '',
+      ].filter(Boolean))),
       hours,
       ownerName: ownerName || 'National Proprietor',
-      gpsCoordinates: gpsCoords
+      gpsCoordinates: gpsCoords,
+      contactPrivacyMode: normalizedPhone ? 'unlock_required' as const : 'area_only' as const,
     };
 
     onSubmitApplication(newBizData);
@@ -3477,9 +3537,11 @@ export default function WebPortal({
     setFormAreasOfOperation([formAreaId]);
     setListingPincode(savedPincode || MASTER_AREAS.find((area) => area.id === formAreaId)?.pincode || '');
     setGpsCoords(undefined);
+    setApplyFormError('');
+    setApplyDuplicateBusinessId(null);
 
     setShowApplyModal(false);
-    alert(`Registration received successfully! Listing "${name}" has boarded the verification queue. A regional moderator will audit properties inside the Moderation Desk.`);
+    alert(`Registration received successfully! Listing "${trimmedName}" has been sent to the verification queue for moderator review.`);
   };
 
   // Triggered on OTP Verification success
@@ -3627,10 +3689,34 @@ export default function WebPortal({
 
   const fallbackSectionTemplates = homepageDefaultsConfig?.sectionTemplates
     || (Array.isArray(HOMEPAGE_DEFAULTS_BOOTSTRAP.sectionTemplates) ? HOMEPAGE_DEFAULTS_BOOTSTRAP.sectionTemplates as HomepageSection[] : []);
-  const homepageSectionsToRender: HomepageSection[] = activeHomepageSections.length > 0 ? activeHomepageSections : fallbackSectionTemplates.map((section, index) => ({
+  const resolvedHomepageSectionsBase: HomepageSection[] = activeHomepageSections.length > 0 ? activeHomepageSections : fallbackSectionTemplates.map((section, index) => ({
     ...section,
     id: `fallback_${section.id || section.sectionType || index + 1}`,
   }));
+  const hasBusinessHomepageSection = resolvedHomepageSectionsBase.some((section) => (
+    ['featured_businesses', 'business_shelf', 'text_business_strip', 'verified_business_grid'].includes(section.sectionType)
+  ));
+  const homepageSectionsToRender: HomepageSection[] = hasBusinessHomepageSection
+    ? resolvedHomepageSectionsBase
+    : [
+        ...resolvedHomepageSectionsBase,
+        {
+          id: 'auto_fallback_verified_businesses',
+          sectionType: 'verified_business_grid',
+          title: 'Top Local Businesses',
+          subtitle: `Popular approved listings currently active in ${currentLocality.name}.`,
+          status: 'active',
+          visible: true,
+          sortOrder: 999,
+          maxItems: 10,
+          desktopCardCount: 5,
+          mobileCardCount: 2,
+          mobileDisplayMode: 'stack',
+          showViewAll: true,
+          listingSourceMode: 'auto',
+          localityIds: [currentLocality.id],
+        }
+      ];
   const shouldUseFallbackAds = !shouldDeferResolvedListingAds && resolvedHomepageSource === 'legacy_fallback' && activeListingAds.length === 0;
   const fallbackSidebarAds: ListingAd[] = (homepageDefaultsConfig?.fallbackListingAds || (Array.isArray(HOMEPAGE_DEFAULTS_BOOTSTRAP.fallbackListingAds) ? HOMEPAGE_DEFAULTS_BOOTSTRAP.fallbackListingAds : []) as Array<Record<string, unknown>>).map((ad, index) => ({
     id: String(ad.id || `fallback_ad_${index + 1}`),
@@ -3654,72 +3740,24 @@ export default function WebPortal({
     mobileRowPosition: Number.isFinite(Number(ad.mobileRowPosition)) ? Number(ad.mobileRowPosition) : 3,
     isActive: true
   }));
-  const getAdCtr = (ad: ListingAd) => {
-    const impressions = Number(ad.impressions || 0);
-    const clicks = Number(ad.clicks || 0);
-    if (impressions <= 0 || clicks <= 0) return 0;
-    return clicks / impressions;
-  };
-  const hashDeliverySeed = (value: string) => {
-    let hash = 0;
-    for (let index = 0; index < value.length; index += 1) {
-      hash = ((hash << 5) - hash) + value.charCodeAt(index);
-      hash |= 0;
-    }
-    return Math.abs(hash);
-  };
-  const getAdDeliveryScore = (ad: ListingAd, contextKey: string) => {
-    const ctr = getAdCtr(ad);
-    const impressions = Number(ad.impressions || 0);
-    const clicks = Number(ad.clicks || 0);
-    const leads = Number(ad.leadCount || 0);
-    const plannedBudget = Number(ad.plannedBudget || 0);
-    const spentBudget = Number(ad.spentBudget || 0);
-    const budgetRemainingRatio = plannedBudget > 0 ? Math.max(0, (plannedBudget - spentBudget) / plannedBudget) : 1;
-    const placementKey = ad.placementKey || '';
-    const categoryIds = ad.categoryIds || [];
-    const tagText = (ad.tags || []).join(' ').toLowerCase();
-
-    let score = 0;
-    if (ad.workflowStatus === 'live') score += 40;
-    else if (ad.workflowStatus === 'approved') score += 28;
-    else if (ad.workflowStatus === 'scheduled') score += 20;
-    else if (ad.workflowStatus === 'paused') score -= 40;
-
-    if (placementKey.includes(contextKey)) score += 18;
-    else if (contextKey.startsWith('homepage') && placementKey.includes('homepage')) score += 10;
-    else if (contextKey.includes('listing') && placementKey.includes('listing')) score += 10;
-
-    if (selectedCategory !== 'all' && categoryIds.includes(selectedCategory)) score += 18;
-    if (selectedSubcategory !== 'all' && tagText.includes(selectedSubcategory.replace(/-/g, ' '))) score += 10;
-
-    if (plannedBudget > 0 && spentBudget >= plannedBudget) score -= 140;
-    else score += budgetRemainingRatio * 22;
-
-    if (ad.billingModel === 'cpc') score += Number(ad.cpcBid || 0) * 0.9;
-    if (ad.billingModel === 'lead') score += leads * 5;
-
-    if ((ad.rotationMode || 'even') === 'weighted') {
-      score += ctr * 420;
-      score += leads * 9;
-      score += Math.max(0, 32 - (impressions / 120));
-    } else if ((ad.rotationMode || 'even') === 'random') {
-      score += hashDeliverySeed(`${homepageRotationTick}:${ad.id}:${contextKey}`) % 100;
-    } else {
-      score += Math.max(0, 40 - (impressions / 80));
-      score += Math.max(0, 12 - clicks);
-    }
-
-    return score;
-  };
+  const getAdCtr = (ad: ListingAd) => getAdCtrService(ad);
+  const getAdDeliveryScore = (ad: ListingAd, contextKey: string) => (
+    getAdDeliveryScoreService(ad, {
+      contextKey,
+      homepageRotationTick,
+      selectedCategory,
+      selectedSubcategory,
+      todayIso
+    })
+  );
   const rankAdsForDelivery = (ads: ListingAd[], contextKey: string) => (
-    ads
-      .slice()
-      .sort((left, right) => (
-        getAdDeliveryScore(right, contextKey) - getAdDeliveryScore(left, contextKey) ||
-        Date.parse(right.reviewedAt || right.submittedAt || right.startDate || todayIso) - Date.parse(left.reviewedAt || left.submittedAt || left.startDate || todayIso) ||
-        left.title.localeCompare(right.title)
-      ))
+    rankAdsForDeliveryService(ads, {
+      contextKey,
+      homepageRotationTick,
+      selectedCategory,
+      selectedSubcategory,
+      todayIso
+    })
   );
   const homepageAdInventory = rankAdsForDelivery(
     shouldUseFallbackAds ? [...activeListingAds, ...fallbackSidebarAds] : activeListingAds,
@@ -4375,7 +4413,7 @@ export default function WebPortal({
               </div>
 
               {/* Grid of Sliders and Multi-select states */}
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+              <div className="grid grid-cols-2 gap-4 text-xs lg:grid-cols-5">
                 {/* 1. Distance filter */}
                 <div>
                   <label className="block text-slate-500 font-bold mb-1">Max Distance Radius</label>
@@ -4391,7 +4429,22 @@ export default function WebPortal({
                   </select>
                 </div>
 
-                {/* 2. Rating min check */}
+                {/* 2. City filter */}
+                <div>
+                  <label className="block text-slate-500 font-bold mb-1">City Scope</label>
+                  <select
+                    value={filterCityId}
+                    onChange={(e) => setFilterCityId(e.target.value)}
+                    className="w-full p-2 bg-white rounded-lg border border-slate-200 focus:outline-none text-[11px]"
+                  >
+                    <option value="all">All active cities</option>
+                    {availableCityOptions.map((city) => (
+                      <option key={city.id} value={city.id}>{city.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* 3. Rating min check */}
                 <div>
                   <label className="block text-slate-500 font-bold mb-1">Customer Star rating</label>
                   <select 
@@ -4405,7 +4458,7 @@ export default function WebPortal({
                   </select>
                 </div>
 
-                {/* 3. Price scale filter */}
+                {/* 4. Price scale filter */}
                 <div>
                   <label className="block text-slate-500 font-bold mb-1">Affoxability scale</label>
                   <select 
@@ -4421,7 +4474,7 @@ export default function WebPortal({
                   </select>
                 </div>
 
-                {/* 4. Sorter order desk */}
+                {/* 5. Sorter order desk */}
                 <div>
                   <label className="block text-slate-500 font-bold mb-1">Prioritize Listings</label>
                   <select 
@@ -4602,7 +4655,7 @@ export default function WebPortal({
           <div className="space-y-6">
             
             {/* VIP Premium Sponsored Segment */}
-            {false && featuredBusinesses.length > 0 && (
+            {featuredBusinesses.length > 0 && (
               <div className="space-y-3">
                 <h3 className="text-xs font-bold font-mono text-indigo-650 tracking-widest uppercase flex items-center gap-1.5">
                   ⭐ Premium Featured &amp; Sponsored ({featuredBusinesses.length})
@@ -4759,11 +4812,13 @@ export default function WebPortal({
 
               {searchResultBusinesses.length === 0 ? (
                 <NoResultsState
+                  activeSearchLabel={activeSearchText}
                   noResultsSuggestedCategories={noResultsSuggestedCategories}
                   nearbyCityLocalities={nearbyCityLocalities}
                   noResultsFallbackBusinesses={noResultsFallbackBusinesses}
                   openResultsForCategory={openResultsForCategory}
                   onLocalityChange={onLocalityChange}
+                  onOpenRecommendationRequest={openRecommendationRequest}
                   openBusinessDetails={openBusinessDetails}
                   renderCompactBusinessRow={renderCompactBusinessRow}
                   shouldShowListingResultImage={shouldShowListingResultImage}
@@ -4875,6 +4930,18 @@ export default function WebPortal({
                               <div className="font-mono text-[10px] text-slate-500 truncate">
                                 PIN: {biz.pincode || MASTER_AREAS.find((area) => area.id === biz.areaId)?.pincode || 'Not set'}
                               </div>
+                              <button
+                                type="button"
+                                onClick={(e) => handleCompareBusinessClick(biz, e)}
+                                className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[10px] font-semibold transition ${
+                                  isBusinessCompared(biz.id)
+                                    ? 'border-indigo-200 bg-indigo-50 text-indigo-700'
+                                    : 'border-slate-200 bg-white text-slate-600 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700'
+                                }`}
+                              >
+                                <CheckSquare className="h-3 w-3" />
+                                <span>{isBusinessCompared(biz.id) ? 'Comparing' : 'Compare'}</span>
+                              </button>
                               
                               <span className="text-indigo-600 font-sans font-bold hover:underline inline-flex items-center gap-0.5 mt-1 block">
                                 Explore directory record →
@@ -5145,6 +5212,7 @@ export default function WebPortal({
               <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
                 {[
                   { label: 'Saved listings', value: buyerSavedBusinesses.length, className: 'border-rose-200 bg-rose-50 text-rose-700' },
+                  { label: 'Compare queue', value: buyerComparedBusinesses.length, className: 'border-sky-200 bg-sky-50 text-sky-700' },
                   { label: 'Contact unlocks', value: buyerViewedBusinesses.length, className: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
                   { label: 'Verified actions', value: buyerRecentActivity.length, className: 'border-indigo-200 bg-indigo-50 text-indigo-700' },
                   { label: 'Your reviews', value: buyerSubmittedReviews.length, className: 'border-amber-200 bg-amber-50 text-amber-700' },
@@ -5178,6 +5246,67 @@ export default function WebPortal({
                       </div>
                       <div className="flex gap-3 overflow-x-auto md:hidden">
                         {buyerSavedBusinesses.slice(0, 4).map((biz) => renderMobileBusinessCard(biz))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
+                  <div className="mb-4 flex items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                    <div>
+                      <h4 className="text-sm font-extrabold text-slate-900">Compare listings</h4>
+                      <p className="text-[11px] text-slate-500">Keep up to 3 listings side by side before contacting.</p>
+                    </div>
+                    <span className="rounded-full bg-sky-50 px-2.5 py-1 text-[10px] font-bold text-sky-700">
+                      {buyerComparedBusinesses.length}/3 selected
+                    </span>
+                  </div>
+                  {buyerComparedBusinesses.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+                      Use the compare button on any listing card to build a short shortlist.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <div className="min-w-[720px] rounded-2xl border border-slate-200">
+                        <div className="grid grid-cols-[180px_repeat(3,minmax(0,1fr))] border-b border-slate-200 bg-slate-50">
+                          <div className="p-3 text-[11px] font-bold uppercase tracking-wide text-slate-500">Field</div>
+                          {Array.from({ length: 3 }, (_, index) => buyerComparedBusinesses[index] || null).map((biz, index) => (
+                            <div key={`compare-head-${biz?.id || index}`} className="border-l border-slate-200 p-3">
+                              {biz ? (
+                                <div className="space-y-2">
+                                  <div className="text-sm font-bold text-slate-900">{biz.name}</div>
+                                  <div className="text-[11px] text-slate-500">{getBusinessCategoryLabel(biz)}</div>
+                                  <button
+                                    type="button"
+                                    onClick={() => onToggleComparedBusiness(biz.id)}
+                                    className="rounded-lg border border-slate-200 px-2.5 py-1 text-[10px] font-semibold text-slate-600 hover:bg-slate-100"
+                                  >
+                                    Remove
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="text-[11px] text-slate-400">Open slot</div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                        {[
+                          { label: 'Area', render: (biz: Business) => getBusinessAreaName(biz) },
+                          { label: 'Rating', render: (biz: Business) => `${biz.rating.toFixed(1)} (${biz.reviewCount} reviews)` },
+                          { label: 'Hours', render: (biz: Business) => biz.hours || 'Not shared' },
+                          { label: 'Phone', render: (biz: Business) => biz.phone || 'OTP unlock required' },
+                          { label: 'Website', render: (biz: Business) => biz.website || 'Listing page only' },
+                          { label: 'Tags', render: (biz: Business) => (biz.tags || []).slice(0, 3).join(', ') || 'Not tagged' },
+                        ].map((row) => (
+                          <div key={row.label} className="grid grid-cols-[180px_repeat(3,minmax(0,1fr))] border-b border-slate-100 last:border-b-0">
+                            <div className="bg-slate-50/70 p-3 text-[11px] font-semibold text-slate-600">{row.label}</div>
+                            {Array.from({ length: 3 }, (_, index) => buyerComparedBusinesses[index] || null).map((biz, index) => (
+                              <div key={`compare-row-${row.label}-${biz?.id || index}`} className="border-l border-slate-100 p-3 text-[11px] text-slate-700">
+                                {biz ? row.render(biz) : '—'}
+                              </div>
+                            ))}
+                          </div>
+                        ))}
                       </div>
                     </div>
                   )}
@@ -5242,6 +5371,8 @@ export default function WebPortal({
                               <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-slate-700 shadow-sm">
                                 {event.actionType === 'saved_listing' || event.actionType === 'unsaved_listing' ? (
                                   <Bookmark className="h-4 w-4" />
+                                ) : event.actionType === 'compare_listing' || event.actionType === 'uncompare_listing' ? (
+                                  <CheckSquare className="h-4 w-4" />
                                 ) : event.actionType === 'contact_unlock' ? (
                                   <ShieldCheck className="h-4 w-4" />
                                 ) : (
@@ -5799,6 +5930,45 @@ export default function WebPortal({
                 &quot;{selectedBiz.description}&quot;
               </p>
 
+              {getBusinessGallery(selectedBiz).length > 0 && (
+                <div className="space-y-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">Gallery</span>
+                    <span className="text-[10px] font-mono text-slate-500">{getBusinessGallery(selectedBiz).length} assets</span>
+                  </div>
+                  <div className="grid grid-cols-4 gap-2">
+                    {getBusinessGallery(selectedBiz).slice(0, 4).map((image, index) => (
+                      <div key={`${image}-${index}`} className={`${index === 0 ? 'col-span-2 row-span-2' : ''} overflow-hidden rounded-xl bg-slate-100`}>
+                        <img src={getMediaProxyUrl(image)} alt={`${selectedBiz.name} ${index + 1}`} className="h-full min-h-[84px] w-full object-cover" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {((selectedBiz.businessTypes && selectedBiz.businessTypes.length > 0) || (selectedBiz.serviceTypes && selectedBiz.serviceTypes.length > 0) || (selectedBiz.verificationTags && selectedBiz.verificationTags.length > 0)) && (
+                <div className="space-y-2 rounded-2xl border border-slate-200 bg-slate-50/70 p-3">
+                  <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">Profile identity</div>
+                  <div className="flex flex-wrap gap-2">
+                    {(selectedBiz.businessTypes || []).slice(0, 3).map((entry) => (
+                      <span key={`biz-type-${entry}`} className="rounded-full bg-white px-2.5 py-1 text-[10px] font-semibold text-slate-700 shadow-sm">
+                        {entry}
+                      </span>
+                    ))}
+                    {(selectedBiz.serviceTypes || []).slice(0, 3).map((entry) => (
+                      <span key={`service-type-${entry}`} className="rounded-full bg-indigo-50 px-2.5 py-1 text-[10px] font-semibold text-indigo-700">
+                        {entry}
+                      </span>
+                    ))}
+                    {(selectedBiz.verificationTags || []).slice(0, 4).map((entry) => (
+                      <span key={`verify-${entry}`} className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-semibold text-emerald-700">
+                        {entry}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Master Areas of Operation list inside details */}
               {selectedBiz.areasOfOperation && (
                 <div className="bg-slate-50/50 border border-slate-100 rounded-xl p-3 flex flex-wrap gap-2 items-center text-xs">
@@ -5961,6 +6131,65 @@ export default function WebPortal({
                 </div>
               )}
 
+              {relatedSelectedBusinesses.length > 0 && (
+                <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-900">Similar Nearby Listings</h4>
+                      <p className="text-[11px] text-slate-500">
+                        Good alternatives in {getBusinessAreaName(selectedBiz)} and nearby matching categories.
+                      </p>
+                    </div>
+                    <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                      Continue exploring
+                    </span>
+                  </div>
+                  <div className="space-y-2.5">
+                    {relatedSelectedBusinesses.map((biz) => (
+                      <button
+                        key={`related-${biz.id}`}
+                        type="button"
+                        onClick={() => openBusinessDetails(biz)}
+                        className="w-full rounded-2xl border border-white bg-white p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-200 hover:shadow"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <h5 className="truncate text-sm font-bold text-slate-900">{biz.name}</h5>
+                              {biz.verifiedBadge && (
+                                <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-emerald-700">
+                                  Verified
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-1 text-[11px] text-slate-500">
+                              {getBusinessCategoryLabel(biz)}
+                              {(biz.subcategoryId || biz.sourceSubcategoryLabel) && ` / ${getBusinessSubcategoryLabel(biz)}`}
+                            </div>
+                            <div className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-slate-600">
+                              {biz.description}
+                            </div>
+                            <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-slate-500">
+                              <span>{getBusinessAreaName(biz)}</span>
+                              {biz.distance ? <span>{biz.distance.toFixed(1)} km away</span> : null}
+                              {biz.hours ? <span>{biz.hours}</span> : null}
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="rounded-full bg-amber-50 px-2 py-1 text-[10px] font-bold text-amber-700">
+                              {biz.rating.toFixed(1)} stars
+                            </div>
+                            <div className="mt-1 text-[10px] text-slate-400">
+                              {biz.reviewCount} reviews
+                            </div>
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Audited reviews List Module */}
               <div className="space-y-3 pt-4 border-t border-slate-100">
                 <h4 className="text-sm font-bold text-slate-900 font-sans flex items-center gap-1.5">
@@ -6058,21 +6287,165 @@ export default function WebPortal({
 
               <div className="grid grid-cols-2 gap-3 pt-4 border-t border-slate-100">
                 <a 
-                  href={selectedBiz.website} 
+                  href={selectedBiz.website || buildAbsoluteListingUrl(selectedBiz)}
                   target="_blank" 
                   rel="noreferrer"
                   className="bg-indigo-600 hover:bg-indigo-700 text-white font-mono font-bold text-xs py-2.5 rounded-xl text-center shadow flex items-center justify-center gap-1.5 transition"
                 >
-                  <ExternalLink className="w-3.5 h-3.5" /> Visit Website
+                  <ExternalLink className="w-3.5 h-3.5" /> {selectedBiz.website ? 'Visit Website' : 'Open Listing'}
                 </a>
+                <button
+                  type="button"
+                  onClick={() => openBusinessDirectionsDirect(selectedBiz)}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-800 font-mono font-bold text-xs py-2.5 rounded-xl flex items-center justify-center gap-1.5 transition"
+                >
+                  <Navigation className="w-3.5 h-3.5" /> Directions
+                </button>
                 <button 
-                  onClick={() => alert(`Direct link context copied for: https://${currentLocality.subdomain}/biz/${selectedBiz.id}`)}
+                  type="button"
+                  onClick={() => void handleShareBusinessListing(selectedBiz)}
                   className="bg-slate-100 hover:bg-slate-200 text-slate-800 font-mono font-bold text-xs py-2.5 rounded-xl flex items-center justify-center gap-1.5 transition"
                 >
                   <Share2 className="w-3.5 h-3.5" /> Share Listing
                 </button>
+                <button
+                  type="button"
+                  onClick={() => handleShareBusinessToWhatsapp(selectedBiz)}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-mono font-bold text-xs py-2.5 rounded-xl flex items-center justify-center gap-1.5 transition"
+                >
+                  <MessageSquare className="w-3.5 h-3.5" /> WhatsApp
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const result = onToggleComparedBusiness(selectedBiz.id);
+                    if (!result.allowed && result.reason) {
+                      alert(result.reason);
+                    }
+                  }}
+                  className={`col-span-2 font-mono font-bold text-xs py-2.5 rounded-xl flex items-center justify-center gap-1.5 transition ${
+                    isBusinessCompared(selectedBiz.id)
+                      ? 'bg-indigo-600 text-white hover:bg-indigo-700'
+                      : 'bg-slate-100 text-slate-800 hover:bg-slate-200'
+                  }`}
+                >
+                  <CheckSquare className="w-3.5 h-3.5" /> {isBusinessCompared(selectedBiz.id) ? 'Added to Compare' : 'Add to Compare'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowApplyModal(true)}
+                  className="col-span-2 rounded-xl border border-[#FFD54F] bg-[#FFF4CC] py-2.5 text-xs font-bold text-[#0D1B2A] transition hover:bg-[#ffeaa2]"
+                >
+                  Claim This Listing
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowApplyModal(true)}
+                  className="col-span-2 rounded-xl border border-slate-200 bg-white py-2.5 text-xs font-bold text-slate-700 transition hover:bg-slate-50"
+                >
+                  Contact Sales For Premium Visibility
+                </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {recommendationRequestOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-lg overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
+            <div className="flex items-center justify-between bg-gradient-to-r from-emerald-700 to-teal-800 px-5 py-4 text-white">
+              <div>
+                <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-emerald-100">Recommendation Request</div>
+                <h3 className="mt-1 text-base font-extrabold">Ask Localisy to find the right business</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRecommendationRequestOpen(false)}
+                className="rounded-lg bg-white/10 px-2.5 py-1.5 text-xs font-bold text-white hover:bg-white/20"
+              >
+                Close
+              </button>
+            </div>
+            <form onSubmit={handleRecommendationRequestSubmit} className="space-y-4 p-5 text-xs">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <label className="mb-1 block font-bold text-slate-700">Full name *</label>
+                  <input
+                    type="text"
+                    required
+                    value={recommendationRequestName}
+                    onChange={(e) => setRecommendationRequestName(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5"
+                    placeholder="Your name"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block font-bold text-slate-700">Mobile number *</label>
+                  <input
+                    type="tel"
+                    required
+                    value={recommendationRequestPhone}
+                    onChange={(e) => setRecommendationRequestPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 font-mono"
+                    placeholder="10-digit mobile"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1fr)_140px]">
+                <div>
+                  <label className="mb-1 block font-bold text-slate-700">What are you looking for? *</label>
+                  <input
+                    type="text"
+                    required
+                    value={recommendationRequestNeed}
+                    onChange={(e) => setRecommendationRequestNeed(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5"
+                    placeholder="e.g. women-led home baker near Roadpali"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block font-bold text-slate-700">Pincode *</label>
+                  <input
+                    type="text"
+                    required
+                    maxLength={6}
+                    value={recommendationRequestPincode}
+                    onChange={(e) => setRecommendationRequestPincode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 font-mono"
+                    placeholder="410218"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="mb-1 block font-bold text-slate-700">Preferences or notes</label>
+                <textarea
+                  rows={4}
+                  value={recommendationRequestNotes}
+                  onChange={(e) => setRecommendationRequestNotes(e.target.value)}
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5"
+                  placeholder="Share budget, urgency, location preference, parking need, women-led preference, home visit need, or any other context."
+                />
+              </div>
+              <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-[11px] leading-relaxed text-emerald-900">
+                Your request will be posted to the locality recommendation board so ops or local contributors can guide you to relevant listings.
+              </div>
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setRecommendationRequestOpen(false)}
+                  className="rounded-xl border border-slate-200 px-4 py-2 font-semibold text-slate-600 hover:bg-slate-100"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="rounded-xl bg-emerald-600 px-4 py-2 font-bold text-white hover:bg-emerald-700"
+                >
+                  Submit Request
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
@@ -6290,7 +6663,11 @@ export default function WebPortal({
                 </h3>
               </div>
               <button 
-                onClick={() => setShowApplyModal(false)}
+                onClick={() => {
+                  setApplyFormError('');
+                  setApplyDuplicateBusinessId(null);
+                  setShowApplyModal(false);
+                }}
                 className="text-slate-200 hover:text-white font-mono font-bold text-xs bg-white/10 hover:bg-white/20 px-2.5 py-1.5 rounded-lg"
               >
                 Close
@@ -6298,6 +6675,26 @@ export default function WebPortal({
             </div>
 
             <form onSubmit={handleApplySubmit} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto text-xs">
+              {applyFormError && (
+                <div className="space-y-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-rose-900">
+                  <div className="text-[11px] font-semibold leading-relaxed">{applyFormError}</div>
+                  {applyDuplicateBusiness && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowApplyModal(false);
+                        setApplyFormError('');
+                        setApplyDuplicateBusinessId(null);
+                        openBusinessDetails(applyDuplicateBusiness);
+                      }}
+                      className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-[11px] font-bold text-rose-700"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                      <span>Open existing listing</span>
+                    </button>
+                  )}
+                </div>
+              )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">Business Name *</label>

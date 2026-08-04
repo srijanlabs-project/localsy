@@ -72,12 +72,12 @@ These items should not be left incomplete if the goal is to deliver the best use
 | Experience Area | Key Modules | High-Impact Sub-modules | Why It Matters | Current State |
 |---|---|---|---|---|
 | Entry and Routing | Tenant and Geography, Web Experience | locality setup, city mapping, locality route handling, fallback scope, pincode mapping | wrong routing breaks the entire experience before search even starts | strong base exists, still not fully hardened |
-| Search Input | Discovery and Search | keyword input, autosuggest, multilingual parsing, pincode filter, locality filter | poor query capture reduces relevance immediately | partly built |
-| Result Quality | Discovery and Search, Duplicate and Data Quality | locality-first ranking, trust boost, popularity boost, duplicate detection, canonical listing logic | customers lose trust if bad or duplicate listings dominate results | partial |
+| Search Input | Discovery and Search | keyword input, autosuggest, multilingual parsing, pincode filter, locality filter | poor query capture reduces relevance immediately | in progress, with autosuggest and locality-aware query capture live |
+| Result Quality | Discovery and Search, Duplicate and Data Quality | locality-first ranking, trust boost, popularity boost, duplicate detection, canonical listing logic | customers lose trust if bad or duplicate listings dominate results | in progress, ranking and dedupe logic are live with merge operations still pending |
 | Listing Trust | Business Directory Core, Reviews and Reputation | verification, verified badge, KYC, response time, satisfaction score, verified reviews | trust signals influence contact conversion and repeat usage | partial |
-| Listing Detail | Business Directory Core, Web Experience | address, phone, WhatsApp, hours, website, tags, map context, trust panels | detail page is the conversion surface | partial, actively being expanded |
-| Contact and Conversion | Business Directory Core, Lead and CRM | call, WhatsApp, contact unlock, lead capture, action tracking | customers must be able to act confidently after finding a listing | partial |
-| No-Result Recovery | Discovery and Search, AI and RAG, WhatsApp Channel | fallback recommendations, follow-up prompts, direct answer, best listing URL | prevents abandonment when exact matching is weak | largely pending |
+| Listing Detail | Business Directory Core, Web Experience | address, phone, WhatsApp, hours, website, tags, map context, trust panels | detail page is the conversion surface | in progress, with stronger detail and sharing actions now live |
+| Contact and Conversion | Business Directory Core, Lead and CRM | call, WhatsApp, contact unlock, lead capture, action tracking | customers must be able to act confidently after finding a listing | in progress, call/WhatsApp/unlock and action logging are live |
+| No-Result Recovery | Discovery and Search, AI and RAG, WhatsApp Channel | fallback recommendations, follow-up prompts, direct answer, best listing URL | prevents abandonment when exact matching is weak | in progress, recommendation fallback is now live but AI response flow is pending |
 | Mobile Usability | Web Experience, WhatsApp Channel | mobile-friendly layouts, concise response rendering, low-friction actions | most discovery will be mobile-first | partial |
 | Content Freshness | Business Directory Core, Admin Operations | business hours, stale listing review, corrections, invalid contact cleanup | stale data directly harms customer trust | partial |
 
@@ -101,7 +101,7 @@ These items are critical because ops quality directly controls customer quality.
 |---|---|---|---|---|
 | Moderation Control | Admin Operations | approve, reject, suspend, bulk update, escalation | operations must correct bad listings quickly | strong base, still incomplete |
 | Listing Governance | Admin Operations, Business Directory Core | listing lifecycle, review queue, correction flow | poor governance causes customer-facing quality drift | in progress |
-| Duplicate Control | Duplicate and Data Quality | duplicate detection, merge review, merge resolution | duplicates reduce trust, create ranking noise, and waste ops time | partial |
+| Duplicate Control | Duplicate and Data Quality | duplicate detection, merge review, merge resolution | duplicates reduce trust, create ranking noise, and waste ops time | in progress, submission-side duplicate prevention is live but merge workflow is pending |
 | Geography Accuracy | Tenant and Geography | state, city, locality, area, pincode, route bindings | geography errors break relevance and SEO together | strong base, still in progress |
 | Taxonomy Quality | Admin Operations, Business Directory Core | category, subcategory, business type, service type | weak classification harms search and ad matching | partial |
 | Internal Permissions | Identity and Access, Platform Governance | RBAC, admin roles, moderator roles, operator roles | unsafe permissions create data risk and operational confusion | partial |
@@ -123,7 +123,7 @@ Advertiser experience should be completed after customer and ops reliability are
 
 | Experience Area | Key Modules | High-Impact Sub-modules | Why It Matters | Current State |
 |---|---|---|---|---|
-| Merchant Onboarding | Merchant Management | apply for listing, claim listing, KYC submission, approval workflow | merchants must enter the platform easily and credibly | partial |
+| Merchant Onboarding | Merchant Management | apply for listing, claim listing, KYC submission, approval workflow | merchants must enter the platform easily and credibly | in progress, guarded application flow and approval queueing are live |
 | Merchant Workspace | Merchant Management | edit listing, update hours, upload assets, manage offers | advertisers need control over listing quality and freshness | partial |
 | Lead Value | Lead and CRM | lead capture, lead stage, contact history, follow-up visibility | advertisers must see measurable business value | largely pending |
 | Promotion and Visibility | Offers, Ads, and Promotion | sponsored boost, offers, ad slots, campaign setup | monetization depends on controlled visibility products | partial |

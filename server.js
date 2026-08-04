@@ -7,6 +7,54 @@ import crypto from 'crypto';
 import localityRoutingBootstrap from './locality-routing-config.json' with { type: 'json' };
 import homepageDefaultsBootstrap from './homepage-defaults-config.json' with { type: 'json' };
 import seoDiscoveryBootstrap from './seo-discovery-config.json' with { type: 'json' };
+import {
+  buildAdminExportRows,
+  buildCampaignComparison,
+  buildChannelAnalytics,
+  buildCrmSegmentation,
+  buildInternalNotifications,
+  buildLeadRoutingSnapshot,
+  buildMerchantConversionInsights,
+  buildSearchAnalytics,
+  stringifyCsv,
+} from './shared/adminOperations.js';
+import { buildSeoCategoryCopyIndex, buildSeoGrowthSnapshot } from './shared/seoGrowth.js';
+import {
+  buildBusinessSearchAliases,
+  buildDuplicateBusinessCandidates,
+  buildGeographyBoundaries,
+  buildMapProviderConfig,
+  buildPasswordPolicy,
+  buildReviewModerationQueue,
+  buildTrendingBusinesses,
+  createCanonicalListingFromPair,
+  markDuplicatePairSeparate,
+  mergeDuplicateBusinessPair,
+  validatePasswordAgainstPolicy,
+} from './shared/directoryQuality.js';
+import {
+  applyRetentionRules,
+  buildComplianceOverview,
+  buildMessagingComplianceRuntime,
+  recordConsent,
+  recordPolicyAcceptance,
+  recordUnsubscribe,
+  replaceMessageTemplates,
+  replaceRetentionRules,
+  sanitizeComplianceGovernanceState,
+  upsertPolicyDocument,
+} from './shared/complianceGovernance.js';
+import {
+  buildKnowledgeOverview,
+  formatGroundedResponse,
+  ingestKnowledgeSource,
+  readKnowledgeSession,
+  reembedKnowledgeState,
+  resolveKnowledgeFollowUpQuery,
+  retrieveKnowledgeMatches,
+  sanitizeKnowledgeRetrievalState,
+  upsertKnowledgeSession,
+} from './shared/knowledgeRetrieval.js';
 import { buildBusinessTaxonomySeed } from './shared/businessTaxonomySeed.js';
 import {
   DEFAULT_STATES,
@@ -33,6 +81,8 @@ const geographyConfigPath = path.join(__dirname, 'geography-config.json');
 const homepageDefaultsConfigPath = path.join(__dirname, 'homepage-defaults-config.json');
 const seoDiscoveryConfigPath = path.join(__dirname, 'seo-discovery-config.json');
 const scalableCmsStatePath = path.join(__dirname, 'scalable-cms-state.json');
+const complianceGovernancePath = path.join(__dirname, 'compliance-governance.json');
+const knowledgeRetrievalStatePath = path.join(__dirname, 'knowledge-retrieval.json');
 const TOKEN_SECRET = process.env.AUTH_SECRET || 'replace-this-in-production';
 const TOKEN_TTL_SEC = 60 * 60 * 12; // 12 hours
 
@@ -82,8 +132,11 @@ let memoryGeographyConfig = null;
 let memoryHomepageDefaultsConfig = null;
 let memorySeoDiscoveryConfig = null;
 let memoryScalableCmsState = null;
+let memoryComplianceGovernance = null;
+let memoryKnowledgeRetrieval = null;
 let memoryOtpChallenges = null;
 let memoryContactViewEvents = null;
+const memoryChannelSessions = new Map();
 const auditEventThrottleBuckets = new Map();
 const auditEventRecentWrites = new Map();
 const publicWriteThrottleBuckets = new Map();
@@ -136,7 +189,7 @@ const TRUSTED_APP_ORIGINS = String(process.env.TRUSTED_APP_ORIGINS || '')
   .filter(Boolean);
 
 const PUBLIC_USER_TYPES = ['buyer', 'seller', 'resource'];
-const ALL_USER_TYPES = ['platform_admin', 'developer', 'buyer', 'seller', 'resource'];
+const ALL_USER_TYPES = ['platform_admin', 'developer', 'support_user', 'buyer', 'seller', 'resource'];
 const SEO_SITE_NAME = 'Localisy';
 const SEO_SITE_TAGLINE = 'A Hyper Local Business Directory';
 const SEO_SITE_PROMISE = 'Discover Local. Support Local. Grow Local.';
@@ -639,6 +692,7 @@ async function verifyPassword(password, stored) {
 function normalizeRoleForType(userType) {
   if (userType === 'platform_admin') return 'admin';
   if (userType === 'developer') return 'developer';
+  if (userType === 'support_user') return 'operator';
   if (userType === 'seller') return 'seller';
   if (userType === 'buyer') return 'buyer';
   return 'resource';
@@ -847,6 +901,316 @@ async function buildResolvedAuthUserResponse(user) {
     ...user,
     sellerBusinessId: sellerBusinessId || undefined,
   });
+}
+
+function normalizeDirectoryQuery(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9\u0900-\u097f\s-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function detectQueryLanguage(value) {
+  return /[\u0900-\u097F]/.test(String(value || '')) ? 'hi' : 'en';
+}
+
+function detectQueryIntent(normalizedQuery) {
+  if (/\b(home baker|homemade|housewife|tiffin|women[- ]led|home chef)\b/.test(normalizedQuery)) {
+    return 'home_business_discovery';
+  }
+  if (/\b(hospital|clinic|doctor|blood bank|ambulance|police|bank|atm|ngo)\b/.test(normalizedQuery)) {
+    return 'essential_service_discovery';
+  }
+  if (/\b(compare|best|top|near|nearby|open now)\b/.test(normalizedQuery)) {
+    return 'ranked_local_discovery';
+  }
+  return 'directory_search';
+}
+
+function detectQueryScope(normalizedQuery, localityId) {
+  if (String(localityId || '').trim()) return 'locality';
+  if (/\b(city|navi mumbai|mumbai|india|national)\b/.test(normalizedQuery)) return 'city_or_national';
+  if (/\bnear me|nearby\b/.test(normalizedQuery)) return 'proximity';
+  return 'general';
+}
+
+function extractQuerySignals(rawQuery, categoryId, localityId) {
+  const normalizedQuery = normalizeDirectoryQuery(rawQuery);
+  return {
+    rawQuery: String(rawQuery || '').trim(),
+    normalizedQuery,
+    tokens: normalizedQuery.split(/[\s/-]+/).filter(Boolean).slice(0, 12),
+    categoryId: String(categoryId || '').trim() || undefined,
+    localityId: String(localityId || '').trim() || undefined,
+  };
+}
+
+function buildBusinessSearchText(business) {
+  return normalizeDirectoryQuery([
+    business.name,
+    business.description,
+    business.address,
+    business.categoryId,
+    business.subcategoryId,
+    business.sourceCategoryLabel,
+    business.sourceSubcategoryLabel,
+    business.ownerName,
+    business.pincode,
+    ...(buildBusinessSearchAliases(business) || []),
+    ...(Array.isArray(business.tags) ? business.tags : []),
+  ].filter(Boolean).join(' '));
+}
+
+function scoreBusinessForDirectorySearch(business, normalizedQuery, { localityId = '', categoryId = '' } = {}) {
+  let score = 0;
+  const searchText = buildBusinessSearchText(business);
+  const businessName = normalizeDirectoryQuery(business.name);
+
+  if (!normalizedQuery) score += 10;
+  if (businessName === normalizedQuery) score += 120;
+  else if (businessName.startsWith(normalizedQuery)) score += 88;
+  else if (businessName.includes(normalizedQuery)) score += 60;
+  else if (searchText.includes(normalizedQuery)) score += 24;
+
+  normalizedQuery.split(/[\s/-]+/).filter(Boolean).forEach((token) => {
+    if (businessName.includes(token)) score += 10;
+    else if (searchText.includes(token)) score += 4;
+  });
+
+  if (localityId && String(business.localityId || '') === String(localityId || '')) score += 20;
+  if (categoryId && String(business.categoryId || '') === String(categoryId || '')) score += 18;
+  if (business.verifiedBadge) score += 14;
+  if (String(business.kycStatus || '') === 'verified') score += 10;
+  if (business.govRegistered) score += 6;
+  score += Math.min(25, Number(business.rating || 0) * 5);
+  score += Math.min(16, Number(business.reviewCount || 0) * 0.4);
+  if (business.isSponsored) score += 8;
+  if (business.featured) score += 6;
+
+  return score;
+}
+
+function buildCanonicalListingPathForBusiness(business, seoContext) {
+  const localityId = String(business.localityId || '').trim();
+  const categoryId = seoContext.categoryIdSet.has(String(business.categoryId || '').trim())
+    ? String(business.categoryId || '').trim()
+    : null;
+  const basePath = buildSeoPath(seoContext, localityId, categoryId, null);
+  return `${basePath}/${buildListingSlug(business.name, business.id)}`;
+}
+
+function buildBusinessContactCard(business, origin, seoContext) {
+  const path = buildCanonicalListingPathForBusiness(business, seoContext);
+  return {
+    id: String(business.id || ''),
+    name: String(business.name || ''),
+    categoryId: String(business.categoryId || ''),
+    subcategoryId: String(business.subcategoryId || ''),
+    localityId: String(business.localityId || ''),
+    address: String(business.address || ''),
+    phone: String(business.phone || ''),
+    email: business.email ? String(business.email) : undefined,
+    website: business.website ? String(business.website) : undefined,
+    rating: Number(business.rating || 0),
+    reviewCount: Number(business.reviewCount || 0),
+    verifiedBadge: business.verifiedBadge === true,
+    kycStatus: business.kycStatus ? String(business.kycStatus) : undefined,
+    hours: business.hours ? String(business.hours) : undefined,
+    holidayHours: Array.isArray(business.holidayHours) ? business.holidayHours : [],
+    brochureUrl: business.brochureUrl ? String(business.brochureUrl) : undefined,
+    videoUrl: business.videoUrl ? String(business.videoUrl) : undefined,
+    aliasNames: Array.isArray(business.aliasNames) ? business.aliasNames : [],
+    listingPath: path,
+    listingUrl: `${origin}${path}`,
+  };
+}
+
+async function resolveDirectorySearch({
+  query = '',
+  localityId = '',
+  categoryId = '',
+  limit = 10,
+  origin,
+} = {}) {
+  const [businesses, seoConfig] = await Promise.all([
+    readBusinessListings(),
+    readSeoDiscoveryConfig(),
+  ]);
+  const seoContext = buildSeoDiscoveryContext(seoConfig);
+  const normalizedQuery = normalizeDirectoryQuery(query);
+  const approvedBusinesses = (Array.isArray(businesses) ? businesses : [])
+    .filter((business) => business && typeof business === 'object')
+    .filter((business) => String(business.status || '') === 'approved')
+    .filter((business) => !localityId || String(business.localityId || '') === String(localityId || ''))
+    .filter((business) => !categoryId || String(business.categoryId || '') === String(categoryId || ''))
+    .filter((business) => {
+      if (!normalizedQuery) return true;
+      return buildBusinessSearchText(business).includes(normalizedQuery);
+    });
+
+  const rankedBusinesses = approvedBusinesses
+    .map((business) => ({
+      business,
+      score: scoreBusinessForDirectorySearch(business, normalizedQuery, { localityId, categoryId }),
+    }))
+    .sort((left, right) => right.score - left.score || Number(right.business.reviewCount || 0) - Number(left.business.reviewCount || 0))
+    .slice(0, Math.max(1, Math.min(Number(limit) || 10, 20)));
+
+  return {
+    normalizedQuery,
+    seoContext,
+    results: rankedBusinesses.map((entry) => ({
+      ...buildBusinessContactCard(entry.business, origin, seoContext),
+      score: entry.score,
+      summary: String(entry.business.description || '').trim(),
+      tags: Array.isArray(entry.business.tags) ? entry.business.tags.slice(0, 6) : [],
+    })),
+  };
+}
+
+function buildSearchFollowUpPrompts(intent, hasResults) {
+  if (!hasResults) {
+    return [
+      'Try adding a locality or pincode.',
+      'Try a nearby category instead.',
+      'Ask for home-based or verified options only.',
+    ];
+  }
+  if (intent === 'home_business_discovery') {
+    return [
+      'Show only women-led home businesses.',
+      'Show the top rated options.',
+      'Share businesses that deliver to my pincode.',
+    ];
+  }
+  if (intent === 'essential_service_discovery') {
+    return [
+      'Show open now options.',
+      'Share only verified listings.',
+      'Show the nearest alternatives.',
+    ];
+  }
+  return [
+    'Show only verified listings.',
+    'Sort by rating.',
+    'Share the top 3 options.',
+  ];
+}
+
+async function resolveGroundedDirectoryAnswer({
+  rawQuery = '',
+  localityId = '',
+  categoryId = '',
+  limit = 3,
+  sessionId = '',
+  channel = 'web',
+  origin,
+} = {}) {
+  const knowledgeState = await readKnowledgeRetrievalState();
+  const previousKnowledgeSession = sessionId ? readKnowledgeSession(knowledgeState, sessionId) : null;
+  const effectiveQuery = resolveKnowledgeFollowUpQuery(rawQuery, previousKnowledgeSession);
+  const understanding = extractQuerySignals(effectiveQuery, categoryId, localityId);
+  const language = detectQueryLanguage(rawQuery || effectiveQuery);
+  const intent = detectQueryIntent(understanding.normalizedQuery);
+  const scope = detectQueryScope(understanding.normalizedQuery, localityId);
+  const searchResult = await resolveDirectorySearch({
+    query: effectiveQuery,
+    localityId,
+    categoryId,
+    limit,
+    origin,
+  });
+  const retrieval = retrieveKnowledgeMatches(knowledgeState, {
+    query: effectiveQuery,
+    localityId,
+    categoryId,
+    limit: Math.max(3, limit),
+  });
+  const followUpPrompts = buildSearchFollowUpPrompts(intent, searchResult.results.length > 0);
+  const citations = [
+    ...searchResult.results.slice(0, 3).map((result) => ({
+      type: 'listing',
+      id: result.id,
+      label: result.name,
+      url: result.listingUrl,
+      score: Number(result.score || 0),
+    })),
+    ...retrieval.citations,
+  ].slice(0, 6);
+  const confidence = Math.min(
+    0.96,
+    Number((
+      0.22 +
+      (searchResult.results.length > 0 ? 0.38 : 0) +
+      (retrieval.hybridResults.length > 0 ? 0.18 : 0) +
+      (retrieval.hybridResults[0]?.hybridScore || 0) * 0.22
+    ).toFixed(2)),
+  );
+
+  const directAnswer = formatGroundedResponse({
+    language,
+    localityId,
+    listings: searchResult.results,
+    knowledgeCitations: retrieval.citations,
+    effectiveQuery,
+  });
+
+  let savedKnowledgeSession = previousKnowledgeSession;
+  if (sessionId) {
+    savedKnowledgeSession = await saveKnowledgeSession({
+      sessionId,
+      channel,
+      lastQuery: rawQuery,
+      effectiveQuery,
+      language,
+      intent,
+      localityId,
+      categoryId,
+      recentResults: citations,
+    });
+  }
+
+  return {
+    language,
+    intent,
+    scope,
+    understanding,
+    effectiveQuery,
+    searchResult,
+    retrieval,
+    followUpPrompts,
+    directAnswer,
+    confidence,
+    citations,
+    previousKnowledgeSession,
+    savedKnowledgeSession,
+  };
+}
+
+function pruneChannelSessions(now = Date.now()) {
+  for (const [key, value] of memoryChannelSessions.entries()) {
+    if (!value || now - Number(value.updatedAtMs || 0) > 1000 * 60 * 60 * 24) {
+      memoryChannelSessions.delete(key);
+    }
+  }
+}
+
+function readChannelSession(sessionKey) {
+  pruneChannelSessions();
+  return memoryChannelSessions.get(sessionKey) || null;
+}
+
+function writeChannelSession(sessionKey, payload) {
+  if (!sessionKey) return null;
+  pruneChannelSessions();
+  const nextSession = {
+    ...payload,
+    updatedAtMs: Date.now(),
+  };
+  memoryChannelSessions.set(sessionKey, nextSession);
+  return nextSession;
 }
 
 async function readAuthenticatedUserFromRequest(req, res) {
@@ -1625,12 +1989,131 @@ async function readAuditEvents() {
   }
 }
 
+async function buildAdminOperationsSnapshot() {
+  const [businesses, crmContacts, adLeads, homepageConfig, auditEvents] = await Promise.all([
+    readBusinessListings(),
+    readCrmContacts(),
+    readAdLeads(),
+    readHomepageConfig(),
+    readAuditEvents(),
+  ]);
+  const listingAds = Array.isArray(homepageConfig?.listingAds) ? homepageConfig.listingAds : [];
+  const searchAnalytics = buildSearchAnalytics({ auditEvents });
+  const channelAnalytics = buildChannelAnalytics({ auditEvents });
+  return {
+    businesses,
+    crmContacts,
+    adLeads,
+    listingAds,
+    auditEvents,
+    searchAnalytics,
+    channelAnalytics,
+    campaignComparison: buildCampaignComparison({ listingAds, adLeads }),
+    internalNotifications: buildInternalNotifications({ auditEvents, businesses, listingAds }),
+    leadRouting: buildLeadRoutingSnapshot({ adLeads, crmContacts, businesses }),
+    crmSegmentation: buildCrmSegmentation({ crmContacts, businesses }),
+    merchantInsights: buildMerchantConversionInsights({ listingAds, adLeads, businesses }),
+  };
+}
+
+async function buildDirectoryQualitySnapshot() {
+  const [businesses, reviews, geographyConfig] = await Promise.all([
+    readBusinessListings(),
+    readReviews(),
+    readGeographyConfig(),
+  ]);
+  return {
+    businesses,
+    reviews,
+    geographyConfig,
+    duplicateCandidates: buildDuplicateBusinessCandidates(businesses),
+    moderationQueue: buildReviewModerationQueue({ reviews, businesses }),
+    trendingBusinesses: buildTrendingBusinesses({ businesses, reviews }),
+    boundaries: buildGeographyBoundaries({ businesses, geographyConfig }),
+    mapProvider: buildMapProviderConfig(),
+  };
+}
+
+async function persistAuditEvent(payload, req, options = {}) {
+  const authenticated = options.authenticatedPayload || authFromHeader(req);
+  let resolvedUserName = normalizeAuditText(options.userName || payload.userName || 'Anonymous Explorer', 120) || 'Anonymous Explorer';
+  if (authenticated?.sub && !options.skipUserLookup) {
+    const users = await readUsers();
+    const user = users.find((entry) => entry.id === authenticated.sub);
+    if (user) {
+      resolvedUserName = normalizeAuditText(user.name || user.email || resolvedUserName, 120) || resolvedUserName;
+    }
+  }
+
+  const ipAddress = options.ipAddress || normalizeRequestIp(req);
+  const userAgent = normalizeAuditText(options.deviceCode || String(req.headers['user-agent'] || payload.deviceCode || 'unknown'), 240) || 'unknown';
+  if (!options.skipThrottle) {
+    const auditDecision = evaluateAuditEventThrottle({
+      ipAddress,
+      userAgent,
+      actionType: payload.actionType,
+      description: payload.description,
+      details: payload.details,
+      userName: resolvedUserName,
+      isAuthenticated: Boolean(authenticated?.sub),
+    });
+    if (!auditDecision.accept) {
+      return {
+        ok: true,
+        skipped: true,
+        status: 202,
+        reason: auditDecision.status,
+        automated: auditDecision.automated,
+        retryAfterMs: auditDecision.retryAfterMs,
+      };
+    }
+  }
+
+  const event = {
+    id: normalizeAuditText(payload.id || `audit_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`, 96),
+    timestamp: String(payload.timestamp || new Date().toISOString()),
+    actionType: String(payload.actionType || 'data_entry'),
+    description: normalizeAuditText(payload.description, 240),
+    details: normalizeAuditText(payload.details, 1000),
+    ipAddress,
+    deviceCode: userAgent,
+    userName: resolvedUserName,
+  };
+
+  const client = await getPgClient();
+  if (client) {
+    await client.query(
+      `INSERT INTO compliance_audit_logs (id, timestamp, action_type, description, details, ip_address, device_code, user_name)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       ON CONFLICT (id) DO NOTHING`,
+      [
+        event.id,
+        event.timestamp,
+        event.actionType,
+        event.description,
+        event.details,
+        event.ipAddress,
+        event.deviceCode,
+        event.userName,
+      ],
+    );
+  } else {
+    await fs.appendFile(auditLogPath, JSON.stringify(event) + '\n', 'utf8');
+  }
+
+  return {
+    ok: true,
+    status: 201,
+    event,
+  };
+}
+
 function sanitizeBuyerActivityEvent(value, index = 0) {
   if (!value || typeof value !== 'object') return null;
   const event = value;
   const title = String(event.title || '').trim();
   if (!title) return null;
-  const actionType = ['saved_listing', 'unsaved_listing', 'contact_unlock', 'review_submitted'].includes(String(event.actionType || ''))
+  const actionType = ['saved_listing', 'unsaved_listing', 'compare_listing', 'uncompare_listing', 'contact_unlock', 'review_submitted'].includes(String(event.actionType || ''))
     ? String(event.actionType)
     : 'saved_listing';
   return {
@@ -1651,6 +2134,9 @@ function sanitizeBuyerStateSnapshot(value) {
   const savedBusinessIds = Array.isArray(source.savedBusinessIds)
     ? Array.from(new Set(source.savedBusinessIds.map((entry) => String(entry || '').trim()).filter(Boolean)))
     : [];
+  const compareBusinessIds = Array.isArray(source.compareBusinessIds)
+    ? Array.from(new Set(source.compareBusinessIds.map((entry) => String(entry || '').trim()).filter(Boolean))).slice(0, 3)
+    : [];
   const buyerActivityEvents = Array.isArray(source.buyerActivityEvents)
     ? source.buyerActivityEvents
         .map((event, index) => sanitizeBuyerActivityEvent(event, index))
@@ -1661,6 +2147,7 @@ function sanitizeBuyerStateSnapshot(value) {
   return {
     viewedBusinessIds,
     savedBusinessIds,
+    compareBusinessIds,
     buyerActivityEvents,
   };
 }
@@ -4621,6 +5108,165 @@ async function writeScalableCmsState(config) {
   }
 }
 
+async function readComplianceGovernanceState() {
+  const client = await getPgClient();
+  if (client) {
+    const result = await client.query(
+      `SELECT value
+       FROM app_state
+       WHERE key = $1
+       LIMIT 1`,
+      ['compliance_governance'],
+    );
+    const data = sanitizeComplianceGovernanceState(result.rows[0]?.value);
+    if (data && Array.isArray(data.documents) && data.documents.length > 0) {
+      memoryComplianceGovernance = data;
+      return data;
+    }
+  }
+
+  if (memoryComplianceGovernance && typeof memoryComplianceGovernance === 'object') {
+    return memoryComplianceGovernance;
+  }
+
+  try {
+    const raw = await fs.readFile(complianceGovernancePath, 'utf8');
+    const data = sanitizeComplianceGovernanceState(JSON.parse(raw));
+    memoryComplianceGovernance = data;
+    return data;
+  } catch {
+    const seeded = sanitizeComplianceGovernanceState(null);
+    memoryComplianceGovernance = seeded;
+    return seeded;
+  }
+}
+
+async function writeComplianceGovernanceState(config) {
+  const sanitized = sanitizeComplianceGovernanceState(config);
+  const client = await getPgClient();
+  if (client) {
+    await client.query(
+      `INSERT INTO app_state (key, value, updated_at)
+       VALUES ($1, $2::jsonb, NOW())
+       ON CONFLICT (key)
+       DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+      ['compliance_governance', JSON.stringify(sanitized)],
+    );
+    memoryComplianceGovernance = sanitized;
+    return sanitized;
+  }
+
+  try {
+    await fs.writeFile(complianceGovernancePath, JSON.stringify(sanitized, null, 2), 'utf8');
+    memoryComplianceGovernance = sanitized;
+    return sanitized;
+  } catch (err) {
+    console.warn('compliance-governance.json write failed, using in-memory compliance store:', err?.message || err);
+    memoryComplianceGovernance = sanitized;
+    return sanitized;
+  }
+}
+
+async function saveComplianceConsent(payload) {
+  const state = await readComplianceGovernanceState();
+  const nextState = recordConsent(state, payload);
+  await writeComplianceGovernanceState(nextState);
+  return nextState;
+}
+
+async function saveCompliancePolicyAcceptance(payload) {
+  const state = await readComplianceGovernanceState();
+  const nextState = recordPolicyAcceptance(state, payload);
+  await writeComplianceGovernanceState(nextState);
+  return nextState;
+}
+
+async function saveComplianceUnsubscribe(payload) {
+  const state = await readComplianceGovernanceState();
+  const nextState = recordUnsubscribe(state, payload);
+  await writeComplianceGovernanceState(nextState);
+  return nextState;
+}
+
+async function readKnowledgeRetrievalState() {
+  const client = await getPgClient();
+  if (client) {
+    const result = await client.query(
+      `SELECT value
+       FROM app_state
+       WHERE key = $1
+       LIMIT 1`,
+      ['knowledge_retrieval'],
+    );
+    const data = sanitizeKnowledgeRetrievalState(result.rows[0]?.value);
+    if (
+      data &&
+      (
+        (Array.isArray(data.sources) && data.sources.length > 0) ||
+        (Array.isArray(data.sessions) && data.sessions.length > 0)
+      )
+    ) {
+      memoryKnowledgeRetrieval = data;
+      return data;
+    }
+  }
+
+  if (memoryKnowledgeRetrieval && typeof memoryKnowledgeRetrieval === 'object') {
+    return memoryKnowledgeRetrieval;
+  }
+
+  try {
+    const raw = await fs.readFile(knowledgeRetrievalStatePath, 'utf8');
+    const data = sanitizeKnowledgeRetrievalState(JSON.parse(raw));
+    memoryKnowledgeRetrieval = data;
+    return data;
+  } catch {
+    const seeded = sanitizeKnowledgeRetrievalState(null);
+    memoryKnowledgeRetrieval = seeded;
+    return seeded;
+  }
+}
+
+async function writeKnowledgeRetrievalState(config) {
+  const sanitized = sanitizeKnowledgeRetrievalState(config);
+  const client = await getPgClient();
+  if (client) {
+    await client.query(
+      `INSERT INTO app_state (key, value, updated_at)
+       VALUES ($1, $2::jsonb, NOW())
+       ON CONFLICT (key)
+       DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+      ['knowledge_retrieval', JSON.stringify(sanitized)],
+    );
+    memoryKnowledgeRetrieval = sanitized;
+    return sanitized;
+  }
+
+  try {
+    await fs.writeFile(knowledgeRetrievalStatePath, JSON.stringify(sanitized, null, 2), 'utf8');
+    memoryKnowledgeRetrieval = sanitized;
+    return sanitized;
+  } catch (err) {
+    console.warn('knowledge-retrieval.json write failed, using in-memory knowledge store:', err?.message || err);
+    memoryKnowledgeRetrieval = sanitized;
+    return sanitized;
+  }
+}
+
+async function ingestKnowledgeRetrievalSource(payload) {
+  const state = await readKnowledgeRetrievalState();
+  const nextState = ingestKnowledgeSource(state, payload);
+  await writeKnowledgeRetrievalState(nextState);
+  return nextState;
+}
+
+async function saveKnowledgeSession(payload) {
+  const state = await readKnowledgeRetrievalState();
+  const nextState = upsertKnowledgeSession(state, payload);
+  await writeKnowledgeRetrievalState(nextState);
+  return readKnowledgeSession(nextState, payload?.sessionId || payload?.id);
+}
+
 async function saveScalableTemplateEntity(templateInput) {
   const template = sanitizeScalableTemplate(templateInput);
   if (!template?.id) {
@@ -5651,7 +6297,7 @@ function requirePrivilegedReadAccess(req, res) {
     res.status(401).json({ ok: false, error: 'Unauthorized' });
     return null;
   }
-  if (!['platform_admin', 'developer'].includes(payload.userType)) {
+  if (!['platform_admin', 'developer', 'support_user'].includes(payload.userType)) {
     res.status(403).json({ ok: false, error: 'Insufficient privileges' });
     return null;
   }
@@ -6393,6 +7039,16 @@ app.post('/api/ad-leads', async (req, res) => {
           note: `Lead captured from ad campaign (${incomingLead.adId})`,
         })
       : null;
+    await persistAuditEvent({
+      timestamp: incomingLead.createdAt,
+      actionType: 'data_entry',
+      description: 'Captured ad lead',
+      details: `Channel: "web" | Ad ID: "${incomingLead.adId}" | Seller ID: "${incomingLead.sellerBusinessId || 'platform'}" | Phone: "${incomingLead.mobile}"`,
+      userName: incomingLead.name || 'Ad lead',
+    }, req, {
+      skipThrottle: true,
+      skipUserLookup: true,
+    });
     res.status(201).json({ ok: true, adLead: incomingLead, adLeads: savedAdLeads, crmContact });
   } catch (err) {
     console.error('Failed to save ad lead:', err);
@@ -7678,6 +8334,10 @@ app.post('/api/auth/register', async (req, res) => {
   if (!String(password || '').trim()) {
     return res.status(400).json({ ok: false, error: 'password is required for platform users' });
   }
+  const passwordPolicy = validatePasswordAgainstPolicy(password);
+  if (!passwordPolicy.valid) {
+    return res.status(400).json({ ok: false, error: passwordPolicy.errors.join(' ') });
+  }
 
   const users = await readUsers();
   const normalizedEmail = String(email).toLowerCase().trim();
@@ -7737,6 +8397,18 @@ app.post('/api/auth/register/request-otp', async (req, res) => {
 
   try {
     await sendMsg91Otp(normalizedPhone);
+    void saveComplianceConsent({
+      subjectType: 'visitor',
+      channel: 'sms',
+      consentType: 'otp_consent',
+      status: 'granted',
+      phone: normalizedPhone,
+      email: normalizedEmail,
+      source: 'register_request_otp',
+      capturedAt: new Date().toISOString(),
+    }).catch((error) => {
+      console.warn('Failed to record registration OTP consent:', error?.message || error);
+    });
     const challenge = await createOtpChallenge({
       userId: `pending:${randomId('usr')}`,
       userType,
@@ -7867,6 +8539,19 @@ app.post('/api/auth/request-otp', async (req, res) => {
   const mobile = normalizePhoneDigits(user.phone);
   try {
     await sendMsg91Otp(mobile);
+    void saveComplianceConsent({
+      subjectType: 'user',
+      channel: 'sms',
+      consentType: 'otp_consent',
+      status: 'granted',
+      phone: mobile,
+      userId: user.id,
+      email: user.email,
+      source: 'public_login_request_otp',
+      capturedAt: new Date().toISOString(),
+    }).catch((error) => {
+      console.warn('Failed to record public login OTP consent:', error?.message || error);
+    });
     const challenge = await createOtpChallenge({
       userId: user.id,
       userType: user.userType,
@@ -7910,6 +8595,17 @@ app.post('/api/contact-unlock/request-otp', async (req, res) => {
 
   try {
     await sendMsg91Otp(normalizedPhone);
+    void saveComplianceConsent({
+      subjectType: 'visitor',
+      channel: 'sms',
+      consentType: 'otp_consent',
+      status: 'granted',
+      phone: normalizedPhone,
+      source: 'contact_unlock_request_otp',
+      capturedAt: new Date().toISOString(),
+    }).catch((error) => {
+      console.warn('Failed to record contact unlock OTP consent:', error?.message || error);
+    });
     const challenge = await createOtpChallenge({
       userId: `contact:${normalizedPhone}`,
       userType: 'buyer',
@@ -8097,7 +8793,7 @@ app.post('/api/auth/platform/request-otp', async (req, res) => {
   const users = await readUsers();
   const user = findUserByLoginIdentifier(users, identifier);
   if (!user) return res.status(401).json({ ok: false, error: 'Invalid credentials' });
-  if (!['platform_admin', 'developer'].includes(user.userType)) {
+  if (!['platform_admin', 'developer', 'support_user'].includes(user.userType)) {
     return res.status(403).json({ ok: false, error: 'Use OTP login for non-platform accounts' });
   }
   const valid = await verifyPassword(String(password), user.passwordHash);
@@ -8111,6 +8807,19 @@ app.post('/api/auth/platform/request-otp', async (req, res) => {
 
   try {
     await sendMsg91Otp(mobile);
+    void saveComplianceConsent({
+      subjectType: 'user',
+      channel: 'sms',
+      consentType: 'otp_consent',
+      status: 'granted',
+      phone: mobile,
+      userId: user.id,
+      email: user.email,
+      source: 'platform_login_request_otp',
+      capturedAt: new Date().toISOString(),
+    }).catch((error) => {
+      console.warn('Failed to record platform login OTP consent:', error?.message || error);
+    });
     const challenge = await createOtpChallenge({
       userId: user.id,
       userType: user.userType,
@@ -8203,6 +8912,30 @@ app.post('/api/auth/login', async (req, res) => {
   });
 });
 
+app.get('/api/auth/password-policy', (_req, res) => {
+  res.json({ ok: true, policy: buildPasswordPolicy() });
+});
+
+app.post('/api/auth/refresh', async (req, res) => {
+  const authenticated = await readAuthenticatedUserFromRequest(req, res);
+  if (!authenticated) return;
+
+  const exp = Math.floor(Date.now() / 1000) + TOKEN_TTL_SEC;
+  const token = signToken({
+    sub: authenticated.user.id,
+    email: authenticated.user.email,
+    role: authenticated.user.role,
+    userType: authenticated.user.userType,
+    exp,
+  });
+
+  res.json({
+    ok: true,
+    token,
+    user: await buildResolvedAuthUserResponse(authenticated.user),
+  });
+});
+
 app.get('/api/auth/me', async (req, res) => {
   const payload = authFromHeader(req);
   if (!payload) return res.status(401).json({ ok: false, error: 'Unauthorized' });
@@ -8214,6 +8947,610 @@ app.get('/api/auth/me', async (req, res) => {
     ok: true,
     user: authUser,
   });
+});
+
+app.get('/api/legal-content', async (req, res) => {
+  try {
+    const state = await readComplianceGovernanceState();
+    const readAccess = authFromHeader(req);
+    const includeDrafts = Boolean(readAccess && ['platform_admin', 'developer', 'support_user'].includes(readAccess.userType));
+    const category = String(req.query.category || '').trim();
+    const audience = String(req.query.audience || '').trim();
+    const localityId = String(req.query.localityId || '').trim();
+    const documents = state.documents
+      .filter((doc) => includeDrafts || doc.status === 'published')
+      .filter((doc) => !category || doc.category === category)
+      .filter((doc) => !audience || doc.audience === 'all' || doc.audience === audience)
+      .filter((doc) => !localityId || !Array.isArray(doc.localityIds) || doc.localityIds.length === 0 || doc.localityIds.includes(localityId));
+    res.json({ ok: true, documents });
+  } catch (err) {
+    console.error('Failed to read legal content:', err);
+    res.status(500).json({ ok: false, error: 'Failed to read legal content' });
+  }
+});
+
+app.get('/api/legal-content/:documentId', async (req, res) => {
+  try {
+    const state = await readComplianceGovernanceState();
+    const readAccess = authFromHeader(req);
+    const includeDrafts = Boolean(readAccess && ['platform_admin', 'developer', 'support_user'].includes(readAccess.userType));
+    const documentId = String(req.params.documentId || '').trim();
+    const document = state.documents.find((doc) => doc.id === documentId || doc.slug === documentId);
+    if (!document || (!includeDrafts && document.status !== 'published')) {
+      return res.status(404).json({ ok: false, error: 'Legal document not found' });
+    }
+    res.json({ ok: true, document });
+  } catch (err) {
+    console.error('Failed to read legal document:', err);
+    res.status(500).json({ ok: false, error: 'Failed to read legal document' });
+  }
+});
+
+app.get('/api/admin/compliance/overview', async (req, res) => {
+  const access = requirePrivilegedReadAccess(req, res);
+  if (!access) return;
+
+  try {
+    const state = await readComplianceGovernanceState();
+    res.json({ ok: true, overview: buildComplianceOverview(state) });
+  } catch (err) {
+    console.error('Failed to build compliance overview:', err);
+    res.status(500).json({ ok: false, error: 'Failed to build compliance overview' });
+  }
+});
+
+app.get('/api/admin/compliance/state', async (req, res) => {
+  const access = requirePrivilegedReadAccess(req, res);
+  if (!access) return;
+
+  try {
+    const state = await readComplianceGovernanceState();
+    res.json({ ok: true, state });
+  } catch (err) {
+    console.error('Failed to read compliance state:', err);
+    res.status(500).json({ ok: false, error: 'Failed to read compliance state' });
+  }
+});
+
+app.put('/api/admin/compliance/documents/:documentId', async (req, res) => {
+  const access = requirePrivilegedWriteAccess(req, res);
+  if (!access) return;
+
+  try {
+    const state = await readComplianceGovernanceState();
+    const documentId = String(req.params.documentId || '').trim();
+    const nextDocuments = upsertPolicyDocument(state.documents, {
+      ...(req.body?.document || {}),
+      id: documentId || req.body?.document?.id,
+      updatedAt: new Date().toISOString(),
+    });
+    const nextState = await writeComplianceGovernanceState({
+      ...state,
+      documents: nextDocuments,
+      metadata: {
+        ...state.metadata,
+        updatedAt: new Date().toISOString(),
+      },
+    });
+    await persistAuditEvent({
+      timestamp: new Date().toISOString(),
+      actionType: 'data_entry',
+      description: 'Updated compliance policy document',
+      details: `Document ID: "${documentId}"`,
+      userName: access.sub || 'platform',
+    }, req, {
+      authenticatedPayload: access,
+      skipThrottle: true,
+    });
+    res.json({ ok: true, documents: nextState.documents });
+  } catch (err) {
+    console.error('Failed to update compliance policy document:', err);
+    res.status(500).json({ ok: false, error: err?.message || 'Failed to update compliance policy document' });
+  }
+});
+
+app.post('/api/compliance/consents', async (req, res) => {
+  if (!enforcePublicWriteThrottle(req, res, {
+    bucket: 'compliance:consents',
+    limit: 20,
+    windowMs: 10 * 60 * 1000,
+    keySuffix: String(req.body?.phone || req.body?.email || req.body?.userId || ''),
+  })) {
+    return;
+  }
+
+  try {
+    const authenticated = authFromHeader(req);
+    const nextState = await saveComplianceConsent({
+      ...(req.body || {}),
+      userId: req.body?.userId || authenticated?.sub || '',
+      capturedAt: req.body?.capturedAt || new Date().toISOString(),
+    });
+    await persistAuditEvent({
+      timestamp: new Date().toISOString(),
+      actionType: 'data_entry',
+      description: 'Captured compliance consent',
+      details: `Channel: "${req.body?.channel || ''}" | Consent: "${req.body?.consentType || ''}" | Status: "${req.body?.status || 'granted'}"`,
+      userName: authenticated?.sub || req.body?.phone || req.body?.email || 'Anonymous consent',
+    }, req, {
+      authenticatedPayload: authenticated,
+      skipThrottle: true,
+      skipUserLookup: true,
+    });
+    res.status(201).json({ ok: true, consents: nextState.consents });
+  } catch (err) {
+    console.error('Failed to save compliance consent:', err);
+    res.status(500).json({ ok: false, error: err?.message || 'Failed to save compliance consent' });
+  }
+});
+
+app.get('/api/admin/compliance/consents', async (req, res) => {
+  const access = requirePrivilegedReadAccess(req, res);
+  if (!access) return;
+
+  try {
+    const state = await readComplianceGovernanceState();
+    res.json({ ok: true, consents: state.consents });
+  } catch (err) {
+    console.error('Failed to read compliance consents:', err);
+    res.status(500).json({ ok: false, error: 'Failed to read compliance consents' });
+  }
+});
+
+app.post('/api/compliance/policy-acceptances', async (req, res) => {
+  if (!enforcePublicWriteThrottle(req, res, {
+    bucket: 'compliance:policy-acceptances',
+    limit: 20,
+    windowMs: 10 * 60 * 1000,
+    keySuffix: String(req.body?.phone || req.body?.email || req.body?.userId || ''),
+  })) {
+    return;
+  }
+
+  try {
+    const authenticated = authFromHeader(req);
+    const nextState = await saveCompliancePolicyAcceptance({
+      ...(req.body || {}),
+      userId: req.body?.userId || authenticated?.sub || '',
+      acceptedAt: req.body?.acceptedAt || new Date().toISOString(),
+    });
+    await persistAuditEvent({
+      timestamp: new Date().toISOString(),
+      actionType: 'data_entry',
+      description: 'Captured policy acceptance',
+      details: `Document ID: "${req.body?.documentId || ''}" | Version: "${req.body?.version || ''}" | Channel: "${req.body?.channel || 'web'}"`,
+      userName: authenticated?.sub || req.body?.phone || req.body?.email || 'Anonymous acceptance',
+    }, req, {
+      authenticatedPayload: authenticated,
+      skipThrottle: true,
+      skipUserLookup: true,
+    });
+    res.status(201).json({ ok: true, policyAcceptances: nextState.policyAcceptances });
+  } catch (err) {
+    console.error('Failed to save policy acceptance:', err);
+    res.status(500).json({ ok: false, error: err?.message || 'Failed to save policy acceptance' });
+  }
+});
+
+app.get('/api/admin/compliance/policy-acceptances', async (req, res) => {
+  const access = requirePrivilegedReadAccess(req, res);
+  if (!access) return;
+
+  try {
+    const state = await readComplianceGovernanceState();
+    res.json({ ok: true, policyAcceptances: state.policyAcceptances });
+  } catch (err) {
+    console.error('Failed to read policy acceptances:', err);
+    res.status(500).json({ ok: false, error: 'Failed to read policy acceptances' });
+  }
+});
+
+app.get('/api/admin/compliance/message-templates', async (req, res) => {
+  const access = requirePrivilegedReadAccess(req, res);
+  if (!access) return;
+
+  try {
+    const state = await readComplianceGovernanceState();
+    res.json({ ok: true, templates: state.messageTemplates });
+  } catch (err) {
+    console.error('Failed to read compliance message templates:', err);
+    res.status(500).json({ ok: false, error: 'Failed to read compliance message templates' });
+  }
+});
+
+app.put('/api/admin/compliance/message-templates', async (req, res) => {
+  const access = requirePrivilegedWriteAccess(req, res);
+  if (!access) return;
+
+  try {
+    const state = await readComplianceGovernanceState();
+    const nextState = await writeComplianceGovernanceState(replaceMessageTemplates(state, req.body?.templates || []));
+    await persistAuditEvent({
+      timestamp: new Date().toISOString(),
+      actionType: 'data_entry',
+      description: 'Updated compliance message templates',
+      details: `Templates: ${(req.body?.templates || []).length || 0}`,
+      userName: access.sub || 'platform',
+    }, req, {
+      authenticatedPayload: access,
+      skipThrottle: true,
+    });
+    res.json({ ok: true, templates: nextState.messageTemplates });
+  } catch (err) {
+    console.error('Failed to update compliance message templates:', err);
+    res.status(500).json({ ok: false, error: err?.message || 'Failed to update compliance message templates' });
+  }
+});
+
+app.post('/api/compliance/unsubscribe', async (req, res) => {
+  if (!enforcePublicWriteThrottle(req, res, {
+    bucket: 'compliance:unsubscribe',
+    limit: 20,
+    windowMs: 10 * 60 * 1000,
+    keySuffix: String(req.body?.phone || req.body?.email || ''),
+  })) {
+    return;
+  }
+
+  try {
+    const nextState = await saveComplianceUnsubscribe({
+      ...(req.body || {}),
+      unsubscribedAt: req.body?.unsubscribedAt || new Date().toISOString(),
+    });
+    await persistAuditEvent({
+      timestamp: new Date().toISOString(),
+      actionType: 'data_entry',
+      description: 'Processed compliance unsubscribe',
+      details: `Channel: "${req.body?.channel || ''}" | Category: "${req.body?.templateCategory || 'marketing'}"`,
+      userName: req.body?.phone || req.body?.email || 'Anonymous unsubscribe',
+    }, req, {
+      skipThrottle: true,
+      skipUserLookup: true,
+    });
+    res.status(201).json({ ok: true, unsubscribes: nextState.unsubscribes });
+  } catch (err) {
+    console.error('Failed to process compliance unsubscribe:', err);
+    res.status(500).json({ ok: false, error: err?.message || 'Failed to process compliance unsubscribe' });
+  }
+});
+
+app.get('/api/admin/compliance/unsubscribes', async (req, res) => {
+  const access = requirePrivilegedReadAccess(req, res);
+  if (!access) return;
+
+  try {
+    const state = await readComplianceGovernanceState();
+    res.json({ ok: true, unsubscribes: state.unsubscribes });
+  } catch (err) {
+    console.error('Failed to read compliance unsubscribes:', err);
+    res.status(500).json({ ok: false, error: 'Failed to read compliance unsubscribes' });
+  }
+});
+
+app.get('/api/compliance/messaging/runtime', async (req, res) => {
+  try {
+    const state = await readComplianceGovernanceState();
+    const runtime = buildMessagingComplianceRuntime(state, {
+      channel: String(req.query.channel || '').trim(),
+      phone: String(req.query.phone || '').trim(),
+      email: String(req.query.email || '').trim(),
+      userId: String(req.query.userId || '').trim(),
+    });
+    res.json({ ok: true, runtime });
+  } catch (err) {
+    console.error('Failed to build messaging compliance runtime:', err);
+    res.status(500).json({ ok: false, error: 'Failed to build messaging compliance runtime' });
+  }
+});
+
+app.get('/api/admin/compliance/retention-rules', async (req, res) => {
+  const access = requirePrivilegedReadAccess(req, res);
+  if (!access) return;
+
+  try {
+    const state = await readComplianceGovernanceState();
+    res.json({ ok: true, retentionRules: state.retentionRules });
+  } catch (err) {
+    console.error('Failed to read retention rules:', err);
+    res.status(500).json({ ok: false, error: 'Failed to read retention rules' });
+  }
+});
+
+app.put('/api/admin/compliance/retention-rules', async (req, res) => {
+  const access = requirePrivilegedWriteAccess(req, res);
+  if (!access) return;
+
+  try {
+    const state = await readComplianceGovernanceState();
+    const nextState = await writeComplianceGovernanceState(replaceRetentionRules(state, req.body?.retentionRules || []));
+    await persistAuditEvent({
+      timestamp: new Date().toISOString(),
+      actionType: 'data_entry',
+      description: 'Updated compliance retention rules',
+      details: `Rules: ${(req.body?.retentionRules || []).length || 0}`,
+      userName: access.sub || 'platform',
+    }, req, {
+      authenticatedPayload: access,
+      skipThrottle: true,
+    });
+    res.json({ ok: true, retentionRules: nextState.retentionRules });
+  } catch (err) {
+    console.error('Failed to update retention rules:', err);
+    res.status(500).json({ ok: false, error: err?.message || 'Failed to update retention rules' });
+  }
+});
+
+app.post('/api/admin/compliance/retention/enforce', async (req, res) => {
+  const access = requirePrivilegedWriteAccess(req, res);
+  if (!access) return;
+
+  try {
+    const state = await readComplianceGovernanceState();
+    const channelSessions = Array.from(memoryChannelSessions.entries()).map(([sessionKey, value]) => ({
+      sessionKey,
+      ...(value || {}),
+      updatedAt: value?.updatedAtMs ? new Date(value.updatedAtMs).toISOString() : new Date().toISOString(),
+    }));
+    const result = applyRetentionRules(state, {
+      otpChallenges: Array.isArray(memoryOtpChallenges) ? memoryOtpChallenges : [],
+      channelSessions,
+    });
+
+    await writeComplianceGovernanceState(result.state);
+
+    if (Array.isArray(memoryOtpChallenges)) {
+      memoryOtpChallenges = result.otpChallenges;
+    }
+    memoryChannelSessions.clear();
+    (result.channelSessions || []).forEach((session) => {
+      if (!session?.sessionKey) return;
+      memoryChannelSessions.set(session.sessionKey, {
+        ...session,
+        updatedAtMs: session.updatedAt ? new Date(session.updatedAt).getTime() : Date.now(),
+      });
+    });
+
+    const otpRule = result.state.retentionRules.find((rule) => rule.entity === 'otp_challenges' && rule.action === 'delete');
+    if (otpRule) {
+      const client = await getPgClient();
+      if (client) {
+        const cutoff = new Date(Date.now() - (Number(otpRule.retentionDays || 30) * 24 * 60 * 60 * 1000)).toISOString();
+        const deleted = await client.query(
+          `DELETE FROM auth_otp_challenges
+           WHERE created_at < $1`,
+          [cutoff],
+        );
+        result.summary.otpChallengesRemoved += Number(deleted.rowCount || 0);
+      }
+    }
+
+    await persistAuditEvent({
+      timestamp: new Date().toISOString(),
+      actionType: 'data_entry',
+      description: 'Executed compliance retention enforcement',
+      details: `Summary: ${JSON.stringify(result.summary)}`,
+      userName: access.sub || 'platform',
+    }, req, {
+      authenticatedPayload: access,
+      skipThrottle: true,
+    });
+    res.json({ ok: true, summary: result.summary, retentionRules: result.state.retentionRules });
+  } catch (err) {
+    console.error('Failed to enforce retention rules:', err);
+    res.status(500).json({ ok: false, error: err?.message || 'Failed to enforce retention rules' });
+  }
+});
+
+app.get('/api/admin/knowledge/state', async (req, res) => {
+  const access = requirePrivilegedReadAccess(req, res);
+  if (!access) return;
+
+  try {
+    const state = await readKnowledgeRetrievalState();
+    res.json({ ok: true, state });
+  } catch (err) {
+    console.error('Failed to read knowledge retrieval state:', err);
+    res.status(500).json({ ok: false, error: 'Failed to read knowledge retrieval state' });
+  }
+});
+
+app.get('/api/admin/knowledge/overview', async (req, res) => {
+  const access = requirePrivilegedReadAccess(req, res);
+  if (!access) return;
+
+  try {
+    const state = await readKnowledgeRetrievalState();
+    res.json({ ok: true, overview: buildKnowledgeOverview(state) });
+  } catch (err) {
+    console.error('Failed to build knowledge overview:', err);
+    res.status(500).json({ ok: false, error: 'Failed to build knowledge overview' });
+  }
+});
+
+app.get('/api/admin/knowledge/sources', async (req, res) => {
+  const access = requirePrivilegedReadAccess(req, res);
+  if (!access) return;
+
+  try {
+    const state = await readKnowledgeRetrievalState();
+    res.json({ ok: true, sources: state.sources, documents: state.documents });
+  } catch (err) {
+    console.error('Failed to read knowledge sources:', err);
+    res.status(500).json({ ok: false, error: 'Failed to read knowledge sources' });
+  }
+});
+
+app.get('/api/admin/knowledge/sessions', async (req, res) => {
+  const access = requirePrivilegedReadAccess(req, res);
+  if (!access) return;
+
+  try {
+    const state = await readKnowledgeRetrievalState();
+    res.json({ ok: true, sessions: state.sessions });
+  } catch (err) {
+    console.error('Failed to read knowledge sessions:', err);
+    res.status(500).json({ ok: false, error: 'Failed to read knowledge sessions' });
+  }
+});
+
+app.post('/api/admin/knowledge/ingest/pdf', async (req, res) => {
+  const access = requirePrivilegedWriteAccess(req, res);
+  if (!access) return;
+
+  try {
+    const nextState = await ingestKnowledgeRetrievalSource({
+      ...(req.body || {}),
+      sourceType: 'pdf',
+      uploadedBy: access.sub || req.body?.uploadedBy || 'platform',
+      ingestionMode: 'pdf_upload',
+    });
+    await persistAuditEvent({
+      timestamp: new Date().toISOString(),
+      actionType: 'data_entry',
+      description: 'Ingested PDF knowledge source',
+      details: `Title: "${req.body?.title || req.body?.fileName || 'PDF'}" | Pages: ${(req.body?.pages || []).length || 0}`,
+      userName: access.sub || 'platform',
+    }, req, {
+      authenticatedPayload: access,
+      skipThrottle: true,
+    });
+    res.status(201).json({ ok: true, overview: buildKnowledgeOverview(nextState), sources: nextState.sources });
+  } catch (err) {
+    console.error('Failed to ingest PDF knowledge source:', err);
+    res.status(500).json({ ok: false, error: err?.message || 'Failed to ingest PDF knowledge source' });
+  }
+});
+
+app.post('/api/admin/knowledge/ingest/excel', async (req, res) => {
+  const access = requirePrivilegedWriteAccess(req, res);
+  if (!access) return;
+
+  try {
+    const nextState = await ingestKnowledgeRetrievalSource({
+      ...(req.body || {}),
+      sourceType: 'excel',
+      uploadedBy: access.sub || req.body?.uploadedBy || 'platform',
+      ingestionMode: 'excel_upload',
+    });
+    await persistAuditEvent({
+      timestamp: new Date().toISOString(),
+      actionType: 'data_entry',
+      description: 'Ingested Excel knowledge source',
+      details: `Title: "${req.body?.title || req.body?.fileName || 'Excel'}" | Sheets: ${(req.body?.sheets || []).length || 0}`,
+      userName: access.sub || 'platform',
+    }, req, {
+      authenticatedPayload: access,
+      skipThrottle: true,
+    });
+    res.status(201).json({ ok: true, overview: buildKnowledgeOverview(nextState), sources: nextState.sources });
+  } catch (err) {
+    console.error('Failed to ingest Excel knowledge source:', err);
+    res.status(500).json({ ok: false, error: err?.message || 'Failed to ingest Excel knowledge source' });
+  }
+});
+
+app.post('/api/admin/knowledge/ingest/api', async (req, res) => {
+  const access = requirePrivilegedWriteAccess(req, res);
+  if (!access) return;
+
+  try {
+    const nextState = await ingestKnowledgeRetrievalSource({
+      ...(req.body || {}),
+      sourceType: 'api',
+      uploadedBy: access.sub || req.body?.uploadedBy || 'platform',
+      ingestionMode: 'api_import',
+    });
+    await persistAuditEvent({
+      timestamp: new Date().toISOString(),
+      actionType: 'data_entry',
+      description: 'Ingested API knowledge source',
+      details: `Title: "${req.body?.title || req.body?.endpoint || 'API'}" | Records: ${(req.body?.records || []).length || 0}`,
+      userName: access.sub || 'platform',
+    }, req, {
+      authenticatedPayload: access,
+      skipThrottle: true,
+    });
+    res.status(201).json({ ok: true, overview: buildKnowledgeOverview(nextState), sources: nextState.sources });
+  } catch (err) {
+    console.error('Failed to ingest API knowledge source:', err);
+    res.status(500).json({ ok: false, error: err?.message || 'Failed to ingest API knowledge source' });
+  }
+});
+
+app.post('/api/admin/knowledge/reembed', async (req, res) => {
+  const access = requirePrivilegedWriteAccess(req, res);
+  if (!access) return;
+
+  try {
+    const state = await readKnowledgeRetrievalState();
+    const nextState = await writeKnowledgeRetrievalState(reembedKnowledgeState(state, req.body || {}));
+    await persistAuditEvent({
+      timestamp: new Date().toISOString(),
+      actionType: 'data_entry',
+      description: 'Re-embedded knowledge retrieval state',
+      details: `Embedding model version: "${nextState.settings.embeddingModelVersion}"`,
+      userName: access.sub || 'platform',
+    }, req, {
+      authenticatedPayload: access,
+      skipThrottle: true,
+    });
+    res.json({ ok: true, overview: buildKnowledgeOverview(nextState), settings: nextState.settings });
+  } catch (err) {
+    console.error('Failed to re-embed knowledge retrieval state:', err);
+    res.status(500).json({ ok: false, error: err?.message || 'Failed to re-embed knowledge retrieval state' });
+  }
+});
+
+app.post('/api/knowledge/query', async (req, res) => {
+  try {
+    const origin = getOrigin(req);
+    const sessionId = String(req.body?.sessionId || '').trim();
+    const localityId = queryValueAsString(req.body?.localityId || req.body?.locality);
+    const categoryId = queryValueAsString(req.body?.categoryId || req.body?.category);
+    const grounded = await resolveGroundedDirectoryAnswer({
+      rawQuery: queryValueAsString(req.body?.query || req.body?.q),
+      localityId,
+      categoryId,
+      limit: Number(req.body?.limit || 3),
+      sessionId,
+      channel: String(req.body?.channel || 'web').trim() || 'web',
+      origin,
+    });
+    res.json({
+      ok: true,
+      understanding: {
+        language: grounded.language,
+        intent: grounded.intent,
+        scope: grounded.scope,
+        extraction: grounded.understanding,
+      },
+      response: {
+        directAnswer: grounded.directAnswer,
+        followUpPrompts: grounded.followUpPrompts,
+        listingCards: grounded.searchResult.results,
+        citations: grounded.citations,
+        confidence: grounded.confidence,
+      },
+      retrieval: {
+        sqlResults: grounded.searchResult.results.map((result) => ({
+          id: result.id,
+          label: result.name,
+          score: Number(result.score || 0),
+        })),
+        vectorResults: grounded.retrieval.vectorResults,
+        hybridResults: grounded.retrieval.hybridResults,
+      },
+      memory: sessionId ? {
+        sessionId,
+        previousQuery: grounded.previousKnowledgeSession?.lastQuery || null,
+        effectiveQuery: grounded.effectiveQuery,
+        recentResults: grounded.savedKnowledgeSession?.recentResults || [],
+      } : null,
+    });
+  } catch (err) {
+    console.error('Failed to resolve knowledge query:', err);
+    res.status(500).json({ ok: false, error: err?.message || 'Failed to resolve knowledge query' });
+  }
 });
 
 app.get('/api/buyer-state', async (req, res) => {
@@ -8275,74 +9612,794 @@ app.post('/api/audit-events', async (req, res) => {
     return res.status(400).json({ ok: false, error: `Missing fields: ${missing.join(', ')}` });
   }
 
-  const authenticated = authFromHeader(req);
-  let resolvedUserName = normalizeAuditText(payload.userName || 'Anonymous Explorer', 120) || 'Anonymous Explorer';
-  if (authenticated?.sub) {
-    const users = await readUsers();
-    const user = users.find((entry) => entry.id === authenticated.sub);
-    if (user) {
-      resolvedUserName = normalizeAuditText(user.name || user.email || resolvedUserName, 120) || resolvedUserName;
-    }
-  }
-
-  const ipAddress = normalizeRequestIp(req);
-  const userAgent = String(req.headers['user-agent'] || payload.deviceCode || 'unknown');
-  const auditDecision = evaluateAuditEventThrottle({
-    ipAddress,
-    userAgent,
-    actionType: payload.actionType,
-    description: payload.description,
-    details: payload.details,
-    userName: resolvedUserName,
-    isAuthenticated: Boolean(authenticated?.sub),
-  });
-  if (!auditDecision.accept) {
-    return res.status(202).json({
-      ok: true,
-      skipped: true,
-      reason: auditDecision.status,
-      automated: auditDecision.automated,
-      retryAfterMs: auditDecision.retryAfterMs,
-    });
-  }
-
-  const event = {
-    id: normalizeAuditText(payload.id || `audit_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`, 96),
-    timestamp: String(payload.timestamp),
-    actionType: String(payload.actionType),
-    description: normalizeAuditText(payload.description, 240),
-    details: normalizeAuditText(payload.details, 1000),
-    ipAddress,
-    deviceCode: normalizeAuditText(userAgent, 240) || 'unknown',
-    userName: resolvedUserName,
-  };
-
   try {
-    const client = await getPgClient();
-    if (client) {
-      await client.query(
-        `INSERT INTO compliance_audit_logs (id, timestamp, action_type, description, details, ip_address, device_code, user_name)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-         ON CONFLICT (id) DO NOTHING`,
-        [
-          event.id,
-          event.timestamp,
-          event.actionType,
-          event.description,
-          event.details,
-          event.ipAddress,
-          event.deviceCode,
-          event.userName,
-        ],
-      );
-    } else {
-      await fs.appendFile(auditLogPath, JSON.stringify(event) + '\n', 'utf8');
+    const result = await persistAuditEvent(payload, req);
+    if (result.skipped) {
+      return res.status(result.status || 202).json({
+        ok: true,
+        skipped: true,
+        reason: result.reason,
+        automated: result.automated,
+        retryAfterMs: result.retryAfterMs,
+      });
     }
-    res.status(201).json({ ok: true });
+    res.status(result.status || 201).json({ ok: true });
   } catch (err) {
     console.error('Failed to persist audit event:', err);
     res.status(500).json({ ok: false, error: 'Failed to persist audit event' });
   }
+});
+
+app.get('/api/mobile/search', async (req, res) => {
+  const startedAt = Date.now();
+  try {
+    const origin = getOrigin(req);
+    const rawQuery = queryValueAsString(req.query.q || req.query.query);
+    const localityId = queryValueAsString(req.query.localityId || req.query.locality);
+    const categoryId = queryValueAsString(req.query.categoryId || req.query.category);
+    const searchResult = await resolveDirectorySearch({
+      query: rawQuery,
+      localityId,
+      categoryId,
+      limit: Number(req.query.limit || 10),
+      origin,
+    });
+    await persistAuditEvent({
+      timestamp: new Date().toISOString(),
+      actionType: 'search',
+      description: 'Mobile directory search',
+      details: `Channel: "mobile" | Query: "${searchResult.normalizedQuery || rawQuery}" | Locality: "${localityId}" | Category: "${categoryId}" | Results: ${searchResult.results.length} | Fallback: ${searchResult.results.length === 0 ? 'yes' : 'no'} | DurationMs: ${Date.now() - startedAt}`,
+      userName: 'Mobile API',
+    }, req, {
+      skipUserLookup: true,
+    });
+
+    res.json({
+      ok: true,
+      query: searchResult.normalizedQuery,
+      total: searchResult.results.length,
+      results: searchResult.results,
+    });
+  } catch (err) {
+    console.error('Failed to resolve mobile search:', err);
+    res.status(500).json({ ok: false, error: 'Failed to resolve search' });
+  }
+});
+
+app.get('/api/mobile/listing/:listingId', async (req, res) => {
+  try {
+    const businesses = await readBusinessListings();
+    const seoConfig = await readSeoDiscoveryConfig();
+    const seoContext = buildSeoDiscoveryContext(seoConfig);
+    const listingId = String(req.params.listingId || '').trim();
+    const business = (Array.isArray(businesses) ? businesses : []).find((entry) => {
+      if (String(entry.id || '') === listingId) return true;
+      return buildListingSlug(entry.name, entry.id) === listingId;
+    });
+
+    if (!business) {
+      return res.status(404).json({ ok: false, error: 'Listing not found' });
+    }
+
+    const origin = getOrigin(req);
+    const related = (Array.isArray(businesses) ? businesses : [])
+      .filter((entry) => entry && String(entry.status || '') === 'approved' && String(entry.id || '') !== String(business.id || ''))
+      .filter((entry) => (
+        String(entry.localityId || '') === String(business.localityId || '') ||
+        String(entry.categoryId || '') === String(business.categoryId || '') ||
+        (business.subcategoryId && String(entry.subcategoryId || '') === String(business.subcategoryId || ''))
+      ))
+      .map((entry) => ({
+        business: entry,
+        score: scoreBusinessForDirectorySearch(entry, normalizeDirectoryQuery(`${business.name} ${business.categoryId} ${business.subcategoryId || ''}`), {
+          localityId: business.localityId,
+          categoryId: business.categoryId,
+        }),
+      }))
+      .sort((left, right) => right.score - left.score)
+      .slice(0, 3)
+      .map((entry) => buildBusinessContactCard(entry.business, origin, seoContext));
+    await persistAuditEvent({
+      timestamp: new Date().toISOString(),
+      actionType: 'contact_view',
+      description: 'Viewed mobile listing details',
+      details: `Channel: "mobile" | Listing ID: "${business.id}" | Locality: "${business.localityId}" | Category: "${business.categoryId}"`,
+      userName: 'Mobile API',
+    }, req, {
+      skipUserLookup: true,
+    });
+
+    res.json({
+      ok: true,
+      listing: {
+        ...buildBusinessContactCard(business, origin, seoContext),
+        description: String(business.description || ''),
+        tags: Array.isArray(business.tags) ? business.tags : [],
+        languagesSpoken: Array.isArray(business.languagesSpoken) ? business.languagesSpoken : [],
+        paymentMethods: Array.isArray(business.paymentMethods) ? business.paymentMethods : [],
+        gpsCoordinates: business.gpsCoordinates || null,
+      },
+      relatedListings: related,
+    });
+  } catch (err) {
+    console.error('Failed to resolve mobile listing:', err);
+    res.status(500).json({ ok: false, error: 'Failed to resolve listing' });
+  }
+});
+
+app.get('/api/mobile/profile', async (req, res) => {
+  const authenticated = await readAuthenticatedUserFromRequest(req, res);
+  if (!authenticated) return;
+
+  try {
+    const [user, state] = await Promise.all([
+      buildResolvedAuthUserResponse(authenticated.user),
+      readBuyerStateForUser(authenticated.user.id),
+    ]);
+    res.json({ ok: true, user, buyerState: state });
+  } catch (err) {
+    console.error('Failed to resolve mobile profile:', err);
+    res.status(500).json({ ok: false, error: 'Failed to resolve profile' });
+  }
+});
+
+app.post('/api/mobile/chat', async (req, res) => {
+  const startedAt = Date.now();
+  try {
+    const rawQuery = queryValueAsString(req.body?.query || req.body?.q);
+    const localityId = queryValueAsString(req.body?.localityId || req.body?.locality);
+    const categoryId = queryValueAsString(req.body?.categoryId || req.body?.category);
+    const origin = getOrigin(req);
+    const sessionKey = String(req.body?.sessionId || '').trim();
+    const grounded = await resolveGroundedDirectoryAnswer({
+      rawQuery,
+      localityId,
+      categoryId,
+      limit: Number(req.body?.limit || 3),
+      sessionId: sessionKey,
+      channel: 'mobile_chat',
+      origin,
+    });
+    const previousSession = sessionKey ? readChannelSession(sessionKey) : null;
+    if (sessionKey) {
+      writeChannelSession(sessionKey, {
+        channel: 'mobile_chat',
+        previousQuery: rawQuery,
+        previousTopListingIds: grounded.searchResult.results.map((result) => result.id).slice(0, 3),
+      });
+    }
+    await persistAuditEvent({
+      timestamp: new Date().toISOString(),
+      actionType: 'search',
+      description: 'Mobile grounded chat directory query',
+      details: `Channel: "mobile" | SessionId: "${sessionKey}" | Query: "${grounded.understanding.normalizedQuery || rawQuery}" | EffectiveQuery: "${grounded.effectiveQuery}" | Locality: "${localityId}" | Category: "${categoryId}" | Results: ${grounded.searchResult.results.length} | KnowledgeHits: ${grounded.retrieval.hybridResults.length} | Fallback: ${grounded.searchResult.results.length > 0 ? 'no' : 'yes'} | DurationMs: ${Date.now() - startedAt}`,
+      userName: sessionKey || 'Mobile chat guest',
+    }, req, {
+      skipUserLookup: true,
+    });
+
+    res.json({
+      ok: true,
+      understanding: {
+        language: grounded.language,
+        intent: grounded.intent,
+        scope: grounded.scope,
+        extraction: grounded.understanding,
+      },
+      response: {
+        directAnswer: grounded.directAnswer,
+        followUpPrompts: grounded.followUpPrompts,
+        listingCards: grounded.searchResult.results,
+        citations: grounded.citations,
+        confidence: grounded.confidence,
+      },
+      memory: sessionKey ? {
+        sessionId: sessionKey,
+        previousQuery: grounded.previousKnowledgeSession?.lastQuery || previousSession?.previousQuery || null,
+        previousTopListingIds: previousSession?.previousTopListingIds || [],
+        effectiveQuery: grounded.effectiveQuery,
+        recentResults: grounded.savedKnowledgeSession?.recentResults || [],
+      } : null,
+      retrieval: {
+        sqlResults: grounded.searchResult.results.map((result) => ({
+          id: result.id,
+          label: result.name,
+          score: Number(result.score || 0),
+        })),
+        vectorResults: grounded.retrieval.vectorResults,
+        hybridResults: grounded.retrieval.hybridResults,
+      },
+    });
+  } catch (err) {
+    console.error('Failed to resolve mobile chat:', err);
+    res.status(500).json({ ok: false, error: 'Failed to resolve chat' });
+  }
+});
+
+async function resolveWhatsappDirectoryResponse(payload, req) {
+  const startedAt = Date.now();
+  const rawQuery = queryValueAsString(payload?.query || payload?.text || payload?.message?.text || payload?.messages?.[0]?.text?.body);
+  const localityId = queryValueAsString(payload?.localityId || payload?.locality);
+  const categoryId = queryValueAsString(payload?.categoryId || payload?.category);
+  const normalizedPhone = normalizePhoneDigits(payload?.phone || payload?.from || payload?.messages?.[0]?.from || '');
+  const origin = getOrigin(req);
+  const sessionKey = normalizedPhone || String(payload?.sessionId || '').trim();
+  const grounded = await resolveGroundedDirectoryAnswer({
+    rawQuery,
+    localityId,
+    categoryId,
+    limit: 3,
+    sessionId: sessionKey,
+    channel: 'whatsapp',
+    origin,
+  });
+  const previousSession = sessionKey ? readChannelSession(sessionKey) : null;
+  if (sessionKey) {
+    writeChannelSession(sessionKey, {
+      channel: 'whatsapp',
+      phone: normalizedPhone || undefined,
+      previousQuery: rawQuery,
+      previousTopListingIds: grounded.searchResult.results.map((result) => result.id).slice(0, 3),
+    });
+  }
+  if (payload?.whatsappConsent === true || payload?.optIn === true) {
+    void saveComplianceConsent({
+      subjectType: 'visitor',
+      channel: 'whatsapp',
+      consentType: 'whatsapp_consent',
+      status: 'granted',
+      phone: normalizedPhone,
+      source: 'whatsapp_inbound_optin',
+      capturedAt: new Date().toISOString(),
+    }).catch((error) => {
+      console.warn('Failed to record WhatsApp consent:', error?.message || error);
+    });
+  }
+  await persistAuditEvent({
+    timestamp: new Date().toISOString(),
+    actionType: 'search',
+    description: 'WhatsApp grounded directory query',
+    details: `Channel: "whatsapp" | SessionId: "${sessionKey}" | Phone: "${normalizedPhone}" | Query: "${grounded.understanding.normalizedQuery || rawQuery}" | EffectiveQuery: "${grounded.effectiveQuery}" | Locality: "${localityId}" | Category: "${categoryId}" | Results: ${grounded.searchResult.results.length} | KnowledgeHits: ${grounded.retrieval.hybridResults.length} | Fallback: ${grounded.searchResult.results.length > 0 ? 'no' : 'yes'} | DurationMs: ${Date.now() - startedAt}`,
+    userName: normalizedPhone || 'WhatsApp guest',
+  }, req, {
+    skipUserLookup: true,
+  });
+
+  return {
+    ok: true,
+    normalizedQuery: grounded.understanding.normalizedQuery,
+    effectiveQuery: grounded.effectiveQuery,
+    directAnswer: grounded.directAnswer,
+    singleBestListingUrl: grounded.searchResult.results[0]?.listingUrl || null,
+    topListingUrls: grounded.searchResult.results.slice(0, 3).map((result) => result.listingUrl),
+    contactCards: grounded.searchResult.results.map((result) => ({
+      id: result.id,
+      name: result.name,
+      phone: result.phone,
+      address: result.address,
+      rating: result.rating,
+      verifiedBadge: result.verifiedBadge,
+      listingUrl: result.listingUrl,
+    })),
+    citations: grounded.citations,
+    knowledgeSnippets: grounded.retrieval.hybridResults.slice(0, 3).map((entry) => ({
+      id: entry.chunkId,
+      title: entry.title,
+      snippet: entry.snippet,
+      sourceType: entry.sourceType,
+      sourceUrl: entry.sourceUrl || null,
+    })),
+    followUpPrompts: grounded.followUpPrompts,
+    confidence: grounded.confidence,
+    previousQuery: grounded.previousKnowledgeSession?.lastQuery || previousSession?.previousQuery || null,
+    sessionId: sessionKey || null,
+  };
+}
+
+app.post('/api/whatsapp/resolve', async (req, res) => {
+  try {
+    const response = await resolveWhatsappDirectoryResponse(req.body || {}, req);
+    res.json(response);
+  } catch (err) {
+    console.error('Failed to resolve WhatsApp directory response:', err);
+    res.status(500).json({ ok: false, error: 'Failed to resolve WhatsApp response' });
+  }
+});
+
+app.post('/api/whatsapp/webhook', async (req, res) => {
+  try {
+    const response = await resolveWhatsappDirectoryResponse(req.body || {}, req);
+    res.json(response);
+  } catch (err) {
+    console.error('Failed to process WhatsApp webhook:', err);
+    res.status(500).json({ ok: false, error: 'Failed to process WhatsApp webhook' });
+  }
+});
+
+app.get('/api/admin/analytics/search', async (req, res) => {
+  const access = requirePrivilegedReadAccess(req, res);
+  if (!access) return;
+
+  try {
+    const snapshot = await buildAdminOperationsSnapshot();
+    res.json({ ok: true, analytics: snapshot.searchAnalytics });
+  } catch (err) {
+    console.error('Failed to build search analytics:', err);
+    res.status(500).json({ ok: false, error: 'Failed to build search analytics' });
+  }
+});
+
+app.get('/api/admin/analytics/channels', async (req, res) => {
+  const access = requirePrivilegedReadAccess(req, res);
+  if (!access) return;
+
+  try {
+    const snapshot = await buildAdminOperationsSnapshot();
+    res.json({ ok: true, analytics: snapshot.channelAnalytics });
+  } catch (err) {
+    console.error('Failed to build channel analytics:', err);
+    res.status(500).json({ ok: false, error: 'Failed to build channel analytics' });
+  }
+});
+
+app.get('/api/admin/analytics/campaign-comparison', async (req, res) => {
+  const access = requirePrivilegedReadAccess(req, res);
+  if (!access) return;
+
+  try {
+    const snapshot = await buildAdminOperationsSnapshot();
+    res.json({ ok: true, campaigns: snapshot.campaignComparison });
+  } catch (err) {
+    console.error('Failed to build campaign comparison analytics:', err);
+    res.status(500).json({ ok: false, error: 'Failed to build campaign comparison analytics' });
+  }
+});
+
+app.get('/api/admin/notifications', async (req, res) => {
+  const access = requirePrivilegedReadAccess(req, res);
+  if (!access) return;
+
+  try {
+    const snapshot = await buildAdminOperationsSnapshot();
+    res.json({ ok: true, notifications: snapshot.internalNotifications });
+  } catch (err) {
+    console.error('Failed to build admin notifications:', err);
+    res.status(500).json({ ok: false, error: 'Failed to build admin notifications' });
+  }
+});
+
+app.get('/api/admin/lead-routing', async (req, res) => {
+  const access = requirePrivilegedReadAccess(req, res);
+  if (!access) return;
+
+  try {
+    const snapshot = await buildAdminOperationsSnapshot();
+    res.json({ ok: true, routing: snapshot.leadRouting });
+  } catch (err) {
+    console.error('Failed to build lead routing snapshot:', err);
+    res.status(500).json({ ok: false, error: 'Failed to build lead routing snapshot' });
+  }
+});
+
+app.get('/api/admin/crm-segments', async (req, res) => {
+  const access = requirePrivilegedReadAccess(req, res);
+  if (!access) return;
+
+  try {
+    const snapshot = await buildAdminOperationsSnapshot();
+    res.json({ ok: true, segmentation: snapshot.crmSegmentation });
+  } catch (err) {
+    console.error('Failed to build CRM segmentation:', err);
+    res.status(500).json({ ok: false, error: 'Failed to build CRM segmentation' });
+  }
+});
+
+app.get('/api/admin/merchant-insights', async (req, res) => {
+  const access = requirePrivilegedReadAccess(req, res);
+  if (!access) return;
+
+  try {
+    const snapshot = await buildAdminOperationsSnapshot();
+    res.json({ ok: true, insights: snapshot.merchantInsights });
+  } catch (err) {
+    console.error('Failed to build merchant insights:', err);
+    res.status(500).json({ ok: false, error: 'Failed to build merchant insights' });
+  }
+});
+
+app.get('/api/admin/seo/analytics', async (req, res) => {
+  const access = requirePrivilegedReadAccess(req, res);
+  if (!access) return;
+
+  try {
+    const [seoConfig, routingConfig, businesses, auditEvents] = await Promise.all([
+      readSeoDiscoveryConfig(),
+      readLocalityRoutingConfig(),
+      readBusinessListings(),
+      readAuditEvents(),
+    ]);
+    const snapshot = buildSeoGrowthSnapshot({
+      seoConfig,
+      localities: routingConfig?.localities || [],
+      businesses,
+      auditEvents,
+    });
+    res.json({ ok: true, analytics: snapshot.analytics });
+  } catch (err) {
+    console.error('Failed to build SEO analytics:', err);
+    res.status(500).json({ ok: false, error: 'Failed to build SEO analytics' });
+  }
+});
+
+app.get('/api/admin/seo/route-coverage', async (req, res) => {
+  const access = requirePrivilegedReadAccess(req, res);
+  if (!access) return;
+
+  try {
+    const [seoConfig, routingConfig, businesses, auditEvents] = await Promise.all([
+      readSeoDiscoveryConfig(),
+      readLocalityRoutingConfig(),
+      readBusinessListings(),
+      readAuditEvents(),
+    ]);
+    const snapshot = buildSeoGrowthSnapshot({
+      seoConfig,
+      localities: routingConfig?.localities || [],
+      businesses,
+      auditEvents,
+    });
+    res.json({ ok: true, routeCoverage: snapshot.routeCoverage });
+  } catch (err) {
+    console.error('Failed to build SEO route coverage:', err);
+    res.status(500).json({ ok: false, error: 'Failed to build SEO route coverage' });
+  }
+});
+
+app.get('/api/admin/seo/crawl-monitoring', async (req, res) => {
+  const access = requirePrivilegedReadAccess(req, res);
+  if (!access) return;
+
+  try {
+    const [seoConfig, routingConfig, businesses, auditEvents] = await Promise.all([
+      readSeoDiscoveryConfig(),
+      readLocalityRoutingConfig(),
+      readBusinessListings(),
+      readAuditEvents(),
+    ]);
+    const snapshot = buildSeoGrowthSnapshot({
+      seoConfig,
+      localities: routingConfig?.localities || [],
+      businesses,
+      auditEvents,
+    });
+    res.json({ ok: true, crawlMonitoring: snapshot.crawlMonitoring });
+  } catch (err) {
+    console.error('Failed to build SEO crawl monitoring:', err);
+    res.status(500).json({ ok: false, error: 'Failed to build SEO crawl monitoring' });
+  }
+});
+
+app.get('/api/admin/seo/merchant-entitlements', async (req, res) => {
+  const access = requirePrivilegedReadAccess(req, res);
+  if (!access) return;
+
+  try {
+    const [seoConfig, routingConfig, businesses, auditEvents] = await Promise.all([
+      readSeoDiscoveryConfig(),
+      readLocalityRoutingConfig(),
+      readBusinessListings(),
+      readAuditEvents(),
+    ]);
+    const snapshot = buildSeoGrowthSnapshot({
+      seoConfig,
+      localities: routingConfig?.localities || [],
+      businesses,
+      auditEvents,
+    });
+    res.json({ ok: true, merchantEntitlements: snapshot.merchantEntitlements });
+  } catch (err) {
+    console.error('Failed to build SEO merchant entitlements:', err);
+    res.status(500).json({ ok: false, error: 'Failed to build SEO merchant entitlements' });
+  }
+});
+
+app.get('/api/admin/seo/category-copy', async (req, res) => {
+  const access = requirePrivilegedReadAccess(req, res);
+  if (!access) return;
+
+  try {
+    const [seoConfig, routingConfig, businesses] = await Promise.all([
+      readSeoDiscoveryConfig(),
+      readLocalityRoutingConfig(),
+      readBusinessListings(),
+    ]);
+    const rows = buildSeoCategoryCopyIndex({
+      seoConfig,
+      localities: routingConfig?.localities || [],
+      businesses,
+    });
+    res.json({ ok: true, categoryCopy: rows });
+  } catch (err) {
+    console.error('Failed to build SEO category copy index:', err);
+    res.status(500).json({ ok: false, error: 'Failed to build SEO category copy index' });
+  }
+});
+
+app.get('/api/admin/exports/:entity', async (req, res) => {
+  const access = requirePrivilegedReadAccess(req, res);
+  if (!access) return;
+
+  try {
+    const snapshot = await buildAdminOperationsSnapshot();
+    const entity = String(req.params.entity || '').trim();
+    const rows = buildAdminExportRows(entity, snapshot);
+    const normalizedEntity = entity.toLowerCase();
+    const knownEntities = new Set([
+      'businesses',
+      'crm_contacts',
+      'crm-contacts',
+      'ad_leads',
+      'ad-leads',
+      'audit_events',
+      'audit-events',
+      'search_analytics',
+      'search-analytics',
+      'channel_analytics',
+      'channel-analytics',
+    ]);
+    if (!knownEntities.has(normalizedEntity)) {
+      return res.status(404).json({ ok: false, error: 'Unknown or empty export entity' });
+    }
+
+    const format = String(req.query.format || 'csv').trim().toLowerCase();
+    const fileStamp = new Date().toISOString().slice(0, 10);
+    if (format === 'json') {
+      res.setHeader('Content-Disposition', `attachment; filename="${entity}-${fileStamp}.json"`);
+      return res.json({ ok: true, entity, exportedAt: new Date().toISOString(), rows });
+    }
+
+    const csv = stringifyCsv(rows);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${entity}-${fileStamp}.csv"`);
+    res.send(csv);
+  } catch (err) {
+    console.error('Failed to export admin dataset:', err);
+    res.status(500).json({ ok: false, error: 'Failed to export admin dataset' });
+  }
+});
+
+app.get('/api/admin/directory-quality/duplicates', async (req, res) => {
+  const access = requirePrivilegedReadAccess(req, res);
+  if (!access) return;
+
+  try {
+    const [snapshot, seoConfig] = await Promise.all([
+      buildDirectoryQualitySnapshot(),
+      readSeoDiscoveryConfig(),
+    ]);
+    const seoContext = buildSeoDiscoveryContext(seoConfig);
+    const candidates = snapshot.duplicateCandidates.map((candidate) => ({
+      ...candidate,
+      canonicalListingPath: buildCanonicalListingPathForBusiness(candidate.canonical, seoContext),
+      duplicateListingPath: buildCanonicalListingPathForBusiness(candidate.duplicate, seoContext),
+    }));
+    res.json({ ok: true, candidates });
+  } catch (err) {
+    console.error('Failed to build duplicate business queue:', err);
+    res.status(500).json({ ok: false, error: 'Failed to build duplicate business queue' });
+  }
+});
+
+app.post('/api/admin/directory-quality/merge', async (req, res) => {
+  const access = requirePrivilegedWriteAccess(req, res);
+  if (!access) return;
+
+  try {
+    const canonicalId = String(req.body?.canonicalId || '').trim();
+    const duplicateId = String(req.body?.duplicateId || '').trim();
+    if (!canonicalId || !duplicateId || canonicalId === duplicateId) {
+      return res.status(400).json({ ok: false, error: 'canonicalId and duplicateId are required and must be different' });
+    }
+
+    const [businesses, reviews] = await Promise.all([
+      readBusinessListings(),
+      readReviews(),
+    ]);
+    const result = mergeDuplicateBusinessPair({ businesses, reviews, canonicalId, duplicateId, timestamp: new Date().toISOString() });
+    await Promise.all([
+      writeBusinessListings(result.businesses),
+      writeReviews(result.reviews),
+    ]);
+    await persistAuditEvent({
+      timestamp: new Date().toISOString(),
+      actionType: 'data_entry',
+      description: 'Merged duplicate business listing',
+      details: `Canonical ID: "${canonicalId}" | Duplicate ID: "${duplicateId}"`,
+      userName: access.sub || 'platform',
+    }, req, {
+      authenticatedPayload: access,
+      skipThrottle: true,
+    });
+    res.json({ ok: true, canonical: result.canonical, duplicate: result.duplicate });
+  } catch (err) {
+    console.error('Failed to merge duplicate businesses:', err);
+    res.status(500).json({ ok: false, error: err?.message || 'Failed to merge duplicate businesses' });
+  }
+});
+
+app.post('/api/admin/directory-quality/keep-separate', async (req, res) => {
+  const access = requirePrivilegedWriteAccess(req, res);
+  if (!access) return;
+
+  try {
+    const canonicalId = String(req.body?.canonicalId || '').trim();
+    const duplicateId = String(req.body?.duplicateId || '').trim();
+    if (!canonicalId || !duplicateId || canonicalId === duplicateId) {
+      return res.status(400).json({ ok: false, error: 'canonicalId and duplicateId are required and must be different' });
+    }
+
+    const businesses = await readBusinessListings();
+    const nextBusinesses = markDuplicatePairSeparate({ businesses, canonicalId, duplicateId, timestamp: new Date().toISOString() });
+    await writeBusinessListings(nextBusinesses);
+    await persistAuditEvent({
+      timestamp: new Date().toISOString(),
+      actionType: 'data_entry',
+      description: 'Marked duplicate business pair as separate',
+      details: `Canonical ID: "${canonicalId}" | Duplicate ID: "${duplicateId}"`,
+      userName: access.sub || 'platform',
+    }, req, {
+      authenticatedPayload: access,
+      skipThrottle: true,
+    });
+    res.json({ ok: true, businesses: nextBusinesses });
+  } catch (err) {
+    console.error('Failed to keep duplicate businesses separate:', err);
+    res.status(500).json({ ok: false, error: err?.message || 'Failed to keep duplicate businesses separate' });
+  }
+});
+
+app.post('/api/admin/directory-quality/create-canonical', async (req, res) => {
+  const access = requirePrivilegedWriteAccess(req, res);
+  if (!access) return;
+
+  try {
+    const leftId = String(req.body?.leftId || '').trim();
+    const rightId = String(req.body?.rightId || '').trim();
+    if (!leftId || !rightId || leftId === rightId) {
+      return res.status(400).json({ ok: false, error: 'leftId and rightId are required and must be different' });
+    }
+    const canonicalId = String(req.body?.canonicalId || `biz_${Date.now()}_${crypto.randomUUID().slice(0, 6)}`).trim();
+    const [businesses, reviews] = await Promise.all([
+      readBusinessListings(),
+      readReviews(),
+    ]);
+    const result = createCanonicalListingFromPair({
+      businesses,
+      reviews,
+      leftId,
+      rightId,
+      canonicalId,
+      timestamp: new Date().toISOString(),
+    });
+    await Promise.all([
+      writeBusinessListings(result.businesses),
+      writeReviews(result.reviews),
+    ]);
+    await persistAuditEvent({
+      timestamp: new Date().toISOString(),
+      actionType: 'data_entry',
+      description: 'Created canonical business listing from duplicates',
+      details: `Left ID: "${leftId}" | Right ID: "${rightId}" | Canonical ID: "${canonicalId}"`,
+      userName: access.sub || 'platform',
+    }, req, {
+      authenticatedPayload: access,
+      skipThrottle: true,
+    });
+    res.json({ ok: true, canonicalBusiness: result.canonicalBusiness });
+  } catch (err) {
+    console.error('Failed to create canonical business listing:', err);
+    res.status(500).json({ ok: false, error: err?.message || 'Failed to create canonical business listing' });
+  }
+});
+
+app.get('/api/admin/reviews/moderation-queue', async (req, res) => {
+  const access = requirePrivilegedReadAccess(req, res);
+  if (!access) return;
+
+  try {
+    const snapshot = await buildDirectoryQualitySnapshot();
+    res.json({ ok: true, queue: snapshot.moderationQueue });
+  } catch (err) {
+    console.error('Failed to build review moderation queue:', err);
+    res.status(500).json({ ok: false, error: 'Failed to build review moderation queue' });
+  }
+});
+
+app.post('/api/admin/reviews/:reviewId/moderate', async (req, res) => {
+  const access = requirePrivilegedWriteAccess(req, res);
+  if (!access) return;
+
+  try {
+    const reviewId = String(req.params.reviewId || '').trim();
+    const action = String(req.body?.action || '').trim();
+    if (!reviewId || !action) {
+      return res.status(400).json({ ok: false, error: 'reviewId and action are required' });
+    }
+
+    const reviews = await readReviews();
+    const review = reviews.find((entry) => String(entry.id) === reviewId);
+    if (!review) {
+      return res.status(404).json({ ok: false, error: 'Review not found' });
+    }
+
+    const nextReviews = reviews.map((entry) => {
+      if (String(entry.id) !== reviewId) return entry;
+      if (action === 'clear_flags') {
+        return { ...entry, reported: false, reportReason: undefined };
+      }
+      if (action === 'resolve_report') {
+        return { ...entry, reported: false };
+      }
+      if (action === 'flag_spam') {
+        return { ...entry, reported: true, reportReason: 'spam_review' };
+      }
+      if (action === 'flag_profanity') {
+        return { ...entry, reported: true, reportReason: 'profanity_review' };
+      }
+      return entry;
+    });
+    await writeReviews(nextReviews);
+    await persistAuditEvent({
+      timestamp: new Date().toISOString(),
+      actionType: 'data_entry',
+      description: 'Moderated review',
+      details: `Review ID: "${reviewId}" | Action: "${action}"`,
+      userName: access.sub || 'platform',
+    }, req, {
+      authenticatedPayload: access,
+      skipThrottle: true,
+    });
+    res.json({ ok: true, review: nextReviews.find((entry) => String(entry.id) === reviewId) });
+  } catch (err) {
+    console.error('Failed to moderate review:', err);
+    res.status(500).json({ ok: false, error: err?.message || 'Failed to moderate review' });
+  }
+});
+
+app.get('/api/admin/reputation/trending', async (req, res) => {
+  const access = requirePrivilegedReadAccess(req, res);
+  if (!access) return;
+
+  try {
+    const snapshot = await buildDirectoryQualitySnapshot();
+    res.json({ ok: true, trending: snapshot.trendingBusinesses });
+  } catch (err) {
+    console.error('Failed to build trending reputation data:', err);
+    res.status(500).json({ ok: false, error: 'Failed to build trending reputation data' });
+  }
+});
+
+app.get('/api/admin/geography/boundaries', async (req, res) => {
+  const access = requirePrivilegedReadAccess(req, res);
+  if (!access) return;
+
+  try {
+    const snapshot = await buildDirectoryQualitySnapshot();
+    res.json({ ok: true, boundaries: snapshot.boundaries });
+  } catch (err) {
+    console.error('Failed to build geography boundaries:', err);
+    res.status(500).json({ ok: false, error: 'Failed to build geography boundaries' });
+  }
+});
+
+app.get('/api/runtime-config', async (_req, res) => {
+  res.json({
+    ok: true,
+    runtime: {
+      mapProvider: buildMapProviderConfig(),
+      passwordPolicy: buildPasswordPolicy(),
+    },
+  });
 });
 
 app.get('/', async (req, res, next) => {

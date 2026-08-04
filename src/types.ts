@@ -20,9 +20,13 @@ export interface PincodeRoutingMapping {
 
 export interface Business {
   id: string;
+  googlePlaceId?: string;
+  slug?: string;
   name: string;
   categoryId: string;
   subcategoryId: string;
+  businessTypes?: string[];
+  serviceTypes?: string[];
   sourceCategoryLabel?: string;
   sourceSubcategoryLabel?: string;
   taxonomyMapped?: boolean;
@@ -40,6 +44,9 @@ export interface Business {
   rating: number;
   reviewCount: number;
   imageUrl: string;
+  logoUrl?: string;
+  coverImageUrl?: string;
+  galleryUrls?: string[];
   featured: boolean;
   status: 'approved' | 'pending' | 'rejected';
   createdAt: string;
@@ -74,6 +81,17 @@ export interface Business {
   duplicateReviewStatus?: 'pending' | 'merged' | 'separate';
   mergedIntoBusinessId?: string;
   sourceLineage?: string[];
+  aliasNames?: string[];
+  holidayHours?: string[];
+  brochureUrl?: string;
+  videoUrl?: string;
+  verificationTags?: string[];
+  seoImpressions?: number;
+  seoClicks?: number;
+  seoLandingPagePath?: string;
+  seoPremiumEnabled?: boolean;
+  domainMappingTags?: string[];
+  featuredSnippetAnswer?: string;
 
   // monthly premium monetization states
   isMonthlySubscriber?: boolean;
@@ -678,7 +696,7 @@ export interface GeographyConfigState {
 }
 
 export type UserRole = 'buyer' | 'admin' | 'moderator' | 'operator' | 'seller' | 'developer' | 'resource';
-export type UserType = 'platform_admin' | 'developer' | 'buyer' | 'seller' | 'resource';
+export type UserType = 'platform_admin' | 'developer' | 'support_user' | 'buyer' | 'seller' | 'resource';
 
 export interface UserSession {
   role: UserRole;
@@ -695,7 +713,7 @@ export interface UserSession {
 
 export interface BuyerActivityEvent {
   id: string;
-  actionType: 'saved_listing' | 'unsaved_listing' | 'contact_unlock' | 'review_submitted';
+  actionType: 'saved_listing' | 'unsaved_listing' | 'compare_listing' | 'uncompare_listing' | 'contact_unlock' | 'review_submitted';
   businessId?: string;
   createdAt: string;
   title: string;
@@ -705,6 +723,7 @@ export interface BuyerActivityEvent {
 export interface BuyerStateSnapshot {
   viewedBusinessIds: string[];
   savedBusinessIds: string[];
+  compareBusinessIds: string[];
   buyerActivityEvents: BuyerActivityEvent[];
 }
 

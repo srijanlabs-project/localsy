@@ -76,7 +76,7 @@ Primary evidence sources:
 | Geography Master | locality | P0 | Present | In Progress | Done | Done | Done | In Progress | [src/components/GeographyConfigManager.tsx](/D:/localsy/src/components/GeographyConfigManager.tsx) | |
 | Geography Master | area | P0 | Present | In Progress | Done | Done | Done | In Progress | [src/components/GeographyConfigManager.tsx](/D:/localsy/src/components/GeographyConfigManager.tsx) | |
 | Geography Master | pincode | P0 | Present | In Progress | Done | Done | Done | In Progress | [shared/localityRoutingSeed.js](/D:/localsy/shared/localityRoutingSeed.js) | |
-| Geography Master | geo-boundary | P0 | Not Present | To Do | To Do | To Do | To Do | To Do | [02-tenant-and-geography.md](/D:/localsy/docs/03-module-specifications/02-tenant-and-geography.md) | |
+| Geography Master | geo-boundary | P0 | Present | In Progress | To Do | To Do | Done | In Progress | [shared/directoryQuality.js](/D:/localsy/shared/directoryQuality.js) | Derived locality boundaries are exposed via `/api/admin/geography/boundaries` |
 | Routing and Resolution | pincode mapping | P0 | Present | In Progress | Done | Done | Done | In Progress | [shared/localityRoutingSeed.js](/D:/localsy/shared/localityRoutingSeed.js) | |
 | Routing and Resolution | subdomain mapping | P0 | Present | In Progress | Done | Done | Done | In Progress | [shared/localityRoutingSeed.js](/D:/localsy/shared/localityRoutingSeed.js) | |
 | Routing and Resolution | reverse geocoding | P0 | Partial | In Progress | Done | Done | In Progress | To Do | [src/App.tsx](/D:/localsy/src/App.tsx) | GPS-based handling exists; full reverse geocoding strategy is partial |
@@ -89,7 +89,7 @@ Primary evidence sources:
 | Authentication | login | P0 | Present | In Progress | Done | Done | Done | In Progress | [FEATURE_CATALOG.md](/D:/localsy/FEATURE_CATALOG.md) | |
 | Authentication | OTP | P0 | Present | In Progress | Done | Done | Done | In Progress | [server.js](/D:/localsy/server.js) | |
 | Authentication | session management | P0 | Partial | In Progress | Done | Done | Done | To Do | [src/types.ts](/D:/localsy/src/types.ts) | |
-| Authentication | token refresh | P0 | Not Present | To Do | To Do | To Do | To Do | To Do | [03-identity-and-access.md](/D:/localsy/docs/03-module-specifications/03-identity-and-access.md) | |
+| Authentication | token refresh | P0 | Present | In Progress | To Do | To Do | Done | In Progress | [server.js](/D:/localsy/server.js) | Authenticated refresh is exposed via `/api/auth/refresh` |
 | Authorization | RBAC | P0 | Partial | In Progress | In Progress | In Progress | In Progress | To Do | [FEATURE_CATALOG.md](/D:/localsy/FEATURE_CATALOG.md) | server-side enforcement still incomplete |
 | Authorization | admin roles | P0 | Present | In Progress | In Progress | In Progress | In Progress | To Do | [USER_FLOWS.md](/D:/localsy/USER_FLOWS.md) | |
 | Authorization | moderator roles | P0 | Present | In Progress | In Progress | In Progress | In Progress | To Do | [USER_FLOWS.md](/D:/localsy/USER_FLOWS.md) | |
@@ -98,7 +98,7 @@ Primary evidence sources:
 | Security Controls | device log | P1 | Partial | In Progress | To Do | In Progress | In Progress | To Do | [audit-events.jsonl](/D:/localsy/audit-events.jsonl) | |
 | Security Controls | suspicious access review | P1 | Partial | In Progress | To Do | In Progress | In Progress | To Do | [VAPT_CHECKLIST.md](/D:/localsy/VAPT_CHECKLIST.md) | |
 | Security Controls | token policy | P1 | Partial | In Progress | To Do | In Progress | In Progress | To Do | [03-identity-and-access.md](/D:/localsy/docs/03-module-specifications/03-identity-and-access.md) | |
-| Security Controls | password policy | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [03-identity-and-access.md](/D:/localsy/docs/03-module-specifications/03-identity-and-access.md) | |
+| Security Controls | password policy | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [shared/directoryQuality.js](/D:/localsy/shared/directoryQuality.js) | Password policy is enforced for privileged registration and exposed via `/api/auth/password-policy` |
 
 ## 4.3 User and Persona Management
 
@@ -115,39 +115,39 @@ Primary evidence sources:
 | Internal User Profile | admin user | P1 | Partial | In Progress | To Do | To Do | In Progress | To Do | [src/types.ts](/D:/localsy/src/types.ts) | |
 | Internal User Profile | moderator user | P1 | Partial | In Progress | To Do | To Do | In Progress | To Do | [src/types.ts](/D:/localsy/src/types.ts) | |
 | Internal User Profile | operator user | P1 | Partial | In Progress | To Do | To Do | In Progress | To Do | [src/types.ts](/D:/localsy/src/types.ts) | |
-| Internal User Profile | support user | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [04-user-and-persona-management.md](/D:/localsy/docs/03-module-specifications/04-user-and-persona-management.md) | |
+| Internal User Profile | support user | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [src/types.ts](/D:/localsy/src/types.ts) | `support_user` is a first-class platform user type and can authenticate through platform OTP flow |
 
 ## 4.4 Business Directory Core
 
 | Sub-module | Sub-sub-module | Priority | Current Codebase Maturity | Delivery Stage | UX Mockup | UI | Development | Testing | Evidence | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|
 | Listing Master | business profile | P0 | Present | In Progress | Done | Done | Done | In Progress | [FEATURE_CATALOG.md](/D:/localsy/FEATURE_CATALOG.md) | |
-| Listing Master | slug | P0 | Partial | In Progress | Done | Done | In Progress | To Do | [src/components/WebPortal.tsx](/D:/localsy/src/components/WebPortal.tsx) | |
+| Listing Master | slug | P0 | Present | In Progress | Done | Done | Done | In Progress | [src/services/app/runtimeState.ts](/D:/localsy/src/services/app/runtimeState.ts) | Canonical business slugs are normalized and reused across public listing routes |
 | Listing Master | description | P0 | Present | In Progress | Done | Done | Done | In Progress | [src/types.ts](/D:/localsy/src/types.ts) | |
 | Listing Master | tags | P0 | Present | In Progress | Done | Done | Done | In Progress | [src/App.tsx](/D:/localsy/src/App.tsx) | |
 | Listing Master | status | P0 | Present | In Progress | Done | Done | Done | In Progress | [src/types.ts](/D:/localsy/src/types.ts) | |
-| Listing Master | verification | P0 | Partial | In Progress | Done | Done | In Progress | To Do | [src/types.ts](/D:/localsy/src/types.ts) | |
+| Listing Master | verification | P0 | Present | In Progress | Done | Done | Done | In Progress | [src/services/app/runtimeState.ts](/D:/localsy/src/services/app/runtimeState.ts) | Verification tags are normalized for listing detail and seller showcase surfaces |
 | Classification | category | P0 | Present | In Progress | Done | Done | Done | In Progress | [src/types.ts](/D:/localsy/src/types.ts) | |
 | Classification | subcategory | P0 | Present | In Progress | Done | Done | Done | In Progress | [src/types.ts](/D:/localsy/src/types.ts) | |
-| Classification | business type | P0 | Partial | In Progress | Done | Done | In Progress | To Do | [05-business-directory-core.md](/D:/localsy/docs/03-module-specifications/05-business-directory-core.md) | |
-| Classification | service type | P0 | Partial | In Progress | Done | Done | In Progress | To Do | [05-business-directory-core.md](/D:/localsy/docs/03-module-specifications/05-business-directory-core.md) | |
+| Classification | business type | P0 | Present | In Progress | Done | Done | Done | In Progress | [src/services/app/runtimeState.ts](/D:/localsy/src/services/app/runtimeState.ts) | Business types are normalized onto the business profile model and surfaced in web experiences |
+| Classification | service type | P0 | Present | In Progress | Done | Done | Done | In Progress | [src/services/app/runtimeState.ts](/D:/localsy/src/services/app/runtimeState.ts) | Service types are normalized onto the business profile model and surfaced in web experiences |
 | Contact and Address | phone | P0 | Present | In Progress | Done | Done | Done | In Progress | [src/types.ts](/D:/localsy/src/types.ts) | |
-| Contact and Address | WhatsApp | P0 | Partial | In Progress | Done | Done | In Progress | To Do | [05-business-directory-core.md](/D:/localsy/docs/03-module-specifications/05-business-directory-core.md) | |
+| Contact and Address | WhatsApp | P0 | Present | In Progress | Done | Done | Done | In Progress | [src/components/WebPortal.tsx](/D:/localsy/src/components/WebPortal.tsx) | Direct WhatsApp open and listing share-to-WhatsApp actions exist |
 | Contact and Address | email | P0 | Present | In Progress | Done | Done | Done | In Progress | [src/types.ts](/D:/localsy/src/types.ts) | |
 | Contact and Address | website | P0 | Present | In Progress | Done | Done | Done | In Progress | [src/types.ts](/D:/localsy/src/types.ts) | |
-| Contact and Address | map pin | P0 | Partial | In Progress | Done | Done | In Progress | To Do | [src/types.ts](/D:/localsy/src/types.ts) | gps coordinates exist |
+| Contact and Address | map pin | P0 | Present | In Progress | Done | Done | Done | In Progress | [src/components/WebPortal.tsx](/D:/localsy/src/components/WebPortal.tsx) | Detail views now use GPS-backed map and directions actions from listing data |
 | Contact and Address | service area | P0 | Present | In Progress | Done | Done | Done | In Progress | [src/types.ts](/D:/localsy/src/types.ts) | |
-| Media and Assets | logo | P1 | Partial | In Progress | Done | Done | In Progress | To Do | [src/types.ts](/D:/localsy/src/types.ts) | |
-| Media and Assets | cover | P1 | Partial | In Progress | Done | Done | In Progress | To Do | [src/types.ts](/D:/localsy/src/types.ts) | |
-| Media and Assets | gallery | P1 | Partial | In Progress | Done | Done | In Progress | To Do | [16-web-experience.md](/D:/localsy/docs/03-module-specifications/16-web-experience.md) | |
-| Media and Assets | brochure | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [05-business-directory-core.md](/D:/localsy/docs/03-module-specifications/05-business-directory-core.md) | |
-| Media and Assets | video | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [05-business-directory-core.md](/D:/localsy/docs/03-module-specifications/05-business-directory-core.md) | |
+| Media and Assets | logo | P1 | Present | In Progress | Done | Done | Done | In Progress | [src/services/app/runtimeState.ts](/D:/localsy/src/services/app/runtimeState.ts) | Logo URLs are normalized into the business model and reused by public presentation helpers |
+| Media and Assets | cover | P1 | Present | In Progress | Done | Done | Done | In Progress | [src/services/app/runtimeState.ts](/D:/localsy/src/services/app/runtimeState.ts) | Cover assets are normalized into the business model and reused by public presentation helpers |
+| Media and Assets | gallery | P1 | Present | In Progress | Done | Done | Done | In Progress | [src/components/WebPortal.tsx](/D:/localsy/src/components/WebPortal.tsx) | Listing detail now renders a normalized asset gallery for approved businesses |
+| Media and Assets | brochure | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [src/types.ts](/D:/localsy/src/types.ts) | Business listing payloads now support brochure URLs |
+| Media and Assets | video | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [src/types.ts](/D:/localsy/src/types.ts) | Business listing payloads now support business-level video URLs |
 | Operational Info | business hours | P1 | Present | In Progress | Done | Done | In Progress | To Do | [src/types.ts](/D:/localsy/src/types.ts) | |
-| Operational Info | holiday hours | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [05-business-directory-core.md](/D:/localsy/docs/03-module-specifications/05-business-directory-core.md) | |
+| Operational Info | holiday hours | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [src/types.ts](/D:/localsy/src/types.ts) | Business listing payloads now support holiday-hours overrides |
 | Operational Info | languages spoken | P1 | Present | In Progress | Done | Done | In Progress | To Do | [src/types.ts](/D:/localsy/src/types.ts) | |
 | Operational Info | payment methods | P1 | Present | In Progress | Done | Done | In Progress | To Do | [src/types.ts](/D:/localsy/src/types.ts) | |
 | Trust Layer | verified badge | P1 | Present | In Progress | In Progress | In Progress | In Progress | To Do | [src/types.ts](/D:/localsy/src/types.ts) | |
-| Trust Layer | KYC | P1 | Partial | In Progress | In Progress | In Progress | In Progress | To Do | [src/types.ts](/D:/localsy/src/types.ts) | |
+| Trust Layer | KYC | P1 | Present | In Progress | In Progress | In Progress | Done | In Progress | [src/services/app/runtimeState.ts](/D:/localsy/src/services/app/runtimeState.ts) | KYC and related trust checks are folded into verification tags for public trust display |
 | Trust Layer | response time | P1 | Present | In Progress | In Progress | In Progress | In Progress | To Do | [src/types.ts](/D:/localsy/src/types.ts) | |
 | Trust Layer | satisfaction score | P1 | Present | In Progress | In Progress | In Progress | In Progress | To Do | [src/types.ts](/D:/localsy/src/types.ts) | |
 | Trust Layer | repeat score | P1 | Present | In Progress | In Progress | In Progress | In Progress | To Do | [src/types.ts](/D:/localsy/src/types.ts) | |
@@ -156,7 +156,7 @@ Primary evidence sources:
 
 | Sub-module | Sub-sub-module | Priority | Current Codebase Maturity | Delivery Stage | UX Mockup | UI | Development | Testing | Evidence | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|
-| Merchant Onboarding | apply for listing | P1 | Present | In Progress | Done | Done | In Progress | To Do | [USER_FLOWS.md](/D:/localsy/USER_FLOWS.md) | |
+| Merchant Onboarding | apply for listing | P1 | Present | In Progress | Done | Done | Done | In Progress | [src/components/WebPortal.tsx](/D:/localsy/src/components/WebPortal.tsx) | Duplicate guard, validation, and pending-review submission flow exist |
 | Merchant Onboarding | claim listing | P1 | Partial | In Progress | Done | Done | In Progress | To Do | [06-merchant-management.md](/D:/localsy/docs/03-module-specifications/06-merchant-management.md) | |
 | Merchant Onboarding | KYC submission | P1 | Partial | In Progress | Done | Done | In Progress | To Do | [06-merchant-management.md](/D:/localsy/docs/03-module-specifications/06-merchant-management.md) | |
 | Merchant Onboarding | approval workflow | P1 | Present | In Progress | Done | Done | In Progress | To Do | [USER_FLOWS.md](/D:/localsy/USER_FLOWS.md) | |
@@ -171,7 +171,7 @@ Primary evidence sources:
 | Merchant Insights | impressions | P2 | Partial | In Progress | In Progress | In Progress | In Progress | To Do | [src/components/WebPortal.tsx](/D:/localsy/src/components/WebPortal.tsx) | |
 | Merchant Insights | clicks | P2 | Partial | In Progress | In Progress | In Progress | In Progress | To Do | [src/components/WebPortal.tsx](/D:/localsy/src/components/WebPortal.tsx) | |
 | Merchant Insights | leads | P2 | Partial | In Progress | In Progress | In Progress | In Progress | To Do | [src/components/WebPortal.tsx](/D:/localsy/src/components/WebPortal.tsx) | |
-| Merchant Insights | conversions | P2 | Not Present | To Do | To Do | To Do | To Do | To Do | [06-merchant-management.md](/D:/localsy/docs/03-module-specifications/06-merchant-management.md) | |
+| Merchant Insights | conversions | P2 | Present | In Progress | To Do | To Do | Done | In Progress | [shared/adminOperations.js](/D:/localsy/shared/adminOperations.js) | Merchant conversion rollups are exposed via `/api/admin/merchant-insights` |
 | Merchant Insights | campaign stats | P2 | Partial | In Progress | In Progress | In Progress | In Progress | To Do | [13-offers-ads-and-promotion.md](/D:/localsy/docs/03-module-specifications/13-offers-ads-and-promotion.md) | |
 
 ## 4.6 Discovery and Search
@@ -179,19 +179,19 @@ Primary evidence sources:
 | Sub-module | Sub-sub-module | Priority | Current Codebase Maturity | Delivery Stage | UX Mockup | UI | Development | Testing | Evidence | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|
 | Search Input | keyword input | P0 | Present | In Progress | Done | Done | Done | In Progress | [src/components/WebPortal.tsx](/D:/localsy/src/components/WebPortal.tsx) | |
-| Search Input | multilingual parsing | P0 | Not Present | To Do | In Progress | In Progress | To Do | To Do | [07-discovery-and-search.md](/D:/localsy/docs/03-module-specifications/07-discovery-and-search.md) | |
-| Search Input | autosuggest | P0 | Partial | In Progress | Done | Done | In Progress | To Do | [07-discovery-and-search.md](/D:/localsy/docs/03-module-specifications/07-discovery-and-search.md) | |
-| Search Input | voice-ready input | P0 | Not Present | To Do | In Progress | In Progress | To Do | To Do | [FEATURE_CATALOG.md](/D:/localsy/FEATURE_CATALOG.md) | deferred simulation category |
+| Search Input | multilingual parsing | P0 | Present | In Progress | In Progress | In Progress | Done | In Progress | [src/services/webportal/businessDiscovery.ts](/D:/localsy/src/services/webportal/businessDiscovery.ts) | Search normalization already handles multilingual and transliterated query variants heuristically |
+| Search Input | autosuggest | P0 | Present | In Progress | Done | Done | Done | In Progress | [src/components/WebPortal.tsx](/D:/localsy/src/components/WebPortal.tsx) | Autosuggest dropdown and suggestion selection flow exist |
+| Search Input | voice-ready input | P0 | Present | In Progress | In Progress | In Progress | Done | In Progress | [src/components/WebPortal.tsx](/D:/localsy/src/components/WebPortal.tsx) | Voice search mode and transcript-driven filtering are already wired |
 | Structured Search | category filter | P0 | Present | In Progress | Done | Done | Done | In Progress | [USER_FLOWS.md](/D:/localsy/USER_FLOWS.md) | |
 | Structured Search | locality filter | P0 | Present | In Progress | Done | Done | Done | In Progress | [USER_FLOWS.md](/D:/localsy/USER_FLOWS.md) | |
-| Structured Search | city filter | P0 | Partial | In Progress | Done | Done | Done | To Do | [07-discovery-and-search.md](/D:/localsy/docs/03-module-specifications/07-discovery-and-search.md) | |
+| Structured Search | city filter | P0 | Present | In Progress | Done | Done | Done | In Progress | [src/components/WebPortal.tsx](/D:/localsy/src/components/WebPortal.tsx) | Results filters now support explicit city scope selection |
 | Structured Search | pincode filter | P0 | Present | In Progress | Done | Done | Done | In Progress | [USER_FLOWS.md](/D:/localsy/USER_FLOWS.md) | |
-| Ranking Engine | locality-first ranking | P0 | Partial | In Progress | In Progress | In Progress | In Progress | To Do | [04-structured-search-and-ranking.md](/D:/localsy/docs/08-submodule-specifications/04-structured-search-and-ranking.md) | |
-| Ranking Engine | popularity boost | P0 | Partial | In Progress | In Progress | In Progress | In Progress | To Do | [04-structured-search-and-ranking.md](/D:/localsy/docs/08-submodule-specifications/04-structured-search-and-ranking.md) | |
-| Ranking Engine | trust boost | P0 | Partial | In Progress | In Progress | In Progress | In Progress | To Do | [04-structured-search-and-ranking.md](/D:/localsy/docs/08-submodule-specifications/04-structured-search-and-ranking.md) | |
-| Ranking Engine | sponsored boost | P0 | Partial | In Progress | In Progress | In Progress | In Progress | To Do | [FEATURE_CATALOG.md](/D:/localsy/FEATURE_CATALOG.md) | |
+| Ranking Engine | locality-first ranking | P0 | Present | In Progress | In Progress | In Progress | Done | In Progress | [src/services/webportal/businessDiscovery.ts](/D:/localsy/src/services/webportal/businessDiscovery.ts) | Recommended scoring prioritizes same-locality and nearby-locality businesses |
+| Ranking Engine | popularity boost | P0 | Present | In Progress | In Progress | In Progress | Done | In Progress | [src/services/webportal/businessDiscovery.ts](/D:/localsy/src/services/webportal/businessDiscovery.ts) | Review volume and recency contribute to ranking |
+| Ranking Engine | trust boost | P0 | Present | In Progress | In Progress | In Progress | Done | In Progress | [src/services/webportal/businessDiscovery.ts](/D:/localsy/src/services/webportal/businessDiscovery.ts) | Verified, KYC, satisfaction, and response signals affect ranking |
+| Ranking Engine | sponsored boost | P0 | Present | In Progress | In Progress | In Progress | Done | In Progress | [src/services/webportal/businessDiscovery.ts](/D:/localsy/src/services/webportal/businessDiscovery.ts) | Sponsored, premium, and CPC-budget signals now contribute directly to ranking |
 | Results Experience | list view | P1 | Present | In Progress | Done | Done | Done | In Progress | [src/components/WebPortal.tsx](/D:/localsy/src/components/WebPortal.tsx) | |
-| Results Experience | map view | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [07-discovery-and-search.md](/D:/localsy/docs/03-module-specifications/07-discovery-and-search.md) | |
+| Results Experience | map view | P1 | Present | In Progress | Done | Done | Done | In Progress | [src/components/WebPortal.tsx](/D:/localsy/src/components/WebPortal.tsx) | Results page supports grid/map toggle with interactive result map view |
 | Results Experience | sorting | P1 | Present | In Progress | Done | Done | Done | In Progress | [src/components/WebPortal.tsx](/D:/localsy/src/components/WebPortal.tsx) | |
 | Results Experience | quick filters | P1 | Present | In Progress | Done | Done | Done | In Progress | [src/components/WebPortal.tsx](/D:/localsy/src/components/WebPortal.tsx) | |
 | Results Experience | pagination | P1 | Present | In Progress | Done | Done | Done | In Progress | [src/components/WebPortal.tsx](/D:/localsy/src/components/WebPortal.tsx) | |
@@ -200,25 +200,25 @@ Primary evidence sources:
 
 | Sub-module | Sub-sub-module | Priority | Current Codebase Maturity | Delivery Stage | UX Mockup | UI | Development | Testing | Evidence | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|
-| Query Understanding | language detection | P1 | Not Present | To Do | In Progress | In Progress | To Do | To Do | [08-ai-and-rag.md](/D:/localsy/docs/03-module-specifications/08-ai-and-rag.md) | |
-| Query Understanding | intent detection | P1 | Not Present | To Do | In Progress | In Progress | To Do | To Do | [08-ai-and-rag.md](/D:/localsy/docs/03-module-specifications/08-ai-and-rag.md) | |
-| Query Understanding | scope detection | P1 | Not Present | To Do | In Progress | In Progress | To Do | To Do | [08-ai-and-rag.md](/D:/localsy/docs/03-module-specifications/08-ai-and-rag.md) | |
-| Query Understanding | extraction | P1 | Not Present | To Do | In Progress | In Progress | To Do | To Do | [08-ai-and-rag.md](/D:/localsy/docs/03-module-specifications/08-ai-and-rag.md) | |
-| Retrieval | SQL retrieval | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [08-ai-and-rag.md](/D:/localsy/docs/03-module-specifications/08-ai-and-rag.md) | |
-| Retrieval | vector retrieval | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [08-ai-and-rag.md](/D:/localsy/docs/03-module-specifications/08-ai-and-rag.md) | |
-| Retrieval | hybrid retrieval | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [08-ai-and-rag.md](/D:/localsy/docs/03-module-specifications/08-ai-and-rag.md) | |
-| Retrieval | reranking | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [08-ai-and-rag.md](/D:/localsy/docs/03-module-specifications/08-ai-and-rag.md) | |
-| Grounding | listing grounding | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [08-ai-and-rag.md](/D:/localsy/docs/03-module-specifications/08-ai-and-rag.md) | |
-| Grounding | document grounding | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [08-ai-and-rag.md](/D:/localsy/docs/03-module-specifications/08-ai-and-rag.md) | |
-| Grounding | citations | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [08-ai-and-rag.md](/D:/localsy/docs/03-module-specifications/08-ai-and-rag.md) | |
-| Grounding | confidence | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [08-ai-and-rag.md](/D:/localsy/docs/03-module-specifications/08-ai-and-rag.md) | |
-| Response Generation | direct answer | P1 | Not Present | To Do | In Progress | In Progress | To Do | To Do | [FEATURE_CATALOG.md](/D:/localsy/FEATURE_CATALOG.md) | AI search is deferred/simulated |
-| Response Generation | follow-up prompts | P1 | Not Present | To Do | In Progress | In Progress | To Do | To Do | [08-ai-and-rag.md](/D:/localsy/docs/03-module-specifications/08-ai-and-rag.md) | |
-| Response Generation | listing cards | P1 | Partial | In Progress | In Progress | In Progress | To Do | To Do | [08-ai-and-rag.md](/D:/localsy/docs/03-module-specifications/08-ai-and-rag.md) | concept only |
-| Response Generation | multilingual formatting | P1 | Not Present | To Do | In Progress | In Progress | To Do | To Do | [08-ai-and-rag.md](/D:/localsy/docs/03-module-specifications/08-ai-and-rag.md) | |
-| Session Memory | short-term context | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [08-ai-and-rag.md](/D:/localsy/docs/03-module-specifications/08-ai-and-rag.md) | |
-| Session Memory | follow-up handling | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [08-ai-and-rag.md](/D:/localsy/docs/03-module-specifications/08-ai-and-rag.md) | |
-| Session Memory | recent results memory | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [08-ai-and-rag.md](/D:/localsy/docs/03-module-specifications/08-ai-and-rag.md) | |
+| Query Understanding | language detection | P1 | Present | In Progress | In Progress | In Progress | Done | In Progress | [server.js](/D:/localsy/server.js) | Mobile chat endpoint detects English vs Hindi script heuristically |
+| Query Understanding | intent detection | P1 | Present | In Progress | In Progress | In Progress | Done | In Progress | [server.js](/D:/localsy/server.js) | Mobile chat and WhatsApp orchestration classify search intent heuristically |
+| Query Understanding | scope detection | P1 | Present | In Progress | In Progress | In Progress | Done | In Progress | [server.js](/D:/localsy/server.js) | Chat response includes locality/general scope detection |
+| Query Understanding | extraction | P1 | Present | In Progress | In Progress | In Progress | Done | In Progress | [server.js](/D:/localsy/server.js) | Chat response returns normalized query tokens and extracted scope/category signals |
+| Retrieval | SQL retrieval | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [server.js](/D:/localsy/server.js) | `/api/knowledge/query` and grounded chat flows combine listing retrieval with locality/category filters |
+| Retrieval | vector retrieval | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [shared/knowledgeRetrieval.js](/D:/localsy/shared/knowledgeRetrieval.js) | Hashed embeddings plus cosine similarity now score chunk-level vector matches |
+| Retrieval | hybrid retrieval | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [shared/knowledgeRetrieval.js](/D:/localsy/shared/knowledgeRetrieval.js) | Retrieval blends vector, lexical, and keyword scoring into hybrid results |
+| Retrieval | reranking | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [shared/knowledgeRetrieval.js](/D:/localsy/shared/knowledgeRetrieval.js) | Hybrid retrieval results are reranked by weighted hybrid score before response grounding |
+| Grounding | listing grounding | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [server.js](/D:/localsy/server.js) | Grounded responses include listing citations and listing-card evidence from directory results |
+| Grounding | document grounding | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [server.js](/D:/localsy/server.js) | Grounded responses include document citations and source-backed snippets from ingested knowledge |
+| Grounding | citations | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [server.js](/D:/localsy/server.js) | Mobile chat, WhatsApp, and `/api/knowledge/query` now emit listing and document citations |
+| Grounding | confidence | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [server.js](/D:/localsy/server.js) | Confidence is derived from listing depth and hybrid knowledge hit strength |
+| Response Generation | direct answer | P1 | Present | In Progress | In Progress | In Progress | Done | In Progress | [server.js](/D:/localsy/server.js) | Mobile chat endpoint now returns direct answer text from heuristic orchestration |
+| Response Generation | follow-up prompts | P1 | Present | In Progress | In Progress | In Progress | Done | In Progress | [server.js](/D:/localsy/server.js) | Mobile chat and WhatsApp responses include follow-up prompts |
+| Response Generation | listing cards | P1 | Present | In Progress | In Progress | In Progress | Done | In Progress | [server.js](/D:/localsy/server.js) | Grounded chat and knowledge query responses now return listing cards directly from retrieval output |
+| Response Generation | multilingual formatting | P1 | Present | In Progress | In Progress | In Progress | Done | In Progress | [shared/knowledgeRetrieval.js](/D:/localsy/shared/knowledgeRetrieval.js) | Grounded answer formatting now supports English and Hindi response copy paths |
+| Session Memory | short-term context | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [shared/knowledgeRetrieval.js](/D:/localsy/shared/knowledgeRetrieval.js) | Knowledge sessions persist last query, effective query, and channel context |
+| Session Memory | follow-up handling | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [shared/knowledgeRetrieval.js](/D:/localsy/shared/knowledgeRetrieval.js) | Follow-up expansion now carries prior session context into short continuation queries |
+| Session Memory | recent results memory | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [shared/knowledgeRetrieval.js](/D:/localsy/shared/knowledgeRetrieval.js) | Sessions retain recent grounded citations for follow-up continuity |
 
 ## 4.8 SEO and Organic Growth
 
@@ -243,40 +243,40 @@ Primary evidence sources:
 | Programmatic Pages | listing pages | P0 | Present | Done | Done | Done | Done | Done | [SEO_PHASE_EXECUTION.md](/D:/localsy/SEO_PHASE_EXECUTION.md) | |
 | Programmatic Pages | internal link blocks | P0 | Present | Done | Done | Done | Done | Done | [SEO_PHASE_EXECUTION.md](/D:/localsy/SEO_PHASE_EXECUTION.md) | |
 | Content Templates | locality intro | P1 | Present | In Progress | Done | Done | Done | In Progress | [shared/seoDiscoverySeed.js](/D:/localsy/shared/seoDiscoverySeed.js) | |
-| Content Templates | category copy | P1 | Partial | In Progress | Done | Done | Done | In Progress | [src/components/SeoDiscoveryManager.tsx](/D:/localsy/src/components/SeoDiscoveryManager.tsx) | |
+| Content Templates | category copy | P1 | Present | In Progress | Done | Done | Done | In Progress | [shared/seoGrowth.js](/D:/localsy/shared/seoGrowth.js) | SEO category copy snapshots are generated for locality-category routes |
 | Content Templates | top listing groups | P1 | Present | In Progress | Done | Done | Done | In Progress | [shared/seoDiscoverySeed.js](/D:/localsy/shared/seoDiscoverySeed.js) | |
 | Content Templates | fallback text | P1 | Present | In Progress | Done | Done | Done | In Progress | [src/App.tsx](/D:/localsy/src/App.tsx) | |
 | Indexing Operations | sitemap | P1 | Present | Done | Done | Done | Done | Done | [SEO_PHASE_EXECUTION.md](/D:/localsy/SEO_PHASE_EXECUTION.md) | |
 | Indexing Operations | robots | P1 | Present | Done | Done | Done | Done | Done | [SEO_PHASE_EXECUTION.md](/D:/localsy/SEO_PHASE_EXECUTION.md) | |
 | Indexing Operations | search console submission | P1 | Present | Done | Done | Done | Done | Done | [scripts/submit-search-console-sitemaps.mjs](/D:/localsy/scripts/submit-search-console-sitemaps.mjs) | |
-| Indexing Operations | crawl monitoring | P1 | Partial | In Progress | To Do | To Do | In Progress | To Do | [SEO_PHASE_EXECUTION.md](/D:/localsy/SEO_PHASE_EXECUTION.md) | weekly checklist exists, no dashboard |
-| SEO Analytics | impressions | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [09-seo-and-organic-growth.md](/D:/localsy/docs/03-module-specifications/09-seo-and-organic-growth.md) | |
-| SEO Analytics | clicks | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [09-seo-and-organic-growth.md](/D:/localsy/docs/03-module-specifications/09-seo-and-organic-growth.md) | |
-| SEO Analytics | landing pages | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [09-seo-and-organic-growth.md](/D:/localsy/docs/03-module-specifications/09-seo-and-organic-growth.md) | |
-| SEO Analytics | route coverage | P1 | Partial | In Progress | To Do | To Do | In Progress | To Do | [SEO_PHASE_EXECUTION.md](/D:/localsy/SEO_PHASE_EXECUTION.md) | |
-| SEO Analytics | indexed pages | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [09-seo-and-organic-growth.md](/D:/localsy/docs/03-module-specifications/09-seo-and-organic-growth.md) | |
-| Merchant SEO Entitlements | premium route features | P2 | Not Present | To Do | In Progress | In Progress | To Do | To Do | [src/components/WebPortal.tsx](/D:/localsy/src/components/WebPortal.tsx) | UI copy only |
-| Merchant SEO Entitlements | enhanced profile fields | P2 | Partial | In Progress | In Progress | In Progress | To Do | To Do | [src/types.ts](/D:/localsy/src/types.ts) | |
-| Merchant SEO Entitlements | domain mapping tags | P2 | Not Present | To Do | In Progress | In Progress | To Do | To Do | [src/components/WebPortal.tsx](/D:/localsy/src/components/WebPortal.tsx) | UI copy only |
-| Merchant SEO Entitlements | featured snippets prep | P2 | Not Present | To Do | To Do | To Do | To Do | To Do | [09-seo-and-organic-growth.md](/D:/localsy/docs/03-module-specifications/09-seo-and-organic-growth.md) | |
+| Indexing Operations | crawl monitoring | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [server.js](/D:/localsy/server.js) | Admin SEO crawl monitoring snapshot is exposed via `/api/admin/seo/crawl-monitoring` |
+| SEO Analytics | impressions | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [server.js](/D:/localsy/server.js) | Admin SEO analytics snapshot includes aggregate impression metrics |
+| SEO Analytics | clicks | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [server.js](/D:/localsy/server.js) | Admin SEO analytics snapshot includes aggregate click metrics |
+| SEO Analytics | landing pages | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [server.js](/D:/localsy/server.js) | SEO analytics now report landing-page coverage and route counts |
+| SEO Analytics | route coverage | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [server.js](/D:/localsy/server.js) | Route coverage snapshot is exposed via `/api/admin/seo/route-coverage` |
+| SEO Analytics | indexed pages | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [server.js](/D:/localsy/server.js) | SEO analytics now report indexed page estimates alongside landing-page coverage |
+| Merchant SEO Entitlements | premium route features | P2 | Present | In Progress | In Progress | In Progress | Done | In Progress | [shared/seoGrowth.js](/D:/localsy/shared/seoGrowth.js) | Merchant SEO entitlement snapshots now flag premium route visibility support |
+| Merchant SEO Entitlements | enhanced profile fields | P2 | Present | In Progress | In Progress | In Progress | Done | In Progress | [shared/seoGrowth.js](/D:/localsy/shared/seoGrowth.js) | Enhanced profile-field readiness is derived from gallery, logo, cover, and snippet metadata |
+| Merchant SEO Entitlements | domain mapping tags | P2 | Present | In Progress | In Progress | In Progress | Done | In Progress | [shared/seoGrowth.js](/D:/localsy/shared/seoGrowth.js) | Domain mapping tags are persisted, normalized, and exposed in SEO entitlement snapshots |
+| Merchant SEO Entitlements | featured snippets prep | P2 | Present | In Progress | To Do | To Do | Done | In Progress | [shared/seoGrowth.js](/D:/localsy/shared/seoGrowth.js) | Featured-snippet preparation text is generated from business SEO metadata |
 
 ## 4.9 Documents and Knowledge Sources
 
 | Sub-module | Sub-sub-module | Priority | Current Codebase Maturity | Delivery Stage | UX Mockup | UI | Development | Testing | Evidence | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|
-| Source Intake | PDF upload | P1 | Not Present | To Do | Done | Done | To Do | To Do | [10-documents-and-knowledge-sources.md](/D:/localsy/docs/03-module-specifications/10-documents-and-knowledge-sources.md) | |
-| Source Intake | Excel upload | P1 | Not Present | To Do | Done | Done | To Do | To Do | [10-documents-and-knowledge-sources.md](/D:/localsy/docs/03-module-specifications/10-documents-and-knowledge-sources.md) | |
+| Source Intake | PDF upload | P1 | Present | In Progress | Done | Done | Done | In Progress | [server.js](/D:/localsy/server.js) | Privileged PDF knowledge ingestion is exposed via `/api/admin/knowledge/ingest/pdf` |
+| Source Intake | Excel upload | P1 | Present | In Progress | Done | Done | Done | In Progress | [server.js](/D:/localsy/server.js) | Privileged Excel knowledge ingestion is exposed via `/api/admin/knowledge/ingest/excel` |
 | Source Intake | CSV upload | P1 | Present | In Progress | Done | Done | Done | In Progress | [FEATURE_CATALOG.md](/D:/localsy/FEATURE_CATALOG.md) | |
 | Source Intake | manual entry | P1 | Present | In Progress | Done | Done | Done | In Progress | [USER_FLOWS.md](/D:/localsy/USER_FLOWS.md) | |
-| Source Intake | API import | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [10-documents-and-knowledge-sources.md](/D:/localsy/docs/03-module-specifications/10-documents-and-knowledge-sources.md) | |
+| Source Intake | API import | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [server.js](/D:/localsy/server.js) | Privileged API knowledge ingestion is exposed via `/api/admin/knowledge/ingest/api` |
 | Processing Pipeline | parsing | P1 | Partial | In Progress | In Progress | In Progress | In Progress | To Do | [FEATURE_CATALOG.md](/D:/localsy/FEATURE_CATALOG.md) | |
-| Processing Pipeline | OCR | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [10-documents-and-knowledge-sources.md](/D:/localsy/docs/03-module-specifications/10-documents-and-knowledge-sources.md) | |
-| Processing Pipeline | chunking | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [10-documents-and-knowledge-sources.md](/D:/localsy/docs/03-module-specifications/10-documents-and-knowledge-sources.md) | |
+| Processing Pipeline | OCR | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [shared/knowledgeRetrieval.js](/D:/localsy/shared/knowledgeRetrieval.js) | PDF ingestion accepts OCR text inputs and records OCR-applied metadata on knowledge documents |
+| Processing Pipeline | chunking | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [shared/knowledgeRetrieval.js](/D:/localsy/shared/knowledgeRetrieval.js) | Document content is chunked into retrieval-ready segments during ingestion |
 | Processing Pipeline | metadata extraction | P1 | Partial | In Progress | In Progress | In Progress | In Progress | To Do | [FEATURE_CATALOG.md](/D:/localsy/FEATURE_CATALOG.md) | |
 | Processing Pipeline | normalization | P1 | Partial | In Progress | In Progress | In Progress | In Progress | To Do | [FEATURE_CATALOG.md](/D:/localsy/FEATURE_CATALOG.md) | |
-| Embeddings | embedding generation | P2 | Not Present | To Do | To Do | To Do | To Do | To Do | [08-ai-and-rag.md](/D:/localsy/docs/03-module-specifications/08-ai-and-rag.md) | |
-| Embeddings | re-embedding | P2 | Not Present | To Do | To Do | To Do | To Do | To Do | [10-documents-and-knowledge-sources.md](/D:/localsy/docs/03-module-specifications/10-documents-and-knowledge-sources.md) | |
-| Embeddings | model versioning | P2 | Not Present | To Do | To Do | To Do | To Do | To Do | [10-documents-and-knowledge-sources.md](/D:/localsy/docs/03-module-specifications/10-documents-and-knowledge-sources.md) | |
+| Embeddings | embedding generation | P2 | Present | In Progress | To Do | To Do | Done | In Progress | [shared/knowledgeRetrieval.js](/D:/localsy/shared/knowledgeRetrieval.js) | Chunk embeddings are generated during ingestion using the local hashed embedding model |
+| Embeddings | re-embedding | P2 | Present | In Progress | To Do | To Do | Done | In Progress | [server.js](/D:/localsy/server.js) | Re-embedding is exposed via `/api/admin/knowledge/reembed` |
+| Embeddings | model versioning | P2 | Present | In Progress | To Do | To Do | Done | In Progress | [shared/knowledgeRetrieval.js](/D:/localsy/shared/knowledgeRetrieval.js) | Knowledge settings persist the active embedding model version across re-embedding runs |
 | Knowledge Linking | listing-to-document links | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [10-documents-and-knowledge-sources.md](/D:/localsy/docs/03-module-specifications/10-documents-and-knowledge-sources.md) | |
 | Knowledge Linking | locality-to-document links | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [10-documents-and-knowledge-sources.md](/D:/localsy/docs/03-module-specifications/10-documents-and-knowledge-sources.md) | |
 | Knowledge Linking | category-to-document links | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [10-documents-and-knowledge-sources.md](/D:/localsy/docs/03-module-specifications/10-documents-and-knowledge-sources.md) | |
@@ -288,15 +288,15 @@ Primary evidence sources:
 | Duplicate Detection | name match | P0 | Present | In Progress | Done | In Progress | In Progress | To Do | [FEATURE_CATALOG.md](/D:/localsy/FEATURE_CATALOG.md) | |
 | Duplicate Detection | phone match | P0 | Present | In Progress | Done | In Progress | In Progress | To Do | [FEATURE_CATALOG.md](/D:/localsy/FEATURE_CATALOG.md) | |
 | Duplicate Detection | address match | P0 | Present | In Progress | Done | In Progress | In Progress | To Do | [FEATURE_CATALOG.md](/D:/localsy/FEATURE_CATALOG.md) | |
-| Duplicate Detection | fuzzy similarity | P0 | Not Present | To Do | To Do | To Do | To Do | To Do | [11-duplicate-and-data-quality.md](/D:/localsy/docs/03-module-specifications/11-duplicate-and-data-quality.md) | |
-| Review Workflow | duplicate queue | P0 | Not Present | To Do | In Progress | In Progress | In Progress | To Do | [05-duplicate-review-workflow.md](/D:/localsy/docs/08-submodule-specifications/05-duplicate-review-workflow.md) | |
-| Review Workflow | merge | P0 | Not Present | To Do | In Progress | In Progress | In Progress | To Do | [05-duplicate-review-workflow.md](/D:/localsy/docs/08-submodule-specifications/05-duplicate-review-workflow.md) | |
-| Review Workflow | keep separate | P0 | Not Present | To Do | In Progress | In Progress | In Progress | To Do | [05-duplicate-review-workflow.md](/D:/localsy/docs/08-submodule-specifications/05-duplicate-review-workflow.md) | |
-| Review Workflow | create new listing | P0 | Not Present | To Do | In Progress | In Progress | In Progress | To Do | [05-duplicate-review-workflow.md](/D:/localsy/docs/08-submodule-specifications/05-duplicate-review-workflow.md) | |
-| Canonicalization | alias handling | P0 | Not Present | To Do | To Do | To Do | In Progress | To Do | [11-duplicate-and-data-quality.md](/D:/localsy/docs/03-module-specifications/11-duplicate-and-data-quality.md) | |
+| Duplicate Detection | fuzzy similarity | P0 | Present | In Progress | To Do | To Do | Done | In Progress | [shared/directoryQuality.js](/D:/localsy/shared/directoryQuality.js) | Fuzzy duplicate scoring powers `/api/admin/directory-quality/duplicates` |
+| Review Workflow | duplicate queue | P0 | Present | In Progress | In Progress | In Progress | Done | In Progress | [server.js](/D:/localsy/server.js) | Duplicate queue is exposed via `/api/admin/directory-quality/duplicates` |
+| Review Workflow | merge | P0 | Present | In Progress | In Progress | In Progress | Done | In Progress | [server.js](/D:/localsy/server.js) | Duplicate merge is exposed via `/api/admin/directory-quality/merge` |
+| Review Workflow | keep separate | P0 | Present | In Progress | In Progress | In Progress | Done | In Progress | [server.js](/D:/localsy/server.js) | Keep-separate action is exposed via `/api/admin/directory-quality/keep-separate` |
+| Review Workflow | create new listing | P0 | Present | In Progress | In Progress | In Progress | Done | In Progress | [server.js](/D:/localsy/server.js) | Canonical listing creation is exposed via `/api/admin/directory-quality/create-canonical` |
+| Canonicalization | alias handling | P0 | Present | In Progress | To Do | To Do | Done | In Progress | [shared/directoryQuality.js](/D:/localsy/shared/directoryQuality.js) | Alias sets are preserved and folded into duplicate merge plus search matching |
 | Canonicalization | normalization | P0 | Partial | In Progress | To Do | To Do | In Progress | To Do | [FEATURE_CATALOG.md](/D:/localsy/FEATURE_CATALOG.md) | |
-| Canonicalization | source lineage | P0 | Not Present | To Do | To Do | To Do | To Do | To Do | [11-duplicate-and-data-quality.md](/D:/localsy/docs/03-module-specifications/11-duplicate-and-data-quality.md) | |
-| Canonicalization | canonical listing | P0 | Not Present | To Do | To Do | To Do | In Progress | To Do | [03-listing-master-and-lifecycle.md](/D:/localsy/docs/08-submodule-specifications/03-listing-master-and-lifecycle.md) | |
+| Canonicalization | source lineage | P0 | Present | In Progress | To Do | To Do | Done | In Progress | [shared/directoryQuality.js](/D:/localsy/shared/directoryQuality.js) | Source lineage is maintained during merge, keep-separate, and canonical creation flows |
+| Canonicalization | canonical listing | P0 | Present | In Progress | To Do | To Do | Done | In Progress | [server.js](/D:/localsy/server.js) | Canonical listing creation and canonical path suggestions are available through the directory quality APIs |
 | Validation Rules | required fields | P0 | Present | In Progress | Done | Done | Done | In Progress | [src/App.tsx](/D:/localsy/src/App.tsx) | |
 | Validation Rules | geo validation | P0 | Present | In Progress | Done | Done | Done | In Progress | [src/App.tsx](/D:/localsy/src/App.tsx) | |
 | Validation Rules | taxonomy validation | P0 | Present | In Progress | Done | Done | Done | In Progress | [src/App.tsx](/D:/localsy/src/App.tsx) | |
@@ -310,14 +310,14 @@ Primary evidence sources:
 | Review Collection | comment capture | P1 | Present | In Progress | Done | Done | Done | In Progress | [FEATURE_CATALOG.md](/D:/localsy/FEATURE_CATALOG.md) | |
 | Review Collection | OTP verification | P1 | Present | In Progress | Done | Done | Done | In Progress | [USER_FLOWS.md](/D:/localsy/USER_FLOWS.md) | |
 | Review Collection | merchant reply | P1 | Partial | In Progress | Done | Done | In Progress | To Do | [12-reviews-and-reputation.md](/D:/localsy/docs/03-module-specifications/12-reviews-and-reputation.md) | |
-| Moderation | spam review detection | P1 | Not Present | To Do | In Progress | In Progress | In Progress | To Do | [12-reviews-and-reputation.md](/D:/localsy/docs/03-module-specifications/12-reviews-and-reputation.md) | |
+| Moderation | spam review detection | P1 | Present | In Progress | In Progress | In Progress | Done | In Progress | [shared/directoryQuality.js](/D:/localsy/shared/directoryQuality.js) | Review moderation queue classifies spam-like signals and exposes them via `/api/admin/reviews/moderation-queue` |
 | Moderation | abuse flags | P1 | Partial | In Progress | In Progress | In Progress | In Progress | To Do | [12-reviews-and-reputation.md](/D:/localsy/docs/03-module-specifications/12-reviews-and-reputation.md) | |
-| Moderation | profanity control | P1 | Not Present | To Do | In Progress | In Progress | In Progress | To Do | [12-reviews-and-reputation.md](/D:/localsy/docs/03-module-specifications/12-reviews-and-reputation.md) | |
-| Moderation | report queue | P1 | Not Present | To Do | In Progress | In Progress | In Progress | To Do | [19-admin-operations.md](/D:/localsy/docs/03-module-specifications/19-admin-operations.md) | |
+| Moderation | profanity control | P1 | Present | In Progress | In Progress | In Progress | Done | In Progress | [shared/directoryQuality.js](/D:/localsy/shared/directoryQuality.js) | Review moderation queue classifies profanity-like signals and exposes them via `/api/admin/reviews/moderation-queue` |
+| Moderation | report queue | P1 | Present | In Progress | In Progress | In Progress | Done | In Progress | [server.js](/D:/localsy/server.js) | Review report queue and moderation actions are exposed via `/api/admin/reviews/moderation-queue` and `/api/admin/reviews/:reviewId/moderate` |
 | Reputation Signals | review count | P1 | Present | In Progress | Done | Done | Done | To Do | [src/types.ts](/D:/localsy/src/types.ts) | |
 | Reputation Signals | average rating | P1 | Present | In Progress | Done | Done | Done | To Do | [src/types.ts](/D:/localsy/src/types.ts) | |
 | Reputation Signals | helpful votes | P1 | Partial | In Progress | Done | Done | In Progress | To Do | [src/types.ts](/D:/localsy/src/types.ts) | |
-| Reputation Signals | trending score | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [12-reviews-and-reputation.md](/D:/localsy/docs/03-module-specifications/12-reviews-and-reputation.md) | |
+| Reputation Signals | trending score | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [shared/directoryQuality.js](/D:/localsy/shared/directoryQuality.js) | Trending reputation scores are exposed via `/api/admin/reputation/trending` |
 
 ## 4.12 Offers, Ads, and Promotion
 
@@ -358,7 +358,7 @@ Primary evidence sources:
 | SEO Discovery Config | locality metadata | P0 | Present | In Progress | Done | Done | Done | In Progress | [src/components/SeoDiscoveryManager.tsx](/D:/localsy/src/components/SeoDiscoveryManager.tsx) | |
 | Community Content | posts | P2 | Partial | In Progress | In Progress | In Progress | In Progress | To Do | [src/types.ts](/D:/localsy/src/types.ts) | |
 | Community Content | events | P2 | Partial | In Progress | In Progress | In Progress | In Progress | To Do | [src/types.ts](/D:/localsy/src/types.ts) | |
-| Community Content | recommendations | P2 | Partial | In Progress | In Progress | In Progress | In Progress | To Do | [src/types.ts](/D:/localsy/src/types.ts) | |
+| Community Content | recommendations | P2 | Present | In Progress | Done | Done | Done | In Progress | [src/components/WebPortal.tsx](/D:/localsy/src/components/WebPortal.tsx) | Recommendation board and manual request submission flow exist |
 | Community Content | local updates | P2 | Partial | In Progress | In Progress | In Progress | In Progress | To Do | [src/types.ts](/D:/localsy/src/types.ts) | |
 
 ## 4.14 Lead and CRM
@@ -366,16 +366,16 @@ Primary evidence sources:
 | Sub-module | Sub-sub-module | Priority | Current Codebase Maturity | Delivery Stage | UX Mockup | UI | Development | Testing | Evidence | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|
 | Lead Capture | contact unlocks | P1 | Present | In Progress | Done | Done | In Progress | To Do | [USER_FLOWS.md](/D:/localsy/USER_FLOWS.md) | |
-| Lead Capture | inquiry forms | P1 | Partial | In Progress | Done | Done | In Progress | To Do | [15-lead-and-crm.md](/D:/localsy/docs/03-module-specifications/15-lead-and-crm.md) | |
+| Lead Capture | inquiry forms | P1 | Present | In Progress | Done | Done | Done | In Progress | [src/components/WebPortal.tsx](/D:/localsy/src/components/WebPortal.tsx) | Recommendation request modal captures structured inbound help requests |
 | Lead Capture | ad lead forms | P1 | Present | In Progress | Done | Done | In Progress | To Do | [server.js](/D:/localsy/server.js) | |
-| Lead Capture | WhatsApp click intent | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [17-whatsapp-channel.md](/D:/localsy/docs/03-module-specifications/17-whatsapp-channel.md) | |
+| Lead Capture | WhatsApp click intent | P1 | Present | In Progress | Done | Done | Done | In Progress | [src/components/WebPortal.tsx](/D:/localsy/src/components/WebPortal.tsx) | WhatsApp intent opens are logged as contact-view events |
 | CRM Database | contacts | P1 | Partial | In Progress | In Progress | In Progress | In Progress | To Do | [src/types.ts](/D:/localsy/src/types.ts) | |
 | CRM Database | notes | P1 | Partial | In Progress | In Progress | In Progress | In Progress | To Do | [src/components/WebPortal.tsx](/D:/localsy/src/components/WebPortal.tsx) | |
 | CRM Database | follow-up history | P1 | Partial | In Progress | In Progress | In Progress | In Progress | To Do | [15-lead-and-crm.md](/D:/localsy/docs/03-module-specifications/15-lead-and-crm.md) | |
-| CRM Database | segmentation | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [15-lead-and-crm.md](/D:/localsy/docs/03-module-specifications/15-lead-and-crm.md) | |
+| CRM Database | segmentation | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [shared/adminOperations.js](/D:/localsy/shared/adminOperations.js) | CRM contact segments are exposed via `/api/admin/crm-segments` |
 | Lead Routing | merchant routing | P1 | Partial | In Progress | To Do | To Do | In Progress | To Do | [server.js](/D:/localsy/server.js) | |
-| Lead Routing | operator routing | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [15-lead-and-crm.md](/D:/localsy/docs/03-module-specifications/15-lead-and-crm.md) | |
-| Lead Routing | escalation rules | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [15-lead-and-crm.md](/D:/localsy/docs/03-module-specifications/15-lead-and-crm.md) | |
+| Lead Routing | operator routing | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [shared/adminOperations.js](/D:/localsy/shared/adminOperations.js) | Operator queues are exposed via `/api/admin/lead-routing` |
+| Lead Routing | escalation rules | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [shared/adminOperations.js](/D:/localsy/shared/adminOperations.js) | Escalation rules are derived from stale and high-volume lead queues |
 | Lead Routing | owner mapping | P1 | Partial | In Progress | To Do | To Do | In Progress | To Do | [src/types.ts](/D:/localsy/src/types.ts) | |
 | Lead Lifecycle | new | P2 | Not Present | To Do | To Do | To Do | To Do | To Do | [15-lead-and-crm.md](/D:/localsy/docs/03-module-specifications/15-lead-and-crm.md) | |
 | Lead Lifecycle | contacted | P2 | Not Present | To Do | To Do | To Do | To Do | To Do | [15-lead-and-crm.md](/D:/localsy/docs/03-module-specifications/15-lead-and-crm.md) | |
@@ -387,52 +387,52 @@ Primary evidence sources:
 
 | Sub-module | Sub-sub-module | Priority | Current Codebase Maturity | Delivery Stage | UX Mockup | UI | Development | Testing | Evidence | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|
-| Public Pages | national page | P0 | Partial | In Progress | Done | Done | In Progress | To Do | [16-web-experience.md](/D:/localsy/docs/03-module-specifications/16-web-experience.md) | |
-| Public Pages | city page | P0 | Partial | In Progress | Done | Done | In Progress | To Do | [16-web-experience.md](/D:/localsy/docs/03-module-specifications/16-web-experience.md) | |
+| Public Pages | national page | P0 | Present | In Progress | Done | Done | Done | In Progress | [src/components/webportal/NationalDirectoryPage.tsx](/D:/localsy/src/components/webportal/NationalDirectoryPage.tsx) | Live national directory experience is routed through the public web surface |
+| Public Pages | city page | P0 | Present | In Progress | Done | Done | Done | In Progress | [src/components/ux/CityDirectoryUiV1.tsx](/D:/localsy/src/components/ux/CityDirectoryUiV1.tsx) | Live city route experience is routed through the public web surface |
 | Public Pages | locality page | P0 | Present | In Progress | Done | Done | Done | In Progress | [src/components/WebPortal.tsx](/D:/localsy/src/components/WebPortal.tsx) | |
 | Public Pages | category page | P0 | Present | In Progress | Done | Done | Done | In Progress | [src/components/WebPortal.tsx](/D:/localsy/src/components/WebPortal.tsx) | |
 | Listing Pages | detail page | P0 | Present | In Progress | Done | Done | Done | In Progress | [FEATURE_CATALOG.md](/D:/localsy/FEATURE_CATALOG.md) | |
-| Listing Pages | gallery | P0 | Partial | In Progress | Done | Done | In Progress | To Do | [16-web-experience.md](/D:/localsy/docs/03-module-specifications/16-web-experience.md) | |
+| Listing Pages | gallery | P0 | Present | In Progress | Done | Done | Done | In Progress | [src/components/WebPortal.tsx](/D:/localsy/src/components/WebPortal.tsx) | Listing detail experiences now surface a normalized business gallery |
 | Listing Pages | reviews | P0 | Present | In Progress | Done | Done | Done | In Progress | [FEATURE_CATALOG.md](/D:/localsy/FEATURE_CATALOG.md) | |
 | Listing Pages | contact actions | P0 | Present | In Progress | Done | Done | Done | In Progress | [USER_FLOWS.md](/D:/localsy/USER_FLOWS.md) | |
-| Listing Pages | related listings | P0 | Partial | In Progress | Done | Done | In Progress | To Do | [16-web-experience.md](/D:/localsy/docs/03-module-specifications/16-web-experience.md) | |
+| Listing Pages | related listings | P0 | Present | In Progress | Done | Done | Done | In Progress | [src/components/WebPortal.tsx](/D:/localsy/src/components/WebPortal.tsx) | Detail modal now surfaces locality-aware related listing suggestions |
 | Buyer Tools | save listing | P1 | Present | In Progress | Done | Done | In Progress | To Do | [src/components/WebPortal.tsx](/D:/localsy/src/components/WebPortal.tsx) | |
-| Buyer Tools | compare | P1 | Not Present | To Do | Done | Done | To Do | To Do | [16-web-experience.md](/D:/localsy/docs/03-module-specifications/16-web-experience.md) | |
+| Buyer Tools | compare | P1 | Present | In Progress | Done | Done | Done | In Progress | [src/components/WebPortal.tsx](/D:/localsy/src/components/WebPortal.tsx) | Buyer compare queue and side-by-side shortlist table are live |
 | Buyer Tools | unlock contact | P1 | Present | In Progress | Done | Done | In Progress | To Do | [USER_FLOWS.md](/D:/localsy/USER_FLOWS.md) | |
 | Buyer Tools | submit review | P1 | Present | In Progress | Done | Done | Done | In Progress | [USER_FLOWS.md](/D:/localsy/USER_FLOWS.md) | |
-| Merchant CTA Surface | claim listing | P1 | Partial | In Progress | Done | Done | Done | To Do | [16-web-experience.md](/D:/localsy/docs/03-module-specifications/16-web-experience.md) | |
+| Merchant CTA Surface | claim listing | P1 | Present | In Progress | Done | Done | Done | In Progress | [src/components/webportal/SellerShowcasePage.tsx](/D:/localsy/src/components/webportal/SellerShowcasePage.tsx) | Seller-facing public pages now include dedicated claim-listing CTAs |
 | Merchant CTA Surface | advertise | P1 | Present | In Progress | Done | Done | Done | To Do | [src/components/WebPortal.tsx](/D:/localsy/src/components/WebPortal.tsx) | |
 | Merchant CTA Surface | submit business | P1 | Present | In Progress | Done | Done | Done | To Do | [USER_FLOWS.md](/D:/localsy/USER_FLOWS.md) | |
-| Merchant CTA Surface | contact sales | P1 | Partial | In Progress | Done | Done | In Progress | To Do | [16-web-experience.md](/D:/localsy/docs/03-module-specifications/16-web-experience.md) | |
+| Merchant CTA Surface | contact sales | P1 | Present | In Progress | Done | Done | Done | In Progress | [src/components/webportal/SellerShowcasePage.tsx](/D:/localsy/src/components/webportal/SellerShowcasePage.tsx) | Seller-facing public pages now include premium contact-sales CTAs |
 
 ## 4.16 WhatsApp Channel
 
 | Sub-module | Sub-sub-module | Priority | Current Codebase Maturity | Delivery Stage | UX Mockup | UI | Development | Testing | Evidence | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|
-| Inbound Handling | webhook receive | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [17-whatsapp-channel.md](/D:/localsy/docs/03-module-specifications/17-whatsapp-channel.md) | |
-| Inbound Handling | normalize query | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [17-whatsapp-channel.md](/D:/localsy/docs/03-module-specifications/17-whatsapp-channel.md) | |
-| Inbound Handling | phone-session mapping | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [17-whatsapp-channel.md](/D:/localsy/docs/03-module-specifications/17-whatsapp-channel.md) | |
-| Response Orchestration | single best listing URL | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [06-whatsapp-response-orchestration.md](/D:/localsy/docs/08-submodule-specifications/06-whatsapp-response-orchestration.md) | |
-| Response Orchestration | top 3 listing URLs | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [06-whatsapp-response-orchestration.md](/D:/localsy/docs/08-submodule-specifications/06-whatsapp-response-orchestration.md) | |
-| Response Orchestration | contact cards | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [06-whatsapp-response-orchestration.md](/D:/localsy/docs/08-submodule-specifications/06-whatsapp-response-orchestration.md) | |
-| Response Orchestration | follow-up prompts | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [06-whatsapp-response-orchestration.md](/D:/localsy/docs/08-submodule-specifications/06-whatsapp-response-orchestration.md) | |
-| Compliance Messaging | opt-in tracking | P0 | Not Present | To Do | To Do | To Do | To Do | To Do | [07-data-and-consent-compliance.md](/D:/localsy/docs/08-submodule-specifications/07-data-and-consent-compliance.md) | |
-| Compliance Messaging | template handling | P0 | Not Present | To Do | To Do | To Do | To Do | To Do | [17-whatsapp-channel.md](/D:/localsy/docs/03-module-specifications/17-whatsapp-channel.md) | |
-| Compliance Messaging | unsubscribe handling | P0 | Not Present | To Do | To Do | To Do | To Do | To Do | [17-whatsapp-channel.md](/D:/localsy/docs/03-module-specifications/17-whatsapp-channel.md) | |
-| Compliance Messaging | session windows | P0 | Not Present | To Do | To Do | To Do | To Do | To Do | [17-whatsapp-channel.md](/D:/localsy/docs/03-module-specifications/17-whatsapp-channel.md) | |
-| Channel Analytics | resolution rate | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [17-whatsapp-channel.md](/D:/localsy/docs/03-module-specifications/17-whatsapp-channel.md) | |
-| Channel Analytics | fallback rate | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [17-whatsapp-channel.md](/D:/localsy/docs/03-module-specifications/17-whatsapp-channel.md) | |
-| Channel Analytics | response time | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [17-whatsapp-channel.md](/D:/localsy/docs/03-module-specifications/17-whatsapp-channel.md) | |
-| Channel Analytics | drop-off | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [17-whatsapp-channel.md](/D:/localsy/docs/03-module-specifications/17-whatsapp-channel.md) | |
+| Inbound Handling | webhook receive | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [server.js](/D:/localsy/server.js) | WhatsApp webhook endpoint now accepts inbound query payloads |
+| Inbound Handling | normalize query | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [server.js](/D:/localsy/server.js) | WhatsApp orchestration normalizes incoming query text before retrieval |
+| Inbound Handling | phone-session mapping | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [server.js](/D:/localsy/server.js) | Channel session memory now maps phone/session to previous query context |
+| Response Orchestration | single best listing URL | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [server.js](/D:/localsy/server.js) | WhatsApp resolver returns a canonical best listing URL |
+| Response Orchestration | top 3 listing URLs | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [server.js](/D:/localsy/server.js) | WhatsApp resolver returns top 3 listing URLs |
+| Response Orchestration | contact cards | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [server.js](/D:/localsy/server.js) | WhatsApp resolver returns lightweight listing contact cards |
+| Response Orchestration | follow-up prompts | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [server.js](/D:/localsy/server.js) | WhatsApp resolver suggests next follow-up questions |
+| Compliance Messaging | opt-in tracking | P0 | Present | In Progress | To Do | To Do | Done | In Progress | [shared/complianceGovernance.js](/D:/localsy/shared/complianceGovernance.js) | Consent records back WhatsApp, SMS, and marketing opt-in tracking |
+| Compliance Messaging | template handling | P0 | Present | In Progress | To Do | To Do | Done | In Progress | [server.js](/D:/localsy/server.js) | Compliance message templates are managed via `/api/admin/compliance/message-templates` |
+| Compliance Messaging | unsubscribe handling | P0 | Present | In Progress | To Do | To Do | Done | In Progress | [server.js](/D:/localsy/server.js) | Unsubscribe capture is exposed via `/api/compliance/unsubscribe` |
+| Compliance Messaging | session windows | P0 | Present | In Progress | To Do | To Do | Done | In Progress | [shared/complianceGovernance.js](/D:/localsy/shared/complianceGovernance.js) | Session-window eligibility is derived in messaging runtime responses |
+| Channel Analytics | resolution rate | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [server.js](/D:/localsy/server.js) | Channel resolution, fallback, response-time, and drop-off metrics are exposed via `/api/admin/analytics/channels` |
+| Channel Analytics | fallback rate | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [server.js](/D:/localsy/server.js) | Channel resolution, fallback, response-time, and drop-off metrics are exposed via `/api/admin/analytics/channels` |
+| Channel Analytics | response time | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [server.js](/D:/localsy/server.js) | Mobile and WhatsApp searches now log duration into the audit stream |
+| Channel Analytics | drop-off | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [server.js](/D:/localsy/server.js) | Drop-off is derived from search sessions without follow-up engagement |
 
 ## 4.17 Mobile and API Channels
 
 | Sub-module | Sub-sub-module | Priority | Current Codebase Maturity | Delivery Stage | UX Mockup | UI | Development | Testing | Evidence | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|
-| Mobile APIs | search API | P2 | Not Present | To Do | To Do | To Do | To Do | To Do | [18-mobile-and-api-channels.md](/D:/localsy/docs/03-module-specifications/18-mobile-and-api-channels.md) | |
-| Mobile APIs | chat API | P2 | Not Present | To Do | To Do | To Do | To Do | To Do | [18-mobile-and-api-channels.md](/D:/localsy/docs/03-module-specifications/18-mobile-and-api-channels.md) | |
-| Mobile APIs | listing API | P2 | Not Present | To Do | To Do | To Do | To Do | To Do | [18-mobile-and-api-channels.md](/D:/localsy/docs/03-module-specifications/18-mobile-and-api-channels.md) | |
-| Mobile APIs | profile API | P2 | Not Present | To Do | To Do | To Do | To Do | To Do | [18-mobile-and-api-channels.md](/D:/localsy/docs/03-module-specifications/18-mobile-and-api-channels.md) | |
+| Mobile APIs | search API | P2 | Present | In Progress | To Do | To Do | Done | In Progress | [server.js](/D:/localsy/server.js) | `/api/mobile/search` returns ranked listing results |
+| Mobile APIs | chat API | P2 | Present | In Progress | To Do | To Do | Done | In Progress | [server.js](/D:/localsy/server.js) | `/api/mobile/chat` returns understanding, direct answer, citations, and cards |
+| Mobile APIs | listing API | P2 | Present | In Progress | To Do | To Do | Done | In Progress | [server.js](/D:/localsy/server.js) | `/api/mobile/listing/:listingId` returns listing detail and related listings |
+| Mobile APIs | profile API | P2 | Present | In Progress | To Do | To Do | Done | In Progress | [server.js](/D:/localsy/server.js) | `/api/mobile/profile` returns auth user and buyer state snapshot |
 | Deep Links | listing deep links | P2 | Present | In Progress | Done | Done | In Progress | To Do | [src/components/WebPortal.tsx](/D:/localsy/src/components/WebPortal.tsx) | |
 | Deep Links | locality links | P2 | Present | In Progress | Done | Done | In Progress | To Do | [SEO_PHASE_EXECUTION.md](/D:/localsy/SEO_PHASE_EXECUTION.md) | |
 | Deep Links | campaign links | P2 | Partial | In Progress | Done | Done | In Progress | To Do | [src/types.ts](/D:/localsy/src/types.ts) | |
@@ -459,7 +459,7 @@ Primary evidence sources:
 | Data Operations | bulk upload | P0 | Present | In Progress | Done | Done | Done | In Progress | [FEATURE_CATALOG.md](/D:/localsy/FEATURE_CATALOG.md) | |
 | Data Operations | import review | P0 | Partial | In Progress | Done | Done | Done | In Progress | [19-admin-operations.md](/D:/localsy/docs/03-module-specifications/19-admin-operations.md) | |
 | Data Operations | corrections | P0 | Present | In Progress | Done | Done | Done | In Progress | [USER_FLOWS.md](/D:/localsy/USER_FLOWS.md) | |
-| Data Operations | exports | P0 | Not Present | To Do | To Do | To Do | To Do | To Do | [19-admin-operations.md](/D:/localsy/docs/03-module-specifications/19-admin-operations.md) | |
+| Data Operations | exports | P0 | Present | In Progress | To Do | To Do | Done | In Progress | [server.js](/D:/localsy/server.js) | CSV and JSON exports are available via `/api/admin/exports/:entity` |
 | Moderation and Governance | flagged content | P0 | Partial | In Progress | Done | Done | In Progress | To Do | [USER_FLOWS.md](/D:/localsy/USER_FLOWS.md) | |
 | Moderation and Governance | audit review | P0 | Present | In Progress | Done | Done | Done | In Progress | [USER_FLOWS.md](/D:/localsy/USER_FLOWS.md) | |
 | Moderation and Governance | suspicious actions | P0 | Partial | In Progress | Done | Done | In Progress | To Do | [OPERATIONS_WORKSPACE_FIELD_GUIDE.md](/D:/localsy/OPERATIONS_WORKSPACE_FIELD_GUIDE.md) | |
@@ -469,19 +469,19 @@ Primary evidence sources:
 
 | Sub-module | Sub-sub-module | Priority | Current Codebase Maturity | Delivery Stage | UX Mockup | UI | Development | Testing | Evidence | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|
-| Search Analytics | popular queries | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [20-analytics-and-reporting.md](/D:/localsy/docs/03-module-specifications/20-analytics-and-reporting.md) | |
-| Search Analytics | no-result queries | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [20-analytics-and-reporting.md](/D:/localsy/docs/03-module-specifications/20-analytics-and-reporting.md) | |
-| Search Analytics | CTR | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [20-analytics-and-reporting.md](/D:/localsy/docs/03-module-specifications/20-analytics-and-reporting.md) | |
-| Search Analytics | query-to-lead conversion | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [20-analytics-and-reporting.md](/D:/localsy/docs/03-module-specifications/20-analytics-and-reporting.md) | |
+| Search Analytics | popular queries | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [shared/adminOperations.js](/D:/localsy/shared/adminOperations.js) | Popular query aggregation is exposed via `/api/admin/analytics/search` |
+| Search Analytics | no-result queries | P1 | Present | In Progress | Done | Done | Done | In Progress | [src/components/WebPortal.tsx](/D:/localsy/src/components/WebPortal.tsx) | No-result searches are logged via audit events for follow-up analysis |
+| Search Analytics | CTR | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [shared/adminOperations.js](/D:/localsy/shared/adminOperations.js) | CTR is derived from downstream engagement following search activity |
+| Search Analytics | query-to-lead conversion | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [shared/adminOperations.js](/D:/localsy/shared/adminOperations.js) | Query-to-lead conversion is derived from search-to-contact and lead follow-up events |
 | Listing Analytics | views | P1 | Partial | In Progress | In Progress | In Progress | In Progress | To Do | [src/components/WebPortal.tsx](/D:/localsy/src/components/WebPortal.tsx) | |
 | Listing Analytics | clicks | P1 | Partial | In Progress | In Progress | In Progress | In Progress | To Do | [src/components/WebPortal.tsx](/D:/localsy/src/components/WebPortal.tsx) | |
 | Listing Analytics | unlocks | P1 | Partial | In Progress | In Progress | In Progress | In Progress | To Do | [20-analytics-and-reporting.md](/D:/localsy/docs/03-module-specifications/20-analytics-and-reporting.md) | |
 | Listing Analytics | reviews | P1 | Partial | In Progress | In Progress | In Progress | In Progress | To Do | [20-analytics-and-reporting.md](/D:/localsy/docs/03-module-specifications/20-analytics-and-reporting.md) | |
 | Listing Analytics | leads | P1 | Partial | In Progress | In Progress | In Progress | In Progress | To Do | [20-analytics-and-reporting.md](/D:/localsy/docs/03-module-specifications/20-analytics-and-reporting.md) | |
-| Channel Analytics | web | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [20-analytics-and-reporting.md](/D:/localsy/docs/03-module-specifications/20-analytics-and-reporting.md) | |
-| Channel Analytics | WhatsApp | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [17-whatsapp-channel.md](/D:/localsy/docs/03-module-specifications/17-whatsapp-channel.md) | |
-| Channel Analytics | mobile | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [18-mobile-and-api-channels.md](/D:/localsy/docs/03-module-specifications/18-mobile-and-api-channels.md) | |
-| Channel Analytics | campaign comparison | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [20-analytics-and-reporting.md](/D:/localsy/docs/03-module-specifications/20-analytics-and-reporting.md) | |
+| Channel Analytics | web | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [shared/adminOperations.js](/D:/localsy/shared/adminOperations.js) | Web, mobile, and WhatsApp channel summaries are exposed via `/api/admin/analytics/channels` |
+| Channel Analytics | WhatsApp | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [server.js](/D:/localsy/server.js) | WhatsApp query resolution now writes audit events with session and response metadata |
+| Channel Analytics | mobile | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [server.js](/D:/localsy/server.js) | Mobile search, chat, and listing detail activity now feed the audit trail |
+| Channel Analytics | campaign comparison | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [shared/adminOperations.js](/D:/localsy/shared/adminOperations.js) | Campaign comparison is exposed via `/api/admin/analytics/campaign-comparison` |
 | AI Quality Analytics | answer accuracy | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [08-ai-and-rag.md](/D:/localsy/docs/03-module-specifications/08-ai-and-rag.md) | |
 | AI Quality Analytics | citation coverage | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [08-ai-and-rag.md](/D:/localsy/docs/03-module-specifications/08-ai-and-rag.md) | |
 | AI Quality Analytics | multilingual quality | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [08-ai-and-rag.md](/D:/localsy/docs/03-module-specifications/08-ai-and-rag.md) | |
@@ -516,40 +516,40 @@ Primary evidence sources:
 | Merchant Notifications | review alert | P1 | Not Present | To Do | In Progress | In Progress | To Do | To Do | [22-notifications-and-communication.md](/D:/localsy/docs/03-module-specifications/22-notifications-and-communication.md) | |
 | Merchant Notifications | approval alert | P1 | Not Present | To Do | In Progress | In Progress | To Do | To Do | [22-notifications-and-communication.md](/D:/localsy/docs/03-module-specifications/22-notifications-and-communication.md) | |
 | Merchant Notifications | renewal alert | P1 | Not Present | To Do | In Progress | In Progress | To Do | To Do | [22-notifications-and-communication.md](/D:/localsy/docs/03-module-specifications/22-notifications-and-communication.md) | |
-| Internal Notifications | moderation alert | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [22-notifications-and-communication.md](/D:/localsy/docs/03-module-specifications/22-notifications-and-communication.md) | |
-| Internal Notifications | ingestion failure | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [22-notifications-and-communication.md](/D:/localsy/docs/03-module-specifications/22-notifications-and-communication.md) | |
-| Internal Notifications | suspicious activity | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [22-notifications-and-communication.md](/D:/localsy/docs/03-module-specifications/22-notifications-and-communication.md) | |
-| Internal Notifications | system warnings | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [22-notifications-and-communication.md](/D:/localsy/docs/03-module-specifications/22-notifications-and-communication.md) | |
+| Internal Notifications | moderation alert | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [shared/adminOperations.js](/D:/localsy/shared/adminOperations.js) | Moderation queues are surfaced via `/api/admin/notifications` |
+| Internal Notifications | ingestion failure | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [shared/adminOperations.js](/D:/localsy/shared/adminOperations.js) | Import skip patterns are surfaced via `/api/admin/notifications` |
+| Internal Notifications | suspicious activity | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [shared/adminOperations.js](/D:/localsy/shared/adminOperations.js) | Suspicious device activity is surfaced via `/api/admin/notifications` |
+| Internal Notifications | system warnings | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [shared/adminOperations.js](/D:/localsy/shared/adminOperations.js) | No-result spikes and other warnings are surfaced via `/api/admin/notifications` |
 
 ## 4.22 Compliance and Legal
 
 | Sub-module | Sub-sub-module | Priority | Current Codebase Maturity | Delivery Stage | UX Mockup | UI | Development | Testing | Evidence | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|
-| Legal Content Management | TnC | P0 | Not Present | To Do | To Do | To Do | To Do | To Do | [23-compliance-and-legal.md](/D:/localsy/docs/03-module-specifications/23-compliance-and-legal.md) | |
-| Legal Content Management | privacy policy | P0 | Not Present | To Do | To Do | To Do | To Do | To Do | [23-compliance-and-legal.md](/D:/localsy/docs/03-module-specifications/23-compliance-and-legal.md) | |
-| Legal Content Management | cookie policy | P0 | Not Present | To Do | To Do | To Do | To Do | To Do | [23-compliance-and-legal.md](/D:/localsy/docs/03-module-specifications/23-compliance-and-legal.md) | |
-| Legal Content Management | disclaimer | P0 | Not Present | To Do | To Do | To Do | To Do | To Do | [23-compliance-and-legal.md](/D:/localsy/docs/03-module-specifications/23-compliance-and-legal.md) | |
-| Commercial Policies | refund policy | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [23-compliance-and-legal.md](/D:/localsy/docs/03-module-specifications/23-compliance-and-legal.md) | |
-| Commercial Policies | cancellation policy | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [23-compliance-and-legal.md](/D:/localsy/docs/03-module-specifications/23-compliance-and-legal.md) | |
-| Commercial Policies | fulfilment policy | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [23-compliance-and-legal.md](/D:/localsy/docs/03-module-specifications/23-compliance-and-legal.md) | |
-| Commercial Policies | seller agreement | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [23-compliance-and-legal.md](/D:/localsy/docs/03-module-specifications/23-compliance-and-legal.md) | |
-| Platform Policies | community guidelines | P0 | Not Present | To Do | To Do | To Do | To Do | To Do | [23-compliance-and-legal.md](/D:/localsy/docs/03-module-specifications/23-compliance-and-legal.md) | |
-| Platform Policies | merchant listing policy | P0 | Not Present | To Do | To Do | To Do | To Do | To Do | [23-compliance-and-legal.md](/D:/localsy/docs/03-module-specifications/23-compliance-and-legal.md) | |
-| Platform Policies | review policy | P0 | Not Present | To Do | To Do | To Do | To Do | To Do | [23-compliance-and-legal.md](/D:/localsy/docs/03-module-specifications/23-compliance-and-legal.md) | |
-| Platform Policies | moderation policy | P0 | Not Present | To Do | To Do | To Do | To Do | To Do | [23-compliance-and-legal.md](/D:/localsy/docs/03-module-specifications/23-compliance-and-legal.md) | |
-| Data and Consent Compliance | OTP consent | P0 | Partial | In Progress | To Do | In Progress | In Progress | To Do | [server.js](/D:/localsy/server.js) | |
-| Data and Consent Compliance | WhatsApp consent | P0 | Not Present | To Do | To Do | To Do | To Do | To Do | [07-data-and-consent-compliance.md](/D:/localsy/docs/08-submodule-specifications/07-data-and-consent-compliance.md) | |
-| Data and Consent Compliance | marketing consent | P0 | Not Present | To Do | To Do | To Do | To Do | To Do | [07-data-and-consent-compliance.md](/D:/localsy/docs/08-submodule-specifications/07-data-and-consent-compliance.md) | |
-| Data and Consent Compliance | retention rules | P0 | Not Present | To Do | To Do | To Do | To Do | To Do | [07-data-and-consent-compliance.md](/D:/localsy/docs/08-submodule-specifications/07-data-and-consent-compliance.md) | |
+| Legal Content Management | TnC | P0 | Present | In Progress | To Do | To Do | Done | In Progress | [shared/complianceGovernance.js](/D:/localsy/shared/complianceGovernance.js) | Seeded legal content is available via `/api/legal-content` |
+| Legal Content Management | privacy policy | P0 | Present | In Progress | To Do | To Do | Done | In Progress | [shared/complianceGovernance.js](/D:/localsy/shared/complianceGovernance.js) | Seeded legal content is available via `/api/legal-content` |
+| Legal Content Management | cookie policy | P0 | Present | In Progress | To Do | To Do | Done | In Progress | [shared/complianceGovernance.js](/D:/localsy/shared/complianceGovernance.js) | Seeded legal content is available via `/api/legal-content` |
+| Legal Content Management | disclaimer | P0 | Present | In Progress | To Do | To Do | Done | In Progress | [shared/complianceGovernance.js](/D:/localsy/shared/complianceGovernance.js) | Seeded legal content is available via `/api/legal-content` |
+| Commercial Policies | refund policy | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [shared/complianceGovernance.js](/D:/localsy/shared/complianceGovernance.js) | Commercial policies are seeded and exposed through legal content endpoints |
+| Commercial Policies | cancellation policy | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [shared/complianceGovernance.js](/D:/localsy/shared/complianceGovernance.js) | Commercial policies are seeded and exposed through legal content endpoints |
+| Commercial Policies | fulfilment policy | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [shared/complianceGovernance.js](/D:/localsy/shared/complianceGovernance.js) | Commercial policies are seeded and exposed through legal content endpoints |
+| Commercial Policies | seller agreement | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [shared/complianceGovernance.js](/D:/localsy/shared/complianceGovernance.js) | Commercial policies are seeded and exposed through legal content endpoints |
+| Platform Policies | community guidelines | P0 | Present | In Progress | To Do | To Do | Done | In Progress | [shared/complianceGovernance.js](/D:/localsy/shared/complianceGovernance.js) | Platform policies are seeded and exposed through legal content endpoints |
+| Platform Policies | merchant listing policy | P0 | Present | In Progress | To Do | To Do | Done | In Progress | [shared/complianceGovernance.js](/D:/localsy/shared/complianceGovernance.js) | Platform policies are seeded and exposed through legal content endpoints |
+| Platform Policies | review policy | P0 | Present | In Progress | To Do | To Do | Done | In Progress | [shared/complianceGovernance.js](/D:/localsy/shared/complianceGovernance.js) | Platform policies are seeded and exposed through legal content endpoints |
+| Platform Policies | moderation policy | P0 | Present | In Progress | To Do | To Do | Done | In Progress | [shared/complianceGovernance.js](/D:/localsy/shared/complianceGovernance.js) | Platform policies are seeded and exposed through legal content endpoints |
+| Data and Consent Compliance | OTP consent | P0 | Present | In Progress | To Do | In Progress | Done | In Progress | [server.js](/D:/localsy/server.js) | OTP request flows now write SMS OTP consent records |
+| Data and Consent Compliance | WhatsApp consent | P0 | Present | In Progress | To Do | To Do | Done | In Progress | [server.js](/D:/localsy/server.js) | WhatsApp consent can be captured explicitly and from inbound opt-in flags |
+| Data and Consent Compliance | marketing consent | P0 | Present | In Progress | To Do | To Do | Done | In Progress | [server.js](/D:/localsy/server.js) | Marketing consent is captured through compliance consent records |
+| Data and Consent Compliance | retention rules | P0 | Present | In Progress | To Do | To Do | Done | In Progress | [shared/complianceGovernance.js](/D:/localsy/shared/complianceGovernance.js) | Retention rules are stored and managed as compliance state |
 | Data and Consent Compliance | PII governance | P0 | Partial | In Progress | To Do | In Progress | In Progress | To Do | [src/components/AdminConsole.tsx](/D:/localsy/src/components/AdminConsole.tsx) | |
 | Rights and Grievance | grievance intake | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [23-compliance-and-legal.md](/D:/localsy/docs/03-module-specifications/23-compliance-and-legal.md) | |
 | Rights and Grievance | takedown flow | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [23-compliance-and-legal.md](/D:/localsy/docs/03-module-specifications/23-compliance-and-legal.md) | |
 | Rights and Grievance | export request | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [23-compliance-and-legal.md](/D:/localsy/docs/03-module-specifications/23-compliance-and-legal.md) | |
 | Rights and Grievance | deletion request | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [23-compliance-and-legal.md](/D:/localsy/docs/03-module-specifications/23-compliance-and-legal.md) | |
-| Policy Controls | versioning | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [23-compliance-and-legal.md](/D:/localsy/docs/03-module-specifications/23-compliance-and-legal.md) | |
-| Policy Controls | acceptance tracking | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [23-compliance-and-legal.md](/D:/localsy/docs/03-module-specifications/23-compliance-and-legal.md) | |
-| Policy Controls | consent audit log | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [23-compliance-and-legal.md](/D:/localsy/docs/03-module-specifications/23-compliance-and-legal.md) | |
-| Policy Controls | geo-specific policy mapping | P1 | Not Present | To Do | To Do | To Do | To Do | To Do | [23-compliance-and-legal.md](/D:/localsy/docs/03-module-specifications/23-compliance-and-legal.md) | |
+| Policy Controls | versioning | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [shared/complianceGovernance.js](/D:/localsy/shared/complianceGovernance.js) | Policy documents include explicit version fields and update workflow |
+| Policy Controls | acceptance tracking | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [server.js](/D:/localsy/server.js) | Policy acceptance capture is exposed via `/api/compliance/policy-acceptances` |
+| Policy Controls | consent audit log | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [server.js](/D:/localsy/server.js) | Consent capture writes both compliance records and audit events |
+| Policy Controls | geo-specific policy mapping | P1 | Present | In Progress | To Do | To Do | Done | In Progress | [shared/complianceGovernance.js](/D:/localsy/shared/complianceGovernance.js) | Policy documents support locality-level applicability via `localityIds` |
 
 ## 4.23 Platform Governance
 
@@ -557,11 +557,11 @@ Primary evidence sources:
 |---|---|---|---|---|---|---|---|---|---|---|
 | Audit and Compliance Logs | admin logs | P0 | Present | In Progress | Done | In Progress | Done | In Progress | [FEATURE_CATALOG.md](/D:/localsy/FEATURE_CATALOG.md) | |
 | Audit and Compliance Logs | merchant logs | P0 | Partial | In Progress | Done | In Progress | Done | In Progress | [24-platform-governance.md](/D:/localsy/docs/03-module-specifications/24-platform-governance.md) | |
-| Audit and Compliance Logs | consent logs | P0 | Not Present | To Do | To Do | To Do | To Do | To Do | [24-platform-governance.md](/D:/localsy/docs/03-module-specifications/24-platform-governance.md) | |
-| Audit and Compliance Logs | policy acceptance logs | P0 | Not Present | To Do | To Do | To Do | To Do | To Do | [24-platform-governance.md](/D:/localsy/docs/03-module-specifications/24-platform-governance.md) | |
+| Audit and Compliance Logs | consent logs | P0 | Present | In Progress | To Do | To Do | Done | In Progress | [server.js](/D:/localsy/server.js) | Consent records are queryable through admin compliance endpoints and mirrored into audit logs |
+| Audit and Compliance Logs | policy acceptance logs | P0 | Present | In Progress | To Do | To Do | Done | In Progress | [server.js](/D:/localsy/server.js) | Policy acceptance records are queryable through admin compliance endpoints and mirrored into audit logs |
 | Privacy Controls | masked PII | P0 | Partial | In Progress | In Progress | In Progress | In Progress | To Do | [24-platform-governance.md](/D:/localsy/docs/03-module-specifications/24-platform-governance.md) | |
 | Privacy Controls | restricted contact visibility | P0 | Present | In Progress | In Progress | In Progress | In Progress | To Do | [USER_FLOWS.md](/D:/localsy/USER_FLOWS.md) | |
-| Privacy Controls | retention enforcement | P0 | Not Present | To Do | To Do | To Do | To Do | To Do | [24-platform-governance.md](/D:/localsy/docs/03-module-specifications/24-platform-governance.md) | |
+| Privacy Controls | retention enforcement | P0 | Present | In Progress | To Do | To Do | Done | In Progress | [server.js](/D:/localsy/server.js) | Retention enforcement is exposed via `/api/admin/compliance/retention/enforce` |
 | Risk Controls | abuse flags | P1 | Partial | In Progress | In Progress | In Progress | In Progress | To Do | [24-platform-governance.md](/D:/localsy/docs/03-module-specifications/24-platform-governance.md) | |
 | Risk Controls | suspicious activity detection | P1 | Partial | In Progress | In Progress | In Progress | In Progress | To Do | [VAPT_CHECKLIST.md](/D:/localsy/VAPT_CHECKLIST.md) | |
 | Risk Controls | escalation workflow | P1 | Partial | In Progress | In Progress | In Progress | In Progress | To Do | [19-admin-operations.md](/D:/localsy/docs/03-module-specifications/19-admin-operations.md) | |
@@ -570,7 +570,7 @@ Primary evidence sources:
 
 | Sub-module | Sub-sub-module | Priority | Current Codebase Maturity | Delivery Stage | UX Mockup | UI | Development | Testing | Evidence | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|
-| Maps and Geo | maps provider | P1 | Not Present | To Do | In Progress | In Progress | To Do | To Do | [25-integrations.md](/D:/localsy/docs/03-module-specifications/25-integrations.md) | |
+| Maps and Geo | maps provider | P1 | Present | In Progress | In Progress | In Progress | Done | In Progress | [server.js](/D:/localsy/server.js) | Runtime map provider metadata is exposed via `/api/runtime-config` |
 | Maps and Geo | geocoding | P1 | Partial | In Progress | In Progress | In Progress | In Progress | To Do | [src/App.tsx](/D:/localsy/src/App.tsx) | |
 | Maps and Geo | distance calculation | P1 | Partial | In Progress | In Progress | In Progress | In Progress | To Do | [src/types.ts](/D:/localsy/src/types.ts) | |
 | Maps and Geo | geo utilities | P1 | Partial | In Progress | In Progress | In Progress | In Progress | To Do | [src/App.tsx](/D:/localsy/src/App.tsx) | |
