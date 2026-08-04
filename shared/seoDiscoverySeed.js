@@ -1,0 +1,171 @@
+export const DEFAULT_SEO_ROUTE_INTENTS = [
+  { id: 'electrician', slug: 'electrician', categoryId: 'home-services', q: 'Electrician', labelPrefix: 'Electrician' },
+  { id: 'salon', slug: 'salon', categoryId: 'beauty-wellness', q: 'Salon', labelPrefix: 'Salon' },
+  { id: 'dental', slug: 'dental-clinic', categoryId: 'health-medical', q: 'Dental Clinic', labelPrefix: 'Dental Clinic' },
+  { id: 'restaurant', slug: 'restaurant', categoryId: 'food-restaurants', q: 'Restaurant', labelPrefix: 'Restaurant' },
+  { id: 'grocery', slug: 'grocery-store', categoryId: 'shopping-retail', q: 'Grocery Store', labelPrefix: 'Grocery Store' },
+  { id: 'chartered', slug: 'ca', categoryId: 'professional-services', q: 'Chartered Accountant', labelPrefix: 'CA' },
+];
+
+export const DEFAULT_SEO_CATEGORY_LABELS = [
+  { categoryId: 'food-restaurants', label: 'Food & Restaurants' },
+  { categoryId: 'health-medical', label: 'Health & Medical' },
+  { categoryId: 'beauty-wellness', label: 'Beauty & Wellness' },
+  { categoryId: 'home-services', label: 'Home Services' },
+  { categoryId: 'automotive', label: 'Automotive' },
+  { categoryId: 'real-estate', label: 'Real Estate' },
+  { categoryId: 'education-training', label: 'Education & Training' },
+  { categoryId: 'shopping-retail', label: 'Shopping & Retail' },
+  { categoryId: 'professional-services', label: 'Professional Services' },
+  { categoryId: 'travel-hospitality', label: 'Travel & Hospitality' },
+  { categoryId: 'event-services', label: 'Event Services' },
+  { categoryId: 'repair-maintenance', label: 'Repair & Maintenance' },
+  { categoryId: 'financial-services', label: 'Financial Services' },
+  { categoryId: 'pets-animals', label: 'Pets & Animals' },
+  { categoryId: 'industrial-b2b', label: 'Industrial & B2B' },
+  { categoryId: 'agriculture', label: 'Agriculture' },
+  { categoryId: 'entertainment-leisure', label: 'Entertainment & Leisure' },
+  { categoryId: 'digital-technology', label: 'Digital & Technology' },
+  { categoryId: 'government-public-services', label: 'Government & Public Services' },
+];
+
+export const DEFAULT_SEO_LOCALITY_METADATA = [
+  {
+    id: 'roadpali',
+    name: 'Roadpali',
+    city: 'Navi Mumbai',
+    intro: 'Roadpali is one of the most active residential and service corridors in Navi Mumbai, with trusted options across salons, food, home services, and clinics.',
+    pincodes: ['410101', '410218'],
+    subdomain: 'roadpali.happygifting.in',
+  },
+  {
+    id: 'kalamboli',
+    name: 'Kalamboli',
+    city: 'Navi Mumbai',
+    intro: 'Kalamboli has a strong mix of education-led neighborhoods and high-demand local services, especially wellness, retail, and family dining.',
+    pincodes: ['410218'],
+    subdomain: 'kalamboli.happygifting.in',
+  },
+  {
+    id: 'kharghar',
+    name: 'Kharghar',
+    city: 'Navi Mumbai',
+    intro: 'Kharghar serves a fast-growing residential population with high-intent demand for modern clinics, food outlets, and professional services.',
+    pincodes: ['410210'],
+    subdomain: 'kharghar.happygifting.in',
+  },
+  {
+    id: 'kamothe',
+    name: 'Kamothe',
+    city: 'Navi Mumbai',
+    intro: 'Kamothe is a strong locality for practical everyday services, neighborhood healthcare, household support, and value retail businesses.',
+    pincodes: ['410209'],
+    subdomain: 'kamothe.happygifting.in',
+  },
+  {
+    id: 'panvel',
+    name: 'Panvel',
+    city: 'Navi Mumbai',
+    intro: 'Panvel combines legacy marketplaces with new residential hubs, making it an important local search destination for both services and commerce.',
+    pincodes: ['410206', '410221'],
+    subdomain: 'panvel.happygifting.in',
+  },
+  {
+    id: 'taloja',
+    name: 'Taloja',
+    city: 'Navi Mumbai',
+    intro: 'Taloja supports expanding residential clusters and industrial-adjacent demand, with rising discovery needs for home and professional services.',
+    pincodes: ['410208'],
+    subdomain: 'taloja.happygifting.in',
+  },
+];
+
+export const DEFAULT_SEO_TOP_LISTINGS = [
+  {
+    localityId: 'roadpali',
+    categoryId: 'beauty-wellness',
+    listingNames: ['5 Elements Family Salon', 'ColorQ International Salon', 'Barberry Bliss Family Salon'],
+  },
+  {
+    localityId: 'roadpali',
+    categoryId: 'food-restaurants',
+    listingNames: ['Utsav Grand Pure Veg Restaurant', 'Bombay Tandoori House', 'Kalamboli Food Square'],
+  },
+  {
+    localityId: 'roadpali',
+    categoryId: 'home-services',
+    listingNames: ['Roadpali Electric Works', 'Sector 17 Plumbing Services', 'Navi Mumbai Home Fix'],
+  },
+  {
+    localityId: 'roadpali',
+    categoryId: 'health-medical',
+    listingNames: ['Roadpali Dental & Care', 'Kalamboli Family Clinic', 'Navi Smile Dental Hub'],
+  },
+  {
+    localityId: 'roadpali',
+    categoryId: 'shopping-retail',
+    listingNames: ['Roadpali Daily Grocery', 'Sector 15 Mega Mart', 'Kalamboli Essentials Store'],
+  },
+  {
+    localityId: 'roadpali',
+    categoryId: 'professional-services',
+    listingNames: ['Panvel Tax & CA Services', 'Roadpali Legal Desk', 'Navi Mumbai Business Advisor'],
+  },
+  {
+    localityId: 'kalamboli',
+    categoryId: 'beauty-wellness',
+    listingNames: ['Majestic Salon Spa & Academy', 'Kalamboli Beauty Lounge', 'Style Studio Sector 11'],
+  },
+  {
+    localityId: 'kalamboli',
+    categoryId: 'food-restaurants',
+    listingNames: ['Kalamboli Food Station', 'Sector 5E Dine House', 'Navi Mumbai Spice Hub'],
+  },
+  {
+    localityId: 'kalamboli',
+    categoryId: 'home-services',
+    listingNames: ['Kalamboli Electric & Repair', 'Fast Home Support Kalamboli', 'Navi Service Grid'],
+  },
+  {
+    localityId: 'kalamboli',
+    categoryId: 'health-medical',
+    listingNames: ['Kalamboli Dental Point', 'Sector 11 Family Clinic', 'Metro Health Kalamboli'],
+  },
+  {
+    localityId: 'kalamboli',
+    categoryId: 'shopping-retail',
+    listingNames: ['Kalamboli Retail Bazaar', 'Sector 2E Grocery House', 'Everyday Needs Kalamboli'],
+  },
+  {
+    localityId: 'kalamboli',
+    categoryId: 'professional-services',
+    listingNames: ['Kalamboli CA Support', 'Business Services Kalamboli', 'SME Desk Navi Mumbai'],
+  },
+];
+
+export const DEFAULT_SEO_DEFAULT_LISTING_NAMES = [
+  {
+    categoryId: 'beauty-wellness',
+    listingNames: ['Trusted Family Salon', 'Premium Wellness Studio', 'Neighbourhood Grooming Hub'],
+  },
+  {
+    categoryId: 'food-restaurants',
+    listingNames: ['Popular Dining Destination', 'Top-Rated Family Restaurant', 'Local Food Specialist'],
+  },
+  {
+    categoryId: 'shopping-retail',
+    listingNames: ['Reliable Neighborhood Store', 'Daily Essentials Mart', 'High-Rating Retail Outlet'],
+  },
+  {
+    categoryId: 'health-medical',
+    listingNames: ['Verified Local Clinic', 'Top Rated Dental Center', 'Trusted Healthcare Point'],
+  },
+  {
+    categoryId: 'home-services',
+    listingNames: ['Verified Electrician Services', 'Home Repair Specialist', 'Local Maintenance Partner'],
+  },
+  {
+    categoryId: 'professional-services',
+    listingNames: ['Certified Professional Services', 'Business Advisory Partner', 'Trusted Local Consultant'],
+  },
+];

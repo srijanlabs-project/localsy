@@ -13,30 +13,38 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "release:check": "npm run lint && npm run build && node scripts/release-smoke.mjs",
-    "seo:submit-sitemaps": "node scripts/submit-search-console-sitemaps.mjs"
+    "qa:access": "node scripts/access-hardening-smoke.mjs",
+    "qa:public-writes": "node scripts/public-write-hardening-smoke.mjs",
+    "qa:resolved-homepage": "node scripts/resolved-homepage-smoke.mjs",
+    "qa:resolved-runtime": "node scripts/resolved-homepage-runtime-smoke.mjs",
+    "qa:workflow": "node scripts/workflow-publish-smoke.mjs",
+    "qa:uat": "npm run qa:access && npm run qa:public-writes && npm run qa:workflow && npm run qa:resolved-homepage && npm run qa:resolved-runtime && npm run lint && node --check server.js && npm run build",
+    "release:check": "npm run qa:uat && node scripts/release-smoke.mjs",
+    "seo:submit-sitemaps": "node scripts/submit-search-console-sitemaps.mjs",
+    "media:upload-listing-images": "node scripts/upload-listing-images-to-r2.mjs"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
+    "dotenv": "^17.2.3",
+    "express": "^4.21.2",
     "lucide-react": "^0.546.0",
+    "motion": "^12.23.24",
+    "pg": "^8.13.1",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "vite": "^6.2.3",
-    "express": "^4.21.2",
-    "dotenv": "^17.2.3",
-    "motion": "^12.23.24",
-    "pg": "^8.13.1"
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
     "autoprefixer": "^10.4.21",
     "esbuild": "^0.25.0",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
-    "vite": "^6.2.3",
-    "@types/express": "^4.17.21"
+    "vite": "^6.2.3"
   }
 }

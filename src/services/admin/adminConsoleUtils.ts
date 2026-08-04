@@ -1,0 +1,168 @@
+import homepageDefaultsBootstrap from '../../../homepage-defaults-config.json';
+import type {
+  Business,
+  HeroBannerStat,
+  HomepageDefaultsConfigState,
+  Locality,
+} from '../../types';
+import {
+  BUSINESS_CATEGORIES,
+  BUSINESS_SUBCATEGORIES,
+  getCategoryById,
+  getSubcategoryById,
+} from '../../categoryMaster';
+
+const HOMEPAGE_DEFAULTS_BOOTSTRAP = homepageDefaultsBootstrap as Partial<HomepageDefaultsConfigState>;
+
+export type HeroStatDraft = {
+  enabled: boolean;
+  label: string;
+  value: string;
+  localityIds: string;
+  pincodes: string;
+};
+
+export const slugifyForPath = (value: string) => value
+  .toLowerCase()
+  .trim()
+  .replace(/&/g, ' and ')
+  .replace(/[^a-z0-9]+/g, '-')
+  .replace(/^-+|-+$/g, '');
+
+export const readFileAsDataUrl = (file: File) => new Promise<string>((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(String(reader.result || ''));
+  reader.onerror = () => reject(new Error('Failed to read image file'));
+  reader.readAsDataURL(file);
+});
+
+export const splitTagSource = (value: string) => (
+  String(value || '')
+    .split(/[|,/]+/)
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+);
+
+export const getFutureDateIso = (durationDays: number) => {
+  const target = new Date();
+  target.setDate(target.getDate() + Math.max(1, durationDays));
+  return target.toISOString().slice(0, 10);
+};
+
+export const buildHeroStatDraftsFromTemplates = (heroStatTemplates?: HeroBannerStat[]): HeroStatDraft[] => {
+  const templates = Array.isArray(heroStatTemplates) && heroStatTemplates.length > 0
+    ? heroStatTemplates
+    : ((Array.isArray(HOMEPAGE_DEFAULTS_BOOTSTRAP.heroStatTemplates) ? HOMEPAGE_DEFAULTS_BOOTSTRAP.heroStatTemplates : []) as HeroBannerStat[]);
+  return templates.map((stat) => ({
+    enabled: stat.enabled ?? true,
+    label: String(stat.label || '').trim(),
+    value: String(stat.value || '').trim(),
+    localityIds: (stat.localityIds || []).join(', '),
+    pincodes: (stat.pincodes || []).join(', '),
+  }));
+};
+
+export const getScalableEntityMetadataSource = (metadata?: Record<string, unknown>) => (
+  String(metadata?.source || metadata?.updatedFrom || '').trim()
+);
+
+export const isScalableEntityDetachedFromLegacySync = (metadata?: Record<string, unknown>) => (
+  Boolean(metadata?.detachedFromLegacySync)
+);
+
+export const isLegacyManagedScalableEntity = (metadata?: Record<string, unknown>) => (
+  getScalableEntityMetadataSource(metadata).startsWith('legacy_') && !isScalableEntityDetachedFromLegacySync(metadata)
+);
+
+export const getScalableEntityOwnershipPresentation = (metadata?: Record<string, unknown>) => {
+  const source = getScalableEntityMetadataSource(metadata);
+  if (isScalableEntityDetachedFromLegacySync(metadata)) {
+    return {
+      label: 'Detached',
+      detail: source || 'protected from legacy sync',
+      className: 'border-amber-200 bg-amber-50 text-amber-800',
+    };
+  }
+  if (source.startsWith('legacy_')) {
+    return {
+      label: 'Legacy Sync',
+      detail: source.replace(/^legacy_/, '') || 'legacy-managed',
+      className: 'border-sky-200 bg-sky-50 text-sky-800',
+    };
+  }
+  return {
+    label: 'Scalable Owned',
+    detail: source || 'admin-managed',
+    className: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+  };
+};
+
+export const getHeroBannerDraftDefaults = (config?: HomepageDefaultsConfigState) => ({
+  ctaLabel: String(config?.heroBannerDraftDefaults?.ctaLabel || HOMEPAGE_DEFAULTS_BOOTSTRAP.heroBannerDraftDefaults?.ctaLabel || 'Explore Businesses').trim() || String(HOMEPAGE_DEFAULTS_BOOTSTRAP.heroBannerDraftDefaults?.ctaLabel || 'Explore Businesses'),
+  ctaType: config?.heroBannerDraftDefaults?.ctaType || HOMEPAGE_DEFAULTS_BOOTSTRAP.heroBannerDraftDefaults?.ctaType || 'search_category',
+  ctaTarget: String(config?.heroBannerDraftDefaults?.ctaTarget || HOMEPAGE_DEFAULTS_BOOTSTRAP.heroBannerDraftDefaults?.ctaTarget || 'all').trim() || String(HOMEPAGE_DEFAULTS_BOOTSTRAP.heroBannerDraftDefaults?.ctaTarget || 'all'),
+  durationDays: Math.max(1, Number(config?.heroBannerDraftDefaults?.durationDays || HOMEPAGE_DEFAULTS_BOOTSTRAP.heroBannerDraftDefaults?.durationDays || 30)),
+});
+
+export const buildListingTags = (...sources: Array<string | string[] | undefined>) => {
+  const seen = new Set<string>();
+  const tags: string[] = [];
+  sources.forEach((source) => {
+    const values = Array.isArray(source)
+      ? source
+      : splitTagSource(String(source || ''));
+    values.forEach((value) => {
+      const trimmed = String(value || '').trim();
+      if (!trimmed) return;
+      const key = trimmed.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      tags.push(trimmed);
+    });
+  });
+  return tags.slice(0, 25);
+};
+
+export const isBusinessTaxonomyMapped = (
+  business: Pick<Business, 'categoryId' | 'subcategoryId'> | { categoryId?: string; subcategoryId?: string }
+) => (
+  BUSINESS_CATEGORIES.some((category) => category.id === String(business.categoryId || '')) &&
+  BUSINESS_SUBCATEGORIES.some((subcategory) => (
+    subcategory.categoryId === String(business.categoryId || '') &&
+    subcategory.id === String(business.subcategoryId || '')
+  ))
+);
+
+export const getBusinessTaxonomyLabel = (
+  business: Pick<Business, 'categoryId' | 'subcategoryId'> & { sourceCategoryLabel?: string; sourceSubcategoryLabel?: string }
+) => {
+  const mappedCategory = getCategoryById(business.categoryId || '')?.name;
+  const mappedSubcategory = getSubcategoryById(business.subcategoryId || '')?.name;
+  return {
+    category: mappedCategory || business.sourceCategoryLabel || business.categoryId || 'Unmapped',
+    subcategory: mappedSubcategory || business.sourceSubcategoryLabel || business.subcategoryId || 'Unmapped',
+  };
+};
+
+export const getPublicLocalityUrl = (locality?: Locality | null) => {
+  const localitySlug = locality?.slug || locality?.id || '';
+  return localitySlug ? `https://www.localisy.in/${localitySlug}` : 'https://www.localisy.in';
+};
+
+export const slugifyAdminValue = (value: string) => value
+  .toLowerCase()
+  .trim()
+  .replace(/&/g, ' and ')
+  .replace(/[^a-z0-9]+/g, '-')
+  .replace(/^-+|-+$/g, '');
+
+export const buildUniqueAdminId = (seed: string, takenIds: Set<string>) => {
+  const baseId = slugifyAdminValue(seed);
+  if (!baseId) return '';
+  if (!takenIds.has(baseId)) return baseId;
+  let suffix = 2;
+  while (takenIds.has(`${baseId}-${suffix}`)) {
+    suffix += 1;
+  }
+  return `${baseId}-${suffix}`;
+};

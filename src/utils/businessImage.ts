@@ -272,6 +272,7 @@ export function getCategoryFallbackImage(categoryId?: string): string {
 
 export function getBusinessImageUrl(business: Pick<Business, 'imageUrl' | 'categoryId'>): string {
   const customImage = String(business.imageUrl || '').trim();
-  if (hasUploadedBusinessImage(business)) return customImage;
+  if (hasUploadedBusinessImage(business)) return getMediaProxyUrl(customImage);
   return getCategoryFallbackImage(business.categoryId);
 }
+import { getMediaProxyUrl } from './mediaUrl';

@@ -16,6 +16,7 @@ RUN npm ci --omit=dev --include=optional
 
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/server.js ./server.js
+COPY --from=build /app/shared ./shared
 
 EXPOSE 3000
 CMD ["node", "server.js"]

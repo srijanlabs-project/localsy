@@ -6,6 +6,26 @@ import {defineConfig} from 'vite';
 export default defineConfig(() => {
   return {
     plugins: [react(), tailwindcss()],
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules')) {
+              if (id.includes('react') || id.includes('scheduler')) return 'vendor-react';
+              if (id.includes('lucide-react')) return 'vendor-icons';
+              return 'vendor';
+            }
+
+            if (id.includes('/src/components/admin/')) return 'admin-workspaces';
+            if (id.includes('/src/components/WebPortal') || id.includes('/src/components/webportal/')) return 'public-directory';
+            if (id.includes('/src/components/ux/')) return 'ux-previews';
+            if (id.includes('/src/components/GoogleLocationPicker')) return 'maps-media';
+            if (id.includes('/src/utils/businessImage') || id.includes('/src/utils/mediaUrl')) return 'media-utils';
+            return undefined;
+          },
+        },
+      },
+    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
