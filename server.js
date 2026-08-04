@@ -4,9 +4,6 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs/promises';
 import crypto from 'crypto';
-import localityRoutingBootstrap from './locality-routing-config.json' with { type: 'json' };
-import homepageDefaultsBootstrap from './homepage-defaults-config.json' with { type: 'json' };
-import seoDiscoveryBootstrap from './seo-discovery-config.json' with { type: 'json' };
 import {
   buildAdminExportRows,
   buildCampaignComparison,
@@ -85,6 +82,19 @@ const complianceGovernancePath = path.join(__dirname, 'compliance-governance.jso
 const knowledgeRetrievalStatePath = path.join(__dirname, 'knowledge-retrieval.json');
 const TOKEN_SECRET = process.env.AUTH_SECRET || 'replace-this-in-production';
 const TOKEN_TTL_SEC = 60 * 60 * 12; // 12 hours
+
+async function readBootstrapJson(filePath, label) {
+  try {
+    const raw = await fs.readFile(filePath, 'utf8');
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (error) {
+    if (error?.code !== 'ENOENT') {
+      console.warn(`${label} bootstrap read failed, using in-memory defaults:`, error?.message || error);
+    }
+    return {};
+  }
+}
 
 app.use(express.json({ limit: '20mb' }));
 app.disable('x-powered-by');
@@ -262,15 +272,9 @@ function slugifyForUrl(value) {
     .replace(/^-+|-+$/g, '');
 }
 
-const LOCALITY_ROUTING_BOOTSTRAP = localityRoutingBootstrap && typeof localityRoutingBootstrap === 'object'
-  ? localityRoutingBootstrap
-  : {};
-const HOMEPAGE_DEFAULTS_BOOTSTRAP = homepageDefaultsBootstrap && typeof homepageDefaultsBootstrap === 'object'
-  ? homepageDefaultsBootstrap
-  : {};
-const SEO_DISCOVERY_BOOTSTRAP = seoDiscoveryBootstrap && typeof seoDiscoveryBootstrap === 'object'
-  ? seoDiscoveryBootstrap
-  : {};
+const LOCALITY_ROUTING_BOOTSTRAP = await readBootstrapJson(localityRoutingConfigPath, 'locality-routing-config.json');
+const HOMEPAGE_DEFAULTS_BOOTSTRAP = await readBootstrapJson(homepageDefaultsConfigPath, 'homepage-defaults-config.json');
+const SEO_DISCOVERY_BOOTSTRAP = await readBootstrapJson(seoDiscoveryConfigPath, 'seo-discovery-config.json');
 
 function buildBootstrapSubdomainMappings(localities = []) {
   return localities.map((locality) => ({
