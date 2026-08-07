@@ -144,6 +144,16 @@ const normalizeUserSessionRecord = (value: Partial<UserSession> & { role?: strin
   isAuthenticated: Boolean(value.isAuthenticated),
 });
 
+const ADMIN_WORKSPACE_TABS = ['moderation', 'listing-status', 'bulk-upload', 'taxonomy-mapping', 'data-audit'] as const;
+type AdminWorkspaceRouteTab = typeof ADMIN_WORKSPACE_TABS[number];
+
+const normalizeAdminWorkspaceRouteTab = (value?: string | null): AdminWorkspaceRouteTab => {
+  const normalizedValue = String(value || '').trim().toLowerCase();
+  return (ADMIN_WORKSPACE_TABS as readonly string[]).includes(normalizedValue)
+    ? normalizedValue as AdminWorkspaceRouteTab
+    : 'moderation';
+};
+
 const getTodayIso = () => new Date().toISOString().slice(0, 10);
 const AUDIT_EVENT_DEDUPE_MS = 15_000;
 const AUDIT_EVENT_SEARCH_DEDUPE_MS = 20_000;
@@ -1604,6 +1614,9 @@ export default function App() {
   }, [seoDiscoveryConfig.routeIntents]);
 
   const [activeView, setActiveView] = useState<'proposal' | 'web' | 'android' | 'admin' | 'ux-mock' | 'ui-screen' | 'ui-city-screen' | 'ui-category-screen' | 'ui-listing-screen'>(() => {
+    if (typeof window !== 'undefined' && window.location.pathname.startsWith('/admin')) {
+      return 'admin';
+    }
     if (typeof window !== 'undefined' && window.location.pathname.startsWith('/ux/locality-home-v1')) {
       return 'ux-mock';
     }
@@ -1625,6 +1638,12 @@ export default function App() {
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
+  const [initialAdminWorkspaceTab, setInitialAdminWorkspaceTab] = useState<AdminWorkspaceRouteTab>(() => (
+    typeof window !== 'undefined'
+      ? normalizeAdminWorkspaceRouteTab(window.location.pathname.split('/').filter(Boolean)[1] || '')
+      : 'moderation'
+  ));
+  const [adminWorkspaceRouteNonce, setAdminWorkspaceRouteNonce] = useState(0);
 
   // Active User session simulation
   const [userSession, setUserSession] = useState<UserSession>(() => {
@@ -2726,6 +2745,13 @@ export default function App() {
       let resolvedBusinessId: string | null = null;
       let shouldOpenSearchResults = false;
       let nextExperienceRoute: { page: 'locality' } | { page: 'city'; cityId: string } | { page: 'national' } | { page: 'seller'; sellerBusinessId: string } = { page: 'locality' };
+
+      if (pathSegments[0] === 'admin') {
+        setInitialAdminWorkspaceTab(normalizeAdminWorkspaceRouteTab(pathSegments[1] || ''));
+        setAdminWorkspaceRouteNonce((prev) => prev + 1);
+        setActiveView('admin');
+        return;
+      }
 
       if (pathSegments[0] === 'national') {
         nextExperienceRoute = { page: 'national' };
@@ -5956,9 +5982,18 @@ export default function App() {
   const [initialPlatformTab, setInitialPlatformTab] = useState<'listings' | 'community' | 'merchant'>('listings');
   const [platformEntryNonce, setPlatformEntryNonce] = useState(0);
 
+  const openAdminWorkspace = (tab: AdminWorkspaceRouteTab = 'moderation') => {
+    setInitialAdminWorkspaceTab(tab);
+    setAdminWorkspaceRouteNonce((prev) => prev + 1);
+    setActiveViewWithAudit('admin');
+    const nextPath = tab === 'moderation' ? '/admin' : `/admin/${tab}`;
+    window.history.pushState({}, '', nextPath);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  };
+
   const handleOpenPlatformWorkspace = () => {
     if (canAccessAdmin) {
-      setActiveViewWithAudit('admin');
+      openAdminWorkspace('moderation');
       return;
     }
 
@@ -6985,6 +7020,8 @@ export default function App() {
               localityCategoryLinks={localityCategoryLinks}
               onCreateLocalityCategoryLink={handleCreateLocalityCategoryLink}
               onDeleteLocalityCategoryLink={handleDeleteLocalityCategoryLink}
+              initialAdminWorkspaceTab={initialAdminWorkspaceTab}
+              adminWorkspaceRouteNonce={adminWorkspaceRouteNonce}
             />
           </Suspense>
         )}

@@ -152,6 +152,8 @@ interface AdminConsoleProps {
   localityCategoryLinks?: LocalityCategoryLink[];
   onCreateLocalityCategoryLink?: (payload: Omit<LocalityCategoryLink, 'id'>) => void;
   onDeleteLocalityCategoryLink?: (id: string) => void;
+  initialAdminWorkspaceTab?: AdminWorkspaceTab;
+  adminWorkspaceRouteNonce?: number;
 }
 
 type BulkImportRow = {
@@ -298,7 +300,9 @@ export default function AdminConsole({
   onDeleteResolvedHomepageSnapshots,
   localityCategoryLinks = [],
   onCreateLocalityCategoryLink,
-  onDeleteLocalityCategoryLink
+  onDeleteLocalityCategoryLink,
+  initialAdminWorkspaceTab = 'moderation',
+  adminWorkspaceRouteNonce = 0
 }: AdminConsoleProps) {
   // Internal infrastructure controls are hidden from public-facing admin UI.
   const showInternalTopology = false;
@@ -320,7 +324,7 @@ export default function AdminConsole({
   const [suggestedImportChunkCount, setSuggestedImportChunkCount] = useState(1);
   const [isImportChunkLimitExceeded, setIsImportChunkLimitExceeded] = useState(false);
   const [consoleSurface, setConsoleSurface] = useState<AdminConsoleSurface>('admin');
-  const [adminWorkspaceTab, setAdminWorkspaceTab] = useState<AdminWorkspaceTab>('moderation');
+  const [adminWorkspaceTab, setAdminWorkspaceTab] = useState<AdminWorkspaceTab>(initialAdminWorkspaceTab);
   const [listingStatusFilter, setListingStatusFilter] = useState<ListingStatusFilter>('all');
   const [duplicateMergeTargetByBusinessId, setDuplicateMergeTargetByBusinessId] = useState<Record<string, string>>({});
   const [operationsSection, setOperationsSection] = useState<AdminOperationsSection>('homepage');
@@ -409,6 +413,13 @@ export default function AdminConsole({
       setAdminWorkspaceTab('moderation');
     }
   }, [adminWorkspaceTab, canUsePrivilegedAdminWorkspace]);
+
+  useEffect(() => {
+    setAdminWorkspaceTab(initialAdminWorkspaceTab);
+    if (initialAdminWorkspaceTab === 'bulk-upload') {
+      setImportPreviewPage(1);
+    }
+  }, [initialAdminWorkspaceTab, adminWorkspaceRouteNonce]);
 
   const [couponBusinessId, setCouponBusinessId] = useState('');
   const [couponTitle, setCouponTitle] = useState('');

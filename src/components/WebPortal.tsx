@@ -4492,6 +4492,7 @@ export default function WebPortal({
             isAdvertiseActive={showApplyModal}
             isAccountActive={isAccountActive || Boolean(userSession?.isAuthenticated && (userSession?.userPhone || ['admin', 'moderator', 'developer', 'operator'].includes(userSession?.role || '')))}
             onOpenLivePortal={() => setShowApplyModal(true)}
+            onOpenPlatform={onOpenPlatform}
             onOpenCityPage={openModernHomeCityPage}
             onOpenCategoryPage={openModernHomeCategoryPage}
             onOpenListingPage={openModernHomeListingPage}
