@@ -491,6 +491,7 @@ export default function LocalityLandingUiV1({
           isAdvertiseActive={isAdvertiseActive}
           isAccountActive={isAccountActive}
           onOpenLivePortal={onOpenLivePortal}
+          onOpenPlatform={onOpenPlatform}
           rotatingPrimaryHeroAd={rotatingPrimaryHeroAd}
           rotatingSecondaryHeroAd={rotatingSecondaryHeroAd}
           rotatingPrimaryHeroCount={primaryHeroImageAds.length}
@@ -652,6 +653,7 @@ function DesktopHomeShell({
   isAdvertiseActive,
   isAccountActive,
   onOpenLivePortal,
+  onOpenPlatform,
   rotatingPrimaryHeroAd,
   rotatingSecondaryHeroAd,
   rotatingPrimaryHeroCount,
@@ -688,6 +690,7 @@ function DesktopHomeShell({
   isAdvertiseActive: boolean;
   isAccountActive: boolean;
   onOpenLivePortal: () => void;
+  onOpenPlatform?: () => void;
   rotatingPrimaryHeroAd: ListingAd | null;
   rotatingSecondaryHeroAd: ListingAd | null;
   rotatingPrimaryHeroCount: number;
