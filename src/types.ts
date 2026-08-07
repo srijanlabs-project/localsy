@@ -54,11 +54,13 @@ export interface Business {
   hours?: string;
   ownerName?: string;
   rejectionReason?: string;
+  suspensionReason?: string;
+  suspendedAt?: string;
   gpsCoordinates?: { lat: number; lng: number }; // Grabbed from simulator
   
   // discovery engine properties
   distance?: number; // Distance in km
-  priceRange?: '₹' | '₹₹' | '₹₹₹' | '₹₹₹₹';
+  priceRange?: 'â‚¹' | 'â‚¹â‚¹' | 'â‚¹â‚¹â‚¹' | 'â‚¹â‚¹â‚¹â‚¹';
   deliveryAvailable?: boolean;
   hasOffers?: boolean;
   languagesSpoken?: string[];

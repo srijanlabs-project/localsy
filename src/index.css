@@ -1,9 +1,47 @@
 @import "tailwindcss";
 
+html {
+  scrollbar-gutter: stable both-edges;
+}
+
+a,
+button,
+[role="button"],
+input[type="submit"],
+input[type="button"] {
+  cursor: pointer;
+}
+
+button:disabled,
+input:disabled,
+[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
 .no-scrollbar {
   scrollbar-width: none;
 }
 
 .no-scrollbar::-webkit-scrollbar {
   display: none;
+}
+
+.localisy-public-page .text-\[15px\] {
+  font-size: 11px !important;
+}
+
+.localisy-public-page .text-\[2rem\] {
+  font-size: 1rem !important;
+}
+
+.localisy-public-page .text-\[1\.65rem\] {
+  font-size: 1rem !important;
+}
+
+.localisy-public-page .leading-7 {
+  line-height: inherit !important;
+}
+
+.localisy-public-page .show-number-action {
+  font-weight: 400 !important;
 }

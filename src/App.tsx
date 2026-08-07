@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, Suspense, lazy } from 'react';
 import { 
-  Locality, Business, SubdomainMapping, Review, UserSession, UserRole,
+  Locality, Business, SubdomainMapping, Review, UserSession, UserRole, UserType,
   CommunityItem, CRMContact, MarketingCoupon, AuditEvent, ListingAd, AdLead, HeroBanner, HeroBannerStat, BuyerActivityEvent, BuyerStateSnapshot,
   HomepageLayout, HomepageSection, HomepageSectionType, ApiConfiguration, HomepageConfigState, ScalableHomepageConfigState, ScalableCampaign, ScalableHomepageTemplate, ScalableHomepageAssignment, BusinessTaxonomyState, BusinessCategory, BusinessSubcategory, LocalityRoutingConfigState, PincodeRoutingMapping, GeographyConfigState, StateMaster, CityMaster, LocalityMaster, AreaMaster, HomepageDefaultsConfigState, FallbackListingAdTemplate, HeroBannerDraftDefaults, SeoDiscoveryConfigState, SeoRouteIntent, SeoLocalityMetadata, SeoCategoryLabel, SeoTopListingGroup, SeoDefaultListingGroup, ResolvedHomepagePublishRequest, ResolvedHomepageSnapshotDeleteRequest, ScalableLegacyOwnershipSummary, PublishedHomepageSnapshot
 } from './types';
@@ -101,6 +101,58 @@ const normalizeStringList = (value: unknown): string[] => (
         .filter(Boolean)
     : []
 );
+
+const USER_ROLE_VALUES = new Set<UserRole>(['buyer', 'admin', 'moderator', 'operator', 'seller', 'developer', 'resource']);
+const USER_TYPE_VALUES = new Set<UserType>(['platform_admin', 'developer', 'support_user', 'buyer', 'seller', 'resource']);
+
+const normalizeUserType = (value?: string | null): UserType | undefined => {
+  if (!value) return undefined;
+  return USER_TYPE_VALUES.has(value as UserType) ? value as UserType : undefined;
+};
+
+const normalizeUserRole = (role?: string | null, userType?: string | null): UserRole => {
+  const normalizedRole = String(role || '').trim().toLowerCase();
+  const normalizedUserType = String(userType || '').trim().toLowerCase();
+
+  if (normalizedRole === 'platform_admin' || normalizedUserType === 'platform_admin') {
+    return 'admin';
+  }
+
+  if (normalizedRole === 'support_user' || normalizedUserType === 'support_user') {
+    return 'operator';
+  }
+
+  if (normalizedRole === 'developer' || normalizedUserType === 'developer') {
+    return 'developer';
+  }
+
+  if (USER_ROLE_VALUES.has(normalizedRole as UserRole)) {
+    return normalizedRole as UserRole;
+  }
+
+  if (normalizedUserType === 'seller') return 'seller';
+  if (normalizedUserType === 'resource') return 'resource';
+  return 'buyer';
+};
+
+const normalizeUserSessionRecord = (value: Partial<UserSession> & { role?: string | null; userType?: string | null }): UserSession => ({
+  ...buildGuestUserSession(),
+  ...value,
+  role: normalizeUserRole(value.role, value.userType),
+  userType: normalizeUserType(value.userType),
+  userName: value.userName || buildGuestUserSession().userName,
+  isAuthenticated: Boolean(value.isAuthenticated),
+});
+
+const ADMIN_WORKSPACE_TABS = ['moderation', 'listing-status', 'bulk-upload', 'taxonomy-mapping', 'data-audit'] as const;
+type AdminWorkspaceRouteTab = typeof ADMIN_WORKSPACE_TABS[number];
+
+const normalizeAdminWorkspaceRouteTab = (value?: string | null): AdminWorkspaceRouteTab => {
+  const normalizedValue = String(value || '').trim().toLowerCase();
+  return (ADMIN_WORKSPACE_TABS as readonly string[]).includes(normalizedValue)
+    ? normalizedValue as AdminWorkspaceRouteTab
+    : 'moderation';
+};
 
 const getTodayIso = () => new Date().toISOString().slice(0, 10);
 const AUDIT_EVENT_DEDUPE_MS = 15_000;
@@ -1562,6 +1614,9 @@ export default function App() {
   }, [seoDiscoveryConfig.routeIntents]);
 
   const [activeView, setActiveView] = useState<'proposal' | 'web' | 'android' | 'admin' | 'ux-mock' | 'ui-screen' | 'ui-city-screen' | 'ui-category-screen' | 'ui-listing-screen'>(() => {
+    if (typeof window !== 'undefined' && window.location.pathname.startsWith('/admin')) {
+      return 'admin';
+    }
     if (typeof window !== 'undefined' && window.location.pathname.startsWith('/ux/locality-home-v1')) {
       return 'ux-mock';
     }
@@ -1583,11 +1638,22 @@ export default function App() {
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
+  const [initialAdminWorkspaceTab, setInitialAdminWorkspaceTab] = useState<AdminWorkspaceRouteTab>(() => (
+    typeof window !== 'undefined'
+      ? normalizeAdminWorkspaceRouteTab(window.location.pathname.split('/').filter(Boolean)[1] || '')
+      : 'moderation'
+  ));
+  const [adminWorkspaceRouteNonce, setAdminWorkspaceRouteNonce] = useState(0);
 
   // Active User session simulation
   const [userSession, setUserSession] = useState<UserSession>(() => {
     const saved = localStorage.getItem('yp_user_session');
-    return saved ? JSON.parse(saved) : buildGuestUserSession();
+    if (!saved) return buildGuestUserSession();
+    try {
+      return normalizeUserSessionRecord(JSON.parse(saved));
+    } catch {
+      return buildGuestUserSession();
+    }
   });
 
   useEffect(() => {
@@ -1606,7 +1672,7 @@ export default function App() {
           setUserSession(buildGuestUserSession());
           return;
         }
-        setUserSession({
+        setUserSession(normalizeUserSessionRecord({
           role: data.user.role,
           userType: data.user.userType,
           userName: data.user.name,
@@ -1616,7 +1682,7 @@ export default function App() {
           sellerBusinessId: data.user.sellerBusinessId || undefined,
           authToken: token,
           isAuthenticated: true,
-        });
+        }));
       })
       .catch(() => {
         localStorage.removeItem('yp_auth_token');
@@ -2680,6 +2746,13 @@ export default function App() {
       let shouldOpenSearchResults = false;
       let nextExperienceRoute: { page: 'locality' } | { page: 'city'; cityId: string } | { page: 'national' } | { page: 'seller'; sellerBusinessId: string } = { page: 'locality' };
 
+      if (pathSegments[0] === 'admin') {
+        setInitialAdminWorkspaceTab(normalizeAdminWorkspaceRouteTab(pathSegments[1] || ''));
+        setAdminWorkspaceRouteNonce((prev) => prev + 1);
+        setActiveView('admin');
+        return;
+      }
+
       if (pathSegments[0] === 'national') {
         nextExperienceRoute = { page: 'national' };
       }
@@ -3667,7 +3740,8 @@ export default function App() {
         body: JSON.stringify({ config: normalized }),
       });
       if (!response.ok) {
-        throw new Error('Failed to save geography config');
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.error || 'Failed to save geography config');
       }
       const payload = await response.json().catch(() => null);
       const saved = normalizeGeographyConfigState(payload?.config || normalized);
@@ -5898,10 +5972,38 @@ export default function App() {
       if (matched) {
         setActiveLocalityId(matched.localityId);
         window.history.pushState({}, '', buildLocalityPath(matched.localityId));
+        window.dispatchEvent(new PopStateEvent('popstate'));
         return;
       }
     }
     window.history.pushState({}, '', buildLocalityPath(activeLocality?.id || activeLocalityId || defaultLocalityId || localities[0]?.id || ''));
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  };
+
+  const [initialPlatformTab, setInitialPlatformTab] = useState<'listings' | 'community' | 'merchant'>('listings');
+  const [platformEntryNonce, setPlatformEntryNonce] = useState(0);
+
+  const openAdminWorkspace = (tab: AdminWorkspaceRouteTab = 'moderation') => {
+    setInitialAdminWorkspaceTab(tab);
+    setAdminWorkspaceRouteNonce((prev) => prev + 1);
+    setActiveViewWithAudit('admin');
+    const nextPath = tab === 'moderation' ? '/admin' : `/admin/${tab}`;
+    window.history.pushState({}, '', nextPath);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  };
+
+  const handleOpenPlatformWorkspace = () => {
+    if (canAccessAdmin) {
+      openAdminWorkspace('moderation');
+      return;
+    }
+
+    const nextTab: 'listings' | 'community' | 'merchant' = userSession.isAuthenticated ? 'merchant' : 'listings';
+    setInitialPlatformTab(nextTab);
+    setPlatformEntryNonce((prev) => prev + 1);
+    setActiveViewWithAudit('web');
+    window.history.pushState({}, '', '/platform');
+    window.dispatchEvent(new PopStateEvent('popstate'));
   };
 
   const handleExitUxMock = () => {
@@ -5991,6 +6093,7 @@ export default function App() {
     setActiveViewWithAudit('web');
     if (matchedCity) {
       window.history.pushState({}, '', `/city/${slugifyForUrl(matchedCity.name)}`);
+      window.dispatchEvent(new PopStateEvent('popstate'));
     }
   };
   const handleOpenNationalPage = () => {
@@ -6064,6 +6167,10 @@ export default function App() {
   };
 
   const isImmersivePreview = ['ui-screen', 'ui-city-screen', 'ui-category-screen', 'ui-listing-screen'].includes(activeView);
+  const isDedicatedLocalityHomepage =
+    activeView === 'web'
+    && liveExperienceRoute.page !== 'national'
+    && liveExperienceRoute.page !== 'seller';
 
   useEffect(() => {
     const siteName = 'Localisy';
@@ -6209,7 +6316,7 @@ export default function App() {
     <div className="relative flex min-h-screen flex-col overflow-x-hidden bg-slate-50 font-sans text-slate-800 selection:bg-indigo-600/15">
       
       {/* Top Navigation Frame - Pristine, Live, Human-labeled web directory */}
-      {!isImmersivePreview && <nav id="platform-navbar" className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 px-4 py-2.5 shadow-sm backdrop-blur md:top-auto md:px-8 md:py-0">
+      {!isImmersivePreview && !isDedicatedLocalityHomepage && <nav id="platform-navbar" className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 px-4 py-2.5 shadow-sm backdrop-blur md:top-auto md:px-8 md:py-0">
         <div className="relative flex items-center gap-2 md:hidden">
           <button
             type="button"
@@ -6576,7 +6683,7 @@ export default function App() {
       </nav>}
 
       {/* Main Workspace Frame */}
-      <main className={`${isImmersivePreview ? 'w-full px-0 py-0' : 'mx-auto max-w-[1440px] px-4 py-5 md:px-8 md:py-8'} flex w-full flex-1 space-y-8 overflow-x-hidden`}>
+      <main className={`${isImmersivePreview || isDedicatedLocalityHomepage ? 'w-full px-0 py-0' : 'mx-auto max-w-[1440px] px-4 py-5 md:px-8 md:py-8'} flex w-full flex-1 flex-col space-y-8 overflow-x-hidden`}>
         
         {/* Workspace Active Presentation Render */}
         {!PRODUCTION_MODE && activeView === 'proposal' && (
@@ -6636,7 +6743,16 @@ export default function App() {
                 businesses={businesses}
                 categories={portalCategories.filter((category) => category.id !== 'all')}
                 localities={localities}
+                displayedPincode={savedPincode || mappedPincodesForActiveLocality[0] || undefined}
+                activeNodeLabel={activeLocalityName}
+                userSession={userSession}
+                onOpenPincodeModal={openPincodeModalManually}
+                onRequestAuth={() => setShowAuthModal(true)}
+                onLogout={handleLogout}
+                isAdvertiseActive={canAccessAdmin ? false : false}
+                isAccountActive={showAuthModal}
                 onOpenLivePortal={handleMainLogoHome}
+                onOpenPlatform={handleOpenPlatformWorkspace}
                 onOpenLocalityPage={(localityId) => {
                   setActiveViewWithAudit('web');
                   window.history.pushState({}, '', buildLocalityPath(localityId));
@@ -6646,6 +6762,15 @@ export default function App() {
                   const targetLocalityId = localityId || activeLocalityId || defaultLocalityId || localities[0]?.id || '';
                   setActiveViewWithAudit('web');
                   window.history.pushState({}, '', `${buildLocalityPath(targetLocalityId)}?category=${encodeURIComponent(categoryId)}`);
+                  window.dispatchEvent(new PopStateEvent('popstate'));
+                }}
+                onSearchSubmit={(query, localityId) => {
+                  const targetLocalityId = localityId || activeLocalityId || defaultLocalityId || localities[0]?.id || '';
+                  const normalizedQuery = String(query || '').trim();
+                  setActiveViewWithAudit('web');
+                  window.history.pushState({}, '', normalizedQuery
+                    ? `${buildLocalityPath(targetLocalityId)}?srp=${encodeURIComponent(normalizedQuery)}`
+                    : buildLocalityPath(targetLocalityId));
                   window.dispatchEvent(new PopStateEvent('popstate'));
                 }}
                 onOpenListingPage={handleOpenLiveListingPage}
@@ -6715,6 +6840,13 @@ export default function App() {
                 coupons={coupons}
                 onAddCoupon={handleAddCoupon}
                 onLogAuditEvent={logAuditEvent}
+                onOpenPincodeModal={openPincodeModalManually}
+                onRequestAuth={() => setShowAuthModal(true)}
+                onLogout={handleLogout}
+                isAccountActive={showAuthModal}
+                onOpenPlatform={handleOpenPlatformWorkspace}
+                initialPlatformTab={initialPlatformTab}
+                platformEntryNonce={platformEntryNonce}
               />
             )}
           </Suspense>
@@ -6889,6 +7021,8 @@ export default function App() {
               localityCategoryLinks={localityCategoryLinks}
               onCreateLocalityCategoryLink={handleCreateLocalityCategoryLink}
               onDeleteLocalityCategoryLink={handleDeleteLocalityCategoryLink}
+              initialAdminWorkspaceTab={initialAdminWorkspaceTab}
+              adminWorkspaceRouteNonce={adminWorkspaceRouteNonce}
             />
           </Suspense>
         )}
@@ -6896,7 +7030,7 @@ export default function App() {
       </main>
 
       {/* Pristine, Professional Footer */}
-      {!isImmersivePreview && <footer className="bg-slate-900 border-t border-slate-800 text-slate-400 py-10 mt-16">
+      {!isImmersivePreview && !isDedicatedLocalityHomepage && <footer className="bg-slate-900 border-t border-slate-800 text-slate-400 py-10 mt-16">
         <div className="max-w-7xl mx-auto px-4 md:px-8 flex flex-col gap-6">
           <div className="space-y-1.5 text-center md:text-left">
             <span className="block text-white font-bold text-sm">{activeNodeLabel} Businesses</span>
@@ -7083,8 +7217,8 @@ export default function App() {
         onClose={() => setShowAuthModal(false)}
         onAuthSuccess={({ token, userId, name, phone, email, role, userType, sellerBusinessId }) => {
           localStorage.setItem('yp_auth_token', token);
-          setUserSession({
-            role: role as UserRole,
+          setUserSession(normalizeUserSessionRecord({
+            role,
             userType,
             userName: `${name} (${userType})`,
             userId,
@@ -7093,7 +7227,7 @@ export default function App() {
             sellerBusinessId,
             authToken: token,
             isAuthenticated: true,
-          });
+          }));
           logAuditEvent('data_entry', 'User Authenticated', `Authenticated user ${email} with role: ${role}`);
         }}
       />

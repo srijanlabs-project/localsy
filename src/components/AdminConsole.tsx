@@ -152,6 +152,8 @@ interface AdminConsoleProps {
   localityCategoryLinks?: LocalityCategoryLink[];
   onCreateLocalityCategoryLink?: (payload: Omit<LocalityCategoryLink, 'id'>) => void;
   onDeleteLocalityCategoryLink?: (id: string) => void;
+  initialAdminWorkspaceTab?: AdminWorkspaceTab;
+  adminWorkspaceRouteNonce?: number;
 }
 
 type BulkImportRow = {
@@ -298,7 +300,9 @@ export default function AdminConsole({
   onDeleteResolvedHomepageSnapshots,
   localityCategoryLinks = [],
   onCreateLocalityCategoryLink,
-  onDeleteLocalityCategoryLink
+  onDeleteLocalityCategoryLink,
+  initialAdminWorkspaceTab = 'moderation',
+  adminWorkspaceRouteNonce = 0
 }: AdminConsoleProps) {
   // Internal infrastructure controls are hidden from public-facing admin UI.
   const showInternalTopology = false;
@@ -320,7 +324,7 @@ export default function AdminConsole({
   const [suggestedImportChunkCount, setSuggestedImportChunkCount] = useState(1);
   const [isImportChunkLimitExceeded, setIsImportChunkLimitExceeded] = useState(false);
   const [consoleSurface, setConsoleSurface] = useState<AdminConsoleSurface>('admin');
-  const [adminWorkspaceTab, setAdminWorkspaceTab] = useState<AdminWorkspaceTab>('moderation');
+  const [adminWorkspaceTab, setAdminWorkspaceTab] = useState<AdminWorkspaceTab>(initialAdminWorkspaceTab);
   const [listingStatusFilter, setListingStatusFilter] = useState<ListingStatusFilter>('all');
   const [duplicateMergeTargetByBusinessId, setDuplicateMergeTargetByBusinessId] = useState<Record<string, string>>({});
   const [operationsSection, setOperationsSection] = useState<AdminOperationsSection>('homepage');
@@ -409,6 +413,13 @@ export default function AdminConsole({
       setAdminWorkspaceTab('moderation');
     }
   }, [adminWorkspaceTab, canUsePrivilegedAdminWorkspace]);
+
+  useEffect(() => {
+    setAdminWorkspaceTab(initialAdminWorkspaceTab);
+    if (initialAdminWorkspaceTab === 'bulk-upload') {
+      setImportPreviewPage(1);
+    }
+  }, [initialAdminWorkspaceTab, adminWorkspaceRouteNonce]);
 
   const [couponBusinessId, setCouponBusinessId] = useState('');
   const [couponTitle, setCouponTitle] = useState('');
@@ -1168,6 +1179,9 @@ export default function AdminConsole({
       meta: getCategoryById(subcategory.categoryId)?.name || subcategory.categoryId,
     }));
   const placementKeySelectionOptions = Array.from(new Set([
+    'homepage_hero_primary',
+    'homepage_hero_secondary',
+    'homepage_strip_between_categories_and_listings',
     'homepage_inline_primary',
     'homepage_sidebar_top',
     'homepage_sidebar_food',
@@ -1549,6 +1563,7 @@ export default function AdminConsole({
       businesses.map((business) => String(business.id || '').trim().toLowerCase()).filter(Boolean)
     );
     const previewAssignedIds = new Map<string, number>();
+    const previewAssignedGooglePlaceIds = new Map<string, number>();
 
     return rows.map((row, idx): ImportPreviewRow => {
       const rowNumber = idx + 2;
@@ -1565,6 +1580,8 @@ export default function AdminConsole({
       ]));
       const normalizedListingId = String(listingId || '').trim();
       const normalizedListingIdKey = normalizedListingId.toLowerCase();
+      const normalizedGooglePlaceId = String(row.googlePlaceId || '').trim();
+      const normalizedGooglePlaceIdKey = normalizedGooglePlaceId.toLowerCase();
       const categoryId = resolveCategoryFromImport(row.category);
       const subcategoryId = resolveSubcategoryFromImport(row.subcategory, categoryId);
       const requiresTaxonomyMapping = !isBusinessTaxonomyMapped({ categoryId, subcategoryId });
@@ -1597,8 +1614,14 @@ export default function AdminConsole({
       const existingBusinessByListingId = normalizedListingIdKey
         ? businesses.find((business) => String(business.id || '').trim().toLowerCase() === normalizedListingIdKey)
         : undefined;
+      const existingBusinessByGooglePlaceId = normalizedGooglePlaceIdKey
+        ? businesses.find((business) => String(business.googlePlaceId || '').trim().toLowerCase() === normalizedGooglePlaceIdKey)
+        : undefined;
       if (normalizedListingIdKey && previewAssignedIds.has(normalizedListingIdKey)) {
         errors.push(`Localisy Listing ID "${normalizedListingId}" is duplicated in this upload sheet.`);
+      }
+      if (normalizedGooglePlaceIdKey && previewAssignedGooglePlaceIds.has(normalizedGooglePlaceIdKey)) {
+        errors.push(`Google Place ID "${normalizedGooglePlaceId}" is duplicated in this upload sheet.`);
       }
 
       const duplicate = businesses.find((biz) => {
@@ -1614,15 +1637,26 @@ export default function AdminConsole({
       if (rawListingId && duplicate && existingBusinessByListingId && duplicate.id !== existingBusinessByListingId.id) {
         errors.push(`Localisy Listing ID "${normalizedListingId}" belongs to another listing. Matching listing already exists as "${duplicate.id}".`);
       }
+      const allowedGooglePlaceBusinessId = existingBusinessByListingId?.id || duplicate?.id || '';
+      if (
+        normalizedGooglePlaceIdKey
+        && existingBusinessByGooglePlaceId
+        && existingBusinessByGooglePlaceId.id !== allowedGooglePlaceBusinessId
+      ) {
+        errors.push(`Google Place ID "${normalizedGooglePlaceId}" already exists on listing "${existingBusinessByGooglePlaceId.id}".`);
+      }
 
       const previewStatus: ImportPreviewRow['previewStatus'] = errors.length ? 'fail' : (existingBusinessByListingId || duplicate) ? 'update' : 'ready';
       if (normalizedListingIdKey) {
         previewAssignedIds.set(normalizedListingIdKey, rowNumber);
       }
+      if (normalizedGooglePlaceIdKey) {
+        previewAssignedGooglePlaceIds.set(normalizedGooglePlaceIdKey, rowNumber);
+      }
       return {
         ...row,
         listingId: normalizedListingId,
-        googlePlaceId: String(row.googlePlaceId || '').trim() || undefined,
+        googlePlaceId: normalizedGooglePlaceId || undefined,
       rowNumber,
       previewStatus,
       errors,
@@ -1663,13 +1697,20 @@ export default function AdminConsole({
         const idx = headers.indexOf(name.toLowerCase());
         return idx >= 0 ? (cols[idx] || '') : '';
       };
+        const photoUrls = [
+          get('Photo 1') || get('Photo1'),
+          get('Photo 2') || get('Photo2'),
+          get('Photo 3') || get('Photo3'),
+          get('Photo 4') || get('Photo4'),
+          get('Photo 5') || get('Photo5'),
+        ].map((value) => String(value || '').trim()).filter(Boolean);
         return {
           listingId: get('Localisy Listing ID') || get('Listing ID') || get('LocalisyListingId') || get('ListingId'),
           googlePlaceId: get('Google Place ID') || get('GooglePlaceId') || get('Place ID') || get('PlaceId'),
-          imageUrl: get('Image URL') || get('ImageUrl'),
+          imageUrl: photoUrls[0] || get('Image URL') || get('ImageUrl'),
           logoUrl: get('Logo URL') || get('LogoUrl'),
-          coverImageUrl: get('Cover Image URL') || get('CoverImageUrl'),
-          galleryUrls: get('Gallery URLs') || get('GalleryUrls'),
+          coverImageUrl: get('Cover Image URL') || get('CoverImageUrl') || photoUrls[1] || photoUrls[0] || '',
+          galleryUrls: photoUrls.length > 0 ? photoUrls.join(', ') : (get('Gallery URLs') || get('GalleryUrls')),
           businessName: get('Business Name'),
           address: get('Address'),
         area: get('Area'),
@@ -1890,7 +1931,16 @@ export default function AdminConsole({
   }, [businesses]);
 
   const listingStatusItems = [...businesses]
-    .filter((business) => listingStatusFilter === 'all' ? true : business.status === listingStatusFilter)
+    .filter((business) => {
+      if (listingStatusFilter === 'all') return true;
+      if (listingStatusFilter === 'suspended') {
+        return business.status === 'rejected' && Boolean(business.suspensionReason);
+      }
+      if (listingStatusFilter === 'rejected') {
+        return business.status === 'rejected' && !business.suspensionReason;
+      }
+      return business.status === listingStatusFilter;
+    })
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   const unmappedTaxonomyBusinesses = businesses
     .filter((business) => !isBusinessTaxonomyMapped(business))
@@ -2197,13 +2247,36 @@ export default function AdminConsole({
       triggerNotification('Valid 6-digit pincode is required.');
       return;
     }
+    const normalizedAreasOfOperation = Array.from(new Set([
+      String(backendDraft.areaId || '').trim(),
+      ...((backendDraft.areasOfOperation || []).map((areaId) => String(areaId || '').trim())),
+    ].filter(Boolean)));
+    const normalizedLanguagesSpoken = Array.from(new Set((backendDraft.languagesSpoken || []).map((entry) => String(entry || '').trim()).filter(Boolean)));
+    const normalizedPaymentMethods = Array.from(new Set((backendDraft.paymentMethods || []).map((entry) => String(entry || '').trim()).filter(Boolean)));
+    const normalizedVerificationTags = Array.from(new Set((backendDraft.verificationTags || []).map((entry) => String(entry || '').trim()).filter(Boolean)));
+    const normalizedHolidayHours = Array.from(new Set((backendDraft.holidayHours || []).map((entry) => String(entry || '').trim()).filter(Boolean)));
+    const normalizedSlug = slugifyAdminValue(backendDraft.slug || backendDraft.name || backendDraft.id);
     const normalizedDraft = {
       ...backendDraft,
+      slug: normalizedSlug,
       stateId,
       cityId: city.id,
       areaId: String(backendDraft.areaId || '').trim(),
       pincode: normalizedPincode,
-      areasOfOperation: String(backendDraft.areaId || '').trim() ? [String(backendDraft.areaId || '').trim()] : [],
+      areasOfOperation: normalizedAreasOfOperation,
+      email: backendDraft.email?.trim() || undefined,
+      website: backendDraft.website.trim(),
+      ownerName: backendDraft.ownerName?.trim() || undefined,
+      hours: backendDraft.hours?.trim() || undefined,
+      holidayHours: normalizedHolidayHours,
+      brochureUrl: backendDraft.brochureUrl?.trim() || undefined,
+      videoUrl: backendDraft.videoUrl?.trim() || undefined,
+      verificationTags: normalizedVerificationTags,
+      languagesSpoken: normalizedLanguagesSpoken,
+      paymentMethods: normalizedPaymentMethods,
+      rejectionReason: backendDraft.status === 'rejected' ? backendDraft.rejectionReason : undefined,
+      suspensionReason: backendDraft.status === 'rejected' ? backendDraft.suspensionReason : undefined,
+      suspendedAt: backendDraft.status === 'rejected' ? backendDraft.suspendedAt : undefined,
     };
     onUpdateBusiness(normalizedDraft);
     setSelectedBackendBiz(normalizedDraft);
@@ -4114,10 +4187,10 @@ export default function AdminConsole({
         )}
         {adminWorkspaceTab === 'listing-status' && (
           <ListingStatusWorkspace
-            listingStatusItemsLength={listingStatusItems.length}
-            listingStatusFilter={listingStatusFilter}
-            onFilterChange={(filter) => {
-              setListingStatusFilter(filter);
+              listingStatusItemsLength={listingStatusItems.length}
+              listingStatusFilter={listingStatusFilter}
+              onFilterChange={(filter) => {
+                setListingStatusFilter(filter);
               setListingStatusPage(1);
             }}
             duplicateReviewCandidates={duplicateReviewCandidates}
@@ -4128,12 +4201,15 @@ export default function AdminConsole({
                 [duplicateBusinessId]: canonicalBusinessId,
               }));
             }}
-            onMergeDuplicate={mergeDuplicateCandidate}
-            onKeepSeparate={keepDuplicateSeparate}
-            listingStatusPageItems={listingStatusPageItems}
-            localities={localities}
-            onOpenBusiness={openBackendListing}
-            onUpdateBusiness={onUpdateBusiness}
+              onMergeDuplicate={mergeDuplicateCandidate}
+              onKeepSeparate={keepDuplicateSeparate}
+              listingStatusPageItems={listingStatusPageItems}
+              allBusinesses={businesses}
+              auditLogs={auditLogs}
+              adLeads={adLeads}
+              localities={localities}
+              onOpenBusiness={openBackendListing}
+              onUpdateBusiness={onUpdateBusiness}
             renderSubcategoryCreator={(business) => (
               <InlineSubcategoryCreator
                 categoryId={business.categoryId}
@@ -7072,6 +7148,36 @@ export default function AdminConsole({
                   />
                 </div>
                 <div>
+                  <label className="block font-bold text-slate-500 mb-1">Listing ID</label>
+                  <input
+                    value={backendDraft.id}
+                    disabled
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 bg-slate-50 font-mono text-slate-500"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-500 mb-1">Slug</label>
+                  <input
+                    value={backendDraft.slug || ''}
+                    disabled={!backendEditMode}
+                    onChange={(e) => setBackendDraft({ ...backendDraft, slug: slugifyAdminValue(e.target.value) })}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 disabled:bg-slate-50 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-500 mb-1">Status</label>
+                  <select
+                    value={backendDraft.status}
+                    disabled={!backendEditMode}
+                    onChange={(e) => setBackendDraft({ ...backendDraft, status: e.target.value as Business['status'] })}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 disabled:bg-slate-50"
+                  >
+                    <option value="approved">Approved</option>
+                    <option value="pending">Pending</option>
+                    <option value="rejected">Rejected</option>
+                  </select>
+                </div>
+                <div>
                   <label className="block font-bold text-slate-500 mb-1">Category</label>
                   <select
                     value={backendDraft.categoryId}
@@ -7139,11 +7245,29 @@ export default function AdminConsole({
                   />
                 </div>
                 <div>
+                  <label className="block font-bold text-slate-500 mb-1">Email</label>
+                  <input
+                    value={backendDraft.email || ''}
+                    disabled={!backendEditMode}
+                    onChange={(e) => setBackendDraft({ ...backendDraft, email: e.target.value })}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 disabled:bg-slate-50"
+                  />
+                </div>
+                <div>
                   <label className="block font-bold text-slate-500 mb-1">Website</label>
                   <input
                     value={backendDraft.website}
                     disabled={!backendEditMode}
                     onChange={(e) => setBackendDraft({ ...backendDraft, website: e.target.value })}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 disabled:bg-slate-50"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-500 mb-1">Owner / Contact Person</label>
+                  <input
+                    value={backendDraft.ownerName || ''}
+                    disabled={!backendEditMode}
+                    onChange={(e) => setBackendDraft({ ...backendDraft, ownerName: e.target.value })}
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 disabled:bg-slate-50"
                   />
                 </div>
@@ -7157,6 +7281,12 @@ export default function AdminConsole({
                       const matchingAreas = MASTER_AREAS.filter((area) => area.localityId === nextLocalityId);
                       const selectedAreaStillValid = matchingAreas.some((area) => area.id === backendDraft.areaId);
                       const nextArea = selectedAreaStillValid ? matchingAreas.find((area) => area.id === backendDraft.areaId) : null;
+                      const nextAreasOfOperation = (backendDraft.areasOfOperation || []).filter((areaId) => (
+                        matchingAreas.some((area) => area.id === areaId)
+                      ));
+                      if (nextArea?.id && !nextAreasOfOperation.includes(nextArea.id)) {
+                        nextAreasOfOperation.push(nextArea.id);
+                      }
                       const { city, stateId } = resolveLocalityGeography(nextLocalityId);
                       setBackendDraft({
                         ...backendDraft,
@@ -7165,6 +7295,7 @@ export default function AdminConsole({
                         areaId: nextArea?.id || '',
                         cityId: nextArea?.cityId || city?.id || backendDraft.cityId,
                         pincode: backendDraft.pincode || nextArea?.pincode || '',
+                        areasOfOperation: nextAreasOfOperation,
                       });
                     }}
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 disabled:bg-slate-50"
@@ -7183,12 +7314,17 @@ export default function AdminConsole({
                       const nextAreaId = e.target.value;
                       const nextArea = MASTER_AREAS.find((area) => area.id === nextAreaId);
                       const nextPincode = nextArea?.pincode || backendDraft.pincode || '';
+                      const nextAreasOfOperation = Array.from(new Set([
+                        ...((backendDraft.areasOfOperation || []).filter(Boolean)),
+                        ...(nextAreaId ? [nextAreaId] : []),
+                      ]));
                       setBackendDraft({
                         ...backendDraft,
                         areaId: nextAreaId,
                         localityId: nextArea?.localityId || backendDraft.localityId,
                         cityId: nextArea?.cityId || backendDraft.cityId,
                         pincode: nextPincode,
+                        areasOfOperation: nextAreasOfOperation,
                       });
                     }}
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 disabled:bg-slate-50"
@@ -7233,6 +7369,41 @@ export default function AdminConsole({
                   />
                 </div>
                 <div className="md:col-span-2">
+                  <label className="block font-bold text-slate-500 mb-2">Service Areas</label>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 grid gap-2 md:grid-cols-2">
+                    {MASTER_AREAS
+                      .filter((area) => area.localityId === backendDraft.localityId)
+                      .map((area) => {
+                        const checked = (backendDraft.areasOfOperation || []).includes(area.id);
+                        return (
+                          <label key={area.id} className="flex items-center gap-2 text-xs text-slate-700">
+                            <input
+                              type="checkbox"
+                              disabled={!backendEditMode}
+                              checked={checked}
+                              onChange={(event) => {
+                                const currentAreas = new Set((backendDraft.areasOfOperation || []).map((areaId) => String(areaId || '').trim()).filter(Boolean));
+                                if (event.target.checked) {
+                                  currentAreas.add(area.id);
+                                } else {
+                                  currentAreas.delete(area.id);
+                                }
+                                setBackendDraft({
+                                  ...backendDraft,
+                                  areasOfOperation: Array.from(currentAreas),
+                                });
+                              }}
+                            />
+                            <span>{area.name} <span className="text-slate-400">({area.pincode})</span></span>
+                          </label>
+                        );
+                      })}
+                    {MASTER_AREAS.filter((area) => area.localityId === backendDraft.localityId).length === 0 && (
+                      <div className="text-xs text-slate-400">No mapped service areas for this locality yet.</div>
+                    )}
+                  </div>
+                </div>
+                <div className="md:col-span-2">
                   <label className="block font-bold text-slate-500 mb-1">Address</label>
                   <input
                     value={backendDraft.address}
@@ -7263,6 +7434,143 @@ export default function AdminConsole({
                     })}
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 disabled:bg-slate-50"
                   />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-500 mb-1">Business Hours</label>
+                  <input
+                    value={backendDraft.hours || ''}
+                    disabled={!backendEditMode}
+                    onChange={(e) => setBackendDraft({ ...backendDraft, hours: e.target.value })}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 disabled:bg-slate-50"
+                    placeholder="Mon-Sat, 9:00 AM - 9:00 PM"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-500 mb-1">Verification Tags</label>
+                  <input
+                    value={(backendDraft.verificationTags || []).join(', ')}
+                    disabled={!backendEditMode}
+                    onChange={(e) => setBackendDraft({
+                      ...backendDraft,
+                      verificationTags: e.target.value.split(',').map((tag) => tag.trim()).filter(Boolean),
+                    })}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 disabled:bg-slate-50"
+                    placeholder="Verified Merchant, GST, Trusted Local"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-500 mb-1">Languages Spoken</label>
+                  <input
+                    value={(backendDraft.languagesSpoken || []).join(', ')}
+                    disabled={!backendEditMode}
+                    onChange={(e) => setBackendDraft({
+                      ...backendDraft,
+                      languagesSpoken: e.target.value.split(',').map((entry) => entry.trim()).filter(Boolean),
+                    })}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 disabled:bg-slate-50"
+                    placeholder="English, Hindi, Marathi"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-500 mb-1">Payment Methods</label>
+                  <input
+                    value={(backendDraft.paymentMethods || []).join(', ')}
+                    disabled={!backendEditMode}
+                    onChange={(e) => setBackendDraft({
+                      ...backendDraft,
+                      paymentMethods: e.target.value.split(',').map((entry) => entry.trim()).filter(Boolean),
+                    })}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 disabled:bg-slate-50"
+                    placeholder="UPI, Cash, Card"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block font-bold text-slate-500 mb-1">Holiday Hours (comma separated)</label>
+                  <textarea
+                    rows={2}
+                    value={(backendDraft.holidayHours || []).join(', ')}
+                    disabled={!backendEditMode}
+                    onChange={(e) => setBackendDraft({
+                      ...backendDraft,
+                      holidayHours: e.target.value.split(',').map((entry) => entry.trim()).filter(Boolean),
+                    })}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 disabled:bg-slate-50"
+                    placeholder="Sunday Closed, Public Holidays 10 AM - 2 PM"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-500 mb-1">Brochure URL</label>
+                  <input
+                    value={backendDraft.brochureUrl || ''}
+                    disabled={!backendEditMode}
+                    onChange={(e) => setBackendDraft({ ...backendDraft, brochureUrl: e.target.value })}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 disabled:bg-slate-50"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-500 mb-1">Video URL</label>
+                  <input
+                    value={backendDraft.videoUrl || ''}
+                    disabled={!backendEditMode}
+                    onChange={(e) => setBackendDraft({ ...backendDraft, videoUrl: e.target.value })}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 disabled:bg-slate-50"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-500 mb-1">GPS Latitude</label>
+                  <input
+                    value={backendDraft.gpsCoordinates?.lat ?? ''}
+                    disabled={!backendEditMode}
+                    onChange={(e) => setBackendDraft({
+                      ...backendDraft,
+                      gpsCoordinates: {
+                        lat: Number(e.target.value || 0),
+                        lng: backendDraft.gpsCoordinates?.lng ?? 0,
+                      },
+                    })}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 disabled:bg-slate-50"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-500 mb-1">GPS Longitude</label>
+                  <input
+                    value={backendDraft.gpsCoordinates?.lng ?? ''}
+                    disabled={!backendEditMode}
+                    onChange={(e) => setBackendDraft({
+                      ...backendDraft,
+                      gpsCoordinates: {
+                        lat: backendDraft.gpsCoordinates?.lat ?? 0,
+                        lng: Number(e.target.value || 0),
+                      },
+                    })}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 disabled:bg-slate-50"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block font-bold text-slate-500 mb-2">Trust and Identity Flags</label>
+                  <div className="grid gap-2 md:grid-cols-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    {[
+                      { key: 'verifiedBadge', label: 'Verified Badge' },
+                      { key: 'isWomenLed', label: 'Women-Led' },
+                      { key: 'isHomeBased', label: 'Home-Based' },
+                      { key: 'isPublicService', label: 'Public Service' },
+                      { key: 'featured', label: 'Featured Listing' },
+                      { key: 'seoPremiumEnabled', label: 'SEO Premium' },
+                    ].map((item) => (
+                      <label key={item.key} className="flex items-center gap-2 text-xs text-slate-700">
+                        <input
+                          type="checkbox"
+                          disabled={!backendEditMode}
+                          checked={Boolean(backendDraft[item.key as keyof Business])}
+                          onChange={(event) => setBackendDraft({
+                            ...backendDraft,
+                            [item.key]: event.target.checked,
+                          } as Business)}
+                        />
+                        <span>{item.label}</span>
+                      </label>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
