@@ -5898,10 +5898,12 @@ export default function App() {
       if (matched) {
         setActiveLocalityId(matched.localityId);
         window.history.pushState({}, '', buildLocalityPath(matched.localityId));
+        window.dispatchEvent(new PopStateEvent('popstate'));
         return;
       }
     }
     window.history.pushState({}, '', buildLocalityPath(activeLocality?.id || activeLocalityId || defaultLocalityId || localities[0]?.id || ''));
+    window.dispatchEvent(new PopStateEvent('popstate'));
   };
 
   const handleExitUxMock = () => {
@@ -5991,6 +5993,7 @@ export default function App() {
     setActiveViewWithAudit('web');
     if (matchedCity) {
       window.history.pushState({}, '', `/city/${slugifyForUrl(matchedCity.name)}`);
+      window.dispatchEvent(new PopStateEvent('popstate'));
     }
   };
   const handleOpenNationalPage = () => {
@@ -6064,6 +6067,10 @@ export default function App() {
   };
 
   const isImmersivePreview = ['ui-screen', 'ui-city-screen', 'ui-category-screen', 'ui-listing-screen'].includes(activeView);
+  const isDedicatedLocalityHomepage =
+    activeView === 'web'
+    && liveExperienceRoute.page !== 'national'
+    && liveExperienceRoute.page !== 'seller';
 
   useEffect(() => {
     const siteName = 'Localisy';
@@ -6209,7 +6216,7 @@ export default function App() {
     <div className="relative flex min-h-screen flex-col overflow-x-hidden bg-slate-50 font-sans text-slate-800 selection:bg-indigo-600/15">
       
       {/* Top Navigation Frame - Pristine, Live, Human-labeled web directory */}
-      {!isImmersivePreview && <nav id="platform-navbar" className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 px-4 py-2.5 shadow-sm backdrop-blur md:top-auto md:px-8 md:py-0">
+      {!isImmersivePreview && !isDedicatedLocalityHomepage && <nav id="platform-navbar" className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 px-4 py-2.5 shadow-sm backdrop-blur md:top-auto md:px-8 md:py-0">
         <div className="relative flex items-center gap-2 md:hidden">
           <button
             type="button"
@@ -6576,7 +6583,7 @@ export default function App() {
       </nav>}
 
       {/* Main Workspace Frame */}
-      <main className={`${isImmersivePreview ? 'w-full px-0 py-0' : 'mx-auto max-w-[1440px] px-4 py-5 md:px-8 md:py-8'} flex w-full flex-1 space-y-8 overflow-x-hidden`}>
+      <main className={`${isImmersivePreview || isDedicatedLocalityHomepage ? 'w-full px-0 py-0' : 'mx-auto max-w-[1440px] px-4 py-5 md:px-8 md:py-8'} flex w-full flex-1 flex-col space-y-8 overflow-x-hidden`}>
         
         {/* Workspace Active Presentation Render */}
         {!PRODUCTION_MODE && activeView === 'proposal' && (
@@ -6636,6 +6643,14 @@ export default function App() {
                 businesses={businesses}
                 categories={portalCategories.filter((category) => category.id !== 'all')}
                 localities={localities}
+                displayedPincode={savedPincode || mappedPincodesForActiveLocality[0] || undefined}
+                activeNodeLabel={activeLocalityName}
+                userSession={userSession}
+                onOpenPincodeModal={openPincodeModalManually}
+                onRequestAuth={() => setShowAuthModal(true)}
+                onLogout={handleLogout}
+                isAdvertiseActive={canAccessAdmin ? false : false}
+                isAccountActive={showAuthModal}
                 onOpenLivePortal={handleMainLogoHome}
                 onOpenLocalityPage={(localityId) => {
                   setActiveViewWithAudit('web');
@@ -6646,6 +6661,15 @@ export default function App() {
                   const targetLocalityId = localityId || activeLocalityId || defaultLocalityId || localities[0]?.id || '';
                   setActiveViewWithAudit('web');
                   window.history.pushState({}, '', `${buildLocalityPath(targetLocalityId)}?category=${encodeURIComponent(categoryId)}`);
+                  window.dispatchEvent(new PopStateEvent('popstate'));
+                }}
+                onSearchSubmit={(query, localityId) => {
+                  const targetLocalityId = localityId || activeLocalityId || defaultLocalityId || localities[0]?.id || '';
+                  const normalizedQuery = String(query || '').trim();
+                  setActiveViewWithAudit('web');
+                  window.history.pushState({}, '', normalizedQuery
+                    ? `${buildLocalityPath(targetLocalityId)}?srp=${encodeURIComponent(normalizedQuery)}`
+                    : buildLocalityPath(targetLocalityId));
                   window.dispatchEvent(new PopStateEvent('popstate'));
                 }}
                 onOpenListingPage={handleOpenLiveListingPage}
@@ -6715,6 +6739,10 @@ export default function App() {
                 coupons={coupons}
                 onAddCoupon={handleAddCoupon}
                 onLogAuditEvent={logAuditEvent}
+                onOpenPincodeModal={openPincodeModalManually}
+                onRequestAuth={() => setShowAuthModal(true)}
+                onLogout={handleLogout}
+                isAccountActive={showAuthModal}
               />
             )}
           </Suspense>
@@ -6896,7 +6924,7 @@ export default function App() {
       </main>
 
       {/* Pristine, Professional Footer */}
-      {!isImmersivePreview && <footer className="bg-slate-900 border-t border-slate-800 text-slate-400 py-10 mt-16">
+      {!isImmersivePreview && !isDedicatedLocalityHomepage && <footer className="bg-slate-900 border-t border-slate-800 text-slate-400 py-10 mt-16">
         <div className="max-w-7xl mx-auto px-4 md:px-8 flex flex-col gap-6">
           <div className="space-y-1.5 text-center md:text-left">
             <span className="block text-white font-bold text-sm">{activeNodeLabel} Businesses</span>

@@ -172,6 +172,7 @@ const STORAGE_OBJECT_ACL = process.env.S3_OBJECT_ACL || '';
 const MSG91_AUTHKEY = process.env.MSG91_AUTHKEY || '';
 const MSG91_OTP_TEMPLATE_ID = process.env.MSG91_OTP_TEMPLATE_ID || '';
 const MSG91_OTP_BASE_URL = process.env.MSG91_OTP_BASE_URL || 'https://control.msg91.com';
+const LOCAL_DEV_OTP = process.env.LOCAL_DEV_OTP || '000000';
 const CONTACT_VIEW_DAILY_LIMIT = Math.max(1, parseInt(process.env.CONTACT_VIEW_DAILY_LIMIT || '10', 10) || 10);
 const AUDIT_EVENT_WINDOW_MS = Math.max(10_000, parseInt(process.env.AUDIT_EVENT_WINDOW_MS || '60000', 10) || 60_000);
 const AUDIT_EVENT_MAX_PER_WINDOW = Math.max(10, parseInt(process.env.AUDIT_EVENT_MAX_PER_WINDOW || '40', 10) || 40);
@@ -1517,6 +1518,50 @@ async function verifyMsg91Otp(mobile, otp) {
     throw new Error('Invalid or expired OTP');
   }
   return text;
+}
+
+function getRequestHost(req) {
+  const forwardedHost = req.headers['x-forwarded-host'];
+  const host = (Array.isArray(forwardedHost) ? forwardedHost[0] : forwardedHost) || req.get('host') || '';
+  return String(host || '').split(',')[0].trim().toLowerCase();
+}
+
+function isLoopbackRequest(req) {
+  const host = getRequestHost(req).replace(/:\d+$/, '');
+  return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]';
+}
+
+function shouldUseLocalDevOtp(req) {
+  return process.env.NODE_ENV !== 'production'
+    && isLoopbackRequest(req)
+    && (!MSG91_AUTHKEY || !MSG91_OTP_TEMPLATE_ID);
+}
+
+function withDevOtpPayload(req, payload) {
+  if (!shouldUseLocalDevOtp(req)) return payload;
+  return {
+    ...payload,
+    devOtpMode: true,
+    devOtp: LOCAL_DEV_OTP,
+  };
+}
+
+async function dispatchOtp(req, mobile) {
+  if (shouldUseLocalDevOtp(req)) {
+    return { ok: true, devOtpMode: true };
+  }
+  await sendMsg91Otp(mobile);
+  return { ok: true, devOtpMode: false };
+}
+
+async function validateOtp(req, mobile, otp) {
+  if (shouldUseLocalDevOtp(req)) {
+    if (String(otp || '').trim() !== LOCAL_DEV_OTP) {
+      throw new Error('Invalid OTP');
+    }
+    return;
+  }
+  await verifyMsg91Otp(mobile, String(otp).trim());
 }
 
 function findUserByLoginIdentifier(users, identifier) {
@@ -8400,7 +8445,7 @@ app.post('/api/auth/register/request-otp', async (req, res) => {
   }
 
   try {
-    await sendMsg91Otp(normalizedPhone);
+    await dispatchOtp(req, normalizedPhone);
     void saveComplianceConsent({
       subjectType: 'visitor',
       channel: 'sms',
@@ -8432,7 +8477,7 @@ app.post('/api/auth/register/request-otp', async (req, res) => {
         pendingUserType: userType,
       },
     });
-    res.json({ ok: true, challengeToken, mobile: normalizedPhone });
+    res.json(withDevOtpPayload(req, { ok: true, challengeToken, mobile: normalizedPhone }));
   } catch (err) {
     console.error('Failed to send registration OTP:', err);
     res.status(500).json({ ok: false, error: err?.message || 'Failed to send OTP' });
@@ -8470,7 +8515,7 @@ app.post('/api/auth/register/verify-otp', async (req, res) => {
   }
 
   try {
-    await verifyMsg91Otp(challenge.mobile, String(otp).trim());
+    await validateOtp(req, challenge.mobile, String(otp).trim());
     await markOtpChallengeUsed(challenge.challengeId);
 
     const users = await readUsers();
@@ -8542,7 +8587,7 @@ app.post('/api/auth/request-otp', async (req, res) => {
 
   const mobile = normalizePhoneDigits(user.phone);
   try {
-    await sendMsg91Otp(mobile);
+    await dispatchOtp(req, mobile);
     void saveComplianceConsent({
       subjectType: 'user',
       channel: 'sms',
@@ -8570,12 +8615,12 @@ app.post('/api/auth/request-otp', async (req, res) => {
       purpose: 'public-login',
     });
     const authUser = await buildResolvedAuthUserResponse(user);
-    res.json({
+    res.json(withDevOtpPayload(req, {
       ok: true,
       challengeToken,
       mobile,
       user: authUser,
-    });
+    }));
   } catch (err) {
     console.error('Failed to send public OTP:', err);
     res.status(500).json({ ok: false, error: err?.message || 'Failed to send OTP' });
@@ -8598,7 +8643,7 @@ app.post('/api/contact-unlock/request-otp', async (req, res) => {
   }
 
   try {
-    await sendMsg91Otp(normalizedPhone);
+    await dispatchOtp(req, normalizedPhone);
     void saveComplianceConsent({
       subjectType: 'visitor',
       channel: 'sms',
@@ -8623,7 +8668,7 @@ app.post('/api/contact-unlock/request-otp', async (req, res) => {
       mobile: normalizedPhone,
       purpose: 'contact-unlock',
     });
-    res.json({ ok: true, challengeToken, mobile: normalizedPhone });
+    res.json(withDevOtpPayload(req, { ok: true, challengeToken, mobile: normalizedPhone }));
   } catch (err) {
     console.error('Failed to send contact unlock OTP:', err);
     res.status(500).json({ ok: false, error: err?.message || 'Failed to send OTP' });
@@ -8661,7 +8706,7 @@ app.post('/api/contact-unlock/verify-otp', async (req, res) => {
   }
 
   try {
-    await verifyMsg91Otp(challenge.mobile, String(otp).trim());
+    await validateOtp(req, challenge.mobile, String(otp).trim());
     await markOtpChallengeUsed(challenge.challengeId);
     const unlockToken = buildContactUnlockGrantToken({
       challengeId: challenge.challengeId,
@@ -8810,7 +8855,7 @@ app.post('/api/auth/platform/request-otp', async (req, res) => {
   }
 
   try {
-    await sendMsg91Otp(mobile);
+    await dispatchOtp(req, mobile);
     void saveComplianceConsent({
       subjectType: 'user',
       channel: 'sms',
@@ -8837,12 +8882,12 @@ app.post('/api/auth/platform/request-otp', async (req, res) => {
       mobile,
       purpose: 'platform-login',
     });
-    res.json({
+    res.json(withDevOtpPayload(req, {
       ok: true,
       challengeToken,
       mobile,
       user: buildAuthUserResponse(user),
-    });
+    }));
   } catch (err) {
     console.error('Failed to send platform OTP:', err);
     res.status(500).json({ ok: false, error: err?.message || 'Failed to send OTP' });
@@ -8886,7 +8931,7 @@ app.post('/api/auth/verify-otp', async (req, res) => {
   }
 
   try {
-    await verifyMsg91Otp(mobile, String(otp).trim());
+    await validateOtp(req, mobile, String(otp).trim());
     await markOtpChallengeUsed(challenge.challengeId);
     const exp = Math.floor(Date.now() / 1000) + TOKEN_TTL_SEC;
     const token = signToken({

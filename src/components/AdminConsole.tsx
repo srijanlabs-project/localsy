@@ -1168,6 +1168,9 @@ export default function AdminConsole({
       meta: getCategoryById(subcategory.categoryId)?.name || subcategory.categoryId,
     }));
   const placementKeySelectionOptions = Array.from(new Set([
+    'homepage_hero_primary',
+    'homepage_hero_secondary',
+    'homepage_strip_between_categories_and_listings',
     'homepage_inline_primary',
     'homepage_sidebar_top',
     'homepage_sidebar_food',

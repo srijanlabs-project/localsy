@@ -1,604 +1,1489 @@
-import React, { useMemo } from 'react';
+import React, { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import {
-  Bus,
-  ChevronDown,
-  ChevronRight,
-  CircleDot,
-  GraduationCap,
-  Grid2x2,
-  HeartHandshake,
-  Landmark,
-  MapPin,
-  MessageCircle,
-  Navigation,
-  Phone,
-  Pill,
-  Plane,
-  Search,
-  ShieldCheck,
-  ShoppingCart,
-  Sparkles,
-  Star,
-  Stethoscope,
-  Store,
-  Trees,
-  UtensilsCrossed,
-  Wrench,
-  Dumbbell,
-  MoreHorizontal,
   ArrowRight,
+  Grid2x2,
+  LogOut,
+  MapPin,
+  Menu,
+  Search,
+  Star,
+  User,
 } from 'lucide-react';
-import { Business, Category, Locality } from '../../types';
+import { Business, Category, HeroBanner, ListingAd, Locality, UserSession } from '../../types';
+import { getCategoryById } from '../../categoryMaster';
+import { getMediaProxyUrl } from '../../utils/mediaUrl';
+import happyBusinessLogo from '../../assets/happy-business-logo.png';
 
 type LocalityLandingUiV1Props = {
   activeLocalityId: string;
   businesses: Business[];
   categories: Category[];
+  heroBanners?: HeroBanner[];
+  listingAds?: ListingAd[];
   localities: Locality[];
+  recentSearches: string[];
+  onClearRecentSearches: () => void;
+  onSearchSubmit: (query: string) => void;
+  onOpenHeroCta?: (banner: HeroBanner) => void;
+  onOpenListingAd?: (ad: ListingAd) => void;
+  displayedPincode?: string;
+  activeNodeLabel?: string;
+  userSession?: UserSession;
+  onOpenPincodeModal?: () => void;
+  onRequestAuth?: () => void;
+  onLogout?: () => void;
+  isAdvertiseActive?: boolean;
+  isAccountActive?: boolean;
   onOpenLivePortal: () => void;
   onOpenCityPage: (localityId?: string) => void;
   onOpenCategoryPage: (categoryId: string, localityId?: string) => void;
   onOpenListingPage: (businessId: string, localityId?: string) => void;
 };
 
-type TileIcon = React.ComponentType<{ className?: string }>;
-
-const categoryIconRules: Array<{ match: string[]; Icon: TileIcon; tone: string }> = [
-  { match: ['restaurant', 'food', 'cafe', 'bakery'], Icon: UtensilsCrossed, tone: 'bg-orange-50 text-orange-500' },
-  { match: ['grocery', 'supermarket', 'mart'], Icon: ShoppingCart, tone: 'bg-lime-50 text-lime-600' },
-  { match: ['hospital', 'doctor', 'clinic', 'medical'], Icon: Stethoscope, tone: 'bg-rose-50 text-rose-500' },
-  { match: ['school', 'tuition', 'education'], Icon: GraduationCap, tone: 'bg-blue-50 text-blue-500' },
-  { match: ['pharmacy', 'chemist'], Icon: Pill, tone: 'bg-cyan-50 text-cyan-500' },
-  { match: ['bank', 'finance', 'atm'], Icon: Landmark, tone: 'bg-violet-50 text-violet-500' },
-  { match: ['gym', 'fitness'], Icon: Dumbbell, tone: 'bg-amber-50 text-amber-500' },
-  { match: ['repair', 'service', 'electric', 'plumber', 'ac'], Icon: Wrench, tone: 'bg-[#eef4ff] text-[#1E3A8A]' },
-];
-
-const popularSearches = [
-  'Best Restaurants',
-  '24x7 Medical',
-  'Grocery Stores',
-  'PG / Hostels',
-  'Home Tutors',
-  'Electricians',
-  'Salons',
-  'Pest Control',
-];
-
-const getCategoryPresentation = (category: Category): { Icon: TileIcon; tone: string } => {
-  const haystack = `${category.id} ${category.name}`.toLowerCase();
-  return categoryIconRules.find((rule) => rule.match.some((token) => haystack.includes(token))) || {
-    Icon: Store,
-    tone: 'bg-slate-100 text-slate-500',
-  };
+type CategoryTile = {
+  category: Category;
+  count: number;
+  accent: string;
 };
+
+type SectionGroup = CategoryTile & {
+  chips: string[];
+  listings: Business[];
+};
+
+type PromoCardContent = {
+  image: string;
+  badge: string;
+  title: string;
+  subtitle: string;
+  cta: string;
+  onClick: () => void;
+};
+
+const CATEGORY_ACCENTS = [
+  '#F97316',
+  '#10B981',
+  '#EC4899',
+  '#6366F1',
+  '#8B5CF6',
+  '#14B8A6',
+  '#F59E0B',
+  '#3B82F6',
+  '#84CC16',
+  '#A855F7',
+  '#64748B',
+  '#E879F9',
+];
+
+const HERO_PRIMARY_PLACEMENT_KEY = 'homepage_hero_primary';
+const HERO_SECONDARY_PLACEMENT_KEY = 'homepage_hero_secondary';
+const CATEGORY_STRIP_PLACEMENT_KEY = 'homepage_strip_between_categories_and_listings';
+
+const matchesPlacementTarget = (
+  ad: ListingAd,
+  placementKey: string,
+  device: 'desktop' | 'mobile' | 'all' = 'all',
+) => {
+  if (String(ad.placementKey || '').trim() !== placementKey) return false;
+  const target = ad.deviceTarget || 'all';
+  if (device === 'desktop') return target !== 'mobile';
+  if (device === 'mobile') return target !== 'desktop';
+  return true;
+};
+
+const normalizeValue = (value: string) => String(value || '')
+  .toLowerCase()
+  .replace(/[^a-z0-9\s]/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim();
 
 const formatRating = (value: number) => Number.isFinite(value) ? value.toFixed(1) : '4.5';
 
-const pluralize = (count: number, noun: string) => `${count}+ ${noun}`;
+const getBusinessSearchLabel = (business: Business, categories: Category[]) => (
+  categories.find((category) => category.id === business.categoryId)?.name
+  || getCategoryById(business.categoryId)?.name
+  || business.sourceCategoryLabel
+  || 'Local business'
+);
+
+const getBusinessSubcategory = (business: Business, categories: Category[]) => (
+  business.sourceSubcategoryLabel
+  || getBusinessSearchLabel(business, categories)
+);
+
+const getBusinessLocationLabel = (business: Business) => (
+  business.address.split(',')[0]?.trim()
+  || 'Sector 17'
+);
+
+const getBusinessHoursLabel = (business: Business) => (
+  business.hours?.trim()
+  || 'Open till 9:00pm'
+);
+
+const getListingScore = (business: Business) => (
+  (business.featured ? 80 : 0)
+  + (business.rating || 0) * 10
+  + ((business.reviewCount || 0) / 8)
+);
+
+function buildCategoryTiles(approvedBusinesses: Business[], categories: Category[]) {
+  const counts = new Map<string, number>();
+  approvedBusinesses.forEach((business) => {
+    const key = business.categoryId || 'uncategorized';
+    counts.set(key, (counts.get(key) || 0) + 1);
+  });
+
+  return [...counts.entries()]
+    .map(([categoryId, count], index) => ({
+      category: categories.find((entry) => entry.id === categoryId) || {
+        id: categoryId,
+        name: getCategoryById(categoryId)?.name || categoryId || 'More',
+      } as Category,
+      count,
+      accent: CATEGORY_ACCENTS[index % CATEGORY_ACCENTS.length],
+    }))
+    .sort((left, right) => right.count - left.count || left.category.name.localeCompare(right.category.name));
+}
+
+function buildPromoTitle(business: Business | null, localityLabel: string, fallback: string) {
+  if (!business) return fallback;
+  return `${business.name} in ${localityLabel}`;
+}
+
+function buildPromoSubtitle(business: Business | null, categories: Category[], localityLabel: string) {
+  if (!business) return `Trusted local businesses in ${localityLabel}`;
+  return `${getBusinessSearchLabel(business, categories)} | ${getBusinessLocationLabel(business)} | ${getBusinessHoursLabel(business)}`;
+}
 
 export default function LocalityLandingUiV1({
   activeLocalityId,
   businesses,
   categories,
+  heroBanners = [],
+  listingAds = [],
   localities,
+  recentSearches,
+  onClearRecentSearches,
+  onSearchSubmit,
+  onOpenHeroCta,
+  onOpenListingAd,
+  displayedPincode,
+  activeNodeLabel,
+  userSession,
+  onOpenPincodeModal,
+  onRequestAuth,
+  onLogout,
+  isAdvertiseActive = false,
+  isAccountActive = false,
   onOpenLivePortal,
   onOpenCityPage,
   onOpenCategoryPage,
   onOpenListingPage,
 }: LocalityLandingUiV1Props) {
-  const activeLocality = useMemo(() => (
-    localities.find((locality) => locality.id === activeLocalityId) || localities[0] || null
-  ), [activeLocalityId, localities]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [heroRotationTick, setHeroRotationTick] = useState(0);
+  const deferredSearchQuery = useDeferredValue(searchQuery);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setHeroRotationTick((current) => current + 1);
+    }, 5000);
+    return () => window.clearInterval(intervalId);
+  }, []);
+
+  const activeLocality = useMemo(
+    () => localities.find((locality) => locality.id === activeLocalityId) || localities[0] || null,
+    [activeLocalityId, localities],
+  );
 
   const localityLabel = activeLocality?.name.split(',')[0] || 'Roadpali';
-  const cityLabel = activeLocality?.name.split(',')[1]?.trim() || 'Navi Mumbai';
-  const fullLocationLabel = `${localityLabel}, ${cityLabel}`;
+  const primaryPincode = useMemo(() => {
+    const firstBusinessPin = businesses.find((business) => business.localityId === activeLocality?.id && business.pincode)?.pincode;
+    return firstBusinessPin || '410218';
+  }, [activeLocality?.id, businesses]);
+  const resolvedPincode = displayedPincode || primaryPincode;
+  const resolvedNodeLabel = activeNodeLabel || localityLabel;
+  const isAuthenticated = Boolean(userSession?.isAuthenticated && userSession?.userPhone);
 
-  const approvedBusinesses = useMemo(() => (
-    businesses.filter((business) => business.localityId === activeLocality?.id && business.status === 'approved')
-  ), [activeLocality?.id, businesses]);
+  const approvedBusinesses = useMemo(
+    () => businesses
+      .filter((business) => business.localityId === activeLocality?.id && business.status === 'approved')
+      .sort((left, right) => getListingScore(right) - getListingScore(left)),
+    [activeLocality?.id, businesses],
+  );
 
-  const featuredBusinesses = useMemo(() => (
-    [...approvedBusinesses]
-      .sort((left, right) => {
-        const leftScore = (left.featured ? 4 : 0) + left.rating + (left.reviewCount / 50);
-        const rightScore = (right.featured ? 4 : 0) + right.rating + (right.reviewCount / 50);
-        return rightScore - leftScore;
-      })
-      .slice(0, 5)
-  ), [approvedBusinesses]);
+  const recentSearchTerms = useMemo(
+    () => recentSearches.map((entry) => String(entry || '').trim()).filter(Boolean).slice(0, 5),
+    [recentSearches],
+  );
 
-  const categoryTiles = useMemo(() => {
-    const counts = new Map<string, number>();
-    approvedBusinesses.forEach((business) => {
-      const key = business.categoryId || 'uncategorized';
-      counts.set(key, (counts.get(key) || 0) + 1);
-    });
+  const categoryTiles = useMemo(
+    () => buildCategoryTiles(approvedBusinesses, categories),
+    [approvedBusinesses, categories],
+  );
 
-    const tiles = [...counts.entries()]
-      .map(([categoryId, count]) => {
-        const category = categories.find((entry) => entry.id === categoryId) || {
-          id: categoryId,
-          name: categoryId === 'uncategorized' ? 'More Categories' : categoryId,
-          icon: 'category_icon',
-          color: '#94a3b8',
-        };
-        return { category, count };
-      })
-      .sort((left, right) => right.count - left.count)
-      .slice(0, 7);
+  const visibleCategoryTiles = categoryTiles.slice(0, 12);
+  const featuredCategoryId = visibleCategoryTiles[0]?.category.id || categories[0]?.id || 'all';
+  const primaryHeroBusiness = approvedBusinesses[0] || null;
+  const secondaryHeroBusiness = approvedBusinesses.find((business) => business.id !== primaryHeroBusiness?.id && business.featured) || approvedBusinesses[1] || null;
+  const homepageListingAds = useMemo(
+    () => listingAds.filter((ad) => !ad.placementKey || ad.placementKey.startsWith('homepage')),
+    [listingAds],
+  );
+  const primaryHeroImageAds = useMemo(
+    () => homepageListingAds
+      .filter((ad) => matchesPlacementTarget(ad, HERO_PRIMARY_PLACEMENT_KEY, 'desktop'))
+      .slice(0, 7),
+    [homepageListingAds],
+  );
+  const mobilePrimaryHeroImageAds = useMemo(
+    () => homepageListingAds
+      .filter((ad) => matchesPlacementTarget(ad, HERO_PRIMARY_PLACEMENT_KEY, 'mobile'))
+      .slice(0, 7),
+    [homepageListingAds],
+  );
+  const secondaryHeroImageAds = useMemo(
+    () => homepageListingAds
+      .filter((ad) => matchesPlacementTarget(ad, HERO_SECONDARY_PLACEMENT_KEY, 'desktop'))
+      .slice(0, 7),
+    [homepageListingAds],
+  );
+  const stripBannerAd = useMemo(
+    () => homepageListingAds.find((ad) => matchesPlacementTarget(ad, CATEGORY_STRIP_PLACEMENT_KEY)) || null,
+    [homepageListingAds],
+  );
+  const rotatingPrimaryHeroAd = primaryHeroImageAds.length > 0
+    ? primaryHeroImageAds[heroRotationTick % primaryHeroImageAds.length]
+    : null;
+  const rotatingMobilePrimaryHeroAd = mobilePrimaryHeroImageAds.length > 0
+    ? mobilePrimaryHeroImageAds[heroRotationTick % mobilePrimaryHeroImageAds.length]
+    : null;
+  const rotatingSecondaryHeroAd = secondaryHeroImageAds.length > 0
+    ? secondaryHeroImageAds[heroRotationTick % secondaryHeroImageAds.length]
+    : null;
+  const primaryHeroBanner = heroBanners[0] || null;
+  const secondaryHeroBanner = heroBanners[1] || null;
 
-    return [
-      ...tiles,
-      {
-        category: { id: 'more', name: 'More Categories', icon: 'category_icon', color: '#94a3b8' },
-        count: Math.max(12, categories.length),
-      },
-    ];
+  const sectionGroups = useMemo<SectionGroup[]>(
+    () => categoryTiles.slice(0, 4).map((tile) => ({
+      ...tile,
+      chips: Array.from(new Set(
+        approvedBusinesses
+          .filter((business) => business.categoryId === tile.category.id)
+          .slice(0, 8)
+          .map((business) => getBusinessSubcategory(business, categories)),
+      )).slice(0, 4),
+      listings: approvedBusinesses
+        .filter((business) => business.categoryId === tile.category.id)
+        .slice(0, 4),
+    })),
+    [approvedBusinesses, categories, categoryTiles],
+  );
+
+  const quickSearches = useMemo(() => {
+    const candidates = approvedBusinesses
+      .slice(0, 24)
+      .map((business) => business.sourceSubcategoryLabel || getBusinessSearchLabel(business, categories))
+      .map((entry) => String(entry || '').trim())
+      .filter(Boolean);
+    return Array.from(new Set(candidates)).slice(0, 5);
   }, [approvedBusinesses, categories]);
 
-  const averageRating = useMemo(() => {
-    if (approvedBusinesses.length === 0) return '4.5';
-    const total = approvedBusinesses.reduce((sum, business) => sum + (Number.isFinite(business.rating) ? business.rating : 0), 0);
-    return formatRating(total / approvedBusinesses.length);
-  }, [approvedBusinesses]);
+  const normalizedQuery = normalizeValue(deferredSearchQuery);
 
-  const heroImage = activeLocality?.coverImage || activeLocality?.carouselImages?.[0] || 'https://images.unsplash.com/photo-1515923256482-1c04580b477c?auto=format&fit=crop&w=1600&q=80';
+  const matchingBusinesses = useMemo(() => {
+    if (!normalizedQuery) return approvedBusinesses.slice(0, 5);
+    return approvedBusinesses
+      .filter((business) => {
+        const haystack = normalizeValue([
+          business.name,
+          business.description,
+          business.address,
+          business.sourceCategoryLabel,
+          business.sourceSubcategoryLabel,
+          getBusinessSearchLabel(business, categories),
+          ...(business.tags || []),
+        ].filter(Boolean).join(' '));
+        return haystack.includes(normalizedQuery);
+      })
+      .slice(0, 5);
+  }, [approvedBusinesses, categories, normalizedQuery]);
 
-  const highlightCards = [
-    { icon: Bus, title: 'Kharghar Railway Stn.', distance: '7.5 km' },
-    { icon: Navigation, title: 'Upcoming Metro', distance: '8.2 km' },
-    { icon: Plane, title: 'Navi Mumbai Airport', distance: '17 km' },
-    { icon: Bus, title: 'Kalamboli Bus Stop', distance: '2.1 km' },
-    { icon: Landmark, title: 'Orion Mall', distance: '6.8 km' },
-    { icon: Trees, title: 'Central Park', distance: '5.3 km' },
-  ];
+  const matchingCategories = useMemo(() => {
+    const pool = categoryTiles.filter(({ category, count }) => {
+      if (!normalizedQuery) return count > 0;
+      const directMatch = normalizeValue(category.name).includes(normalizedQuery);
+      const categoryListingMatch = approvedBusinesses.some((business) => (
+        business.categoryId === category.id
+        && normalizeValue(`${business.name} ${business.description} ${business.sourceSubcategoryLabel || ''}`).includes(normalizedQuery)
+      ));
+      return directMatch || categoryListingMatch;
+    });
+    return pool.slice(0, 5);
+  }, [approvedBusinesses, categoryTiles, normalizedQuery]);
 
-  const aboutCards = [
-    {
-      icon: Navigation,
-      title: 'Connectivity',
-      detail: 'Well connected via Sion-Panvel Highway, Mumbai-Pune Expressway and Kharghar railway station.',
-    },
-    {
-      icon: MapPin,
-      title: 'Nearby Areas',
-      detail: 'Kalamboli, Kharghar, Kamothe, Panvel, Sector 20, Sector 19.',
-    },
-    {
-      icon: Grid2x2,
-      title: 'Lifestyle',
-      detail: 'Peaceful residential locality with schools, markets, parks and modern amenities.',
-    },
-    {
-      icon: HeartHandshake,
-      title: 'Why People Choose',
-      detail: 'Affordable living, good connectivity, and upcoming infrastructure.',
-    },
-  ];
+  const suggestionResultCount = useMemo(() => {
+    if (!normalizedQuery) return approvedBusinesses.length;
+    return approvedBusinesses.filter((business) => {
+      const haystack = normalizeValue([
+        business.name,
+        business.description,
+        business.address,
+        business.sourceCategoryLabel,
+        business.sourceSubcategoryLabel,
+        getBusinessSearchLabel(business, categories),
+        ...(business.tags || []),
+      ].filter(Boolean).join(' '));
+      return haystack.includes(normalizedQuery);
+    }).length;
+  }, [approvedBusinesses, categories, normalizedQuery]);
+
+  const shouldShowSuggestions = isSearchFocused && (searchQuery.trim().length > 0 || recentSearchTerms.length > 0);
+
+  const submitSearch = (query = searchQuery) => {
+    const finalQuery = String(query || '').trim() || getCategoryById(featuredCategoryId)?.name || '';
+    if (!finalQuery) return;
+    onSearchSubmit(finalQuery);
+  };
+
+  const primaryPromo = useMemo<PromoCardContent>(() => {
+    if (rotatingPrimaryHeroAd) {
+      return {
+        image: getMediaProxyUrl(rotatingPrimaryHeroAd.imageUrl || ''),
+        badge: rotatingPrimaryHeroAd.badge || 'Sponsored placement',
+        title: rotatingPrimaryHeroAd.title,
+        subtitle: rotatingPrimaryHeroAd.description,
+        cta: rotatingPrimaryHeroAd.ctaText || 'Explore',
+        onClick: () => {
+          if (onOpenListingAd) {
+            onOpenListingAd(rotatingPrimaryHeroAd);
+            return;
+          }
+          onOpenLivePortal();
+        },
+      };
+    }
+
+    if (primaryHeroBanner) {
+      return {
+        image: getMediaProxyUrl(primaryHeroBanner.imageUrl),
+        badge: 'Sponsored placement',
+        title: primaryHeroBanner.title,
+        subtitle: primaryHeroBanner.subtitle,
+        cta: primaryHeroBanner.ctaLabel || 'Explore',
+        onClick: () => {
+          if (onOpenHeroCta) {
+            onOpenHeroCta(primaryHeroBanner);
+            return;
+          }
+          submitSearch(primaryHeroBanner.title);
+        },
+      };
+    }
+
+    return {
+      image: getMediaProxyUrl(primaryHeroBusiness?.coverImageUrl || primaryHeroBusiness?.imageUrl || 'https://images.unsplash.com/photo-1488459716781-31db52582fe9?auto=format&fit=crop&w=1600&q=80'),
+      badge: primaryHeroBusiness?.featured ? 'Featured listing' : 'Popular now',
+      title: buildPromoTitle(primaryHeroBusiness, localityLabel, `Trusted businesses in ${localityLabel}`),
+      subtitle: buildPromoSubtitle(primaryHeroBusiness, categories, localityLabel),
+      cta: 'View listing',
+      onClick: () => {
+        if (primaryHeroBusiness) {
+          onOpenListingPage(primaryHeroBusiness.id, primaryHeroBusiness.localityId);
+          return;
+        }
+        submitSearch(searchQuery);
+      },
+    };
+  }, [categories, localityLabel, onOpenHeroCta, onOpenListingAd, onOpenListingPage, onOpenLivePortal, primaryHeroBanner, primaryHeroBusiness, rotatingPrimaryHeroAd, searchQuery]);
+
+  const mobilePrimaryPromo = useMemo<PromoCardContent>(() => {
+    if (rotatingMobilePrimaryHeroAd) {
+      return {
+        image: getMediaProxyUrl(rotatingMobilePrimaryHeroAd.imageUrl || ''),
+        badge: rotatingMobilePrimaryHeroAd.badge || 'Sponsored placement',
+        title: rotatingMobilePrimaryHeroAd.title,
+        subtitle: rotatingMobilePrimaryHeroAd.description,
+        cta: rotatingMobilePrimaryHeroAd.ctaText || 'Explore',
+        onClick: () => {
+          if (onOpenListingAd) {
+            onOpenListingAd(rotatingMobilePrimaryHeroAd);
+            return;
+          }
+          onOpenLivePortal();
+        },
+      };
+    }
+
+    return primaryPromo;
+  }, [onOpenListingAd, onOpenLivePortal, primaryPromo, rotatingMobilePrimaryHeroAd]);
+
+  const secondaryPromo = useMemo<PromoCardContent>(() => {
+    if (rotatingSecondaryHeroAd) {
+      return {
+        image: getMediaProxyUrl(rotatingSecondaryHeroAd.imageUrl || ''),
+        badge: rotatingSecondaryHeroAd.badge || 'Sponsored',
+        title: rotatingSecondaryHeroAd.title,
+        subtitle: rotatingSecondaryHeroAd.description,
+        cta: rotatingSecondaryHeroAd.ctaText || 'Explore',
+        onClick: () => {
+          if (onOpenListingAd) {
+            onOpenListingAd(rotatingSecondaryHeroAd);
+            return;
+          }
+          onOpenLivePortal();
+        },
+      };
+    }
+
+    if (secondaryHeroBanner) {
+      return {
+        image: getMediaProxyUrl(secondaryHeroBanner.imageUrl),
+        badge: 'Sponsored',
+        title: secondaryHeroBanner.title,
+        subtitle: secondaryHeroBanner.subtitle,
+        cta: secondaryHeroBanner.ctaLabel || 'Explore',
+        onClick: () => {
+          if (onOpenHeroCta) {
+            onOpenHeroCta(secondaryHeroBanner);
+            return;
+          }
+          submitSearch(secondaryHeroBanner.title);
+        },
+      };
+    }
+
+    return {
+      image: getMediaProxyUrl(secondaryHeroBusiness?.coverImageUrl || secondaryHeroBusiness?.imageUrl || 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=900&q=80'),
+      badge: secondaryHeroBusiness?.featured ? 'Sponsored' : 'Top rated',
+      title: buildPromoTitle(secondaryHeroBusiness, localityLabel, `Recommended picks in ${localityLabel}`),
+      subtitle: buildPromoSubtitle(secondaryHeroBusiness, categories, localityLabel),
+      cta: secondaryHeroBusiness ? 'See details' : 'Explore',
+      onClick: () => {
+        if (secondaryHeroBusiness) {
+          onOpenListingPage(secondaryHeroBusiness.id, secondaryHeroBusiness.localityId);
+          return;
+        }
+        submitSearch(searchQuery);
+      },
+    };
+  }, [categories, localityLabel, onOpenHeroCta, onOpenListingAd, onOpenListingPage, onOpenLivePortal, rotatingSecondaryHeroAd, secondaryHeroBanner, secondaryHeroBusiness, searchQuery]);
 
   return (
-    <section className="bg-[#FFF5F9] text-[#0D1B2A]">
-      <div className="mx-auto max-w-[1540px] px-4 pb-10 pt-4 md:px-6 lg:px-8">
-        <header className="rounded-[22px] border border-slate-200 bg-white px-5 py-4 shadow-[0_8px_30px_rgba(15,23,42,0.06)]">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex items-center gap-8">
+    <section className="localisy-public-page min-h-screen overflow-x-hidden bg-[#EEF2F7] text-[#0F172A]">
+      <div className="mx-auto w-full max-w-[1440px]">
+        <DesktopHomeShell
+          localityLabel={localityLabel}
+          primaryPincode={primaryPincode}
+          categories={categories}
+          searchQuery={searchQuery}
+          setSearchQuery={setSearchQuery}
+          submitSearch={submitSearch}
+          recentSearchTerms={recentSearchTerms}
+          onClearRecentSearches={onClearRecentSearches}
+          quickSearches={quickSearches}
+          resolvedPincode={resolvedPincode}
+          resolvedNodeLabel={resolvedNodeLabel}
+          userSession={userSession}
+          onOpenPincodeModal={onOpenPincodeModal}
+          onRequestAuth={onRequestAuth}
+          onLogout={onLogout}
+          isAdvertiseActive={isAdvertiseActive}
+          isAccountActive={isAccountActive}
+          onOpenLivePortal={onOpenLivePortal}
+          rotatingPrimaryHeroAd={rotatingPrimaryHeroAd}
+          rotatingSecondaryHeroAd={rotatingSecondaryHeroAd}
+          rotatingPrimaryHeroCount={primaryHeroImageAds.length}
+          rotatingPrimaryHeroIndex={primaryHeroImageAds.length > 0 ? heroRotationTick % primaryHeroImageAds.length : 0}
+          onOpenListingAd={onOpenListingAd}
+          onOpenCityPage={() => onOpenCityPage(activeLocality?.id || activeLocalityId)}
+          primaryPromo={primaryPromo}
+          secondaryPromo={secondaryPromo}
+          shouldShowSuggestions={shouldShowSuggestions}
+          onSearchFocus={() => setIsSearchFocused(true)}
+          onSearchBlur={() => window.setTimeout(() => setIsSearchFocused(false), 120)}
+          matchingCategories={matchingCategories}
+          matchingBusinesses={matchingBusinesses}
+          suggestionResultCount={suggestionResultCount}
+          onOpenCategoryPage={(categoryId) => onOpenCategoryPage(categoryId, activeLocality?.id || activeLocalityId)}
+          onOpenListingPage={(businessId, localityId) => onOpenListingPage(businessId, localityId)}
+        />
+
+        <MobileHomeShell
+          localityLabel={localityLabel}
+          categories={categories}
+          heroPromo={mobilePrimaryPromo}
+          searchQuery={searchQuery}
+          setSearchQuery={setSearchQuery}
+          submitSearch={submitSearch}
+          recentSearchTerms={recentSearchTerms}
+          onClearRecentSearches={onClearRecentSearches}
+          quickSearches={quickSearches}
+          resolvedPincode={resolvedPincode}
+          resolvedNodeLabel={resolvedNodeLabel}
+          userSession={userSession}
+          isMobileMenuOpen={isMobileMenuOpen}
+          setIsMobileMenuOpen={setIsMobileMenuOpen}
+          onOpenPincodeModal={onOpenPincodeModal}
+          onRequestAuth={onRequestAuth}
+          onLogout={onLogout}
+          onOpenLivePortal={onOpenLivePortal}
+          shouldShowSuggestions={shouldShowSuggestions}
+          onSearchFocus={() => setIsSearchFocused(true)}
+          onSearchBlur={() => window.setTimeout(() => setIsSearchFocused(false), 120)}
+          matchingCategories={matchingCategories}
+          matchingBusinesses={matchingBusinesses}
+          suggestionResultCount={suggestionResultCount}
+          onOpenCategoryPage={(categoryId) => onOpenCategoryPage(categoryId, activeLocality?.id || activeLocalityId)}
+          onOpenListingPage={(businessId, localityId) => onOpenListingPage(businessId, localityId)}
+        />
+
+        <div className="hidden pb-14 lg:block">
+          <section className="bg-white px-10 py-8 shadow-[0_10px_30px_rgba(15,23,42,0.05)]">
+            <div className="flex items-end justify-between">
+              <div>
+                <h2 className="text-[2rem] font-extrabold tracking-[-0.04em] text-[#0F172A]">All categories</h2>
+                <p className="mt-1 text-sm text-[#94A3B8]">
+                  {Math.max(visibleCategoryTiles.length, 1)} active groups shown from {Math.max(categories.length, 1)} total category groups.
+                </p>
+              </div>
               <div className="flex items-center gap-3">
-                <div className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-[#0D1B2A] text-[#FFD54F]">
-                  <MapPin className="h-6 w-6" />
-                </div>
-                <div>
-                  <div className="text-[2rem] font-black tracking-[-0.05em] text-[#0D1B2A]">localisy</div>
-                  <div className="-mt-1 text-[11px] font-medium text-slate-500">Find it locally</div>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => onOpenCityPage(activeLocality?.id || activeLocalityId)}
-                className="hidden items-center gap-3 rounded-full border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-[#0D1B2A] shadow-sm lg:inline-flex"
-              >
-                <MapPin className="h-4 w-4 text-slate-500" />
-                <span>{fullLocationLabel}</span>
-                <ChevronDown className="h-4 w-4 text-slate-400" />
-              </button>
-            </div>
-
-            <div className="flex flex-1 items-center gap-3 lg:max-w-[760px]">
-              <div className="flex h-12 flex-1 items-center gap-3 rounded-full border border-slate-200 bg-white px-4 shadow-sm">
-                <Search className="h-4 w-4 text-slate-400" />
-                <span className="text-sm text-slate-400">Search for restaurants, doctors, groceries, salons and more...</span>
-              </div>
-              <button
-                type="button"
-                className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-[#0D1B2A] text-[#FFD54F] shadow-sm transition hover:bg-[#132845]"
-              >
-                <Search className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="flex items-center gap-4">
-              <button type="button" className="hidden items-center gap-2 text-sm font-semibold text-[#0D1B2A] md:inline-flex">
-                <Grid2x2 className="h-4 w-4 text-slate-500" />
-                <span>Categories</span>
-              </button>
-              <button
-                type="button"
-                onClick={onOpenLivePortal}
-                className="hidden rounded-xl border border-[#FFD54F] bg-[#FFF4CC] px-4 py-3 text-sm font-semibold text-[#0D1B2A] md:inline-flex"
-              >
-                List Your Business
-              </button>
-              <button type="button" className="hidden items-center gap-2 text-sm font-semibold text-[#0D1B2A] md:inline-flex">
-                <CircleDot className="h-4 w-4 text-slate-500" />
-                <span>Login</span>
-              </button>
-            </div>
-          </div>
-        </header>
-
-        <section className="relative mt-5 overflow-hidden rounded-[26px] border border-slate-200 bg-white shadow-[0_16px_40px_rgba(15,23,42,0.06)]">
-          <div className="absolute inset-y-0 right-0 w-[64%]">
-            <img src={heroImage} alt={fullLocationLabel} className="h-full w-full object-cover" />
-            <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(255,245,249,0.96)_0%,rgba(255,245,249,0.8)_28%,rgba(255,245,249,0)_60%)]" />
-          </div>
-
-          <div className="relative z-10 grid min-h-[320px] gap-8 px-8 py-10 lg:grid-cols-[1.1fr_0.9fr]">
-            <div className="max-w-[560px]">
-              <div className="text-[2rem] font-bold tracking-[-0.04em] text-[#1E3A8A]">Welcome to</div>
-              <h1 className="mt-1 text-[3.7rem] font-black leading-[0.95] tracking-[-0.06em] text-[#0D1B2A]">
-                {localityLabel}, {cityLabel}
-              </h1>
-              <p className="mt-4 max-w-[430px] text-[1.05rem] leading-8 text-slate-600">
-                Find everything you need around you.
-                <br />
-                Trusted local businesses at your fingertips.
-              </p>
-
-              <div className="mt-7 rounded-[18px] border border-slate-200 bg-white/92 p-3 shadow-sm backdrop-blur">
-                <div className="flex flex-col gap-3 md:flex-row">
-                  <button
-                    type="button"
-                    className="inline-flex h-12 items-center justify-between rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 md:w-[180px]"
-                  >
-                    <span>All Categories</span>
-                    <ChevronDown className="h-4 w-4 text-slate-400" />
-                  </button>
-                  <div className="flex h-12 flex-1 items-center justify-between rounded-xl border border-slate-200 bg-white px-4 text-sm text-slate-400">
-                    <span>Search in {localityLabel}...</span>
-                    <Search className="h-4 w-4" />
-                  </div>
-                  <button
-                    type="button"
-                    className="inline-flex h-12 items-center justify-center rounded-xl bg-[#0D1B2A] px-7 text-sm font-semibold text-white shadow-sm"
-                  >
-                    Search
-                  </button>
-                </div>
-              </div>
-
-              <div className="mt-7 grid grid-cols-2 gap-4 md:grid-cols-4">
-                <StatItem value={pluralize(Math.max(350, approvedBusinesses.length), 'Businesses')} label="Businesses" />
-                <StatItem value={`${Math.max(42, categories.length)}+`} label="Categories" highlight="category" />
-                <StatItem value={averageRating} label="Avg. Rating" highlight="star" />
-                <StatItem value="Updated" label="Daily" highlight="verified" />
-              </div>
-            </div>
-
-            <div className="flex items-end justify-end">
-              <div className="max-w-[500px] rounded-[22px] bg-[#0D1B2A]/84 p-6 text-white shadow-xl backdrop-blur">
-                <div className="text-[1.55rem] font-bold tracking-[-0.03em]">Roadpali at a Glance</div>
-                <div className="mt-5 grid grid-cols-2 gap-4 md:grid-cols-4">
-                  {[
-                    { title: 'Great', label: 'Connectivity' },
-                    { title: 'Upcoming', label: 'Infrastructure' },
-                    { title: 'Peaceful', label: 'Living' },
-                    { title: 'Rapidly', label: 'Developing' },
-                  ].map((item) => (
-                    <div key={item.title} className="space-y-1">
-                      <div className="text-sm font-bold">{item.title}</div>
-                      <div className="text-xs text-white/75">{item.label}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <div className="mt-5 grid gap-6 lg:grid-cols-[1.9fr_0.95fr]">
-          <div>
-            <div className="flex items-center justify-between">
-              <h2 className="text-[2rem] font-black tracking-[-0.04em] text-slate-950">Browse by Category</h2>
-              <button type="button" className="hidden items-center gap-2 text-sm font-semibold text-[#1E3A8A] md:inline-flex">
-                View All Categories
-                <ArrowRight className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="mt-4 grid grid-cols-2 gap-4 md:grid-cols-4 xl:grid-cols-8">
-              {categoryTiles.map(({ category, count }) => {
-                const { Icon, tone } = getCategoryPresentation(category);
-                const isMore = category.id === 'more';
-                return (
-                  <button
-                    key={category.id}
-                    type="button"
-                    onClick={() => onOpenCategoryPage(category.id, activeLocality?.id || activeLocalityId)}
-                    className="rounded-[22px] border border-slate-200 bg-white px-3 py-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
-                  >
-                    <div className={`mx-auto inline-flex h-14 w-14 items-center justify-center rounded-full ${isMore ? 'bg-slate-100 text-slate-500' : tone}`}>
-                      {isMore ? <MoreHorizontal className="h-5 w-5" /> : <Icon className="h-5 w-5" />}
-                    </div>
-                    <div className="mt-4 text-sm font-bold text-slate-900">{category.name}</div>
-                    <div className="mt-1 text-xs text-slate-500">{count}+</div>
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="mt-7 flex items-center justify-between">
-              <h2 className="text-[2rem] font-black tracking-[-0.04em] text-slate-950">Featured Businesses</h2>
-              <button type="button" onClick={() => onOpenCategoryPage(categoryTiles[0]?.category.id || categories[0]?.id || '', activeLocality?.id || activeLocalityId)} className="text-sm font-semibold text-[#1E3A8A]">View All</button>
-            </div>
-
-            <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-              {featuredBusinesses.map((business) => (
-                <div key={business.id}>
-                  <FeaturedBusinessCard business={business} localityLabel={localityLabel} onOpenDetails={(businessId) => onOpenListingPage(businessId, business.localityId)} />
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-7">
-              <div className="text-[1.55rem] font-black tracking-[-0.04em] text-slate-950">Popular Searches</div>
-              <div className="mt-4 flex flex-wrap gap-3">
-                {popularSearches.map((term) => (
-                  <button
-                    key={term}
-                    type="button"
-                    onClick={() => onOpenCategoryPage(categoryTiles[0]?.category.id || categories[0]?.id || '', activeLocality?.id || activeLocalityId)}
-                    className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm"
-                  >
-                    <Search className="h-3.5 w-3.5 text-slate-400" />
-                    <span>{term}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="mt-7">
-              <div className="text-[1.55rem] font-black tracking-[-0.04em] text-slate-950">About {localityLabel}</div>
-              <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                {aboutCards.map((card) => (
-                  <div key={card.title} className="rounded-[20px] border border-slate-200 bg-white p-4 shadow-sm">
-                    <div className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-[#eef4ff] text-[#1E3A8A]">
-                      <card.icon className="h-5 w-5" />
-                    </div>
-                    <div className="mt-4 text-base font-bold text-slate-900">{card.title}</div>
-                    <div className="mt-2 text-sm leading-6 text-slate-600">{card.detail}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="mt-7 rounded-[22px] border border-[#FFD54F]/40 bg-[linear-gradient(90deg,#fff9df_0%,#fff5f9_100%)] px-6 py-5 shadow-sm">
-              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                <div className="flex items-start gap-4">
-                  <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-[#1E3A8A] shadow-sm">
-                    <Sparkles className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <div className="text-[1.25rem] font-bold tracking-[-0.03em] text-slate-950">Need help finding the right local option?</div>
-                    <div className="mt-1 text-sm text-slate-600">Tell us what you need and we will help you discover the best local matches.</div>
-                  </div>
-                </div>
                 <button
                   type="button"
-                  className="inline-flex items-center gap-2 rounded-xl bg-[#0D1B2A] px-5 py-3 text-sm font-semibold text-white shadow-sm"
+                  onClick={() => onOpenCategoryPage(featuredCategoryId, activeLocality?.id || activeLocalityId)}
+                  className="rounded-full border border-[#D8E0EA] px-4 py-2 text-sm font-semibold text-[#667085]"
                 >
-                  Request a Recommendation
-                  <ArrowRight className="h-4 w-4" />
+                  A-Z index
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onOpenCategoryPage(featuredCategoryId, activeLocality?.id || activeLocalityId)}
+                  className="text-sm font-semibold text-[#C46A00]"
+                >
+                  View all {'->'}
                 </button>
               </div>
             </div>
+
+            <div className="mt-6 grid grid-cols-6 gap-4">
+              {visibleCategoryTiles.map(({ category, count, accent }) => (
+                <button
+                  key={category.id}
+                  type="button"
+                  onClick={() => onOpenCategoryPage(category.id, activeLocality?.id || activeLocalityId)}
+                  className="rounded-[18px] border border-[#E6EBF2] bg-white px-4 py-5 text-center transition hover:-translate-y-0.5 hover:border-[#F59E0B] hover:shadow-[0_10px_24px_rgba(15,23,42,0.06)]"
+                >
+                  <span className="mx-auto inline-flex h-11 w-11 items-center justify-center rounded-[14px]" style={{ backgroundColor: `${accent}16`, color: accent }}>
+                    <Grid2x2 className="h-5 w-5" />
+                  </span>
+                  <div className="mt-3 text-[13px] font-bold leading-4 text-[#111827]">{category.name}</div>
+                  <div className="mt-1 text-[11px] text-[#98A2B3]">{count} listings</div>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          {stripBannerAd ? (
+            <div className="mt-6">
+              <InFeedAdStrip
+                listingAd={stripBannerAd}
+                onOpenListingAd={onOpenListingAd}
+                onOpenLivePortal={onOpenLivePortal}
+                imageOnly
+              />
+            </div>
+          ) : null}
+
+          <div className="mt-6 space-y-6">
+            {sectionGroups.map((section) => (
+              <React.Fragment key={section.category.id}>
+                <DirectorySectionPanel
+                  categories={categories}
+                  section={section}
+                  onOpenCategoryPage={() => onOpenCategoryPage(section.category.id, activeLocality?.id || activeLocalityId)}
+                  onOpenListingPage={onOpenListingPage}
+                />
+              </React.Fragment>
+            ))}
           </div>
 
-          <aside className="space-y-4">
-            <SidebarCard
-              title={`Explore ${localityLabel} on Map`}
-              actionLabel="View Full Map"
-            >
-              <div className="relative h-[210px] overflow-hidden rounded-[18px] border border-slate-200 bg-[linear-gradient(180deg,#eef6ff_0%,#ffffff_100%)]">
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(59,130,246,0.08),transparent_20%),radial-gradient(circle_at_80%_30%,rgba(249,115,22,0.08),transparent_20%),radial-gradient(circle_at_50%_85%,rgba(34,197,94,0.08),transparent_20%)]" />
-                <svg viewBox="0 0 420 210" className="absolute inset-0 h-full w-full text-slate-200">
-                  <path d="M0 45 H420" stroke="currentColor" strokeWidth="2" />
-                  <path d="M0 92 H420" stroke="currentColor" strokeWidth="1.5" />
-                  <path d="M0 148 H420" stroke="currentColor" strokeWidth="1.5" />
-                  <path d="M70 0 V210" stroke="currentColor" strokeWidth="1.5" />
-                  <path d="M170 0 V210" stroke="currentColor" strokeWidth="2" />
-                  <path d="M278 0 V210" stroke="currentColor" strokeWidth="1.5" />
-                  <path d="M360 0 V210" stroke="currentColor" strokeWidth="1.5" />
-                  <path d="M310 0 C290 60 330 130 420 210" stroke="#bfdbfe" strokeWidth="16" fill="none" opacity="0.75" />
-                </svg>
-                {[
-                  { left: '11%', top: '58%', color: 'bg-rose-500' },
-                  { left: '35%', top: '32%', color: 'bg-violet-500' },
-                  { left: '48%', top: '76%', color: 'bg-green-500' },
-                  { left: '67%', top: '42%', color: 'bg-orange-500' },
-                  { left: '84%', top: '61%', color: 'bg-sky-500' },
-                  { left: '81%', top: '17%', color: 'bg-amber-500' },
-                ].map((pin, index) => (
-                  <span
-                    key={`${pin.left}-${pin.top}-${index}`}
-                    className={`absolute h-5 w-5 rounded-full ring-4 ring-white ${pin.color}`}
-                    style={{ left: pin.left, top: pin.top }}
-                  />
-                ))}
-                <div className="absolute left-1/2 top-1/2 rounded-full bg-white px-4 py-2 text-sm font-bold text-slate-900 shadow-md">
-                  {localityLabel}
+          <footer className="mt-8 bg-[#111827] px-10 py-10 text-white">
+            <div className="grid grid-cols-[1.5fr_1fr_1fr_1fr] gap-8">
+              <div>
+                <div className="text-[1.8rem] font-extrabold tracking-[-0.04em]">
+                  LOCALISY <span className="text-[0.95rem] uppercase tracking-[0.18em] text-[#F59E0B]">{localityLabel}</span>
                 </div>
+                <p className="mt-4 max-w-[320px] text-sm leading-6 text-[#98A2B3]">
+                  Discover trusted businesses in {localityLabel}. Hours are owner-confirmed and contact visibility follows verified access rules.
+                </p>
               </div>
-            </SidebarCard>
-
-            <SidebarCard title="Local Highlights">
-              <div className="grid grid-cols-2 gap-3">
-                {highlightCards.map((item) => (
-                  <div key={item.title} className="rounded-[18px] border border-slate-200 bg-white p-3">
-                    <div className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-[#eef4ff] text-[#1E3A8A]">
-                      <item.icon className="h-4 w-4" />
-                    </div>
-                    <div className="mt-3 text-sm font-semibold text-slate-900">{item.title}</div>
-                    <div className="mt-1 text-xs text-slate-500">{item.distance}</div>
-                  </div>
-                ))}
-              </div>
-            </SidebarCard>
-
-            <div className="overflow-hidden rounded-[24px] border border-[#FFD54F]/35 bg-[linear-gradient(90deg,#fff9e1_0%,#ffffff_100%)] p-6 shadow-sm">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <div className="text-[1.7rem] font-black tracking-[-0.04em] text-slate-950">Own a Business in {localityLabel}?</div>
-                  <div className="mt-2 max-w-[260px] text-sm leading-6 text-slate-600">
-                    Get discovered by thousands of local customers.
-                  </div>
-                  <button
-                    type="button"
-                    onClick={onOpenLivePortal}
-                    className="mt-6 inline-flex rounded-xl bg-[#0D1B2A] px-5 py-3 text-sm font-semibold text-white shadow-sm"
-                  >
-                    List Your Business
-                  </button>
-                </div>
-                <div className="hidden rounded-[20px] bg-white/90 p-5 text-[#1E3A8A] shadow-sm md:block">
-                  <Store className="h-16 w-16" />
-                </div>
-              </div>
+              <FooterColumn title="Explore" items={['Categories', 'Sectors', 'Offers']} />
+              <FooterColumn title="For business" items={['Claim a listing', 'Advertise', 'Lead reports']} />
+              <FooterColumn title="About locality" items={[`${approvedBusinesses.length} active listings`, `${visibleCategoryTiles.length} top categories`, `${primaryPincode} priority pincode`]} />
             </div>
-          </aside>
+            <div className="mt-8 flex items-center justify-between border-t border-white/10 pt-5 text-xs text-[#7C8799]">
+              <div>Copyright 2026 Localisy | {localityLabel} {primaryPincode}</div>
+              <div>Privacy | Terms | Report a listing</div>
+            </div>
+          </footer>
         </div>
       </div>
     </section>
   );
 }
 
-function StatItem({
-  value,
-  label,
-  highlight,
+function DesktopHomeShell({
+  localityLabel,
+  primaryPincode,
+  categories,
+  searchQuery,
+  setSearchQuery,
+  submitSearch,
+  recentSearchTerms,
+  onClearRecentSearches,
+  quickSearches,
+  resolvedPincode,
+  resolvedNodeLabel,
+  userSession,
+  onOpenPincodeModal,
+  onRequestAuth,
+  onLogout,
+  isAdvertiseActive,
+  isAccountActive,
+  onOpenLivePortal,
+  rotatingPrimaryHeroAd,
+  rotatingSecondaryHeroAd,
+  rotatingPrimaryHeroCount,
+  rotatingPrimaryHeroIndex,
+  stripBannerAd,
+  onOpenListingAd,
+  onOpenCityPage,
+  primaryPromo,
+  secondaryPromo,
+  shouldShowSuggestions,
+  onSearchFocus,
+  onSearchBlur,
+  matchingCategories,
+  matchingBusinesses,
+  suggestionResultCount,
+  onOpenCategoryPage,
+  onOpenListingPage,
 }: {
-  value: string;
-  label: string;
-  highlight?: 'star' | 'verified' | 'category';
+  localityLabel: string;
+  primaryPincode: string;
+  categories: Category[];
+  searchQuery: string;
+  setSearchQuery: (value: string) => void;
+  submitSearch: (query?: string) => void;
+  recentSearchTerms: string[];
+  onClearRecentSearches: () => void;
+  quickSearches: string[];
+  resolvedPincode: string;
+  resolvedNodeLabel: string;
+  userSession?: UserSession;
+  onOpenPincodeModal?: () => void;
+  onRequestAuth?: () => void;
+  onLogout?: () => void;
+  isAdvertiseActive: boolean;
+  isAccountActive: boolean;
+  onOpenLivePortal: () => void;
+  rotatingPrimaryHeroAd: ListingAd | null;
+  rotatingSecondaryHeroAd: ListingAd | null;
+  rotatingPrimaryHeroCount: number;
+  rotatingPrimaryHeroIndex: number;
+  onOpenListingAd?: (ad: ListingAd) => void;
+  onOpenCityPage: () => void;
+  primaryPromo: PromoCardContent;
+  secondaryPromo: PromoCardContent;
+  shouldShowSuggestions: boolean;
+  onSearchFocus: () => void;
+  onSearchBlur: () => void;
+  matchingCategories: CategoryTile[];
+  matchingBusinesses: Business[];
+  suggestionResultCount: number;
+  onOpenCategoryPage: (categoryId: string) => void;
+  onOpenListingPage: (businessId: string, localityId?: string) => void;
 }) {
-  const iconClassName = highlight === 'star'
-    ? 'bg-amber-50 text-amber-500'
-    : highlight === 'verified'
-      ? 'bg-[#eef8f1] text-[#1b8f5f]'
-      : 'bg-[#eef4ff] text-[#1E3A8A]';
+  const isAuthenticated = Boolean(userSession?.isAuthenticated && userSession?.userPhone);
 
   return (
-    <div className="flex items-center gap-3">
-      <span className={`inline-flex h-11 w-11 items-center justify-center rounded-2xl ${iconClassName}`}>
-        {highlight === 'star'
-          ? <Star className="h-5 w-5" />
-          : highlight === 'category'
-            ? <Grid2x2 className="h-5 w-5" />
-            : <ShieldCheck className="h-5 w-5" />}
-      </span>
-      <div>
-        <div className="text-[1.6rem] font-black tracking-[-0.04em] text-slate-950">
-          {highlight ? value : value.split('+')[0]}
-          {!highlight && value.includes('+') ? '+' : ''}
+    <div className="hidden lg:block">
+      <header className="bg-[#111827] px-8 py-5 text-white shadow-[0_1px_0_rgba(255,255,255,0.04)]">
+        <div className="mx-auto flex max-w-[1280px] items-center justify-between">
+          <div className="flex items-center gap-10">
+            <button
+              type="button"
+              onClick={onOpenCityPage}
+              className="flex items-center"
+            >
+              <img src={happyBusinessLogo} alt="Localisy" className="h-10 w-auto object-contain" />
+            </button>
+            <button
+              type="button"
+              onClick={onOpenPincodeModal || onOpenCityPage}
+              className="inline-flex cursor-pointer items-baseline gap-2 text-left"
+            >
+              <span className="text-[13px] font-normal uppercase tracking-[0.26em] text-[#F59E0B]">
+                {localityLabel} | {resolvedPincode}
+              </span>
+              <span className="cursor-pointer text-[13px] font-normal uppercase tracking-[0.22em] text-[#4F46E5] underline-offset-4 transition hover:underline">
+                (Change)
+              </span>
+            </button>
+          </div>
+          <div className="flex items-center gap-10">
+            <button
+              type="button"
+              onClick={onOpenLivePortal}
+              className={`cursor-pointer pb-1 text-[13px] font-normal text-white transition hover:text-white/85 ${isAdvertiseActive ? 'border-b-2 border-[#F59E0B]' : 'border-b-2 border-transparent'}`}
+            >
+              Advertise Business
+            </button>
+            {isAuthenticated ? (
+              <div className={`flex items-center gap-3 border-b-2 pb-1 text-[13px] font-normal text-white ${isAccountActive ? 'border-[#F59E0B]' : 'border-transparent'}`}>
+                <span>{userSession?.userName?.split(' ')[0] || 'Account'}</span>
+                <button type="button" onClick={onLogout} className="text-[13px] font-normal text-white/80 transition hover:text-white">
+                  Log Out
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={onRequestAuth}
+                className={`cursor-pointer border-b-2 pb-1 text-[13px] font-normal text-white transition hover:text-white/85 ${isAccountActive ? 'border-[#F59E0B]' : 'border-transparent'}`}
+              >
+                Sign In
+              </button>
+            )}
+          </div>
         </div>
-        <div className="text-xs text-slate-600">{label}</div>
+      </header>
+
+      <div className="bg-white px-8 py-6">
+        <div className="mx-auto max-w-[1280px]">
+          <div className="mb-3 text-[11px] font-bold uppercase tracking-[0.2em] text-[#C46A00]">Sponsored placement</div>
+          <div className="grid grid-cols-[minmax(0,1fr)_170px] gap-4">
+            {rotatingPrimaryHeroAd ? (
+              <ImageAdPromoCard listingAd={rotatingPrimaryHeroAd} onOpenListingAd={onOpenListingAd} onOpenLivePortal={onOpenLivePortal} />
+            ) : (
+              <PromoCard
+                tone="warm"
+                image={primaryPromo.image}
+                badge={primaryPromo.badge}
+                title={primaryPromo.title}
+                subtitle={primaryPromo.subtitle}
+                cta={primaryPromo.cta}
+                onClick={primaryPromo.onClick}
+              />
+            )}
+            {rotatingSecondaryHeroAd ? (
+              <ImageAdPromoCard listingAd={rotatingSecondaryHeroAd} compact onOpenListingAd={onOpenListingAd} onOpenLivePortal={onOpenLivePortal} />
+            ) : (
+              <PromoCard
+                tone="berry"
+                image={secondaryPromo.image}
+                badge={secondaryPromo.badge}
+                title={secondaryPromo.title}
+                subtitle={secondaryPromo.subtitle}
+                cta={secondaryPromo.cta}
+                compact
+                onClick={secondaryPromo.onClick}
+              />
+            )}
+          </div>
+          <div className="mt-3 flex gap-2">
+            {Array.from({ length: Math.max(rotatingPrimaryHeroCount || 0, 1) }).map((_, index) => (
+              <span
+                key={`hero-dot-${index}`}
+                className={`h-[3px] w-[30px] rounded-full ${index === rotatingPrimaryHeroIndex ? 'bg-[#F59E0B]' : 'bg-[#E5E7EB]'}`}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-[#111827] px-8 py-4">
+        <div className="mx-auto grid max-w-[1280px] grid-cols-[minmax(0,1fr)_360px] items-center gap-6">
+          <div className="relative">
+            <div className="rounded-[16px] border border-white/16 bg-[#2B3446] p-2 shadow-[0_14px_34px_rgba(2,6,23,0.28)]">
+              <div className="flex items-center rounded-[12px] bg-white px-4 py-2.5">
+                <Search className="h-4 w-4 text-[#98A2B3]" />
+                <input
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  onFocus={onSearchFocus}
+                  onBlur={onSearchBlur}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      submitSearch();
+                    }
+                  }}
+                  placeholder="Search businesses, categories, services..."
+                  className="min-w-0 flex-1 border-0 bg-transparent px-3 text-base text-[#111827] outline-none"
+                />
+                <div className="mr-4 flex items-center gap-2 border-l border-[#E5E7EB] pl-4 text-xs font-semibold uppercase tracking-[0.12em] text-[#98A2B3]">
+                  <MapPin className="h-3.5 w-3.5 text-[#F59E0B]" />
+                  <span>{localityLabel} | {primaryPincode}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => submitSearch()}
+                  className="rounded-[10px] bg-[#F59E0B] px-5 py-2.5 text-sm font-bold text-[#111827]"
+                >
+                  Search
+                </button>
+              </div>
+            </div>
+
+            {shouldShowSuggestions ? (
+              <div className="absolute left-2 right-2 top-[calc(100%+14px)] z-20 overflow-hidden rounded-[18px] border border-[#E2E8F0] bg-white shadow-[0_20px_50px_rgba(15,23,42,0.16)]">
+                <SearchSuggestionsPanel
+                  searchQuery={searchQuery}
+                  recentSearchTerms={recentSearchTerms}
+                  matchingCategories={matchingCategories}
+                  matchingBusinesses={matchingBusinesses}
+                  categories={categories}
+                  suggestionResultCount={suggestionResultCount}
+                  onOpenCategoryPage={onOpenCategoryPage}
+                  onOpenListingPage={onOpenListingPage}
+                  onClearRecent={onClearRecentSearches}
+                  onSubmitSearch={submitSearch}
+                />
+              </div>
+            ) : null}
+          </div>
+
+          <div className="space-y-3">
+            <div className="text-[1.2rem] font-extrabold leading-tight tracking-[-0.04em] text-white">
+              Every trusted business in <span className="text-[#F59E0B]">{localityLabel}</span>, in one place.
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {quickSearches.map((term) => (
+                <button
+                  key={term}
+                  type="button"
+                  onClick={() => submitSearch(term)}
+                  className="rounded-full bg-white/10 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/20"
+                >
+                  {term}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
-function FeaturedBusinessCard({
-  business,
-  localityLabel,
-  onOpenDetails,
+function ImageAdPromoCard({
+  listingAd,
+  compact = false,
+  onOpenListingAd,
+  onOpenLivePortal,
 }: {
-  business: Business;
-  localityLabel: string;
-  onOpenDetails?: (businessId: string) => void;
+  listingAd: ListingAd;
+  compact?: boolean;
+  onOpenListingAd?: (ad: ListingAd) => void;
+  onOpenLivePortal: () => void;
 }) {
-  const image = business.imageUrl || 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=800&q=80';
+  const adImage = getMediaProxyUrl(listingAd.imageUrl || '');
+
   return (
-    <article className="overflow-hidden rounded-[20px] border border-slate-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
-      <div className="relative h-36 overflow-hidden">
-        <img src={image} alt={business.name} className="h-full w-full object-cover" />
-        <div className="absolute left-3 top-3 rounded-full bg-[#FFF4CC] px-3 py-1 text-xs font-semibold text-[#0D1B2A] shadow-sm">
-          Open
-        </div>
+    <button
+      type="button"
+      onClick={() => onOpenListingAd ? onOpenListingAd(listingAd) : onOpenLivePortal()}
+      className={`relative block overflow-hidden text-left ${compact ? 'min-h-[240px]' : 'min-h-[240px]'}`}
+    >
+      <img src={adImage} alt={listingAd.title} className="absolute inset-0 h-full w-full object-cover" />
+      <div className="absolute left-4 top-4 z-10 inline-flex rounded-md bg-[#FBBF24] px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-[#111827]">
+        {listingAd.badge || 'Sponsored'}
       </div>
-      <div className="p-4">
-        <div className="flex items-start justify-between gap-3">
+    </button>
+  );
+}
+
+function MobileHomeShell({
+  localityLabel,
+  categories,
+  heroPromo,
+  searchQuery,
+  setSearchQuery,
+  submitSearch,
+  recentSearchTerms,
+  onClearRecentSearches,
+  quickSearches,
+  resolvedPincode,
+  resolvedNodeLabel,
+  userSession,
+  isMobileMenuOpen,
+  setIsMobileMenuOpen,
+  onOpenPincodeModal,
+  onRequestAuth,
+  onLogout,
+  onOpenLivePortal,
+  shouldShowSuggestions,
+  onSearchFocus,
+  onSearchBlur,
+  matchingCategories,
+  matchingBusinesses,
+  suggestionResultCount,
+  onOpenCategoryPage,
+  onOpenListingPage,
+}: {
+  localityLabel: string;
+  categories: Category[];
+  heroPromo: PromoCardContent;
+  searchQuery: string;
+  setSearchQuery: (value: string) => void;
+  submitSearch: (query?: string) => void;
+  recentSearchTerms: string[];
+  onClearRecentSearches: () => void;
+  quickSearches: string[];
+  resolvedPincode: string;
+  resolvedNodeLabel: string;
+  userSession?: UserSession;
+  isMobileMenuOpen: boolean;
+  setIsMobileMenuOpen: (value: boolean) => void;
+  onOpenPincodeModal?: () => void;
+  onRequestAuth?: () => void;
+  onLogout?: () => void;
+  onOpenLivePortal: () => void;
+  shouldShowSuggestions: boolean;
+  onSearchFocus: () => void;
+  onSearchBlur: () => void;
+  matchingCategories: CategoryTile[];
+  matchingBusinesses: Business[];
+  suggestionResultCount: number;
+  onOpenCategoryPage: (categoryId: string) => void;
+  onOpenListingPage: (businessId: string, localityId?: string) => void;
+}) {
+  const isAuthenticated = Boolean(userSession?.isAuthenticated && userSession?.userPhone);
+
+  return (
+    <div className="px-4 pt-4 lg:hidden">
+      <section className="overflow-hidden rounded-[24px] bg-[#111827] text-white shadow-[0_20px_40px_rgba(15,23,42,0.18)]">
+        <div className="flex items-center justify-between border-b border-white/10 px-4 py-4">
+          <div>
+            <div className="text-[1.5rem] font-extrabold tracking-[-0.04em]">LOCALISY</div>
+            <button
+              type="button"
+              onClick={onOpenPincodeModal}
+              className="mt-1 inline-flex items-center gap-1 rounded-full bg-white/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.1em] text-[#F59E0B]"
+            >
+              <MapPin className="h-3 w-3" />
+              {resolvedPincode} | {resolvedNodeLabel}
+            </button>
+          </div>
+          <div className="relative">
           <button
             type="button"
-            onClick={() => onOpenDetails?.(business.id)}
-            className="text-left text-base font-bold text-slate-950 transition hover:text-[#1E3A8A]"
+            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            className="inline-flex h-11 w-11 items-center justify-center rounded-[14px] border border-white/12 bg-white/5"
           >
-            {business.name}
+            <Menu className="h-5 w-5" />
           </button>
-          <div className="inline-flex items-center gap-1 text-sm font-semibold text-slate-700">
-            <Star className="h-3.5 w-3.5 text-amber-500" />
-            <span>{formatRating(business.rating)}</span>
-            <span className="text-xs text-slate-400">({business.reviewCount})</span>
+            {isMobileMenuOpen ? (
+              <div className="absolute right-0 top-[calc(100%+10px)] z-30 w-56 rounded-[18px] border border-slate-200 bg-white p-2 text-[#111827] shadow-[0_20px_50px_rgba(15,23,42,0.28)]">
+                <button type="button" onClick={onOpenPincodeModal} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold hover:bg-slate-50">
+                  <MapPin className="h-4 w-4 text-indigo-600" />
+                  Change pincode
+                </button>
+                <button type="button" onClick={onOpenLivePortal} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold hover:bg-slate-50">
+                  <ArrowRight className="h-4 w-4 text-[#F59E0B]" />
+                  Advertise business
+                </button>
+                {isAuthenticated ? (
+                  <button type="button" onClick={onLogout} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold text-rose-600 hover:bg-rose-50">
+                    <LogOut className="h-4 w-4" />
+                    Log out
+                  </button>
+                ) : (
+                  <button type="button" onClick={onRequestAuth} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold hover:bg-indigo-50">
+                    <User className="h-4 w-4 text-indigo-600" />
+                    Sign in
+                  </button>
+                )}
+              </div>
+            ) : null}
           </div>
         </div>
-        <div className="mt-1 text-sm text-slate-600">{business.sourceSubcategoryLabel || business.sourceCategoryLabel || 'Trusted local business'}</div>
-        <div className="mt-3 flex items-center gap-1 text-xs text-slate-500">
-          <MapPin className="h-3.5 w-3.5" />
-          <span>{localityLabel}</span>
+
+        <div className="px-4 py-5">
+          <h1 className="max-w-[290px] text-[2rem] font-extrabold leading-[1.02] tracking-[-0.04em]">
+            Every trusted business in <span className="text-[#F59E0B]">{localityLabel}.</span>
+          </h1>
+
+          <div className="relative mt-5">
+            <div className="flex items-center rounded-[14px] bg-white px-3 py-3 text-[#111827]">
+              <Search className="h-4 w-4 text-[#98A2B3]" />
+              <input
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                onFocus={onSearchFocus}
+                onBlur={onSearchBlur}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    submitSearch();
+                  }
+                }}
+                placeholder="Search businesses, categories, services..."
+                className="min-w-0 flex-1 border-0 bg-transparent px-3 text-[15px] outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => submitSearch()}
+                className="rounded-[10px] bg-[#F59E0B] px-4 py-2 text-sm font-bold text-[#111827]"
+              >
+                Go
+              </button>
+            </div>
+
+            {shouldShowSuggestions ? (
+              <div className="absolute left-0 right-0 top-[calc(100%+10px)] z-20 overflow-hidden rounded-[16px] border border-[#E2E8F0] bg-white shadow-[0_20px_50px_rgba(15,23,42,0.18)]">
+                <SearchSuggestionsPanel
+                  searchQuery={searchQuery}
+                  recentSearchTerms={recentSearchTerms}
+                  matchingCategories={matchingCategories}
+                  matchingBusinesses={matchingBusinesses}
+                  categories={categories}
+                  suggestionResultCount={suggestionResultCount}
+                  onOpenCategoryPage={onOpenCategoryPage}
+                  onOpenListingPage={onOpenListingPage}
+                  onClearRecent={onClearRecentSearches}
+                  onSubmitSearch={submitSearch}
+                  compact
+                />
+              </div>
+            ) : null}
+          </div>
         </div>
-        <div className="mt-4 flex items-center gap-2">
-          <button type="button" className="inline-flex flex-1 items-center justify-center gap-1 rounded-full border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-800">
-            <Phone className="h-3.5 w-3.5 text-[#1E3A8A]" />
-            Call
-          </button>
-          <button type="button" className="inline-flex flex-1 items-center justify-center gap-1 rounded-full border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-800">
-            <Navigation className="h-3.5 w-3.5 text-slate-500" />
-            Directions
-          </button>
-          <button type="button" className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#c9d8ff] text-[#1E3A8A]">
-            <MessageCircle className="h-4 w-4" />
-          </button>
+
+        <div className="bg-white px-4 pb-4 text-[#111827]">
+          <div className="overflow-hidden rounded-[16px]">
+            <button type="button" onClick={heroPromo.onClick} className="relative block h-[154px] w-full text-left">
+              <img src={heroPromo.image} alt={heroPromo.title || localityLabel} className="absolute inset-0 h-full w-full object-cover" />
+              <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(10,94,84,0.88)_0%,rgba(15,23,42,0.18)_100%)]" />
+              <div className="relative z-10 flex h-full flex-col justify-end px-4 py-4 text-white">
+                <span className="mb-2 inline-flex w-fit rounded-md bg-[#F59E0B] px-2 py-1 text-[11px] font-bold uppercase tracking-[0.08em] text-[#111827]">
+                  {heroPromo.badge}
+                </span>
+                <div className="text-[1.6rem] font-extrabold tracking-[-0.04em]">
+                  {heroPromo.title}
+                </div>
+                <div className="mt-1 max-w-[240px] text-[12px] text-white/80">{heroPromo.subtitle}</div>
+              </div>
+            </button>
+          </div>
+          <div className="mt-2 flex gap-2">
+            <span className="h-[3px] w-[28px] rounded-full bg-[#F59E0B]" />
+            <span className="h-[3px] w-[28px] rounded-full bg-[#D9DDE6]" />
+            <span className="h-[3px] w-[28px] rounded-full bg-[#D9DDE6]" />
+            <span className="h-[3px] w-[28px] rounded-full bg-[#D9DDE6]" />
+          </div>
+          <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+            {quickSearches.map((term) => (
+              <button
+                key={term}
+                type="button"
+                onClick={() => submitSearch(term)}
+                className="inline-flex whitespace-nowrap rounded-full bg-[#EFF3F8] px-3 py-2 text-[12px] font-medium text-[#667085]"
+              >
+                {term}
+              </button>
+            ))}
+          </div>
         </div>
-        {onOpenDetails ? (
-          <button
-            type="button"
-            onClick={() => onOpenDetails(business.id)}
-            className="mt-3 inline-flex text-xs font-semibold text-[#1E3A8A]"
-          >
-            View details
-          </button>
-        ) : null}
+      </section>
+    </div>
+  );
+}
+
+function PromoCard({
+  tone,
+  image,
+  badge,
+  title,
+  subtitle,
+  cta,
+  compact = false,
+  onClick,
+}: {
+  tone: 'warm' | 'berry';
+  image: string;
+  badge: string;
+  title: string;
+  subtitle: string;
+  cta: string;
+  compact?: boolean;
+  onClick: () => void;
+}) {
+  const overlay = tone === 'warm'
+    ? 'bg-[linear-gradient(90deg,rgba(202,83,16,0.88)_0%,rgba(111,36,10,0.42)_100%)]'
+    : 'bg-[linear-gradient(180deg,rgba(162,28,98,0.88)_0%,rgba(86,22,63,0.82)_100%)]';
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`relative overflow-hidden rounded-[16px] text-left text-white ${compact ? 'min-h-[160px]' : 'min-h-[160px]'}`}
+    >
+      <img src={image} alt={title} className="absolute inset-0 h-full w-full object-cover" />
+      <div className={`absolute inset-0 ${overlay}`} />
+      <div className={`relative z-10 flex h-full flex-col justify-between ${compact ? 'px-4 py-4' : 'px-7 py-6'}`}>
+        <div>
+          <span className="inline-flex rounded-md bg-[#FBBF24] px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-[#111827]">
+            {badge}
+          </span>
+          <div className={`mt-3 font-extrabold leading-[1.02] tracking-[-0.04em] ${compact ? 'text-[1.15rem]' : 'max-w-[440px] text-[2.1rem]'}`}>
+            {title}
+          </div>
+          <div className={`mt-2 text-white/85 ${compact ? 'text-[11px]' : 'text-sm'}`}>{subtitle}</div>
+        </div>
+        <div>
+          <span className={`inline-flex rounded-[10px] font-bold ${compact ? 'bg-white px-3 py-2 text-xs text-[#5B1C4A]' : 'bg-[#FBBF24] px-4 py-2.5 text-sm text-[#111827]'}`}>
+            {cta}
+          </span>
+        </div>
+      </div>
+    </button>
+  );
+}
+
+function DirectorySectionPanel({
+  categories,
+  section,
+  onOpenCategoryPage,
+  onOpenListingPage,
+}: {
+  categories: Category[];
+  section: SectionGroup;
+  onOpenCategoryPage: () => void;
+  onOpenListingPage: (businessId: string, localityId?: string) => void;
+}) {
+  return (
+    <section className="bg-white px-4 py-4 shadow-[0_10px_30px_rgba(15,23,42,0.05)]">
+      <div className="mb-4 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: section.accent }} />
+          <h3 className="text-[1.1rem] font-extrabold tracking-[-0.03em] text-[#111827]">{section.category.name}</h3>
+          <div className="flex gap-2">
+            {section.chips.map((chip) => (
+              <span key={`${section.category.id}-${chip}`} className="rounded-full bg-[#F2F4F7] px-3 py-1 text-[11px] font-semibold text-[#667085]">
+                {chip}
+              </span>
+            ))}
+          </div>
+        </div>
+        <button type="button" onClick={onOpenCategoryPage} className="text-sm font-semibold text-[#C46A00]">
+          All {section.count} sub-categories {'->'}
+        </button>
+      </div>
+
+      <div className="grid grid-cols-4 gap-4">
+        {section.listings.map((business) => (
+          <DirectoryListingCard
+            key={business.id}
+            business={business}
+            categoryLabel={getBusinessSearchLabel(business, categories)}
+            onOpenListingPage={onOpenListingPage}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function DirectoryListingCard({
+  business,
+  categoryLabel,
+  onOpenListingPage,
+}: {
+  business: Business;
+  categoryLabel: string;
+  onOpenListingPage: (businessId: string, localityId?: string) => void;
+}) {
+  const imageUrl = business.coverImageUrl || business.imageUrl || 'https://images.unsplash.com/photo-1498050108023-c5249f4df085?auto=format&fit=crop&w=720&q=80';
+  const badgeLabel = business.featured ? 'Sponsored' : (!business.phone ? 'Unclaimed' : business.verifiedBadge ? 'Verified' : '');
+
+  return (
+    <article className="overflow-hidden rounded-[18px] border border-[#E6EBF2] bg-white">
+      <button
+        type="button"
+        onClick={() => onOpenListingPage(business.id, business.localityId)}
+        className="block w-full text-left"
+      >
+        <div className="relative aspect-[0.92/1] overflow-hidden bg-[#EEF2F7]">
+          <img src={getMediaProxyUrl(imageUrl)} alt={business.name} className="h-full w-full object-cover" />
+          {badgeLabel ? (
+            <span className={`absolute left-2 top-2 rounded-md px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] ${business.featured ? 'bg-[#FBBF24] text-[#111827]' : 'bg-white/90 text-[#667085]'}`}>
+              {badgeLabel}
+            </span>
+          ) : null}
+          <span className="absolute bottom-2 right-2 inline-flex items-center gap-1 rounded-md bg-white px-2 py-1 text-[11px] font-bold text-[#111827] shadow-sm">
+            <Star className="h-3 w-3 fill-[#F59E0B] text-[#F59E0B]" />
+            {formatRating(business.rating)}
+          </span>
+        </div>
+      </button>
+
+      <div className="px-3 pb-3 pt-3">
+        <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#C46A00]">{categoryLabel}</div>
+        <div className="mt-2 text-[1rem] font-extrabold leading-5 text-[#111827]">{business.name}</div>
+        <div className="mt-1 text-[12px] text-[#98A2B3]">
+          {getBusinessLocationLabel(business)} | {Math.max(business.reviewCount || 0, 0)} ratings
+        </div>
+        <div className="mt-1 flex items-center gap-1 text-[12px] text-[#667085]">
+          <span className="h-1.5 w-1.5 rounded-full bg-[#22C55E]" />
+          <span>{getBusinessHoursLabel(business)}</span>
+        </div>
+        <button
+          type="button"
+          onClick={() => onOpenListingPage(business.id, business.localityId)}
+          className={`show-number-action mt-3 w-full rounded-[12px] px-3 py-3 text-sm ${business.phone ? 'bg-[#0F172A] text-white' : 'border border-[#E4E7EC] bg-white text-[#667085]'}`}
+        >
+          {business.phone ? 'Show number' : 'Send enquiry'}
+        </button>
       </div>
     </article>
   );
 }
 
-function SidebarCard({
-  title,
-  actionLabel,
-  children,
+function InFeedAdStrip({
+  listingAd,
+  onOpenListingAd,
+  onOpenLivePortal,
+  imageOnly = false,
 }: {
-  title: string;
-  actionLabel?: string;
-  children: React.ReactNode;
+  listingAd: ListingAd | null;
+  onOpenListingAd?: (ad: ListingAd) => void;
+  onOpenLivePortal: () => void;
+  imageOnly?: boolean;
+}) {
+  if (listingAd) {
+    const adImage = getMediaProxyUrl(listingAd.imageUrl || '');
+    if (imageOnly && adImage) {
+      return (
+        <button
+          type="button"
+          onClick={() => onOpenListingAd ? onOpenListingAd(listingAd) : onOpenLivePortal()}
+          className="relative block w-full overflow-hidden text-left"
+        >
+          <img src={adImage} alt={listingAd.title} className="block h-auto w-full object-cover" />
+        </button>
+      );
+    }
+
+    return (
+      <button
+        type="button"
+        onClick={() => onOpenListingAd ? onOpenListingAd(listingAd) : onOpenLivePortal()}
+        className="relative block w-full overflow-hidden rounded-[18px] text-left"
+        style={{ backgroundColor: listingAd.backgroundColor || '#111827' }}
+      >
+        {adImage ? <img src={adImage} alt={listingAd.title} className="absolute inset-0 h-full w-full object-cover opacity-30" /> : null}
+        <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(15,23,42,0.92)_0%,rgba(15,23,42,0.78)_52%,rgba(15,23,42,0.52)_100%)]" />
+        <div className="relative z-10 flex items-center justify-between gap-6 px-6 py-5 text-white">
+          <div className="min-w-0">
+            <div className="flex items-center gap-4">
+              <span className="rounded-md bg-[#F59E0B] px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[#111827]">
+                {listingAd.badge || 'Ad'}
+              </span>
+              {listingAd.placementKey ? <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-white/60">{listingAd.placementKey.replace(/_/g, ' ')}</span> : null}
+            </div>
+            <div className="mt-3 text-lg font-extrabold tracking-[-0.03em]">{listingAd.title}</div>
+            <div className="mt-1 max-w-[760px] text-sm text-white/78">{listingAd.description}</div>
+          </div>
+          <span className="shrink-0 rounded-[10px] bg-white px-4 py-2 text-sm font-bold text-[#111827]">
+            {listingAd.ctaText || 'Explore'}
+          </span>
+        </div>
+      </button>
+    );
+  }
+
+  return (
+    <div className="overflow-hidden rounded-[18px] bg-[#111827]">
+      <div className="flex items-center justify-between px-6 py-5 text-white">
+        <div className="flex items-center gap-4">
+          <span className="rounded-md bg-[#F59E0B] px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[#111827]">Ad</span>
+          <div className="text-lg font-extrabold tracking-[-0.03em]">Your shop, top of this row, from Rs 499 a week</div>
+        </div>
+        <button
+          type="button"
+          onClick={onOpenLivePortal}
+          className="rounded-[10px] bg-white px-4 py-2 text-sm font-bold text-[#111827]"
+        >
+          See rates
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function FooterColumn({ title, items }: { title: string; items: string[] }) {
+  return (
+    <div>
+      <div className="text-sm font-bold text-white">{title}</div>
+      <div className="mt-3 space-y-2 text-sm text-[#98A2B3]">
+        {items.map((item) => <div key={item}>{item}</div>)}
+      </div>
+    </div>
+  );
+}
+
+function SearchSuggestionsPanel({
+  searchQuery,
+  recentSearchTerms,
+  matchingCategories,
+  matchingBusinesses,
+  categories,
+  suggestionResultCount,
+  onOpenCategoryPage,
+  onOpenListingPage,
+  onClearRecent,
+  onSubmitSearch,
+  compact = false,
+}: {
+  searchQuery: string;
+  recentSearchTerms: string[];
+  matchingCategories: CategoryTile[];
+  matchingBusinesses: Business[];
+  categories: Category[];
+  suggestionResultCount: number;
+  onOpenCategoryPage: (categoryId: string) => void;
+  onOpenListingPage: (businessId: string, localityId?: string) => void;
+  onClearRecent: () => void;
+  onSubmitSearch: (query?: string) => void;
+  compact?: boolean;
 }) {
   return (
-    <section className="rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div className="text-[1.35rem] font-bold tracking-[-0.03em] text-slate-950">{title}</div>
-        {actionLabel ? <button type="button" className="text-sm font-semibold text-[#1E3A8A]">{actionLabel}</button> : null}
+    <div className="text-[#0F172A]">
+      {recentSearchTerms.length > 0 ? (
+        <div className="border-b border-[#E2E8F0] px-4 py-4">
+          <div className="mb-3 flex items-center justify-between">
+            <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#94A3B8]">Recent</div>
+            <button type="button" onClick={onClearRecent} className="text-sm text-[#94A3B8]">Clear</button>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {recentSearchTerms.map((term) => (
+              <button
+                key={term}
+                type="button"
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  onSubmitSearch(term);
+                }}
+                className="rounded-full border border-[#E2E8F0] bg-[#F8FAFC] px-4 py-2 text-sm text-[#667085] hover:border-[#F59E0B] hover:text-[#111827]"
+              >
+                {term}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      <div className="border-b border-[#E2E8F0] px-4 py-3">
+        <div className="mb-3 text-[11px] font-bold uppercase tracking-[0.16em] text-[#94A3B8]">Categories</div>
+        <div className="space-y-1">
+          {matchingCategories.slice(0, 5).map(({ category, count }) => (
+            <button
+              key={category.id}
+              type="button"
+              onMouseDown={(event) => {
+                event.preventDefault();
+                onOpenCategoryPage(category.id);
+              }}
+              className="flex w-full items-center justify-between gap-3 rounded-xl px-1 py-2 text-left transition hover:bg-[#F8FAFC]"
+            >
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-[#FCE7F3] text-[#C0266D]">
+                  <Grid2x2 className="h-4 w-4" />
+                </span>
+                <div className="min-w-0">
+                  <div className="truncate text-[1.02rem] font-bold text-[#B45309]">{category.name}</div>
+                  <div className="truncate text-sm text-[#94A3B8]">{count} listings</div>
+                </div>
+              </div>
+              <ArrowRight className="h-4 w-4 text-[#C7CEDB]" />
+            </button>
+          ))}
+          {matchingCategories.length === 0 ? (
+            <div className="rounded-xl bg-[#F8FAFC] px-3 py-3 text-sm text-[#94A3B8]">
+              No matching categories found.
+            </div>
+          ) : null}
+        </div>
       </div>
-      {children}
-    </section>
+
+      <div className="px-4 py-3">
+        <div className="mb-3 text-[11px] font-bold uppercase tracking-[0.16em] text-[#94A3B8]">Businesses</div>
+        <div className="space-y-2">
+          {matchingBusinesses.slice(0, 5).map((business) => (
+            <button
+              key={business.id}
+              type="button"
+              onMouseDown={(event) => {
+                event.preventDefault();
+                onOpenListingPage(business.id, business.localityId);
+              }}
+              className="flex w-full items-center justify-between gap-3 rounded-xl px-1 py-2 text-left transition hover:bg-[#F8FAFC]"
+            >
+              <div className="flex min-w-0 items-center gap-3">
+                <img
+                  src={getMediaProxyUrl(business.imageUrl || business.coverImageUrl || 'https://images.unsplash.com/photo-1521590832167-7bcbfaa6381f?auto=format&fit=crop&w=120&q=80')}
+                  alt={business.name}
+                  className="h-12 w-12 rounded-xl object-cover"
+                />
+                <div className="min-w-0">
+                  <div className="truncate text-[1.02rem] font-bold text-[#B45309]">{business.name}</div>
+                  <div className="truncate text-sm text-[#94A3B8]">{getBusinessSearchLabel(business, categories)} | {getBusinessLocationLabel(business)} | {getBusinessHoursLabel(business)}</div>
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-3">
+                {business.featured ? (
+                  <span className="rounded-md bg-[#FEF3C7] px-2 py-1 text-[11px] font-bold uppercase tracking-[0.06em] text-[#B45309]">
+                    Sponsored
+                  </span>
+                ) : null}
+                <div className="flex items-center gap-1 text-sm font-bold text-[#047857]">
+                  <Star className="h-3.5 w-3.5 fill-current" />
+                  <span>{formatRating(business.rating)}</span>
+                </div>
+              </div>
+            </button>
+          ))}
+          {matchingBusinesses.length === 0 ? (
+            <div className="rounded-xl bg-[#F8FAFC] px-3 py-3 text-sm text-[#94A3B8]">
+              No matching businesses found yet.
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between border-t border-[#E2E8F0] px-4 py-4">
+        <button
+          type="button"
+          onMouseDown={(event) => {
+            event.preventDefault();
+            onSubmitSearch(searchQuery);
+          }}
+          className={`font-semibold text-[#B45309] ${compact ? 'text-sm' : 'text-[1.02rem]'}`}
+        >
+            View all {Math.max(suggestionResultCount, matchingBusinesses.length)} results for "{searchQuery || 'search'}" {'->'}
+        </button>
+        {!compact ? (
+          <div className="inline-flex items-center gap-2 text-sm text-[#94A3B8]">
+            <span className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-[#E2E8F0]">Enter</span>
+            <span>to search</span>
+          </div>
+        ) : null}
+      </div>
+    </div>
   );
 }

@@ -18,10 +18,12 @@ import homepageDefaultsBootstrap from '../../homepage-defaults-config.json';
 import { MASTER_STATES, MASTER_CITIES, MASTER_LOCALITIES, MASTER_AREAS } from '../geographyMaster';
 import OtpVerificationModal from './OtpVerificationModal';
 import GoogleLocationPicker from './GoogleLocationPicker';
+import LocalityLandingUiV1 from './ux/LocalityLandingUiV1';
 import NoResultsState from './webportal/NoResultsState';
 import ResultsMapView from './webportal/ResultsMapView';
 import { getBusinessImageUrl, getCategoryFallbackImage, hasUploadedBusinessImage } from '../utils/businessImage';
 import { getMediaProxyUrl } from '../utils/mediaUrl';
+import happyBusinessLogo from '../assets/happy-business-logo.png';
 import { getAdCtr as getAdCtrService, getAdDeliveryScore as getAdDeliveryScoreService, rankAdsForDelivery as rankAdsForDeliveryService } from '../services/webportal/adDelivery';
 import {
   dedupeBusinessesForExperience as dedupeBusinessesForExperienceService,
@@ -279,6 +281,10 @@ interface WebPortalProps {
   coupons: MarketingCoupon[];
   onAddCoupon: (coupon: Omit<MarketingCoupon, 'id' | 'usageCount'>) => void;
   onLogAuditEvent?: (actionType: 'search' | 'contact_view' | 'data_entry', description: string, details: string) => void;
+  onOpenPincodeModal?: () => void;
+  onRequestAuth?: () => void;
+  onLogout?: () => void;
+  isAccountActive?: boolean;
 }
 
 export default function WebPortal({
@@ -328,7 +334,11 @@ export default function WebPortal({
   onUpdateCRMContact,
   coupons,
   onAddCoupon,
-  onLogAuditEvent
+  onLogAuditEvent,
+  onOpenPincodeModal,
+  onRequestAuth,
+  onLogout,
+  isAccountActive = false
 }: WebPortalProps) {
   const showSubdomainLocationMapping = false; // Hidden for production public UI.
   const SIMPLE_SEARCH_FORM = true;
@@ -796,6 +806,14 @@ export default function WebPortal({
       return next;
     });
   };
+  const clearRecentSearches = () => {
+    setRecentSearches([]);
+    try {
+      window.localStorage.removeItem(recentSearchStorageKey);
+    } catch {
+      // Ignore storage failures in private or blocked contexts.
+    }
+  };
   const buildSearchResultsRoutePath = (
     categoryId = selectedCategory,
     subcategoryId = selectedSubcategory,
@@ -884,6 +902,39 @@ export default function WebPortal({
   const openBusinessDetails = (biz: Business) => {
     setSelectedBiz(biz);
     pushHistoryIfNeeded(buildListingRoutePath(biz));
+  };
+  const openModernHomeCategoryPage = (categoryId: string, localityId?: string) => {
+    const targetLocalityId = localityId || currentLocality.id;
+    if (targetLocalityId !== currentLocality.id) {
+      const targetLocality = localities.find((entry) => entry.id === targetLocalityId);
+      if (!targetLocality) return;
+      onLocalityChange(targetLocalityId);
+      const nextPath = `/${targetLocality.slug || targetLocality.id}?category=${encodeURIComponent(categoryId)}`;
+      window.history.pushState({}, '', nextPath);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+      return;
+    }
+    openResultsForCategory(categoryId);
+  };
+  const openModernHomeListingPage = (businessId: string, localityId?: string) => {
+    const business = businesses.find((entry) => entry.id === businessId);
+    if (!business) return;
+    if (localityId && localityId !== currentLocality.id) {
+      onLocalityChange(localityId);
+      window.history.pushState({}, '', buildListingRoutePath(business));
+      window.dispatchEvent(new PopStateEvent('popstate'));
+      return;
+    }
+    openBusinessDetails(business);
+  };
+  const openModernHomeCityPage = () => {
+    const currentMasterLocality = MASTER_LOCALITIES.find((locality) => locality.id === currentLocality.id);
+    const currentMasterCity = currentMasterLocality
+      ? MASTER_CITIES.find((city) => city.id === currentMasterLocality.cityId)
+      : null;
+    if (!currentMasterCity) return;
+    window.history.pushState({}, '', `/city/${slugifyForUrl(currentMasterCity.name)}`);
+    window.dispatchEvent(new PopStateEvent('popstate'));
   };
   const handleShareBusinessListing = async (biz: Business) => {
     const listingUrl = buildAbsoluteListingUrl(biz);
@@ -3959,8 +4010,309 @@ export default function WebPortal({
     );
   };
 
+  const desktopResultsSidebarAds = useMemo(() => {
+    const merged = [...desktopResultAds, ...desktopSidebarAds];
+    const seen = new Set<string>();
+    return merged.filter((ad) => {
+      if (seen.has(ad.id)) return false;
+      seen.add(ad.id);
+      return true;
+    }).slice(0, 4);
+  }, [desktopResultAds, desktopSidebarAds]);
+
+  const desktopResultsInlineAds = useMemo(() => {
+    const merged = [...desktopResultAds, ...desktopSidebarAds];
+    const seen = new Set<string>();
+    return merged.filter((ad) => {
+      if (seen.has(ad.id)) return false;
+      seen.add(ad.id);
+      return true;
+    });
+  }, [desktopResultAds, desktopSidebarAds]);
+
+  const desktopResultsCategories = useMemo(() => (
+    BUSINESS_CATEGORIES
+      .map((category) => ({
+        id: category.id,
+        name: category.name,
+        count: approvedInLocality.filter((business) => business.categoryId === category.id).length,
+      }))
+      .filter((category) => category.count > 0)
+  ), [approvedInLocality]);
+
+  const desktopResultsStream = useMemo(() => {
+    const rows: Array<
+      | { type: 'listing'; id: string; business: Business }
+      | { type: 'ad'; id: string; ad: ListingAd }
+    > = [];
+    pagedSearchResultBusinesses.forEach((business, index) => {
+      rows.push({ type: 'listing', id: business.id, business });
+      const shouldInsertAd = desktopResultsInlineAds.length > 0 && (index + 1) % 3 === 0 && index !== pagedSearchResultBusinesses.length - 1;
+      if (shouldInsertAd) {
+        const ad = desktopResultsInlineAds[Math.floor(index / 3) % desktopResultsInlineAds.length];
+        rows.push({ type: 'ad', id: `${ad.id}-inline-${index}`, ad });
+      }
+    });
+    return rows;
+  }, [desktopResultsInlineAds, pagedSearchResultBusinesses]);
+
+  const desktopActiveFilterSummary = useMemo(() => {
+    const parts: string[] = [];
+    if (selectedCategory !== 'all') {
+      parts.push(getCategoryById(selectedCategory)?.name || selectedCategory);
+    }
+    if (filterRating === 4.5) parts.push('4.5 & up');
+    if (filterRating === 4) parts.push('4.0 & up');
+    if (filterOpenNow) parts.push('open now');
+    if (filterVerifiedOnly) parts.push('verified number');
+    const sortLabelMap: Record<string, string> = {
+      recommended: 'recommended',
+      popular: 'most reviewed',
+      rating: 'rating',
+      nearest: 'nearest',
+      newest: 'newest',
+    };
+    parts.push(`sorted by ${sortLabelMap[sortBy] || 'recommended'}`);
+    return parts;
+  }, [filterOpenNow, filterRating, filterVerifiedOnly, selectedCategory, sortBy]);
+
+  const clearDesktopResultsFilters = () => {
+    setSelectedCategory('all');
+    setSelectedSubcategory('all');
+    setFilterRating(0);
+    setFilterOpenNow(false);
+    setFilterVerifiedOnly(false);
+    setSortBy('recommended');
+  };
+
+  const maskBusinessPhone = (phone: string) => {
+    const digits = String(phone || '').replace(/\D/g, '').slice(-10);
+    if (!digits) return 'Number hidden';
+    return `+91 •••• ••${digits.slice(-2)}`;
+  };
+
+  const getDesktopListingTags = (biz: Business) => {
+    const chips = [
+      biz.sourceSubcategoryLabel,
+      ...(biz.tags || []),
+    ]
+      .map((entry) => String(entry || '').trim())
+      .filter(Boolean);
+    return Array.from(new Set(chips)).slice(0, 3);
+  };
+
+  const renderDesktopInlineResultAd = (ad: ListingAd) => {
+    const adImage = getMediaProxyUrl(ad.imageUrl);
+    return (
+      <button
+        key={ad.id}
+        type="button"
+        onClick={() => handleListingAdAction(ad)}
+        className="relative block w-full overflow-hidden rounded-[24px] bg-[#111827] text-left text-white shadow-sm"
+      >
+        {adImage ? (
+          <>
+            <img src={adImage} alt={ad.title} className="absolute inset-0 h-full w-full object-cover opacity-25" />
+            <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(15,23,42,0.95)_0%,rgba(15,23,42,0.82)_100%)]" />
+          </>
+        ) : null}
+        <div className="relative z-10 flex items-center justify-between gap-6 px-7 py-7">
+          <div className="min-w-0">
+            <span className="inline-flex rounded-md bg-[#F59E0B] px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[#111827]">
+              Ad
+            </span>
+            <div className="mt-3 text-[1.9rem] font-extrabold tracking-[-0.03em]">
+              {ad.title || `Top of "${activeSearchText || 'search'}" results`}
+            </div>
+            <div className="mt-2 text-sm text-white/80">
+              {ad.description || `Promote your business inside ${activeSearchText || 'search'} results.`}
+            </div>
+          </div>
+          <span className="shrink-0 rounded-[14px] bg-white px-5 py-3 text-sm font-bold text-[#111827]">
+            {ad.ctaText || 'See rates'}
+          </span>
+        </div>
+      </button>
+    );
+  };
+
+  const renderDesktopSearchResultRow = (biz: Business) => {
+    const imageUrl = getBusinessImageUrl(biz);
+    const listingTags = getDesktopListingTags(biz);
+    const showPrimaryButton = Boolean((biz.phone || '').replace(/\D/g, '').slice(-10));
+    const eyebrow = [getBusinessSubcategoryLabel(biz), getBusinessAreaName(biz)]
+      .map((value) => String(value || '').trim())
+      .filter(Boolean)
+      .join(' · ');
+    const description = String(biz.description || '').trim() || `${biz.name} is listed in ${getBusinessCategoryLabel(biz)} for ${getBusinessAreaName(biz) || currentLocalityLabel}.`;
+
+    return (
+      <article
+        key={biz.id}
+        onClick={() => openBusinessDetails(biz)}
+        className={`overflow-hidden rounded-[24px] border bg-white p-4 shadow-sm transition hover:border-[#F59E0B] ${biz.featured || biz.isSponsored ? 'border-[#F59E0B]' : 'border-[#E5E7EB]'}`}
+      >
+        <div className="grid grid-cols-[200px_minmax(0,1fr)_190px] gap-5">
+          <div className="relative overflow-hidden rounded-[18px] bg-slate-100">
+            <img
+              src={imageUrl}
+              alt={biz.name}
+              onError={(e) => {
+                (e.target as HTMLImageElement).src = getCategoryFallbackImage(biz.categoryId);
+              }}
+              className={`h-full min-h-[160px] w-full ${hasUploadedBusinessImage(biz) ? 'object-cover' : 'object-contain p-4'}`}
+            />
+            {biz.featured || biz.isSponsored ? (
+              <span className="absolute left-3 top-3 rounded-md bg-[#F59E0B] px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[#111827]">
+                Sponsored
+              </span>
+            ) : null}
+          </div>
+
+          <div className="min-w-0 py-1">
+            {eyebrow ? (
+              <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#C46A00]">
+                {eyebrow.toUpperCase()}
+              </div>
+            ) : null}
+            <h3 className="mt-2 text-[2rem] font-extrabold leading-tight tracking-[-0.04em] text-[#111827]">
+              {biz.name}
+            </h3>
+            <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-[#667085]">
+              <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2 py-1 font-bold text-white">
+                <Star className="h-3.5 w-3.5 fill-current" />
+                {biz.rating.toFixed(1)}
+              </span>
+              <span>{biz.reviewCount || 0} ratings</span>
+            </div>
+            <p className="mt-3 max-w-[620px] text-[15px] leading-7 text-[#667085]">
+              {description}
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {listingTags.map((tag) => (
+                <span key={`${biz.id}-${tag}`} className="rounded-full border border-[#E4E7EC] bg-[#F8FAFC] px-3 py-1.5 text-sm text-[#667085]">
+                  {tag}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <div className="border-l border-[#EAECF0] pl-5">
+            <div className="text-[1.65rem] font-bold leading-tight text-[#111827]">
+              {showPrimaryButton ? maskBusinessPhone(biz.phone) : 'Number hidden'}
+            </div>
+            <div className="mt-4 space-y-3">
+              <button
+                type="button"
+                onClick={(event) => {
+                  if (showPrimaryButton) {
+                    handlePrimaryBusinessAction(biz, event);
+                  } else {
+                    event.stopPropagation();
+                    openBusinessDetails(biz);
+                  }
+                }}
+                className={`show-number-action w-full rounded-[14px] px-4 py-3 text-sm ${showPrimaryButton ? 'bg-[#111827] text-white' : 'border border-[#E4E7EC] bg-white text-[#667085]'}`}
+              >
+                {showPrimaryButton ? 'Show number' : 'Send enquiry'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </article>
+    );
+  };
+
+  const renderMobileSearchResultRow = (biz: Business) => {
+    const imageUrl = getBusinessImageUrl(biz);
+    const showPrimaryButton = Boolean((biz.phone || '').replace(/\D/g, '').slice(-10));
+    const addressText = String(biz.address || '').trim() || `${getBusinessAreaName(biz) || currentLocalityLabel}`;
+    const hoursText = String(biz.hours || '').trim() || 'Hours not confirmed';
+    const distanceText = typeof biz.distance === 'number' && Number.isFinite(biz.distance)
+      ? `${biz.distance.toFixed(1)} km`
+      : null;
+    const statusText = [hoursText, distanceText].filter(Boolean).join(' · ');
+    const showPositiveStatus = !/not confirmed|closed/i.test(hoursText);
+
+    return (
+      <article
+        key={biz.id}
+        onClick={() => openBusinessDetails(biz)}
+        className={`overflow-hidden rounded-[24px] border bg-white p-6 shadow-sm transition ${biz.featured || biz.isSponsored ? 'border-[3px] border-[#F59E0B]' : 'border-[#D9E0EA]'}`}
+      >
+        <div className="flex gap-5">
+          <div className="relative h-[118px] w-[118px] shrink-0 overflow-hidden rounded-[18px] bg-slate-100">
+            <img
+              src={imageUrl}
+              alt={biz.name}
+              onError={(event) => {
+                (event.target as HTMLImageElement).src = getCategoryFallbackImage(biz.categoryId);
+              }}
+              className={`h-full w-full ${hasUploadedBusinessImage(biz) ? 'object-cover' : 'object-contain p-3'}`}
+            />
+          </div>
+
+          <div className="min-w-0 flex-1">
+            {biz.featured || biz.isSponsored ? (
+              <span className="inline-flex rounded-[10px] bg-[#FEF3C7] px-3 py-1 text-[11px] font-bold uppercase tracking-[0.12em] text-[#B45309]">
+                Sponsored
+              </span>
+            ) : null}
+            <h3 className="mt-2 text-[1.45rem] font-extrabold leading-tight tracking-[-0.04em] text-[#111827]">
+              {biz.name}
+            </h3>
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-[15px] text-[#667085]">
+              <span className="inline-flex items-center gap-1">
+                <Star className="h-4 w-4 fill-current text-[#667085]" />
+                <span>{biz.rating.toFixed(1)}</span>
+              </span>
+              <span>·</span>
+              <span>{biz.reviewCount || 0} ratings</span>
+            </div>
+            <div className="mt-2 flex items-start gap-2 text-[15px] leading-6 text-[#667085]">
+              <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-[#98A2B3]" />
+              <span className="line-clamp-2">{addressText}</span>
+            </div>
+            {statusText ? (
+              <div className={`mt-2 text-[16px] font-semibold ${showPositiveStatus ? 'text-[#14804A]' : 'text-[#667085]'}`}>
+                {statusText}
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="mt-6 grid grid-cols-[minmax(0,1fr)_178px] gap-4">
+          <button
+            type="button"
+            onClick={(event) => {
+              if (showPrimaryButton) {
+                handlePrimaryBusinessAction(biz, event);
+              } else {
+                event.stopPropagation();
+                openBusinessDetails(biz);
+              }
+            }}
+            className="show-number-action rounded-[16px] bg-[#0F172A] px-5 py-4 text-[17px] text-white"
+          >
+            {showPrimaryButton ? 'Show number' : 'Send enquiry'}
+          </button>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              openBusinessDirectionsDirect(biz);
+            }}
+            className="rounded-[16px] border border-[#D0D5DD] bg-white px-5 py-4 text-[17px] font-semibold text-[#344054]"
+          >
+            Directions
+          </button>
+        </div>
+      </article>
+    );
+  };
+
   return (
-    <div id="web-portal-root" className="w-full max-w-full space-y-6 overflow-x-hidden pb-28 md:pb-10">
+    <div id="web-portal-root" className="localisy-public-page w-full max-w-full space-y-6 overflow-x-hidden pb-28 md:pb-10">
       
       {/* Dynamic Subdomain Navigator Router Header */}
       {showSubdomainLocationMapping && <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl p-4 md:p-5 border border-indigo-500/10 shadow-md flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -4113,54 +4465,308 @@ export default function WebPortal({
 
       {/* RENDER TAB 1: YELLOW PAGES BUSINESS DIRECTORY FINDER */}
       {activePortalTab === 'listings' && !isResultsPage && (
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_280px]">
-          <div className="min-w-0 space-y-5">
-            <div id="homepage-results-anchor" className="scroll-mt-24" />
-            {renderHomepageSectionsContent()}
-
-            {userSession.role === 'seller' && userSession.sellerBusinessId && (
-              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="mb-3 flex items-center justify-between">
-                  <h4 className="text-sm font-bold text-slate-900">Seller Ad Leads</h4>
-                  <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-mono font-bold text-indigo-700">
-                    {activeSellerWidgetLeads.length}
-                  </span>
-                </div>
-                <div className="space-y-2">
-                  {pagedSellerWidgetLeads.map((lead) => (
-                    <div key={lead.id} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-semibold text-slate-800">{lead.name}</span>
-                        <span className="font-mono text-slate-500">{lead.pincode}</span>
-                      </div>
-                      <div className="font-mono text-slate-600">{lead.mobile}</div>
-                    </div>
-                  ))}
-                  {activeSellerWidgetLeads.length === 0 && (
-                    <span className="text-xs text-slate-400">No leads received yet.</span>
-                  )}
-                </div>
-                <div className="mt-3">
-                  <PaginationControls
-                    compact
-                    currentPage={safeSellerWidgetLeadsPage}
-                    totalPages={sellerWidgetLeadsTotalPages}
-                    onPageChange={setSellerWidgetLeadsPage}
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-
-          <aside className="hidden space-y-5 xl:block">
-            <div className="sticky top-6 space-y-5">
-              {desktopSidebarAds.map((ad, index) => renderSidebarAdCard(ad, index))}
-            </div>
-          </aside>
+        <div>
+          <div id="homepage-results-anchor" className="scroll-mt-24" />
+          <LocalityLandingUiV1
+            activeLocalityId={currentLocality.id}
+            businesses={businesses}
+            categories={categories.filter((category) => category.id !== 'all')}
+            heroBanners={activeHeroBanners}
+            listingAds={activeListingAds}
+            localities={localities}
+            recentSearches={recentSearches}
+            onClearRecentSearches={clearRecentSearches}
+            onSearchSubmit={(query) => openResultsFromSearch('all', 'all', query)}
+            onOpenHeroCta={(banner) => handleConfiguredCta(banner.ctaType, banner.ctaTarget, banner.ctaLabel || 'Explore')}
+            onOpenListingAd={handleListingAdAction}
+            displayedPincode={savedPincode || selectedLocalityMappedPincodes[0] || businesses.find((business) => business.localityId === currentLocality.id && business.pincode)?.pincode || ''}
+            activeNodeLabel={currentLocalityLabel}
+            userSession={userSession}
+            onOpenPincodeModal={onOpenPincodeModal}
+            onRequestAuth={onRequestAuth}
+            onLogout={onLogout}
+            isAdvertiseActive={showApplyModal}
+            isAccountActive={isAccountActive || Boolean(userSession?.isAuthenticated && userSession?.userPhone)}
+            onOpenLivePortal={() => setShowApplyModal(true)}
+            onOpenCityPage={openModernHomeCityPage}
+            onOpenCategoryPage={openModernHomeCategoryPage}
+            onOpenListingPage={openModernHomeListingPage}
+          />
         </div>
       )}
       {activePortalTab === 'listings' && isResultsPage && (
-        <div id="results-page-top" className="space-y-3 scroll-mt-20 md:space-y-6">
+        <>
+        <div id="results-page-top" className="hidden scroll-mt-20 lg:block">
+          <div className="bg-[#111827] px-8 py-5 text-white shadow-[0_1px_0_rgba(255,255,255,0.04)]">
+            <div className="mx-auto flex max-w-[1460px] items-center justify-between gap-8">
+              <div className="flex min-w-0 items-center gap-8">
+                <button type="button" onClick={openHomePage} className="flex items-center">
+                  <img src={happyBusinessLogo} alt="Localisy" className="h-10 w-auto object-contain" />
+                </button>
+                <button
+                  type="button"
+                  onClick={onOpenPincodeModal || openHomePage}
+                  className="inline-flex shrink-0 cursor-pointer items-baseline gap-2 text-left"
+                >
+                  <span className="text-[13px] font-normal uppercase tracking-[0.26em] text-[#F59E0B]">
+                    {currentLocalityLabel} | {savedPincode || selectedLocalityMappedPincodes[0] || businesses.find((business) => business.localityId === currentLocality.id && business.pincode)?.pincode || '410218'}
+                  </span>
+                  <span className="cursor-pointer text-[13px] font-normal uppercase tracking-[0.22em] text-[#4F46E5] underline-offset-4 transition hover:underline">
+                    (Change)
+                  </span>
+                </button>
+              </div>
+              <div className="relative min-w-0 max-w-[660px] flex-1">
+                <div className="flex items-center rounded-[16px] border border-white/12 bg-white px-4 py-2 shadow-[0_10px_28px_rgba(2,6,23,0.22)]">
+                  <Search className="h-4 w-4 text-[#98A2B3]" />
+                  <input
+                    id="public-listing-search-input"
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => {
+                      setSearchQuery(e.target.value);
+                      setSelectedSubcategory('all');
+                    }}
+                    onFocus={() => setIsSearchInputFocused(true)}
+                    onBlur={() => window.setTimeout(() => setIsSearchInputFocused(false), 120)}
+                    onKeyDown={handleSearchInputKeyDown}
+                    placeholder="Search businesses, tags, services..."
+                    className="min-w-0 flex-1 border-0 bg-transparent px-3 text-[15px] text-[#111827] outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={openResultsPage}
+                    className="rounded-[12px] bg-[#F59E0B] px-5 py-2 text-sm font-bold text-[#111827]"
+                  >
+                    Search
+                  </button>
+                </div>
+                {renderSearchSuggestions()}
+              </div>
+              <div className="flex shrink-0 items-center gap-8">
+                <button
+                  type="button"
+                  onClick={() => setShowApplyModal(true)}
+                  className={`cursor-pointer border-b-2 pb-1 text-[13px] font-normal text-white transition hover:text-white/85 ${showApplyModal ? 'border-[#F59E0B]' : 'border-transparent'}`}
+                >
+                  Advertise Business
+                </button>
+                {userSession.isAuthenticated && userSession.userPhone ? (
+                  <div className={`flex items-center gap-3 border-b-2 pb-1 text-[13px] font-normal text-white ${isAccountActive ? 'border-[#F59E0B]' : 'border-transparent'}`}>
+                    <span>{userSession.userName?.split(' ')[0] || 'Account'}</span>
+                    <button type="button" onClick={onLogout} className="text-[13px] font-normal text-white/80 transition hover:text-white">
+                      Log Out
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={onRequestAuth}
+                    className={`cursor-pointer border-b-2 pb-1 text-[13px] font-normal text-white transition hover:text-white/85 ${isAccountActive ? 'border-[#F59E0B]' : 'border-transparent'}`}
+                  >
+                    Sign In
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-[#F6F8FC] px-8 py-6">
+            <div className="mx-auto grid max-w-[1460px] grid-cols-[280px_minmax(0,1fr)_290px] gap-6 items-start">
+              <aside className="rounded-[24px] border border-[#E5E7EB] bg-white p-5 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-[1.45rem] font-extrabold tracking-[-0.03em] text-[#111827]">Filters</h3>
+                  <button
+                    type="button"
+                    onClick={clearDesktopResultsFilters}
+                    className="text-sm font-semibold text-[#C46A00]"
+                  >
+                    Clear all
+                  </button>
+                </div>
+
+                <div className="mt-6">
+                  <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#98A2B3]">Category</div>
+                  <div className="mt-4 space-y-3">
+                    {desktopResultsCategories.slice(0, 6).map((category) => (
+                      <label key={category.id} className="flex cursor-pointer items-center justify-between gap-3 text-[1rem] text-[#475467]">
+                        <span className="flex items-center gap-3">
+                          <input
+                            type="checkbox"
+                            checked={selectedCategory === category.id}
+                            onChange={() => {
+                              setSelectedCategory((current) => current === category.id ? 'all' : category.id);
+                              setSelectedSubcategory('all');
+                            }}
+                            className="h-5 w-5 rounded border border-[#CBD5E1] text-[#111827] focus:ring-0"
+                          />
+                          <span>{category.name}</span>
+                        </span>
+                        <span className="text-sm text-[#98A2B3]">{category.count}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="mt-8 border-t border-[#EAECF0] pt-6">
+                  <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#98A2B3]">Rating</div>
+                  <div className="mt-4 flex flex-wrap gap-3">
+                    {[
+                      { label: '4.5 & up', value: 4.5 },
+                      { label: '4.0 & up', value: 4 },
+                      { label: 'Any', value: 0 },
+                    ].map((rating) => (
+                      <button
+                        key={rating.label}
+                        type="button"
+                        onClick={() => setFilterRating(rating.value as 0 | 4 | 4.5)}
+                        className={`rounded-full px-4 py-2 text-sm font-semibold ${filterRating === rating.value ? 'bg-[#111827] text-white' : 'border border-[#E4E7EC] bg-white text-[#667085]'}`}
+                      >
+                        {rating.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </aside>
+
+              <section className="space-y-5">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h1 className="text-[2.25rem] font-extrabold tracking-[-0.04em] text-[#111827]">
+                      {searchResultBusinesses.length} results for “{activeSearchText || getSearchResultsKeyword()}”
+                    </h1>
+                    <p className="mt-1 text-[15px] text-[#98A2B3]">
+                      {desktopActiveFilterSummary.join(' · ')}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-medium text-[#98A2B3]">Sort</span>
+                    <select
+                      value={sortBy}
+                      onChange={(e) => setSortBy(e.target.value as any)}
+                      className="rounded-[14px] border border-[#E4E7EC] bg-white px-4 py-3 text-sm font-semibold text-[#111827] outline-none"
+                    >
+                      <option value="rating">Top rated</option>
+                      <option value="recommended">Recommended</option>
+                      <option value="popular">Most reviewed</option>
+                      <option value="newest">Newest</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-3">
+                  {selectedCategory !== 'all' ? (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedCategory('all')}
+                      className="rounded-full bg-[#111827] px-4 py-2 text-sm font-semibold text-white"
+                    >
+                      {(getCategoryById(selectedCategory)?.name || selectedCategory)} ×
+                    </button>
+                  ) : null}
+                  {filterRating === 4.5 ? (
+                    <button type="button" onClick={() => setFilterRating(0)} className="rounded-full bg-[#111827] px-4 py-2 text-sm font-semibold text-white">
+                      4.5 & up
+                    </button>
+                  ) : null}
+                  {filterRating === 4 ? (
+                    <button type="button" onClick={() => setFilterRating(0)} className="rounded-full bg-[#111827] px-4 py-2 text-sm font-semibold text-white">
+                      4.0 & up
+                    </button>
+                  ) : null}
+                  {filterOpenNow ? <span className="rounded-full bg-[#111827] px-4 py-2 text-sm font-semibold text-white">Open now</span> : null}
+                  {filterVerifiedOnly ? <span className="rounded-full border border-[#D0D5DD] bg-white px-4 py-2 text-sm font-semibold text-[#667085]">Verified number</span> : null}
+                </div>
+
+                <div className="space-y-4">
+                  {searchResultBusinesses.length === 0 ? (
+                    <NoResultsState
+                      activeSearchLabel={activeSearchText}
+                      noResultsSuggestedCategories={noResultsSuggestedCategories}
+                      nearbyCityLocalities={nearbyCityLocalities}
+                      noResultsFallbackBusinesses={noResultsFallbackBusinesses}
+                      openResultsForCategory={openResultsForCategory}
+                      onLocalityChange={onLocalityChange}
+                      onOpenRecommendationRequest={openRecommendationRequest}
+                      openBusinessDetails={openBusinessDetails}
+                      renderCompactBusinessRow={renderCompactBusinessRow}
+                      shouldShowListingResultImage={shouldShowListingResultImage}
+                      getBusinessSubcategoryLabel={getBusinessSubcategoryLabel}
+                      renderBusinessRecognitionBadges={renderBusinessRecognitionBadges}
+                    />
+                  ) : (
+                    desktopResultsStream.map((row) => (
+                      row.type === 'listing'
+                        ? renderDesktopSearchResultRow(row.business)
+                        : renderDesktopInlineResultAd(row.ad)
+                    ))
+                  )}
+                </div>
+
+                {searchResultBusinesses.length > 0 ? (
+                  <PaginationControls
+                    currentPage={safeSearchResultPage}
+                    totalPages={searchResultTotalPages}
+                    onPageChange={setRegularPage}
+                  />
+                ) : null}
+              </section>
+
+              <aside className="space-y-4">
+                {desktopResultsSidebarAds.map((ad, index) => renderSidebarAdCard(ad, index))}
+              </aside>
+            </div>
+          </div>
+        </div>
+        <div className="space-y-4 scroll-mt-20 lg:hidden">
+          <div className="rounded-[24px] bg-white px-4 py-5">
+            <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-[#98A2B3]">
+              <button type="button" onClick={openHomePage} className="text-[#4F46E5]">
+                Home
+              </button>
+              <ChevronRight className="h-3.5 w-3.5 text-[#CBD5E1]" />
+              <span>Search results</span>
+            </div>
+            <h2 className="mt-3 text-[2.25rem] font-extrabold leading-none tracking-[-0.05em] text-[#111827]">
+              {searchResultBusinesses.length} results
+            </h2>
+            <p className="mt-2 text-[17px] leading-7 text-[#667085]">
+              {desktopActiveFilterSummary.join(' · ')}
+            </p>
+          </div>
+
+          {searchResultBusinesses.length === 0 ? (
+            <NoResultsState
+              activeSearchLabel={activeSearchText}
+              noResultsSuggestedCategories={noResultsSuggestedCategories}
+              nearbyCityLocalities={nearbyCityLocalities}
+              noResultsFallbackBusinesses={noResultsFallbackBusinesses}
+              openResultsForCategory={openResultsForCategory}
+              onLocalityChange={onLocalityChange}
+              onOpenRecommendationRequest={openRecommendationRequest}
+              openBusinessDetails={openBusinessDetails}
+              renderCompactBusinessRow={renderCompactBusinessRow}
+              shouldShowListingResultImage={shouldShowListingResultImage}
+              getBusinessSubcategoryLabel={getBusinessSubcategoryLabel}
+              renderBusinessRecognitionBadges={renderBusinessRecognitionBadges}
+            />
+          ) : (
+            <div className="space-y-6">
+              {pagedSearchResultBusinesses.map((biz) => renderMobileSearchResultRow(biz))}
+            </div>
+          )}
+
+          {searchResultBusinesses.length > 0 ? (
+            <div className="px-1 pb-2">
+              <PaginationControls
+                currentPage={safeSearchResultPage}
+                totalPages={searchResultTotalPages}
+                onPageChange={setRegularPage}
+              />
+            </div>
+          ) : null}
+        </div>
+        <div className="hidden">
           <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm md:p-5">
             <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
               <div className="min-w-0">
@@ -5008,6 +5614,7 @@ export default function WebPortal({
             </div>
           </div>
         </div>
+        </>
       )}
 
       {/* RENDER TAB 2: LOCAL COMMUNTIY CITIZEN BULLETIN BOARD & DEALS */}

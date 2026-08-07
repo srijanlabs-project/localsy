@@ -37,6 +37,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
   const [error, setError] = useState('');
   const [challengeToken, setChallengeToken] = useState('');
   const [otp, setOtp] = useState('');
+  const [devOtpHint, setDevOtpHint] = useState('');
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -51,6 +52,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
     setError('');
     setChallengeToken('');
     setOtp('');
+    setDevOtpHint('');
     setPassword('');
   };
 
@@ -93,6 +95,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
     if (!requestRes.ok) {
       throw new Error(requestData?.error || 'Failed to send OTP');
     }
+    setDevOtpHint(requestData?.devOtpMode && requestData?.devOtp ? String(requestData.devOtp) : '');
     setChallengeToken(requestData.challengeToken || '');
     setStep('otp');
   };
@@ -112,6 +115,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
     if (!requestRes.ok) {
       throw new Error(requestData?.error || 'Failed to send OTP');
     }
+    setDevOtpHint(requestData?.devOtpMode && requestData?.devOtp ? String(requestData.devOtp) : '');
     setChallengeToken(requestData.challengeToken || '');
     setStep('otp');
   };
@@ -131,6 +135,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
     if (!requestRes.ok) {
       throw new Error(requestData?.error || 'Registration failed');
     }
+    setDevOtpHint(requestData?.devOtpMode && requestData?.devOtp ? String(requestData.devOtp) : '');
     setChallengeToken(requestData.challengeToken || '');
     setStep('otp');
   };
@@ -309,6 +314,11 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }: AuthModalP
               <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
                 OTP sent to {tab === 'platform' ? 'the platform admin mobile number' : `+91 ${phone}`}
               </div>
+              {devOtpHint && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                  Local development OTP: <span className="font-extrabold">{devOtpHint}</span>
+                </div>
+              )}
               <div className="relative">
                 <ShieldCheck className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
                 <input
