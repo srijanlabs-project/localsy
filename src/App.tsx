@@ -3740,7 +3740,8 @@ export default function App() {
         body: JSON.stringify({ config: normalized }),
       });
       if (!response.ok) {
-        throw new Error('Failed to save geography config');
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.error || 'Failed to save geography config');
       }
       const payload = await response.json().catch(() => null);
       const saved = normalizeGeographyConfigState(payload?.config || normalized);

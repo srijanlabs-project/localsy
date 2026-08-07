@@ -189,6 +189,7 @@ export default function GeographyConfigManager({
       });
       setStatusText(successMessage);
     } catch (error) {
+      setDraft(config);
       setStatusText(error instanceof Error ? error.message : 'Failed to save geography config.');
     } finally {
       setIsSaving(false);
