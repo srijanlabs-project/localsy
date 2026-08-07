@@ -6928,6 +6928,101 @@ app.put('/api/businesses', async (req, res) => {
   }
 });
 
+app.put('/api/admin/businesses/replace', async (req, res) => {
+  const access = requirePrivilegedWriteAccess(req, res);
+  if (!access) return;
+
+  const incoming = sanitizeBusinessListings(req.body?.businesses);
+  if (!incoming) {
+    return res.status(400).json({ ok: false, error: 'businesses array is required' });
+  }
+
+  try {
+    await writeBusinessListings(incoming);
+    res.json({ ok: true, businesses: incoming, replacedCount: incoming.length });
+  } catch (err) {
+    console.error('Failed to replace business listings:', err);
+    res.status(500).json({ ok: false, error: 'Failed to replace business listings' });
+  }
+});
+
+app.post('/api/admin/directory/reset', async (req, res) => {
+  const access = requirePrivilegedWriteAccess(req, res);
+  if (!access) return;
+
+  const confirmation = String(req.body?.confirmation || '').trim();
+  if (confirmation !== 'RESET_DIRECTORY_DATA') {
+    return res.status(400).json({
+      ok: false,
+      error: 'Confirmation token is required.',
+      expectedConfirmation: 'RESET_DIRECTORY_DATA',
+    });
+  }
+
+  const clearBusinesses = req.body?.clearBusinesses !== false;
+  const clearReviews = req.body?.clearReviews !== false;
+  const resetGeography = req.body?.resetGeography !== false;
+  const resetRouting = req.body?.resetRouting !== false;
+
+  try {
+    const beforeBusinesses = await readBusinessListings();
+    const beforeReviews = await readReviews();
+    const beforeGeography = await readGeographyConfig();
+    const beforeRouting = await readLocalityRoutingConfig();
+
+    if (clearBusinesses) {
+      await writeBusinessListings([]);
+    }
+    if (clearReviews) {
+      await writeReviews([]);
+    }
+    if (resetGeography) {
+      await writeGeographyConfig(sanitizeGeographyConfigState(null));
+    }
+    if (resetRouting) {
+      await writeLocalityRoutingConfig(sanitizeLocalityRoutingConfigState(null));
+    }
+
+    const afterBusinesses = await readBusinessListings();
+    const afterReviews = await readReviews();
+    const afterGeography = await readGeographyConfig();
+    const afterRouting = await readLocalityRoutingConfig();
+
+    res.json({
+      ok: true,
+      summary: {
+        clearedBusinesses: clearBusinesses ? beforeBusinesses.length - afterBusinesses.length : 0,
+        clearedReviews: clearReviews ? beforeReviews.length - afterReviews.length : 0,
+        geographyReset: resetGeography,
+        routingReset: resetRouting,
+        before: {
+          businesses: beforeBusinesses.length,
+          reviews: beforeReviews.length,
+          states: beforeGeography.states.length,
+          cities: beforeGeography.cities.length,
+          localities: beforeGeography.localities.length,
+          areas: beforeGeography.areas.length,
+          routingLocalities: beforeRouting.localities.length,
+          routingPincodes: beforeRouting.pincodeMappings.length,
+        },
+        after: {
+          businesses: afterBusinesses.length,
+          reviews: afterReviews.length,
+          states: afterGeography.states.length,
+          cities: afterGeography.cities.length,
+          localities: afterGeography.localities.length,
+          areas: afterGeography.areas.length,
+          routingLocalities: afterRouting.localities.length,
+          routingPincodes: afterRouting.pincodeMappings.length,
+        },
+      },
+    });
+  } catch (err) {
+    console.error('Failed to reset directory data:', err);
+    res.status(500).json({ ok: false, error: 'Failed to reset directory data' });
+  }
+});
+
 app.get('/api/reviews', async (_req, res) => {
   try {
     const reviews = await readReviews();
