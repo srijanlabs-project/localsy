@@ -5906,6 +5906,23 @@ export default function App() {
     window.dispatchEvent(new PopStateEvent('popstate'));
   };
 
+  const [initialPlatformTab, setInitialPlatformTab] = useState<'listings' | 'community' | 'merchant'>('listings');
+  const [platformEntryNonce, setPlatformEntryNonce] = useState(0);
+
+  const handleOpenPlatformWorkspace = () => {
+    if (canAccessAdmin) {
+      setActiveViewWithAudit('admin');
+      return;
+    }
+
+    const nextTab: 'listings' | 'community' | 'merchant' = userSession.isAuthenticated ? 'merchant' : 'listings';
+    setInitialPlatformTab(nextTab);
+    setPlatformEntryNonce((prev) => prev + 1);
+    setActiveViewWithAudit('web');
+    window.history.pushState({}, '', '/platform');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  };
+
   const handleExitUxMock = () => {
     setActiveViewWithAudit('web');
     window.history.pushState({}, '', buildLocalityPath(activeLocality?.id || activeLocalityId || defaultLocalityId || localities[0]?.id || ''));
@@ -6652,6 +6669,7 @@ export default function App() {
                 isAdvertiseActive={canAccessAdmin ? false : false}
                 isAccountActive={showAuthModal}
                 onOpenLivePortal={handleMainLogoHome}
+                onOpenPlatform={handleOpenPlatformWorkspace}
                 onOpenLocalityPage={(localityId) => {
                   setActiveViewWithAudit('web');
                   window.history.pushState({}, '', buildLocalityPath(localityId));
@@ -6743,6 +6761,9 @@ export default function App() {
                 onRequestAuth={() => setShowAuthModal(true)}
                 onLogout={handleLogout}
                 isAccountActive={showAuthModal}
+                onOpenPlatform={handleOpenPlatformWorkspace}
+                initialPlatformTab={initialPlatformTab}
+                platformEntryNonce={platformEntryNonce}
               />
             )}
           </Suspense>

@@ -29,6 +29,7 @@ type CityDirectoryUiV1Props = {
   isAdvertiseActive?: boolean;
   isAccountActive?: boolean;
   onOpenLivePortal: () => void;
+  onOpenPlatform?: () => void;
   onOpenLocalityPage: (localityId: string) => void;
   onOpenCategoryPage: (categoryId: string, localityId?: string) => void;
   onOpenListingPage: (businessId: string, localityId?: string) => void;
@@ -144,6 +145,7 @@ export default function CityDirectoryUiV1({
   isAdvertiseActive = false,
   isAccountActive = false,
   onOpenLivePortal,
+  onOpenPlatform,
   onOpenLocalityPage,
   onOpenCategoryPage,
   onOpenListingPage,
@@ -311,7 +313,7 @@ export default function CityDirectoryUiV1({
                 {isAuthenticated ? (
                   <button
                     type="button"
-                    onClick={onOpenLivePortal}
+                    onClick={onOpenPlatform || onOpenLivePortal}
                     className="cursor-pointer border-b-2 border-transparent pb-1 text-[13px] font-normal text-white transition hover:text-white/85"
                   >
                     Platform
@@ -441,7 +443,7 @@ export default function CityDirectoryUiV1({
                       Change pincode
                     </button>
                     {isAuthenticated ? (
-                      <button type="button" onClick={onOpenLivePortal} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold hover:bg-slate-50">
+                      <button type="button" onClick={onOpenPlatform || onOpenLivePortal} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold hover:bg-slate-50">
                         <Grid2x2 className="h-4 w-4 text-[#F59E0B]" />
                         Platform
                       </button>

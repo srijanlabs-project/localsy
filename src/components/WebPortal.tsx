@@ -285,6 +285,9 @@ interface WebPortalProps {
   onRequestAuth?: () => void;
   onLogout?: () => void;
   isAccountActive?: boolean;
+  onOpenPlatform?: () => void;
+  initialPlatformTab?: 'listings' | 'community' | 'merchant';
+  platformEntryNonce?: number;
 }
 
 export default function WebPortal({
@@ -338,7 +341,10 @@ export default function WebPortal({
   onOpenPincodeModal,
   onRequestAuth,
   onLogout,
-  isAccountActive = false
+  isAccountActive = false,
+  onOpenPlatform,
+  initialPlatformTab = 'listings',
+  platformEntryNonce = 0,
 }: WebPortalProps) {
   const showSubdomainLocationMapping = false; // Hidden for production public UI.
   const SIMPLE_SEARCH_FORM = true;
@@ -532,6 +538,10 @@ export default function WebPortal({
     window.addEventListener('localsy:open-business-application', openApplicationForm);
     return () => window.removeEventListener('localsy:open-business-application', openApplicationForm);
   }, []);
+
+  useEffect(() => {
+    setActivePortalTab(initialPlatformTab);
+  }, [initialPlatformTab, platformEntryNonce]);
 
   useEffect(() => {
     if (selectedCategory === 'all') {
@@ -4541,7 +4551,13 @@ export default function WebPortal({
                 {userSession.isAuthenticated && userSession.userPhone ? (
                   <button
                     type="button"
-                    onClick={() => setActivePortalTab('listings')}
+                    onClick={() => {
+                      if (onOpenPlatform) {
+                        onOpenPlatform();
+                        return;
+                      }
+                      setActivePortalTab(userSession.isAuthenticated ? 'merchant' : 'listings');
+                    }}
                     className="cursor-pointer border-b-2 border-[#F59E0B] pb-1 text-[13px] font-normal text-white transition hover:text-white/85"
                   >
                     Platform
