@@ -528,6 +528,7 @@ export default function LocalityLandingUiV1({
           onRequestAuth={onRequestAuth}
           onLogout={onLogout}
           onOpenLivePortal={onOpenLivePortal}
+          onOpenPlatform={onOpenPlatform}
           shouldShowSuggestions={shouldShowSuggestions}
           onSearchFocus={() => setIsSearchFocused(true)}
           onSearchBlur={() => window.setTimeout(() => setIsSearchFocused(false), 120)}
@@ -931,6 +932,7 @@ function MobileHomeShell({
   onRequestAuth,
   onLogout,
   onOpenLivePortal,
+  onOpenPlatform,
   shouldShowSuggestions,
   onSearchFocus,
   onSearchBlur,
@@ -958,6 +960,7 @@ function MobileHomeShell({
   onRequestAuth?: () => void;
   onLogout?: () => void;
   onOpenLivePortal: () => void;
+  onOpenPlatform?: () => void;
   shouldShowSuggestions: boolean;
   onSearchFocus: () => void;
   onSearchBlur: () => void;
