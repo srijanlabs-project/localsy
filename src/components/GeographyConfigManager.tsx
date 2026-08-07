@@ -134,7 +134,10 @@ export default function GeographyConfigManager({
     const loadBoundaries = async () => {
       setIsLoadingBoundaries(true);
       try {
-        const response = await fetch('/api/admin/geography/boundaries');
+        const token = typeof window !== 'undefined' ? window.localStorage.getItem('yp_auth_token') : '';
+        const response = await fetch('/api/admin/geography/boundaries', {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok || !payload?.ok) {
           throw new Error(payload?.error || 'Failed to load locality boundaries.');
