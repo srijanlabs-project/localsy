@@ -516,6 +516,18 @@ const validateGeographyConfigForOperations = (
   return errors;
 };
 
+const getIntroducedGeographyValidationErrors = (
+  currentConfig: GeographyConfigState,
+  nextConfig: GeographyConfigState,
+  businesses: Business[],
+  pincodeMappings: PincodeRoutingMapping[],
+) => {
+  const baselineErrors = validateGeographyConfigForOperations(currentConfig, businesses, pincodeMappings);
+  const nextErrors = validateGeographyConfigForOperations(nextConfig, businesses, pincodeMappings);
+  const baselineSet = new Set(baselineErrors);
+  return nextErrors.filter((error) => !baselineSet.has(error));
+};
+
 const normalizeFallbackListingAdTemplate = (
   ad: Partial<FallbackListingAdTemplate>,
   index: number,
@@ -3725,7 +3737,13 @@ export default function App() {
 
   const handleSaveGeographyConfig = async (nextConfig: GeographyConfigState) => {
     const normalized = normalizeGeographyConfigState(nextConfig);
-    const validationErrors = validateGeographyConfigForOperations(normalized, businesses, pincodeMappings);
+    const currentNormalized = normalizeGeographyConfigState(geographyConfig);
+    const validationErrors = getIntroducedGeographyValidationErrors(
+      currentNormalized,
+      normalized,
+      businesses,
+      pincodeMappings,
+    );
     if (validationErrors.length > 0) {
       throw new Error(validationErrors.join(' '));
     }
@@ -3745,7 +3763,12 @@ export default function App() {
       }
       const payload = await response.json().catch(() => null);
       const saved = normalizeGeographyConfigState(payload?.config || normalized);
-      const savedValidationErrors = validateGeographyConfigForOperations(saved, businesses, pincodeMappings);
+      const savedValidationErrors = getIntroducedGeographyValidationErrors(
+        currentNormalized,
+        saved,
+        businesses,
+        pincodeMappings,
+      );
       if (savedValidationErrors.length > 0) {
         throw new Error(savedValidationErrors.join(' '));
       }
