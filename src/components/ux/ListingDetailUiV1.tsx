@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Clock3, ExternalLink, Globe, Mail, MapPin, ShieldCheck, Sparkles, Star } from 'lucide-react';
+import { ExternalLink, Globe, Mail, MapPin, ShieldCheck, Sparkles, Star } from 'lucide-react';
 import { Business, Category, Locality, Review, UserSession } from '../../types';
 import {
   FeaturedBusinessCard,
@@ -166,12 +166,8 @@ export default function ListingDetailUiV1({
                 </div>
 
                 <div className="rounded-[20px] border border-slate-200 bg-white p-5 shadow-sm">
-                  <div className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-400">Operational info</div>
+                  <div className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-400">Trust signals</div>
                   <div className="mt-4 space-y-3 text-sm text-slate-700">
-                    <div className="flex items-center gap-3">
-                      <Clock3 className="h-4 w-4 text-[#1E3A8A]" />
-                      <span>{primaryBusiness.hours || 'Mon-Sat, 9:00 AM - 8:00 PM'}</span>
-                    </div>
                     <div className="flex items-center gap-3">
                       <ShieldCheck className="h-4 w-4 text-[#1b8f5f]" />
                       <span>{primaryBusiness.customerSatisfaction || 94}% satisfaction score</span>

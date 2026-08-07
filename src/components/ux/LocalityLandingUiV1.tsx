@@ -116,11 +116,6 @@ const getBusinessLocationLabel = (business: Business) => (
   || 'Sector 17'
 );
 
-const getBusinessHoursLabel = (business: Business) => (
-  business.hours?.trim()
-  || 'Open till 9:00pm'
-);
-
 const getListingScore = (business: Business) => (
   (business.featured ? 80 : 0)
   + (business.rating || 0) * 10
@@ -153,7 +148,7 @@ function buildPromoTitle(business: Business | null, localityLabel: string, fallb
 
 function buildPromoSubtitle(business: Business | null, categories: Category[], localityLabel: string) {
   if (!business) return `Trusted local businesses in ${localityLabel}`;
-  return `${getBusinessSearchLabel(business, categories)} | ${getBusinessLocationLabel(business)} | ${getBusinessHoursLabel(business)}`;
+  return `${getBusinessSearchLabel(business, categories)} | ${getBusinessLocationLabel(business)}`;
 }
 
 export default function LocalityLandingUiV1({
@@ -617,7 +612,7 @@ export default function LocalityLandingUiV1({
                   LOCALISY <span className="text-[0.95rem] uppercase tracking-[0.18em] text-[#F59E0B]">{localityLabel}</span>
                 </div>
                 <p className="mt-4 max-w-[320px] text-sm leading-6 text-[#98A2B3]">
-                  Discover trusted businesses in {localityLabel}. Hours are owner-confirmed and contact visibility follows verified access rules.
+                  Discover trusted businesses in {localityLabel}. Contact visibility follows verified access rules.
                 </p>
               </div>
               <FooterColumn title="Explore" items={['Categories', 'Sectors', 'Offers']} />
@@ -735,6 +730,15 @@ function DesktopHomeShell({
             </button>
           </div>
           <div className="flex items-center gap-10">
+            {isAuthenticated ? (
+              <button
+                type="button"
+                onClick={onOpenLivePortal}
+                className="cursor-pointer border-b-2 border-transparent pb-1 text-[13px] font-normal text-white transition hover:text-white/85"
+              >
+                Platform
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={onOpenLivePortal}
@@ -762,9 +766,8 @@ function DesktopHomeShell({
         </div>
       </header>
 
-      <div className="bg-white px-8 py-6">
+      <div className="bg-white px-8 py-0">
         <div className="mx-auto max-w-[1280px]">
-          <div className="mb-3 text-[11px] font-bold uppercase tracking-[0.2em] text-[#C46A00]">Sponsored placement</div>
           <div className="grid grid-cols-[minmax(0,1fr)_170px] gap-4">
             {rotatingPrimaryHeroAd ? (
               <ImageAdPromoCard listingAd={rotatingPrimaryHeroAd} onOpenListingAd={onOpenListingAd} onOpenLivePortal={onOpenLivePortal} />
@@ -794,7 +797,7 @@ function DesktopHomeShell({
               />
             )}
           </div>
-          <div className="mt-3 flex gap-2">
+          <div className="mt-2 flex gap-2 pb-2">
             {Array.from({ length: Math.max(rotatingPrimaryHeroCount || 0, 1) }).map((_, index) => (
               <span
                 key={`hero-dot-${index}`}
@@ -805,10 +808,10 @@ function DesktopHomeShell({
         </div>
       </div>
 
-      <div className="bg-[#111827] px-8 py-4">
+      <div className="bg-[#B45309] px-8 py-4">
         <div className="mx-auto grid max-w-[1280px] grid-cols-[minmax(0,1fr)_360px] items-center gap-6">
           <div className="relative">
-            <div className="rounded-[16px] border border-white/16 bg-[#2B3446] p-2 shadow-[0_14px_34px_rgba(2,6,23,0.28)]">
+            <div className="border border-white/16 bg-[#8C2D04] p-2 shadow-[0_14px_34px_rgba(124,45,18,0.28)]">
               <div className="flex items-center rounded-[12px] bg-white px-4 py-2.5">
                 <Search className="h-4 w-4 text-[#98A2B3]" />
                 <input
@@ -832,7 +835,7 @@ function DesktopHomeShell({
                 <button
                   type="button"
                   onClick={() => submitSearch()}
-                  className="rounded-[10px] bg-[#F59E0B] px-5 py-2.5 text-sm font-bold text-[#111827]"
+                  className="rounded-[10px] bg-[#B45309] px-5 py-2.5 text-sm font-bold text-white"
                 >
                   Search
                 </button>
@@ -897,7 +900,7 @@ function ImageAdPromoCard({
     <button
       type="button"
       onClick={() => onOpenListingAd ? onOpenListingAd(listingAd) : onOpenLivePortal()}
-      className={`relative block overflow-hidden text-left ${compact ? 'min-h-[240px]' : 'min-h-[240px]'}`}
+      className={`relative block overflow-hidden text-left ${compact ? 'min-h-[300px]' : 'min-h-[300px]'}`}
     >
       <img src={adImage} alt={listingAd.title} className="absolute inset-0 h-full w-full object-cover" />
       <div className="absolute left-4 top-4 z-10 inline-flex rounded-md bg-[#FBBF24] px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-[#111827]">
@@ -993,6 +996,12 @@ function MobileHomeShell({
                   <MapPin className="h-4 w-4 text-indigo-600" />
                   Change pincode
                 </button>
+                {isAuthenticated ? (
+                  <button type="button" onClick={onOpenLivePortal} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold hover:bg-slate-50">
+                    <Grid2x2 className="h-4 w-4 text-[#F59E0B]" />
+                    Platform
+                  </button>
+                ) : null}
                 <button type="button" onClick={onOpenLivePortal} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold hover:bg-slate-50">
                   <ArrowRight className="h-4 w-4 text-[#F59E0B]" />
                   Advertise business
@@ -1131,7 +1140,7 @@ function PromoCard({
     <button
       type="button"
       onClick={onClick}
-      className={`relative overflow-hidden rounded-[16px] text-left text-white ${compact ? 'min-h-[160px]' : 'min-h-[160px]'}`}
+      className={`relative overflow-hidden text-left text-white ${compact ? 'min-h-[300px]' : 'min-h-[300px]'}`}
     >
       <img src={image} alt={title} className="absolute inset-0 h-full w-full object-cover" />
       <div className={`absolute inset-0 ${overlay}`} />
@@ -1237,10 +1246,6 @@ function DirectoryListingCard({
         <div className="mt-2 text-[1rem] font-extrabold leading-5 text-[#111827]">{business.name}</div>
         <div className="mt-1 text-[12px] text-[#98A2B3]">
           {getBusinessLocationLabel(business)} | {Math.max(business.reviewCount || 0, 0)} ratings
-        </div>
-        <div className="mt-1 flex items-center gap-1 text-[12px] text-[#667085]">
-          <span className="h-1.5 w-1.5 rounded-full bg-[#22C55E]" />
-          <span>{getBusinessHoursLabel(business)}</span>
         </div>
         <button
           type="button"
@@ -1442,7 +1447,7 @@ function SearchSuggestionsPanel({
                 />
                 <div className="min-w-0">
                   <div className="truncate text-[1.02rem] font-bold text-[#B45309]">{business.name}</div>
-                  <div className="truncate text-sm text-[#94A3B8]">{getBusinessSearchLabel(business, categories)} | {getBusinessLocationLabel(business)} | {getBusinessHoursLabel(business)}</div>
+                  <div className="truncate text-sm text-[#94A3B8]">{getBusinessSearchLabel(business, categories)} | {getBusinessLocationLabel(business)}</div>
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-3">

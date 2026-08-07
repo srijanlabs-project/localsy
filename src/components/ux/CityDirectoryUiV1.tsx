@@ -94,11 +94,6 @@ const getBusinessLocationLabel = (business: Business) => (
   || 'Sector 17'
 );
 
-const getBusinessHoursLabel = (business: Business) => (
-  business.hours?.trim()
-  || 'Open till 9:00pm'
-);
-
 const getListingScore = (business: Business) => (
   (business.featured ? 80 : 0)
   + (business.isSponsored ? 40 : 0)
@@ -132,7 +127,7 @@ const buildPromoTitle = (business: Business | null, cityLabel: string, fallback:
 
 const buildPromoSubtitle = (business: Business | null, categories: Category[], cityLabel: string) => {
   if (!business) return `Trusted local businesses across ${cityLabel}`;
-  return `${getBusinessSearchLabel(business, categories)} | ${getBusinessLocationLabel(business)} | ${getBusinessHoursLabel(business)}`;
+  return `${getBusinessSearchLabel(business, categories)} | ${getBusinessLocationLabel(business)}`;
 };
 
 export default function CityDirectoryUiV1({
@@ -313,6 +308,15 @@ export default function CityDirectoryUiV1({
                 </button>
               </div>
               <div className="flex items-center gap-10">
+                {isAuthenticated ? (
+                  <button
+                    type="button"
+                    onClick={onOpenLivePortal}
+                    className="cursor-pointer border-b-2 border-transparent pb-1 text-[13px] font-normal text-white transition hover:text-white/85"
+                  >
+                    Platform
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   onClick={onOpenLivePortal}
@@ -436,6 +440,12 @@ export default function CityDirectoryUiV1({
                       <MapPin className="h-4 w-4 text-indigo-600" />
                       Change pincode
                     </button>
+                    {isAuthenticated ? (
+                      <button type="button" onClick={onOpenLivePortal} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold hover:bg-slate-50">
+                        <Grid2x2 className="h-4 w-4 text-[#F59E0B]" />
+                        Platform
+                      </button>
+                    ) : null}
                     <button type="button" onClick={onOpenLivePortal} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold hover:bg-slate-50">
                       <ArrowRight className="h-4 w-4 text-[#F59E0B]" />
                       Advertise business
@@ -822,10 +832,6 @@ function CityListingCard({
         <div className="mt-2 text-[1rem] font-extrabold leading-5 text-[#111827]">{business.name}</div>
         <div className="mt-1 text-[12px] text-[#98A2B3]">
           {getBusinessLocationLabel(business)} | {Math.max(business.reviewCount || 0, 0)} ratings
-        </div>
-        <div className="mt-1 flex items-center gap-1 text-[12px] text-[#667085]">
-          <span className="h-1.5 w-1.5 rounded-full bg-[#22C55E]" />
-          <span>{getBusinessHoursLabel(business)}</span>
         </div>
         <button
           type="button"

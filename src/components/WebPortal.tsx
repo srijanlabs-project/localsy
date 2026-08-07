@@ -4063,7 +4063,6 @@ export default function WebPortal({
     }
     if (filterRating === 4.5) parts.push('4.5 & up');
     if (filterRating === 4) parts.push('4.0 & up');
-    if (filterOpenNow) parts.push('open now');
     if (filterVerifiedOnly) parts.push('verified number');
     const sortLabelMap: Record<string, string> = {
       recommended: 'recommended',
@@ -4273,11 +4272,6 @@ export default function WebPortal({
               <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-[#98A2B3]" />
               <span className="line-clamp-2">{addressText}</span>
             </div>
-            {statusText ? (
-              <div className={`mt-2 text-[16px] font-semibold ${showPositiveStatus ? 'text-[#14804A]' : 'text-[#667085]'}`}>
-                {statusText}
-              </div>
-            ) : null}
           </div>
         </div>
 
@@ -4544,6 +4538,15 @@ export default function WebPortal({
                 {renderSearchSuggestions()}
               </div>
               <div className="flex shrink-0 items-center gap-8">
+                {userSession.isAuthenticated && userSession.userPhone ? (
+                  <button
+                    type="button"
+                    onClick={() => setActivePortalTab('listings')}
+                    className="cursor-pointer border-b-2 border-[#F59E0B] pb-1 text-[13px] font-normal text-white transition hover:text-white/85"
+                  >
+                    Platform
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   onClick={() => setShowApplyModal(true)}
@@ -4674,7 +4677,6 @@ export default function WebPortal({
                       4.0 & up
                     </button>
                   ) : null}
-                  {filterOpenNow ? <span className="rounded-full bg-[#111827] px-4 py-2 text-sm font-semibold text-white">Open now</span> : null}
                   {filterVerifiedOnly ? <span className="rounded-full border border-[#D0D5DD] bg-white px-4 py-2 text-sm font-semibold text-[#667085]">Verified number</span> : null}
                 </div>
 
@@ -5099,16 +5101,6 @@ export default function WebPortal({
 
               {/* Toggle checklist strip */}
               <div className="flex flex-wrap items-center gap-3.5 pt-2 border-t border-slate-150/50">
-                <label className="flex items-center gap-1.5 cursor-pointer text-[11px] text-slate-650 font-mono">
-                  <input
-                    type="checkbox"
-                    checked={filterOpenNow}
-                    onChange={(e) => setFilterOpenNow(e.target.checked)}
-                    className="rounded text-indigo-600 focus:ring-0 w-3.5 h-3.5"
-                  />
-                  <span>Open Now</span>
-                </label>
-
                 <label className="flex items-center gap-1.5 cursor-pointer text-[11px] text-slate-650 font-mono">
                   <input
                     type="checkbox"
@@ -6779,7 +6771,6 @@ export default function WebPortal({
                             <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-slate-500">
                               <span>{getBusinessAreaName(biz)}</span>
                               {biz.distance ? <span>{biz.distance.toFixed(1)} km away</span> : null}
-                              {biz.hours ? <span>{biz.hours}</span> : null}
                             </div>
                           </div>
                           <div className="text-right">
