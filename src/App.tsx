@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, Suspense, lazy } from 'react';
 import { 
-  Locality, Business, SubdomainMapping, Review, UserSession, UserRole,
+  Locality, Business, SubdomainMapping, Review, UserSession, UserRole, UserType,
   CommunityItem, CRMContact, MarketingCoupon, AuditEvent, ListingAd, AdLead, HeroBanner, HeroBannerStat, BuyerActivityEvent, BuyerStateSnapshot,
   HomepageLayout, HomepageSection, HomepageSectionType, ApiConfiguration, HomepageConfigState, ScalableHomepageConfigState, ScalableCampaign, ScalableHomepageTemplate, ScalableHomepageAssignment, BusinessTaxonomyState, BusinessCategory, BusinessSubcategory, LocalityRoutingConfigState, PincodeRoutingMapping, GeographyConfigState, StateMaster, CityMaster, LocalityMaster, AreaMaster, HomepageDefaultsConfigState, FallbackListingAdTemplate, HeroBannerDraftDefaults, SeoDiscoveryConfigState, SeoRouteIntent, SeoLocalityMetadata, SeoCategoryLabel, SeoTopListingGroup, SeoDefaultListingGroup, ResolvedHomepagePublishRequest, ResolvedHomepageSnapshotDeleteRequest, ScalableLegacyOwnershipSummary, PublishedHomepageSnapshot
 } from './types';
@@ -101,6 +101,48 @@ const normalizeStringList = (value: unknown): string[] => (
         .filter(Boolean)
     : []
 );
+
+const USER_ROLE_VALUES = new Set<UserRole>(['buyer', 'admin', 'moderator', 'operator', 'seller', 'developer', 'resource']);
+const USER_TYPE_VALUES = new Set<UserType>(['platform_admin', 'developer', 'support_user', 'buyer', 'seller', 'resource']);
+
+const normalizeUserType = (value?: string | null): UserType | undefined => {
+  if (!value) return undefined;
+  return USER_TYPE_VALUES.has(value as UserType) ? value as UserType : undefined;
+};
+
+const normalizeUserRole = (role?: string | null, userType?: string | null): UserRole => {
+  const normalizedRole = String(role || '').trim().toLowerCase();
+  const normalizedUserType = String(userType || '').trim().toLowerCase();
+
+  if (normalizedRole === 'platform_admin' || normalizedUserType === 'platform_admin') {
+    return 'admin';
+  }
+
+  if (normalizedRole === 'support_user' || normalizedUserType === 'support_user') {
+    return 'operator';
+  }
+
+  if (normalizedRole === 'developer' || normalizedUserType === 'developer') {
+    return 'developer';
+  }
+
+  if (USER_ROLE_VALUES.has(normalizedRole as UserRole)) {
+    return normalizedRole as UserRole;
+  }
+
+  if (normalizedUserType === 'seller') return 'seller';
+  if (normalizedUserType === 'resource') return 'resource';
+  return 'buyer';
+};
+
+const normalizeUserSessionRecord = (value: Partial<UserSession> & { role?: string | null; userType?: string | null }): UserSession => ({
+  ...buildGuestUserSession(),
+  ...value,
+  role: normalizeUserRole(value.role, value.userType),
+  userType: normalizeUserType(value.userType),
+  userName: value.userName || buildGuestUserSession().userName,
+  isAuthenticated: Boolean(value.isAuthenticated),
+});
 
 const getTodayIso = () => new Date().toISOString().slice(0, 10);
 const AUDIT_EVENT_DEDUPE_MS = 15_000;
@@ -1587,7 +1629,12 @@ export default function App() {
   // Active User session simulation
   const [userSession, setUserSession] = useState<UserSession>(() => {
     const saved = localStorage.getItem('yp_user_session');
-    return saved ? JSON.parse(saved) : buildGuestUserSession();
+    if (!saved) return buildGuestUserSession();
+    try {
+      return normalizeUserSessionRecord(JSON.parse(saved));
+    } catch {
+      return buildGuestUserSession();
+    }
   });
 
   useEffect(() => {
@@ -1606,7 +1653,7 @@ export default function App() {
           setUserSession(buildGuestUserSession());
           return;
         }
-        setUserSession({
+        setUserSession(normalizeUserSessionRecord({
           role: data.user.role,
           userType: data.user.userType,
           userName: data.user.name,
@@ -1616,7 +1663,7 @@ export default function App() {
           sellerBusinessId: data.user.sellerBusinessId || undefined,
           authToken: token,
           isAuthenticated: true,
-        });
+        }));
       })
       .catch(() => {
         localStorage.removeItem('yp_auth_token');
@@ -7132,8 +7179,8 @@ export default function App() {
         onClose={() => setShowAuthModal(false)}
         onAuthSuccess={({ token, userId, name, phone, email, role, userType, sellerBusinessId }) => {
           localStorage.setItem('yp_auth_token', token);
-          setUserSession({
-            role: role as UserRole,
+          setUserSession(normalizeUserSessionRecord({
+            role,
             userType,
             userName: `${name} (${userType})`,
             userId,
@@ -7142,7 +7189,7 @@ export default function App() {
             sellerBusinessId,
             authToken: token,
             isAuthenticated: true,
-          });
+          }));
           logAuditEvent('data_entry', 'User Authenticated', `Authenticated user ${email} with role: ${role}`);
         }}
       />
