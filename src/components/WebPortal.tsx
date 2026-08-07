@@ -4490,7 +4490,7 @@ export default function WebPortal({
             onRequestAuth={onRequestAuth}
             onLogout={onLogout}
             isAdvertiseActive={showApplyModal}
-            isAccountActive={isAccountActive || Boolean(userSession?.isAuthenticated && userSession?.userPhone)}
+            isAccountActive={isAccountActive || Boolean(userSession?.isAuthenticated && (userSession?.userPhone || ['admin', 'moderator', 'developer', 'operator'].includes(userSession?.role || '')))}
             onOpenLivePortal={() => setShowApplyModal(true)}
             onOpenCityPage={openModernHomeCityPage}
             onOpenCategoryPage={openModernHomeCategoryPage}
@@ -4548,7 +4548,7 @@ export default function WebPortal({
                 {renderSearchSuggestions()}
               </div>
               <div className="flex shrink-0 items-center gap-8">
-                {userSession.isAuthenticated && userSession.userPhone ? (
+                {userSession.isAuthenticated && (userSession.userPhone || ['admin', 'moderator', 'developer', 'operator'].includes(userSession.role || '')) ? (
                   <button
                     type="button"
                     onClick={() => {
@@ -4560,7 +4560,7 @@ export default function WebPortal({
                     }}
                     className="cursor-pointer border-b-2 border-[#F59E0B] pb-1 text-[13px] font-normal text-white transition hover:text-white/85"
                   >
-                    Platform
+                    {['admin', 'moderator', 'developer', 'operator'].includes(userSession.role || '') ? 'Admin Console' : 'Platform'}
                   </button>
                 ) : null}
                 <button
@@ -4570,7 +4570,7 @@ export default function WebPortal({
                 >
                   Advertise Business
                 </button>
-                {userSession.isAuthenticated && userSession.userPhone ? (
+                {userSession.isAuthenticated && (userSession.userPhone || ['admin', 'moderator', 'developer', 'operator'].includes(userSession.role || '')) ? (
                   <div className={`flex items-center gap-3 border-b-2 pb-1 text-[13px] font-normal text-white ${isAccountActive ? 'border-[#F59E0B]' : 'border-transparent'}`}>
                     <span>{userSession.userName?.split(' ')[0] || 'Account'}</span>
                     <button type="button" onClick={onLogout} className="text-[13px] font-normal text-white/80 transition hover:text-white">
