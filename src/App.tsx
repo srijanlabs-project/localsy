@@ -462,7 +462,9 @@ const validateGeographyConfigForOperations = (
   const areaLookup = new Map(config.areas.map((area) => [area.id, area]));
   const pincodeLocalityLookup = new Map(pincodeMappings.map((mapping) => [mapping.pincode, mapping.localityId]));
 
-  const missingPrimaryGeoBusinesses = businesses
+  const activeBusinesses = businesses.filter((business) => business.status === 'approved');
+
+  const missingPrimaryGeoBusinesses = activeBusinesses
     .filter((business) => (
       !stateIds.has(business.stateId) ||
       !cityIds.has(business.cityId) ||
@@ -474,14 +476,14 @@ const validateGeographyConfigForOperations = (
     errors.push(`These listings would lose their primary geography mapping: ${formatValidationExamples(missingPrimaryGeoBusinesses)}.`);
   }
 
-  const missingOperationalAreaBusinesses = businesses
+  const missingOperationalAreaBusinesses = activeBusinesses
     .filter((business) => business.areasOfOperation.some((areaId) => !areaIds.has(areaId)))
     .map((business) => business.name);
   if (missingOperationalAreaBusinesses.length > 0) {
     errors.push(`These listings reference areas of operation that would be removed: ${formatValidationExamples(missingOperationalAreaBusinesses)}.`);
   }
 
-  const mismatchedAreaChainBusinesses = businesses
+  const mismatchedAreaChainBusinesses = activeBusinesses
     .filter((business) => {
       if (!String(business.areaId || '').trim()) return false;
       const area = areaLookup.get(business.areaId);
@@ -500,7 +502,7 @@ const validateGeographyConfigForOperations = (
     errors.push(`These listings would no longer match their state/city/locality/area hierarchy: ${formatValidationExamples(mismatchedAreaChainBusinesses)}.`);
   }
 
-  const localityMismatchBusinesses = businesses
+  const localityMismatchBusinesses = activeBusinesses
     .filter((business) => {
       const area = areaLookup.get(business.areaId);
       const resolvedPincode = String(business.pincode || area?.pincode || '').trim();
@@ -511,6 +513,140 @@ const validateGeographyConfigForOperations = (
     .map((business) => business.name);
   if (localityMismatchBusinesses.length > 0) {
     errors.push(`These listings would conflict with locality-pincode routing rules: ${formatValidationExamples(localityMismatchBusinesses)}.`);
+  }
+
+  return errors;
+};
+
+const buildGeographyConfigLookups = (
+  config: GeographyConfigState,
+  pincodeMappings: PincodeRoutingMapping[],
+) => {
+  const stateLookup = new Map(config.states.map((state) => [state.id, state]));
+  const cityLookup = new Map(config.cities.map((city) => [city.id, city]));
+  const localityLookup = new Map(config.localities.map((locality) => [locality.id, locality]));
+  const areaLookup = new Map(config.areas.map((area) => [area.id, area]));
+  const pincodeLocalityLookup = new Map(pincodeMappings.map((mapping) => [mapping.pincode, mapping.localityId]));
+
+  return {
+    stateLookup,
+    cityLookup,
+    localityLookup,
+    areaLookup,
+    pincodeLocalityLookup,
+  };
+};
+
+const realignBusinessHierarchyForGeographyConfig = (
+  business: Business,
+  config: GeographyConfigState,
+  pincodeMappings: PincodeRoutingMapping[],
+): Business => {
+  const lookups = buildGeographyConfigLookups(config, pincodeMappings);
+  const requestedAreaId = String(business.areaId || '').trim();
+  const requestedLocalityId = String(business.localityId || '').trim();
+  const requestedCityId = String(business.cityId || '').trim();
+  const requestedStateId = String(business.stateId || '').trim();
+  const requestedPincode = String(business.pincode || '').replace(/\D/g, '').slice(0, 6);
+
+  const resolvedArea = requestedAreaId ? lookups.areaLookup.get(requestedAreaId) : undefined;
+  const resolvedLocality = (
+    resolvedArea
+      ? lookups.localityLookup.get(resolvedArea.localityId)
+      : undefined
+  ) || (
+    requestedLocalityId
+      ? lookups.localityLookup.get(requestedLocalityId)
+      : undefined
+  ) || (
+    requestedPincode
+      ? lookups.localityLookup.get(lookups.pincodeLocalityLookup.get(requestedPincode) || '')
+      : undefined
+  );
+  const resolvedCity = (
+    resolvedArea
+      ? lookups.cityLookup.get(resolvedArea.cityId)
+      : undefined
+  ) || (
+    resolvedLocality
+      ? lookups.cityLookup.get(resolvedLocality.cityId)
+      : undefined
+  ) || (
+    requestedCityId
+      ? lookups.cityLookup.get(requestedCityId)
+      : undefined
+  );
+  const resolvedState = (
+    resolvedCity
+      ? lookups.stateLookup.get(resolvedCity.stateId)
+      : undefined
+  ) || (
+    requestedStateId
+      ? lookups.stateLookup.get(requestedStateId)
+      : undefined
+  );
+
+  return {
+    ...business,
+    localityId: resolvedLocality?.id || requestedLocalityId,
+    cityId: resolvedCity?.id || requestedCityId,
+    stateId: resolvedState?.id || requestedStateId,
+    pincode: requestedPincode || resolvedArea?.pincode || '',
+  };
+};
+
+const getBusinessHierarchyValidationErrors = (
+  business: Business,
+  config: GeographyConfigState,
+  pincodeMappings: PincodeRoutingMapping[],
+): string[] => {
+  const lookups = buildGeographyConfigLookups(config, pincodeMappings);
+  const errors: string[] = [];
+  const areaId = String(business.areaId || '').trim();
+  const localityId = String(business.localityId || '').trim();
+  const cityId = String(business.cityId || '').trim();
+  const stateId = String(business.stateId || '').trim();
+  const pincode = String(business.pincode || '').trim();
+
+  const state = stateId ? lookups.stateLookup.get(stateId) : undefined;
+  const city = cityId ? lookups.cityLookup.get(cityId) : undefined;
+  const locality = localityId ? lookups.localityLookup.get(localityId) : undefined;
+  const area = areaId ? lookups.areaLookup.get(areaId) : undefined;
+
+  if (!localityId || !locality) {
+    errors.push(`Missing or invalid locality: ${localityId || 'not set'}`);
+  }
+  if (!cityId || !city) {
+    errors.push(`Missing or invalid city: ${cityId || 'not set'}`);
+  }
+  if (!stateId || !state) {
+    errors.push(`Missing or invalid state: ${stateId || 'not set'}`);
+  }
+  if (areaId && !area) {
+    errors.push(`Missing or invalid area: ${areaId}`);
+  }
+
+  if (area && locality && area.localityId !== locality.id) {
+    errors.push(`Area/locality mismatch: area "${area.name}" belongs to locality "${lookups.localityLookup.get(area.localityId)?.name || area.localityId}"`);
+  }
+  if (area && city && area.cityId !== city.id) {
+    errors.push(`Area/city mismatch: area "${area.name}" belongs to city "${lookups.cityLookup.get(area.cityId)?.name || area.cityId}"`);
+  }
+  if (locality && city && locality.cityId !== city.id) {
+    errors.push(`Locality/city mismatch: locality "${locality.name}" belongs to city "${lookups.cityLookup.get(locality.cityId)?.name || locality.cityId}"`);
+  }
+  if (city && state && city.stateId !== state.id) {
+    errors.push(`City/state mismatch: city "${city.name}" belongs to state "${lookups.stateLookup.get(city.stateId)?.name || city.stateId}"`);
+  }
+
+  const mappedLocalityId = pincode ? lookups.pincodeLocalityLookup.get(pincode) : undefined;
+  if (mappedLocalityId && locality && mappedLocalityId !== locality.id) {
+    errors.push(`Pincode/locality mismatch: PIN ${pincode} routes to locality "${lookups.localityLookup.get(mappedLocalityId)?.name || mappedLocalityId}"`);
+  }
+
+  const invalidOperationalAreas = (business.areasOfOperation || []).filter((entry) => !lookups.areaLookup.has(String(entry || '').trim()));
+  if (invalidOperationalAreas.length > 0) {
+    errors.push(`Invalid areas of operation: ${invalidOperationalAreas.join(', ')}`);
   }
 
   return errors;
@@ -3738,10 +3874,15 @@ export default function App() {
   const handleSaveGeographyConfig = async (nextConfig: GeographyConfigState) => {
     const normalized = normalizeGeographyConfigState(nextConfig);
     const currentNormalized = normalizeGeographyConfigState(geographyConfig);
+    const realignedBusinesses = businesses.map((business) => (
+      business.status === 'approved'
+        ? realignBusinessHierarchyForGeographyConfig(business, normalized, pincodeMappings)
+        : business
+    ));
     const validationErrors = getIntroducedGeographyValidationErrors(
       currentNormalized,
       normalized,
-      businesses,
+      realignedBusinesses,
       pincodeMappings,
     );
     if (validationErrors.length > 0) {
@@ -3763,10 +3904,15 @@ export default function App() {
       }
       const payload = await response.json().catch(() => null);
       const saved = normalizeGeographyConfigState(payload?.config || normalized);
+      const savedAlignedBusinesses = businesses.map((business) => (
+        business.status === 'approved'
+          ? realignBusinessHierarchyForGeographyConfig(business, saved, pincodeMappings)
+          : business
+      ));
       const savedValidationErrors = getIntroducedGeographyValidationErrors(
         currentNormalized,
         saved,
-        businesses,
+        savedAlignedBusinesses,
         pincodeMappings,
       );
       if (savedValidationErrors.length > 0) {
@@ -3774,7 +3920,9 @@ export default function App() {
       }
       setGeographyConfig(saved);
       setGeographyCatalog(saved.states, saved.cities, saved.localities, saved.areas);
-      setBusinesses((prev) => prev.map(normalizeStoredBusiness));
+      const normalizedAlignedBusinesses = savedAlignedBusinesses.map(normalizeStoredBusiness);
+      setBusinesses(normalizedAlignedBusinesses);
+      persistBusinessesToServer(normalizedAlignedBusinesses);
       logAuditEvent(
         'data_entry',
         'Saved managed geography configuration',
@@ -3785,7 +3933,8 @@ export default function App() {
 
     setGeographyConfig(normalized);
     setGeographyCatalog(normalized.states, normalized.cities, normalized.localities, normalized.areas);
-    setBusinesses((prev) => prev.map(normalizeStoredBusiness));
+    const normalizedAlignedBusinesses = realignedBusinesses.map(normalizeStoredBusiness);
+    setBusinesses(normalizedAlignedBusinesses);
     logAuditEvent(
       'data_entry',
       'Saved managed geography configuration',
@@ -4932,8 +5081,16 @@ export default function App() {
     setBusinesses(prev => {
       const next = prev.map(b => {
         if (b.id === bizId) {
+          const alignedBusiness = realignBusinessHierarchyForGeographyConfig(b, geographyConfig, pincodeMappings);
+          const hierarchyErrors = getBusinessHierarchyValidationErrors(alignedBusiness, geographyConfig, pincodeMappings);
+          if (hierarchyErrors.length > 0) {
+            if (typeof window !== 'undefined') {
+              window.alert(`Listing cannot be activated until hierarchy is fixed:\n- ${hierarchyErrors.join('\n- ')}`);
+            }
+            return b;
+          }
           logAuditEvent('data_entry', `Approved business listing registration: "${b.name}"`, `Successfully validated SLA & activated routing headers for ID ${bizId}`);
-          return { ...b, status: 'approved' };
+          return { ...alignedBusiness, status: 'approved' };
         }
         return b;
       });
@@ -5149,9 +5306,26 @@ export default function App() {
     const normalizedInput = normalizeBusinessGeographyInput(updatedBiz);
     logAuditEvent('data_entry', `Business listing updated: "${updatedBiz.name}"`, `Updated listing ID: ${updatedBiz.id} | Locality: ${normalizedInput.localityId}`);
     setBusinesses(prev => {
+      const current = prev.find((business) => business.id === updatedBiz.id) || null;
+      const candidateForActivation = updatedBiz.status === 'approved'
+        ? realignBusinessHierarchyForGeographyConfig({
+            ...updatedBiz,
+            ...normalizedInput,
+          }, geographyConfig, pincodeMappings)
+        : null;
+      if (candidateForActivation && current?.status !== 'approved') {
+        const hierarchyErrors = getBusinessHierarchyValidationErrors(candidateForActivation, geographyConfig, pincodeMappings);
+        if (hierarchyErrors.length > 0) {
+          if (typeof window !== 'undefined') {
+            window.alert(`Listing cannot be activated until hierarchy is fixed:\n- ${hierarchyErrors.join('\n- ')}`);
+          }
+          return prev;
+        }
+      }
       const normalized = normalizeStoredBusiness({
         ...updatedBiz,
         ...normalizedInput,
+        ...(candidateForActivation || {}),
       });
       const next = prev.map(b => b.id === normalized.id ? normalized : b);
       persistBusinessesToServer(next);
