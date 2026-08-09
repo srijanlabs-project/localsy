@@ -335,8 +335,15 @@ const normalizeGeographyConfigState = (
     ? value.localities.map(normalizeStoredGeographyLocality).filter((locality) => locality.id && locality.name && cityIds.has(locality.cityId))
     : [...MASTER_LOCALITIES].map(normalizeStoredGeographyLocality);
   const localityIds = new Set(localities.map((locality) => locality.id));
+  const localityCityLookup = new Map(localities.map((locality) => [locality.id, locality.cityId]));
   const areas = Array.isArray(value?.areas)
-    ? value.areas.map(normalizeStoredArea).filter((area) => area.id && area.name && area.pincode && localityIds.has(area.localityId) && cityIds.has(area.cityId))
+    ? value.areas
+        .map(normalizeStoredArea)
+        .map((area) => ({
+          ...area,
+          cityId: localityCityLookup.get(area.localityId) || area.cityId,
+        }))
+        .filter((area) => area.id && area.name && area.pincode && localityIds.has(area.localityId) && cityIds.has(area.cityId))
     : [...MASTER_AREAS].map(normalizeStoredArea);
   return {
     states,
@@ -564,12 +571,12 @@ const realignBusinessHierarchyForGeographyConfig = (
       : undefined
   );
   const resolvedCity = (
-    resolvedArea
-      ? lookups.cityLookup.get(resolvedArea.cityId)
-      : undefined
-  ) || (
     resolvedLocality
       ? lookups.cityLookup.get(resolvedLocality.cityId)
+      : undefined
+  ) || (
+    resolvedArea
+      ? lookups.cityLookup.get(resolvedArea.cityId)
       : undefined
   ) || (
     requestedCityId
