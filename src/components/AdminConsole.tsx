@@ -4715,7 +4715,7 @@ export default function AdminConsole({
                 const matchedLoc = localities.find(l => l.id === mapping.localityId);
                 return (
                   <div key={mapping.pincode} className="flex justify-between items-center p-2 bg-slate-50 border border-slate-150 rounded-xl font-mono">
-                    <span className="font-bold text-slate-800">ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â°ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âª {mapping.pincode}</span>
+                    <span className="font-bold text-slate-800">PIN {mapping.pincode}</span>
                     <div className="flex items-center gap-2">
                       <span className="font-sans text-[11px] text-slate-600 font-semibold">{matchedLoc?.name.split(',')[0] || mapping.localityId}</span>
                       <button
