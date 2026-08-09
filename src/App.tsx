@@ -2495,6 +2495,42 @@ export default function App() {
       });
   };
 
+  const replaceBusinessesOnServer = async (nextBusinesses: Business[]) => {
+    if (apiConfiguration.syncMode !== 'api' || !apiConfiguration.autoSyncBusinesses) {
+      return;
+    }
+
+    const replaceResponse = await fetch('/api/admin/businesses/replace', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify({ businesses: nextBusinesses }),
+    });
+
+    if (!replaceResponse.ok) {
+      const fallbackResponse = await fetch(apiConfiguration.businessesEndpoint, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(),
+        },
+        body: JSON.stringify({ businesses: nextBusinesses }),
+      });
+
+      if (!fallbackResponse.ok) {
+        const payload = await fallbackResponse.json().catch(() => null);
+        throw new Error(payload?.error || 'Failed to sync business hierarchy updates');
+      }
+    }
+
+    setApiConfiguration((prev) => ({
+      ...prev,
+      lastBusinessesSyncAt: new Date().toISOString(),
+    }));
+  };
+
   const createReviewOnServer = (review: Review) => {
     if (apiConfiguration.syncMode !== 'api' || !apiConfiguration.reviewsEndpoint) {
       return;
@@ -3928,8 +3964,8 @@ export default function App() {
       setGeographyConfig(saved);
       setGeographyCatalog(saved.states, saved.cities, saved.localities, saved.areas);
       const normalizedAlignedBusinesses = savedAlignedBusinesses.map(normalizeStoredBusiness);
+      await replaceBusinessesOnServer(normalizedAlignedBusinesses);
       setBusinesses(normalizedAlignedBusinesses);
-      persistBusinessesToServer(normalizedAlignedBusinesses);
       logAuditEvent(
         'data_entry',
         'Saved managed geography configuration',
