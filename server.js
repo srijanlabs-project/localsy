@@ -82,6 +82,9 @@ const complianceGovernancePath = path.join(__dirname, 'compliance-governance.jso
 const knowledgeRetrievalStatePath = path.join(__dirname, 'knowledge-retrieval.json');
 const TOKEN_SECRET = process.env.AUTH_SECRET || 'replace-this-in-production';
 const TOKEN_TTL_SEC = 60 * 60 * 12; // 12 hours
+const REQUIRE_PERSISTENT_MANAGED_STATE = String(
+  process.env.REQUIRE_PERSISTENT_MANAGED_STATE || (process.env.NODE_ENV === 'production' ? 'true' : 'false'),
+).toLowerCase() === 'true';
 
 async function readBootstrapJson(filePath, label) {
   try {
@@ -94,6 +97,14 @@ async function readBootstrapJson(filePath, label) {
     }
     return {};
   }
+}
+
+function assertPersistentManagedStateAvailable(client, domainLabel) {
+  if (client) return;
+  if (!REQUIRE_PERSISTENT_MANAGED_STATE) return;
+  throw new Error(
+    `Persistent database storage is unavailable for ${domainLabel}. Configure DATABASE_URL before saving production changes.`
+  );
 }
 
 app.use(express.json({ limit: '20mb' }));
@@ -2557,9 +2568,9 @@ async function syncHomepageConfigToTables(_client, state) {
       await client.query(
         `INSERT INTO homepage_layouts (id, locality_id, name, status, visible, sections, updated_at)
          VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::timestamptz)
-         ON CONFLICT (id)
+         ON CONFLICT (locality_id)
          DO UPDATE SET
-           locality_id = EXCLUDED.locality_id,
+           id = EXCLUDED.id,
            name = EXCLUDED.name,
            status = EXCLUDED.status,
            visible = EXCLUDED.visible,
@@ -3941,7 +3952,7 @@ async function writeBusinessTaxonomy(taxonomy) {
 }
 
 async function readLocalityRoutingConfigFromTables(client) {
-  const [localitiesResult, subdomainsResult, mappingsResult, defaultResult] = await Promise.all([
+  const [localitiesResult, subdomainsResult, mappingsResult, defaultResult, geographyResult] = await Promise.all([
     client.query(`
       SELECT id, name, slug, subdomain, description, status, cover_image, stats, carousel_images, metadata, updated_at
       FROM platform_localities
@@ -3963,11 +3974,24 @@ async function readLocalityRoutingConfigFromTables(client) {
       WHERE key = $1
       LIMIT 1
     `, ['default_locality_id']),
+    client.query(`
+      SELECT value
+      FROM app_state
+      WHERE key = $1
+      LIMIT 1
+    `, ['geography_config']),
   ]);
 
   if (localitiesResult.rows.length === 0) {
     return null;
   }
+
+  const storedGeographyConfig = geographyResult.rows[0]?.value
+    ? sanitizeGeographyConfigState(geographyResult.rows[0].value)
+    : null;
+  const derivedPincodeMappings = mappingsResult.rows.length === 0 && storedGeographyConfig
+    ? derivePincodeMappingsFromGeographyConfig(storedGeographyConfig)
+    : [];
 
   return sanitizeLocalityRoutingConfigState({
     localities: localitiesResult.rows.map((row) => ({
@@ -3990,10 +4014,12 @@ async function readLocalityRoutingConfigFromTables(client) {
       dnsStatus: row.dns_status,
       createdAt: row.created_at?.toISOString?.() || new Date().toISOString(),
     })),
-    pincodeMappings: mappingsResult.rows.map((row) => ({
-      pincode: row.pincode,
-      localityId: row.locality_id,
-    })),
+    pincodeMappings: mappingsResult.rows.length > 0
+      ? mappingsResult.rows.map((row) => ({
+          pincode: row.pincode,
+          localityId: row.locality_id,
+        }))
+      : derivedPincodeMappings,
     defaultLocalityId: defaultResult.rows[0]?.value || '',
     metadata: {
       seededFromCode: false,
@@ -4120,6 +4146,18 @@ async function writeLocalityRoutingConfig(config) {
 }
 
 async function readGeographyConfigFromTables(client) {
+  const storedResult = await client.query(
+    `SELECT value
+     FROM app_state
+     WHERE key = $1
+     LIMIT 1`,
+    ['geography_config'],
+  );
+
+  if (storedResult.rows[0]?.value) {
+    return sanitizeGeographyConfigState(storedResult.rows[0].value);
+  }
+
   const [statesResult, citiesResult, areasResult] = await Promise.all([
     client.query(`
       SELECT id, name, metadata, updated_at
@@ -4236,6 +4274,14 @@ async function writeGeographyConfig(config) {
   const client = await getPgClient();
   if (client) {
     await syncGeographyConfigToTables(client, sanitized);
+    await client.query(
+      `INSERT INTO app_state (key, value, updated_at)
+       VALUES ($1, $2::jsonb, NOW())
+       ON CONFLICT (key)
+       DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+      ['geography_config', JSON.stringify(sanitized)],
+    );
+    memoryGeographyConfig = sanitized;
     return sanitized;
   }
 
@@ -4248,6 +4294,29 @@ async function writeGeographyConfig(config) {
     memoryGeographyConfig = sanitized;
     return sanitized;
   }
+}
+
+function derivePincodeMappingsFromGeographyConfig(config) {
+  const sanitized = sanitizeGeographyConfigState(config);
+  const pincodeLocalitySets = new Map();
+
+  for (const area of sanitized.areas || []) {
+    const pincode = String(area?.pincode || '').trim();
+    const localityId = String(area?.localityId || '').trim();
+    if (!pincode || !localityId) continue;
+    if (!pincodeLocalitySets.has(pincode)) {
+      pincodeLocalitySets.set(pincode, new Set());
+    }
+    pincodeLocalitySets.get(pincode).add(localityId);
+  }
+
+  return Array.from(pincodeLocalitySets.entries())
+    .filter(([, localityIds]) => localityIds.size === 1)
+    .map(([pincode, localityIds]) => ({
+      pincode,
+      localityId: Array.from(localityIds)[0],
+    }))
+    .sort((a, b) => a.pincode.localeCompare(b.pincode));
 }
 
 async function readHomepageDefaultsConfig() {
