@@ -3036,8 +3036,9 @@ export default function App() {
       let resolvedSearch: string | null = null;
       let resolvedBusinessId: string | null = null;
       let pendingListingSlug: string | null = null;
+      let cityRedirectPath: string | null = null;
       let shouldOpenSearchResults = false;
-      let nextExperienceRoute: { page: 'locality' } | { page: 'city'; cityId: string } | { page: 'national' } | { page: 'seller'; sellerBusinessId: string } = { page: 'locality' };
+      let nextExperienceRoute: { page: 'locality' } | { page: 'national' } | { page: 'seller'; sellerBusinessId: string } = { page: 'locality' };
 
       if (pathSegments[0] === 'admin') {
         setInitialAdminWorkspaceTab(normalizeAdminWorkspaceRouteTab(pathSegments[1] || ''));
@@ -3049,13 +3050,30 @@ export default function App() {
       if (pathSegments[0] === 'national') {
         nextExperienceRoute = { page: 'national' };
       }
+      // The city aggregate page has been retired: it was a second, drifting
+      // design of the same directory. A /city/<name> URL now resolves to the
+      // pincode-based locality page and the address bar is rewritten to it, so
+      // there is only ever one public directory experience.
       if (pathSegments[0] === 'city' && pathSegments[1]) {
         const matchedCity = MASTER_CITIES.find((city) => slugifyForUrl(city.name) === pathSegments[1] || city.id === pathSegments[1]);
         if (matchedCity) {
-          nextExperienceRoute = { page: 'city', cityId: matchedCity.id };
-          const firstLocalityInCity = localities.find((locality) => locality.name.toLowerCase().includes(matchedCity.name.toLowerCase()));
-          if (firstLocalityInCity) {
-            resolvedLocalityId = firstLocalityInCity.id;
+          const cityLocalityIds = MASTER_LOCALITIES
+            .filter((locality) => locality.cityId === matchedCity.id)
+            .map((locality) => locality.id);
+          // Prefer whatever the visitor's saved pincode already resolved to,
+          // when that locality belongs to this city.
+          const savedLocalityIds = String(localStorage.getItem('yp_saved_locality_id') || '')
+            .split(',')
+            .map((entry) => entry.trim())
+            .filter(Boolean);
+          const savedLocalityInCity = savedLocalityIds.find((id) => cityLocalityIds.includes(id)) || '';
+          const targetLocality = localities.find((locality) => locality.id === savedLocalityInCity)
+            || localities.find((locality) => cityLocalityIds.includes(locality.id))
+            || localities.find((locality) => locality.name.toLowerCase().includes(matchedCity.name.toLowerCase()))
+            || null;
+          if (targetLocality) {
+            resolvedLocalityId = targetLocality.id;
+            cityRedirectPath = `/${targetLocality.slug || targetLocality.id}`;
           }
         }
       }
@@ -3154,6 +3172,10 @@ export default function App() {
         if (businessParam && businesses.some((biz) => biz.id === businessParam)) {
           resolvedBusinessId = businessParam;
         }
+      }
+
+      if (cityRedirectPath && window.location.pathname !== cityRedirectPath) {
+        window.history.replaceState({}, '', cityRedirectPath);
       }
 
       if (resolvedLocalityId) {
@@ -6497,22 +6519,19 @@ export default function App() {
       : '/ui/listing-detail-v1';
     window.history.pushState({}, '', nextPath);
   };
+  // There is no separate city page any more — this opens the locality page for
+  // whichever locality the visitor's pincode resolves to.
   const handleOpenLiveCityPage = (localityId?: string) => {
     const targetLocalityId = localityId || activeLocality?.id || activeLocalityId || defaultLocalityId || localities[0]?.id || '';
     const targetLocality = localities.find((locality) => locality.id === targetLocalityId) || activeLocality || localities[0];
-    const targetLocalityCityId = targetLocality?.cityId
-      || MASTER_LOCALITIES.find((locality) => locality.id === targetLocality?.id)?.cityId
-      || '';
-    const matchedCity = MASTER_CITIES.find((city) => city.id === targetLocalityCityId);
     if (targetLocality?.id) {
       setActiveLocalityId(targetLocality.id);
     }
     setActiveViewWithAudit('web');
-    if (matchedCity) {
-      window.history.pushState({}, '', `/city/${slugifyForUrl(matchedCity.name)}`);
-      window.dispatchEvent(new PopStateEvent('popstate'));
-    }
+    window.history.pushState({}, '', buildLocalityPath(targetLocality?.id || targetLocalityId));
+    window.dispatchEvent(new PopStateEvent('popstate'));
   };
+
   const handleOpenNationalPage = () => {
     setActiveViewWithAudit('web');
     window.history.pushState({}, '', '/national');
@@ -7150,44 +7169,6 @@ export default function App() {
                   const targetLocalityId = localityId || activeLocalityId || defaultLocalityId || localities[0]?.id || '';
                   setActiveViewWithAudit('web');
                   window.history.pushState({}, '', `${buildLocalityPath(targetLocalityId)}?category=${encodeURIComponent(categoryId)}`);
-                  window.dispatchEvent(new PopStateEvent('popstate'));
-                }}
-                onOpenListingPage={handleOpenLiveListingPage}
-              />
-            ) : liveExperienceRoute.page === 'city' ? (
-              <CityDirectoryUiV1
-                activeLocalityId={activeLocalityId}
-                businesses={businesses}
-                categories={portalCategories.filter((category) => category.id !== 'all')}
-                localities={localities}
-                displayedPincode={savedPincode || mappedPincodesForActiveLocality[0] || undefined}
-                activeNodeLabel={activeLocalityName}
-                userSession={userSession}
-                onOpenPincodeModal={openPincodeModalManually}
-                onRequestAuth={() => setShowAuthModal(true)}
-                onLogout={handleLogout}
-                isAdvertiseActive={canAccessAdmin ? false : false}
-                isAccountActive={showAuthModal}
-                onOpenLivePortal={handleMainLogoHome}
-                onOpenPlatform={handleOpenPlatformWorkspace}
-                onOpenLocalityPage={(localityId) => {
-                  setActiveViewWithAudit('web');
-                  window.history.pushState({}, '', buildLocalityPath(localityId));
-                  window.dispatchEvent(new PopStateEvent('popstate'));
-                }}
-                onOpenCategoryPage={(categoryId, localityId) => {
-                  const targetLocalityId = localityId || activeLocalityId || defaultLocalityId || localities[0]?.id || '';
-                  setActiveViewWithAudit('web');
-                  window.history.pushState({}, '', `${buildLocalityPath(targetLocalityId)}?category=${encodeURIComponent(categoryId)}`);
-                  window.dispatchEvent(new PopStateEvent('popstate'));
-                }}
-                onSearchSubmit={(query, localityId) => {
-                  const targetLocalityId = localityId || activeLocalityId || defaultLocalityId || localities[0]?.id || '';
-                  const normalizedQuery = String(query || '').trim();
-                  setActiveViewWithAudit('web');
-                  window.history.pushState({}, '', normalizedQuery
-                    ? `${buildLocalityPath(targetLocalityId)}?srp=${encodeURIComponent(normalizedQuery)}`
-                    : buildLocalityPath(targetLocalityId));
                   window.dispatchEvent(new PopStateEvent('popstate'));
                 }}
                 onOpenListingPage={handleOpenLiveListingPage}
