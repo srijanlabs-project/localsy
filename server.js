@@ -5006,11 +5006,24 @@ async function readScalableCmsStateFromTables(client) {
 }
 
 async function deleteRowsMissingFromIdSet(client, tableName, ids) {
+  // Every table this helper is actually called with. The homepage-config sync
+  // prunes six tables that were missing from this list, so its first prune
+  // threw "Unsupported prune table" and rolled back the whole transaction —
+  // including the app_state mirror written at the end of it. That is why
+  // homepage config, hero banners, listing ads, coupons and category URL
+  // entries never persisted on a database-backed install.
+  // All of these use `id TEXT PRIMARY KEY`, which the DELETE below relies on.
   const allowedTables = new Set([
     'cms_templates',
     'cms_template_assignments',
     'cms_campaigns',
     'published_homepage_snapshots',
+    'homepage_layouts',
+    'homepage_hero_banners',
+    'homepage_listing_ads',
+    'homepage_coupons',
+    'homepage_community_items',
+    'homepage_locality_category_links',
   ]);
   if (!allowedTables.has(tableName)) {
     throw new Error(`Unsupported prune table: ${tableName}`);

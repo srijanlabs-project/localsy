@@ -6,3 +6,39 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# --- Runtime state written by the server ---
+# These are created and rewritten by the running app. Tracking them means
+# production state leaks into the repo (and, for users.json, credentials do).
+# The server tolerates their absence: readBootstrapJson returns {} on ENOENT.
+users.json
+scalable-cms-state.json
+business-taxonomy.json
+buyer-states.json
+ad-leads.json
+compliance-governance.json
+knowledge-retrieval.json
+audit-events.jsonl
+
+# --- DO NOT ignore these ---
+# src/App.tsx and src/components/WebPortal.tsx import them directly, so Vite
+# needs them present at build time. Ignoring any of these breaks `npm run build`
+# on a fresh clone with "Cannot find module":
+#   businesses.json
+#   crm-contacts.json
+#   homepage-defaults-config.json
+#   locality-routing-config.json
+#   reviews.json
+#   seo-discovery-config.json
+# geography-config.json and homepage-config.json stay tracked too: the server
+# reads them as bootstrap seeds on first boot.
+
+# --- Bulk import working files ---
+upload-chunks/
+upload-*.csv
+upload-*.xlsx
+
+# --- Local scratch ---
+.tmp/
+.tmp-*
+.codex-*
