@@ -1,0 +1,339 @@
+{
+  "documents": [
+    {
+      "id": "tnc",
+      "slug": "terms-and-conditions",
+      "title": "Terms and Conditions",
+      "category": "legal_content",
+      "summary": "Platform usage terms for all Localisy visitors, businesses, and contributors.",
+      "audience": "all",
+      "version": "1.0.0",
+      "effectiveFrom": "2026-08-02T00:00:00.000Z",
+      "status": "published",
+      "localityIds": [],
+      "content": [
+        "Localisy provides a hyperlocal directory and discovery platform.",
+        "Users must provide accurate information while searching, reviewing, or listing businesses.",
+        "Business owners are responsible for listing accuracy, operating permissions, and customer-facing commitments.",
+        "Localisy may moderate, suspend, or remove content that violates platform policy or legal requirements."
+      ],
+      "updatedAt": "2026-08-02T00:00:00.000Z"
+    },
+    {
+      "id": "privacy-policy",
+      "slug": "privacy-policy",
+      "title": "Privacy Policy",
+      "category": "legal_content",
+      "summary": "How Localisy collects, uses, stores, and protects personal and operational data.",
+      "audience": "all",
+      "version": "1.0.0",
+      "effectiveFrom": "2026-08-02T00:00:00.000Z",
+      "status": "published",
+      "localityIds": [],
+      "content": [
+        "Localisy collects profile, contact, consent, and directory interaction data required to deliver platform services.",
+        "PII access is role-restricted and purpose-limited.",
+        "Consent and audit trails are retained according to policy and regulatory requirements.",
+        "Users may request export or deletion subject to fraud, safety, and statutory obligations."
+      ],
+      "updatedAt": "2026-08-02T00:00:00.000Z"
+    },
+    {
+      "id": "cookie-policy",
+      "slug": "cookie-policy",
+      "title": "Cookie Policy",
+      "category": "legal_content",
+      "summary": "How Localisy uses browser storage, session cookies, and analytics storage.",
+      "audience": "all",
+      "version": "1.0.0",
+      "effectiveFrom": "2026-08-02T00:00:00.000Z",
+      "status": "published",
+      "localityIds": [],
+      "content": [
+        "Localisy uses essential storage for authentication, locality routing, and buyer-state continuity.",
+        "Non-essential analytics and marketing signals should honor user consent preferences.",
+        "Users can revoke optional consent without losing core directory access."
+      ],
+      "updatedAt": "2026-08-02T00:00:00.000Z"
+    },
+    {
+      "id": "disclaimer",
+      "slug": "disclaimer",
+      "title": "Platform Disclaimer",
+      "category": "legal_content",
+      "summary": "Platform-level disclaimers for listing accuracy, availability, and third-party actions.",
+      "audience": "all",
+      "version": "1.0.0",
+      "effectiveFrom": "2026-08-02T00:00:00.000Z",
+      "status": "published",
+      "localityIds": [],
+      "content": [
+        "Listing information may change and should be independently verified for critical or urgent decisions.",
+        "Emergency and public-service information is curated in good faith but may depend on third-party operators.",
+        "Localisy does not guarantee advertiser performance or transaction outcomes unless explicitly contracted."
+      ],
+      "updatedAt": "2026-08-02T00:00:00.000Z"
+    },
+    {
+      "id": "refund-policy",
+      "slug": "refund-policy",
+      "title": "Refund Policy",
+      "category": "commercial_policy",
+      "summary": "Refund handling for subscriptions, ads, and managed services.",
+      "audience": "seller",
+      "version": "1.0.0",
+      "effectiveFrom": "2026-08-02T00:00:00.000Z",
+      "status": "published",
+      "localityIds": [],
+      "content": [
+        "Refunds depend on service type, campaign start status, and documented delivery gaps.",
+        "Unused prepaid advertiser balances may be eligible for review-based credit or refund.",
+        "Fraud, policy violations, and manual override abuse are not refundable."
+      ],
+      "updatedAt": "2026-08-02T00:00:00.000Z"
+    },
+    {
+      "id": "cancellation-policy",
+      "slug": "cancellation-policy",
+      "title": "Cancellation Policy",
+      "category": "commercial_policy",
+      "summary": "Rules for cancelling plans, ads, or managed campaign services.",
+      "audience": "seller",
+      "version": "1.0.0",
+      "effectiveFrom": "2026-08-02T00:00:00.000Z",
+      "status": "published",
+      "localityIds": [],
+      "content": [
+        "Sellers can cancel upcoming plans and campaigns before activation windows close.",
+        "In-flight campaign cancellation may preserve spend already consumed and stop future delivery.",
+        "Platform-managed campaigns require operator confirmation before final cancellation."
+      ],
+      "updatedAt": "2026-08-02T00:00:00.000Z"
+    },
+    {
+      "id": "fulfilment-policy",
+      "slug": "fulfilment-policy",
+      "title": "Fulfilment Policy",
+      "category": "commercial_policy",
+      "summary": "Operational fulfilment expectations for ad delivery and managed merchant services.",
+      "audience": "seller",
+      "version": "1.0.0",
+      "effectiveFrom": "2026-08-02T00:00:00.000Z",
+      "status": "published",
+      "localityIds": [],
+      "content": [
+        "Localisy fulfils advertiser commitments through approved placements, scheduled campaigns, and analytics access.",
+        "Merchant support timelines vary by service level, campaign type, and moderation dependencies.",
+        "Delays caused by missing approvals, policy blocks, or incorrect inputs may pause fulfilment clocks."
+      ],
+      "updatedAt": "2026-08-02T00:00:00.000Z"
+    },
+    {
+      "id": "seller-agreement",
+      "slug": "seller-agreement",
+      "title": "Seller Agreement",
+      "category": "commercial_policy",
+      "summary": "Operating agreement for merchants, advertisers, and listing claimants.",
+      "audience": "seller",
+      "version": "1.0.0",
+      "effectiveFrom": "2026-08-02T00:00:00.000Z",
+      "status": "published",
+      "localityIds": [],
+      "content": [
+        "Sellers must maintain truthful business information and hold rights for uploaded content.",
+        "Advertisers must comply with content, targeting, and category restrictions.",
+        "Listing misuse, deceptive offers, or prohibited-category promotion may trigger suspension."
+      ],
+      "updatedAt": "2026-08-02T00:00:00.000Z"
+    },
+    {
+      "id": "community-guidelines",
+      "slug": "community-guidelines",
+      "title": "Community Guidelines",
+      "category": "platform_policy",
+      "summary": "Rules for recommendations, reviews, local updates, and community participation.",
+      "audience": "all",
+      "version": "1.0.0",
+      "effectiveFrom": "2026-08-02T00:00:00.000Z",
+      "status": "published",
+      "localityIds": [],
+      "content": [
+        "Users should contribute authentic, respectful, and locality-relevant content.",
+        "Spam, impersonation, harassment, and coordinated misinformation are prohibited.",
+        "Sensitive public-service content may be operator-curated or escalated."
+      ],
+      "updatedAt": "2026-08-02T00:00:00.000Z"
+    },
+    {
+      "id": "merchant-listing-policy",
+      "slug": "merchant-listing-policy",
+      "title": "Merchant Listing Policy",
+      "category": "platform_policy",
+      "summary": "Rules for creating, claiming, editing, and promoting directory listings.",
+      "audience": "seller",
+      "version": "1.0.0",
+      "effectiveFrom": "2026-08-02T00:00:00.000Z",
+      "status": "published",
+      "localityIds": [],
+      "content": [
+        "Each listing must represent a real, supportable business or public-service entity.",
+        "Duplicate, misleading, or location-spam listings are subject to merge or removal.",
+        "Special handling applies for home-based, women-led, and public-service listings to improve discoverability without misclassification."
+      ],
+      "updatedAt": "2026-08-02T00:00:00.000Z"
+    },
+    {
+      "id": "review-policy",
+      "slug": "review-policy",
+      "title": "Review Policy",
+      "category": "platform_policy",
+      "summary": "Rules for collecting, moderating, and resolving business reviews.",
+      "audience": "all",
+      "version": "1.0.0",
+      "effectiveFrom": "2026-08-02T00:00:00.000Z",
+      "status": "published",
+      "localityIds": [],
+      "content": [
+        "Reviews must reflect first-hand experience and should avoid abuse, defamation, or spam promotion.",
+        "OTP verification, report handling, and moderation review may be used to protect integrity.",
+        "Repeated policy violations may lead to content removal or account restrictions."
+      ],
+      "updatedAt": "2026-08-02T00:00:00.000Z"
+    },
+    {
+      "id": "moderation-policy",
+      "slug": "moderation-policy",
+      "title": "Moderation Policy",
+      "category": "platform_policy",
+      "summary": "How Localisy reviews listings, ads, reviews, and user-submitted content.",
+      "audience": "all",
+      "version": "1.0.0",
+      "effectiveFrom": "2026-08-02T00:00:00.000Z",
+      "status": "published",
+      "localityIds": [],
+      "content": [
+        "Localisy uses manual and rules-based moderation for listings, ads, and reviews.",
+        "Moderation outcomes include approve, reject, merge, keep separate, flag, or escalate.",
+        "High-risk cases may be retained longer for dispute, fraud, or regulatory review."
+      ],
+      "updatedAt": "2026-08-02T00:00:00.000Z"
+    }
+  ],
+  "consents": [
+    {
+      "id": "consent_1787510440696_1",
+      "subjectType": "user",
+      "channel": "sms",
+      "consentType": "otp_consent",
+      "status": "granted",
+      "phone": "919999900000",
+      "email": "admin@localsy.test",
+      "userId": "usr_1779453980689_80848",
+      "policyDocumentId": "",
+      "policyVersion": "",
+      "localityId": "",
+      "source": "platform_login_request_otp",
+      "capturedAt": "2026-08-23T18:40:40.691Z",
+      "metadata": {}
+    }
+  ],
+  "policyAcceptances": [],
+  "messageTemplates": [
+    {
+      "id": "tmpl_whatsapp_search_followup",
+      "channel": "whatsapp",
+      "name": "Search Follow-up",
+      "category": "utility",
+      "status": "active",
+      "locale": "en",
+      "requiresOptIn": true,
+      "sessionWindowHours": 24,
+      "body": "Here are the best matching Localisy listings for your request.",
+      "updatedAt": "2026-08-07T06:26:23.152Z"
+    },
+    {
+      "id": "tmpl_whatsapp_marketing_digest",
+      "channel": "whatsapp",
+      "name": "Marketing Digest",
+      "category": "marketing",
+      "status": "paused",
+      "locale": "en",
+      "requiresOptIn": true,
+      "sessionWindowHours": 0,
+      "body": "Discover new offers, trusted local businesses, and seasonal highlights.",
+      "updatedAt": "2026-08-07T06:26:23.152Z"
+    },
+    {
+      "id": "tmpl_sms_otp",
+      "channel": "sms",
+      "name": "OTP Verification",
+      "category": "utility",
+      "status": "active",
+      "locale": "en",
+      "requiresOptIn": false,
+      "sessionWindowHours": 0,
+      "body": "Your Localisy verification code is {{otp}}.",
+      "updatedAt": "2026-08-07T06:26:23.152Z"
+    }
+  ],
+  "unsubscribes": [],
+  "retentionRules": [
+    {
+      "entity": "consent_records",
+      "retentionDays": 730,
+      "action": "retain",
+      "piiFields": [
+        "phone",
+        "email"
+      ]
+    },
+    {
+      "entity": "policy_acceptances",
+      "retentionDays": 730,
+      "action": "retain",
+      "piiFields": [
+        "userId",
+        "phone",
+        "email"
+      ]
+    },
+    {
+      "entity": "unsubscribe_records",
+      "retentionDays": 1095,
+      "action": "retain",
+      "piiFields": [
+        "phone",
+        "email"
+      ]
+    },
+    {
+      "entity": "grievance_requests",
+      "retentionDays": 365,
+      "action": "archive",
+      "piiFields": [
+        "phone",
+        "email"
+      ]
+    },
+    {
+      "entity": "otp_challenges",
+      "retentionDays": 30,
+      "action": "delete",
+      "piiFields": [
+        "mobile"
+      ]
+    },
+    {
+      "entity": "channel_sessions",
+      "retentionDays": 30,
+      "action": "delete",
+      "piiFields": [
+        "phone"
+      ]
+    }
+  ],
+  "metadata": {
+    "updatedAt": "2026-08-23T18:40:40.697Z",
+    "seededFromCode": true
+  }
+}

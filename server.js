@@ -80,8 +80,22 @@ const seoDiscoveryConfigPath = path.join(__dirname, 'seo-discovery-config.json')
 const scalableCmsStatePath = path.join(__dirname, 'scalable-cms-state.json');
 const complianceGovernancePath = path.join(__dirname, 'compliance-governance.json');
 const knowledgeRetrievalStatePath = path.join(__dirname, 'knowledge-retrieval.json');
+const AUTH_SECRET_IS_DEFAULT = !process.env.AUTH_SECRET;
 const TOKEN_SECRET = process.env.AUTH_SECRET || 'replace-this-in-production';
+if (AUTH_SECRET_IS_DEFAULT) {
+  // Tokens are signed with this secret, so if the process is sometimes started
+  // WITH the env file and sometimes without it, the secret silently flips and
+  // every previously issued admin token starts returning 401 — which looked
+  // like "the admin login goes stale after a restart".
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('AUTH_SECRET must be set in production: refusing to sign tokens with the built-in development secret.');
+  }
+  console.warn('[auth] AUTH_SECRET is not set — using the built-in development secret. Tokens will not survive a start that DOES set AUTH_SECRET.');
+}
 const TOKEN_TTL_SEC = 60 * 60 * 12; // 12 hours
+const REQUIRE_PERSISTENT_MANAGED_STATE = String(
+  process.env.REQUIRE_PERSISTENT_MANAGED_STATE || (process.env.NODE_ENV === 'production' ? 'true' : 'false'),
+).toLowerCase() === 'true';
 
 async function readBootstrapJson(filePath, label) {
   try {
@@ -94,6 +108,14 @@ async function readBootstrapJson(filePath, label) {
     }
     return {};
   }
+}
+
+function assertPersistentManagedStateAvailable(client, domainLabel) {
+  if (client) return;
+  if (!REQUIRE_PERSISTENT_MANAGED_STATE) return;
+  throw new Error(
+    `Persistent database storage is unavailable for ${domainLabel}. Configure DATABASE_URL before saving production changes.`
+  );
 }
 
 app.use(express.json({ limit: '20mb' }));
@@ -111,9 +133,9 @@ app.use((req, res, next) => {
       "frame-ancestors 'none'",
       "object-src 'none'",
       "script-src 'self'",
-      "style-src 'self' 'unsafe-inline'",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "img-src 'self' data: blob: https:",
-      "font-src 'self' data:",
+      "font-src 'self' data: https://fonts.gstatic.com",
       "connect-src 'self' https: ws: wss:",
       "media-src 'self' data: blob: https:",
       "form-action 'self'",
@@ -172,7 +194,7 @@ const STORAGE_OBJECT_ACL = process.env.S3_OBJECT_ACL || '';
 const MSG91_AUTHKEY = process.env.MSG91_AUTHKEY || '';
 const MSG91_OTP_TEMPLATE_ID = process.env.MSG91_OTP_TEMPLATE_ID || '';
 const MSG91_OTP_BASE_URL = process.env.MSG91_OTP_BASE_URL || 'https://control.msg91.com';
-const LOCAL_DEV_OTP = process.env.LOCAL_DEV_OTP || '000000';
+const LOCAL_DEV_OTP = process.env.LOCAL_DEV_OTP || '123456';
 const CONTACT_VIEW_DAILY_LIMIT = Math.max(1, parseInt(process.env.CONTACT_VIEW_DAILY_LIMIT || '10', 10) || 10);
 const AUDIT_EVENT_WINDOW_MS = Math.max(10_000, parseInt(process.env.AUDIT_EVENT_WINDOW_MS || '60000', 10) || 60_000);
 const AUDIT_EVENT_MAX_PER_WINDOW = Math.max(10, parseInt(process.env.AUDIT_EVENT_MAX_PER_WINDOW || '40', 10) || 40);
@@ -660,16 +682,25 @@ function signToken(payload) {
 }
 
 function verifyToken(token) {
-  const [header, body, sig] = token.split('.');
-  if (!header || !body || !sig) return null;
-  const expected = crypto
-    .createHmac('sha256', TOKEN_SECRET)
-    .update(`${header}.${body}`)
-    .digest('base64url');
-  if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
-  const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
-  if (!payload.exp || payload.exp < Math.floor(Date.now() / 1000)) return null;
-  return payload;
+  try {
+    const [header, body, sig] = String(token || '').split('.');
+    if (!header || !body || !sig) return null;
+    const expected = crypto
+      .createHmac('sha256', TOKEN_SECRET)
+      .update(`${header}.${body}`)
+      .digest('base64url');
+    const providedBuffer = Buffer.from(sig);
+    const expectedBuffer = Buffer.from(expected);
+    // timingSafeEqual THROWS on a length mismatch, so a truncated or malformed
+    // token used to blow up the request instead of being rejected cleanly.
+    if (providedBuffer.length !== expectedBuffer.length) return null;
+    if (!crypto.timingSafeEqual(providedBuffer, expectedBuffer)) return null;
+    const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
+    if (!payload.exp || payload.exp < Math.floor(Date.now() / 1000)) return null;
+    return payload;
+  } catch {
+    return null;
+  }
 }
 
 async function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
@@ -1533,8 +1564,7 @@ function isLoopbackRequest(req) {
 
 function shouldUseLocalDevOtp(req) {
   return process.env.NODE_ENV !== 'production'
-    && isLoopbackRequest(req)
-    && (!MSG91_AUTHKEY || !MSG91_OTP_TEMPLATE_ID);
+    && isLoopbackRequest(req);
 }
 
 function withDevOtpPayload(req, payload) {
@@ -2449,6 +2479,11 @@ function buildDefaultLegacyHomepageLayout(localityId, fallbackLayout) {
   if (fallbackLayout && typeof fallbackLayout === 'object') {
     return sanitizeLegacyHomepageLayout({
       ...fallbackLayout,
+      // A layout copied from another locality must NOT inherit its id:
+      // homepage_layouts.id is the primary key, so reusing it collides with the
+      // layout it was copied from and the whole save fails with a duplicate-key
+      // error. This is what made creating a locality return 500.
+      id: `homepage_${normalizedLocalityId || crypto.randomUUID()}`,
       localityId: normalizedLocalityId,
     });
   }
@@ -2555,11 +2590,15 @@ async function syncHomepageConfigToTables(_client, state) {
     for (const layout of state.homepageLayouts || []) {
       const sanitizedLayout = sanitizeLegacyHomepageLayout(layout);
       await client.query(
+        `DELETE FROM homepage_layouts WHERE id = $1 AND locality_id <> $2`,
+        [sanitizedLayout.id, sanitizedLayout.localityId],
+      );
+      await client.query(
         `INSERT INTO homepage_layouts (id, locality_id, name, status, visible, sections, updated_at)
          VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::timestamptz)
-         ON CONFLICT (id)
+         ON CONFLICT (locality_id)
          DO UPDATE SET
-           locality_id = EXCLUDED.locality_id,
+           id = EXCLUDED.id,
            name = EXCLUDED.name,
            status = EXCLUDED.status,
            visible = EXCLUDED.visible,
@@ -3709,10 +3748,28 @@ function shouldAllowLegacyScalableReseed(state) {
 function sanitizeScalableCmsState(value) {
   if (!value || typeof value !== 'object') return null;
   const state = value;
+  const sanitizedTemplates = Array.isArray(state.templates)
+    ? state.templates.map(sanitizeScalableTemplate).filter((template) => template.id)
+    : [];
+  // cms_template_assignments.template_id is a FK onto cms_templates(id), so an
+  // assignment pointing at a template that no longer exists aborts the whole
+  // sync with a foreign-key violation on every boot. Drop those orphans here,
+  // where the state is normalised, rather than letting the INSERT fail.
+  const templateIds = new Set(sanitizedTemplates.map((template) => template.id));
+  const sanitizedAssignments = Array.isArray(state.assignments)
+    ? state.assignments
+        .map(sanitizeTemplateAssignment)
+        .filter((assignment) => assignment.id && assignment.templateId)
+    : [];
+  const liveAssignments = sanitizedAssignments.filter((assignment) => templateIds.has(assignment.templateId));
+  const orphanedAssignments = sanitizedAssignments.length - liveAssignments.length;
+  if (orphanedAssignments > 0) {
+    console.warn(`[cms] dropped ${orphanedAssignments} template assignment(s) referencing a missing template`);
+  }
   return {
     version: Number.isFinite(Number(state.version)) ? Number(state.version) : 1,
-    templates: Array.isArray(state.templates) ? state.templates.map(sanitizeScalableTemplate).filter((template) => template.id) : [],
-    assignments: Array.isArray(state.assignments) ? state.assignments.map(sanitizeTemplateAssignment).filter((assignment) => assignment.id && assignment.templateId) : [],
+    templates: sanitizedTemplates,
+    assignments: liveAssignments,
     campaigns: Array.isArray(state.campaigns) ? state.campaigns.map(sanitizeCampaign).filter((campaign) => campaign.id) : [],
     publishedSnapshots: Array.isArray(state.publishedSnapshots)
       ? state.publishedSnapshots.map(sanitizePublishedSnapshot).filter((snapshot) => snapshot.id && snapshot.localityId)
@@ -3941,7 +3998,7 @@ async function writeBusinessTaxonomy(taxonomy) {
 }
 
 async function readLocalityRoutingConfigFromTables(client) {
-  const [localitiesResult, subdomainsResult, mappingsResult, defaultResult] = await Promise.all([
+  const [localitiesResult, subdomainsResult, mappingsResult, defaultResult, geographyResult] = await Promise.all([
     client.query(`
       SELECT id, name, slug, subdomain, description, status, cover_image, stats, carousel_images, metadata, updated_at
       FROM platform_localities
@@ -3963,11 +4020,24 @@ async function readLocalityRoutingConfigFromTables(client) {
       WHERE key = $1
       LIMIT 1
     `, ['default_locality_id']),
+    client.query(`
+      SELECT value
+      FROM app_state
+      WHERE key = $1
+      LIMIT 1
+    `, ['geography_config']),
   ]);
 
   if (localitiesResult.rows.length === 0) {
     return null;
   }
+
+  const storedGeographyConfig = geographyResult.rows[0]?.value
+    ? sanitizeGeographyConfigState(geographyResult.rows[0].value)
+    : null;
+  const derivedPincodeMappings = mappingsResult.rows.length === 0 && storedGeographyConfig
+    ? derivePincodeMappingsFromGeographyConfig(storedGeographyConfig)
+    : [];
 
   return sanitizeLocalityRoutingConfigState({
     localities: localitiesResult.rows.map((row) => ({
@@ -3990,10 +4060,12 @@ async function readLocalityRoutingConfigFromTables(client) {
       dnsStatus: row.dns_status,
       createdAt: row.created_at?.toISOString?.() || new Date().toISOString(),
     })),
-    pincodeMappings: mappingsResult.rows.map((row) => ({
-      pincode: row.pincode,
-      localityId: row.locality_id,
-    })),
+    pincodeMappings: mappingsResult.rows.length > 0
+      ? mappingsResult.rows.map((row) => ({
+          pincode: row.pincode,
+          localityId: row.locality_id,
+        }))
+      : derivedPincodeMappings,
     defaultLocalityId: defaultResult.rows[0]?.value || '',
     metadata: {
       seededFromCode: false,
@@ -4120,6 +4192,18 @@ async function writeLocalityRoutingConfig(config) {
 }
 
 async function readGeographyConfigFromTables(client) {
+  const storedResult = await client.query(
+    `SELECT value
+     FROM app_state
+     WHERE key = $1
+     LIMIT 1`,
+    ['geography_config'],
+  );
+
+  if (storedResult.rows[0]?.value) {
+    return sanitizeGeographyConfigState(storedResult.rows[0].value);
+  }
+
   const [statesResult, citiesResult, areasResult] = await Promise.all([
     client.query(`
       SELECT id, name, metadata, updated_at
@@ -4236,6 +4320,14 @@ async function writeGeographyConfig(config) {
   const client = await getPgClient();
   if (client) {
     await syncGeographyConfigToTables(client, sanitized);
+    await client.query(
+      `INSERT INTO app_state (key, value, updated_at)
+       VALUES ($1, $2::jsonb, NOW())
+       ON CONFLICT (key)
+       DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+      ['geography_config', JSON.stringify(sanitized)],
+    );
+    memoryGeographyConfig = sanitized;
     return sanitized;
   }
 
@@ -4248,6 +4340,29 @@ async function writeGeographyConfig(config) {
     memoryGeographyConfig = sanitized;
     return sanitized;
   }
+}
+
+function derivePincodeMappingsFromGeographyConfig(config) {
+  const sanitized = sanitizeGeographyConfigState(config);
+  const pincodeLocalitySets = new Map();
+
+  for (const area of sanitized.areas || []) {
+    const pincode = String(area?.pincode || '').trim();
+    const localityId = String(area?.localityId || '').trim();
+    if (!pincode || !localityId) continue;
+    if (!pincodeLocalitySets.has(pincode)) {
+      pincodeLocalitySets.set(pincode, new Set());
+    }
+    pincodeLocalitySets.get(pincode).add(localityId);
+  }
+
+  return Array.from(pincodeLocalitySets.entries())
+    .filter(([, localityIds]) => localityIds.size === 1)
+    .map(([pincode, localityIds]) => ({
+      pincode,
+      localityId: Array.from(localityIds)[0],
+    }))
+    .sort((a, b) => a.pincode.localeCompare(b.pincode));
 }
 
 async function readHomepageDefaultsConfig() {
@@ -6706,10 +6821,49 @@ async function getPgClient() {
     `);
     await pgPool.query(`
       CREATE TABLE IF NOT EXISTS platform_pincode_mappings (
-        pincode TEXT PRIMARY KEY,
+        pincode TEXT NOT NULL,
         locality_id TEXT NOT NULL REFERENCES platform_localities(id) ON DELETE CASCADE,
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (pincode, locality_id)
       )
+    `);
+    // Migration: this table originally used `pincode` alone as the primary
+    // key, which made it physically impossible for a pincode to route to
+    // more than one locality (a real-world need — postal codes often
+    // straddle several named localities). CREATE TABLE IF NOT EXISTS above
+    // never touches a table that already exists, so on any database that
+    // was created before this change, find and replace that old
+    // single-column primary key with the new composite one. This is a
+    // no-op (finds nothing to do) once a database has already been
+    // migrated or was created fresh with the composite key above.
+    await pgPool.query(`
+      DO $$
+      DECLARE
+        pk_name TEXT;
+      BEGIN
+        SELECT tc.constraint_name INTO pk_name
+        FROM information_schema.table_constraints tc
+        WHERE tc.table_name = 'platform_pincode_mappings'
+          AND tc.table_schema = 'public'
+          AND tc.constraint_type = 'PRIMARY KEY'
+          AND EXISTS (
+            SELECT 1 FROM information_schema.key_column_usage kcu
+            WHERE kcu.constraint_name = tc.constraint_name
+              AND kcu.table_schema = tc.table_schema
+              AND kcu.column_name = 'pincode'
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM information_schema.key_column_usage kcu2
+            WHERE kcu2.constraint_name = tc.constraint_name
+              AND kcu2.table_schema = tc.table_schema
+              AND kcu2.column_name = 'locality_id'
+          );
+
+        IF pk_name IS NOT NULL THEN
+          EXECUTE format('ALTER TABLE platform_pincode_mappings DROP CONSTRAINT %I', pk_name);
+          EXECUTE 'ALTER TABLE platform_pincode_mappings ADD PRIMARY KEY (pincode, locality_id)';
+        END IF;
+      END $$;
     `);
     await pgPool.query(`
       CREATE TABLE IF NOT EXISTS cms_templates (
@@ -6925,6 +7079,101 @@ app.put('/api/businesses', async (req, res) => {
   } catch (err) {
     console.error('Failed to sync business listings:', err);
     res.status(500).json({ ok: false, error: 'Failed to sync business listings' });
+  }
+});
+
+app.put('/api/admin/businesses/replace', async (req, res) => {
+  const access = requirePrivilegedWriteAccess(req, res);
+  if (!access) return;
+
+  const incoming = sanitizeBusinessListings(req.body?.businesses);
+  if (!incoming) {
+    return res.status(400).json({ ok: false, error: 'businesses array is required' });
+  }
+
+  try {
+    await writeBusinessListings(incoming);
+    res.json({ ok: true, businesses: incoming, replacedCount: incoming.length });
+  } catch (err) {
+    console.error('Failed to replace business listings:', err);
+    res.status(500).json({ ok: false, error: 'Failed to replace business listings' });
+  }
+});
+
+app.post('/api/admin/directory/reset', async (req, res) => {
+  const access = requirePrivilegedWriteAccess(req, res);
+  if (!access) return;
+
+  const confirmation = String(req.body?.confirmation || '').trim();
+  if (confirmation !== 'RESET_DIRECTORY_DATA') {
+    return res.status(400).json({
+      ok: false,
+      error: 'Confirmation token is required.',
+      expectedConfirmation: 'RESET_DIRECTORY_DATA',
+    });
+  }
+
+  const clearBusinesses = req.body?.clearBusinesses !== false;
+  const clearReviews = req.body?.clearReviews !== false;
+  const resetGeography = req.body?.resetGeography !== false;
+  const resetRouting = req.body?.resetRouting !== false;
+
+  try {
+    const beforeBusinesses = await readBusinessListings();
+    const beforeReviews = await readReviews();
+    const beforeGeography = await readGeographyConfig();
+    const beforeRouting = await readLocalityRoutingConfig();
+
+    if (clearBusinesses) {
+      await writeBusinessListings([]);
+    }
+    if (clearReviews) {
+      await writeReviews([]);
+    }
+    if (resetGeography) {
+      await writeGeographyConfig(sanitizeGeographyConfigState(null));
+    }
+    if (resetRouting) {
+      await writeLocalityRoutingConfig(sanitizeLocalityRoutingConfigState(null));
+    }
+
+    const afterBusinesses = await readBusinessListings();
+    const afterReviews = await readReviews();
+    const afterGeography = await readGeographyConfig();
+    const afterRouting = await readLocalityRoutingConfig();
+
+    res.json({
+      ok: true,
+      summary: {
+        clearedBusinesses: clearBusinesses ? beforeBusinesses.length - afterBusinesses.length : 0,
+        clearedReviews: clearReviews ? beforeReviews.length - afterReviews.length : 0,
+        geographyReset: resetGeography,
+        routingReset: resetRouting,
+        before: {
+          businesses: beforeBusinesses.length,
+          reviews: beforeReviews.length,
+          states: beforeGeography.states.length,
+          cities: beforeGeography.cities.length,
+          localities: beforeGeography.localities.length,
+          areas: beforeGeography.areas.length,
+          routingLocalities: beforeRouting.localities.length,
+          routingPincodes: beforeRouting.pincodeMappings.length,
+        },
+        after: {
+          businesses: afterBusinesses.length,
+          reviews: afterReviews.length,
+          states: afterGeography.states.length,
+          cities: afterGeography.cities.length,
+          localities: afterGeography.localities.length,
+          areas: afterGeography.areas.length,
+          routingLocalities: afterRouting.localities.length,
+          routingPincodes: afterRouting.pincodeMappings.length,
+        },
+      },
+    });
+  } catch (err) {
+    console.error('Failed to reset directory data:', err);
+    res.status(500).json({ ok: false, error: 'Failed to reset directory data' });
   }
 });
 

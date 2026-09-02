@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { BarChart3, Globe2, PhoneCall, Search, TrendingUp } from 'lucide-react';
 import type { AdLead, AuditEvent, Business } from '../../types';
+import { formatNumber, formatPercent, getDetailValue, normalizeLower, normalizeText, parseAuditDetails } from '../../services/admin/auditAnalytics';
 
 type ListingAnalyticsPanelProps = {
   businesses: Business[];
@@ -23,51 +24,10 @@ type ListingMetricRow = {
   seoLandingPagePath: string;
 };
 
-function normalizeText(value: unknown) {
-  return String(value || '').trim();
-}
-
-function normalizeLower(value: unknown) {
-  return normalizeText(value).toLowerCase();
-}
-
-function normalizeKey(value: unknown) {
-  return normalizeLower(value).replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
-}
-
-function parseAuditDetails(details: unknown) {
-  const raw = normalizeText(details);
-  if (!raw) return {} as Record<string, string>;
-  return raw
-    .split('|')
-    .map((segment) => segment.trim())
-    .filter(Boolean)
-    .reduce((acc, segment) => {
-      const separatorIndex = segment.indexOf(':');
-      if (separatorIndex === -1) return acc;
-      const key = normalizeKey(segment.slice(0, separatorIndex));
-      const rawValue = segment.slice(separatorIndex + 1).trim();
-      if (!key) return acc;
-      acc[key] = rawValue.replace(/^"(.*)"$/, '$1').trim();
-      return acc;
-    }, {} as Record<string, string>);
-}
-
-function getDetailValue(details: Record<string, string>, ...keys: string[]) {
-  for (const key of keys) {
-    const value = details[normalizeKey(key)];
-    if (value) return value;
-  }
-  return '';
-}
-
-function formatNumber(value: number) {
-  return new Intl.NumberFormat('en-IN').format(Math.max(0, Number(value) || 0));
-}
-
-function formatPercent(value: number) {
-  return `${Number.isFinite(value) ? value.toFixed(1) : '0.0'}%`;
-}
+// normalizeText/normalizeLower/normalizeKey/parseAuditDetails/getDetailValue/formatNumber/
+// formatPercent now live in services/admin/auditAnalytics.ts (Section 9 build step 7) — pulled
+// out, unchanged, so the new Platform Analytics Overview page (spec 5.29) can reuse the same
+// audit-event parsing instead of duplicating it. No behavior change to this component.
 
 export default function ListingAnalyticsPanel({
   businesses,

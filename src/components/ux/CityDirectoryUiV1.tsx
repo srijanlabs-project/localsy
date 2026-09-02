@@ -12,6 +12,7 @@ import {
   User,
 } from 'lucide-react';
 import { Business, Category, Locality, UserSession } from '../../types';
+import { getSubcategoryById } from '../../categoryMaster';
 import happyBusinessLogo from '../../assets/happy-business-logo.png';
 import { getMediaProxyUrl } from '../../utils/mediaUrl';
 
@@ -90,6 +91,14 @@ const getBusinessSubcategory = (business: Business, categories: Category[]) => (
   || getBusinessSearchLabel(business, categories)
 );
 
+// Real subcategory name resolved from the taxonomy by id — cards show this
+// rather than the parent category, matching the locality landing page.
+const getBusinessSubcategoryLabel = (business: Business, categories: Category[]) => (
+  getSubcategoryById(business.subcategoryId || '')?.name
+  || business.sourceSubcategoryLabel
+  || getBusinessSearchLabel(business, categories)
+);
+
 const getBusinessLocationLabel = (business: Business) => (
   business.address.split(',')[0]?.trim()
   || 'Sector 17'
@@ -100,6 +109,17 @@ const getListingScore = (business: Business) => (
   + (business.isSponsored ? 40 : 0)
   + (business.rating || 0) * 10
   + ((business.reviewCount || 0) / 8)
+);
+// A listing with no contactable phone shows no action button, so it is the
+// least useful card. Ranking it below every contactable listing keeps the
+// dead-end cards out of the top of each category row.
+const hasContactablePhone = (business: Business) => (
+  Boolean(String(business.phone || '').replace(/\D/g, '').slice(-10))
+);
+
+const compareListings = (left: Business, right: Business) => (
+  (Number(hasContactablePhone(right)) - Number(hasContactablePhone(left)))
+  || (getListingScore(right) - getListingScore(left))
 );
 
 const buildCategoryTiles = (approvedBusinesses: Business[], categories: Category[]) => {
@@ -187,7 +207,7 @@ export default function CityDirectoryUiV1({
   const cityBusinesses = useMemo(
     () => businesses
       .filter((business) => business.status === 'approved' && cityLocalityIds.has(business.localityId))
-      .sort((left, right) => getListingScore(right) - getListingScore(left)),
+      .sort(compareListings),
     [businesses, cityLocalityIds],
   );
 
@@ -205,15 +225,23 @@ export default function CityDirectoryUiV1({
     [categories, cityBusinesses],
   );
 
-  const visibleCategoryTiles = categoryTiles.slice(0, 12);
+  // Consistent with the locality landing page: every category group that
+  // genuinely has listings gets a chip, no arbitrary cap, and buckets that
+  // resolve to nothing are dropped so no empty heading can render.
+  const visibleCategoryTiles = useMemo(
+    () => categoryTiles.filter((tile) => cityBusinesses.some((business) => business.categoryId === tile.category.id)),
+    [categoryTiles, cityBusinesses],
+  );
   const topCategoryId = visibleCategoryTiles[0]?.category.id || categories[0]?.id || 'all';
   const primaryLocalityId = cityLocalities[0]?.id || activeLocality?.id || activeLocalityId;
 
   const primaryHeroBusiness = cityBusinesses[0] || null;
   const secondaryHeroBusiness = cityBusinesses.find((business) => business.id !== primaryHeroBusiness?.id) || cityBusinesses[1] || null;
 
+  // One row per category group present in this city, busiest first, empty
+  // buckets dropped — same rule as the locality landing page.
   const sectionGroups = useMemo<SectionGroup[]>(
-    () => categoryTiles.slice(0, 4).map((tile) => ({
+    () => categoryTiles.map((tile) => ({
       ...tile,
       chips: Array.from(new Set(
         cityBusinesses
@@ -224,7 +252,7 @@ export default function CityDirectoryUiV1({
       listings: cityBusinesses
         .filter((business) => business.categoryId === tile.category.id)
         .slice(0, 4),
-    })),
+    })).filter((section) => section.listings.length > 0),
     [categories, categoryTiles, cityBusinesses],
   );
 
@@ -600,12 +628,15 @@ export default function CityDirectoryUiV1({
           </section>
 
           <div className="mt-6 space-y-6">
-            {sectionGroups.map((section) => (
-              <section key={section.category.id} className="bg-white px-4 py-4 shadow-[0_10px_30px_rgba(15,23,42,0.05)]">
-                <div className="mb-4 flex items-center justify-between">
+            {sectionGroups.map((section, sectionIndex) => (
+              <React.Fragment key={section.category.id}>
+              <section className="bg-white px-4 py-4 shadow-[0_10px_30px_rgba(15,23,42,0.05)]">
+                {/* Same heading treatment as the locality page so a category
+                    row never reads like a listing title. */}
+                <div className="mb-4 flex items-center justify-between border-b-2 pb-2.5" style={{ borderColor: `${section.accent}55` }}>
                   <div className="flex items-center gap-3">
-                    <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: section.accent }} />
-                    <h3 className="text-[1.1rem] font-extrabold tracking-[-0.03em] text-[#111827]">{section.category.name}</h3>
+                    <span className="h-6 w-1.5 rounded-full" style={{ backgroundColor: section.accent }} />
+                    <h3 className="text-[0.95rem] font-black uppercase tracking-[0.14em] text-[#0D1B2A]">{section.category.name}</h3>
                     <div className="flex gap-2">
                       {section.chips.map((chip) => (
                         <span key={`${section.category.id}-${chip}`} className="rounded-full bg-[#F2F4F7] px-3 py-1 text-[11px] font-semibold text-[#667085]">
@@ -628,12 +659,36 @@ export default function CityDirectoryUiV1({
                     <CityListingCard
                       key={business.id}
                       business={business}
-                      categoryLabel={getBusinessSearchLabel(business, categories)}
+                      categoryLabel={getBusinessSubcategoryLabel(business, categories)}
                       onOpenListingPage={onOpenListingPage}
                     />
                   ))}
                 </div>
               </section>
+              {/* Banner slot after every 3rd category row, matching the
+                  locality landing page. Never trails the last row. */}
+              {(sectionIndex + 1) % 3 === 0 && sectionIndex !== sectionGroups.length - 1 ? (
+                <button
+                  type="button"
+                  onClick={onOpenLivePortal}
+                  className="block w-full overflow-hidden rounded-[18px] px-6 py-6 text-left"
+                  style={{ backgroundColor: section.accent }}
+                >
+                  <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-white/80">
+                    Sponsored
+                  </div>
+                  <div className="mt-1.5 text-[1.25rem] font-extrabold tracking-[-0.02em] text-white">
+                    Advertise your business across {cityLabel}
+                  </div>
+                  <div className="mt-1 text-[13px] text-white/85">
+                    Featured placement on every category page in {cityLabel}.
+                  </div>
+                  <span className="mt-3 inline-block rounded-[10px] bg-white px-4 py-2 text-[13px] font-bold text-[#111827]">
+                    Get featured
+                  </span>
+                </button>
+              ) : null}
+              </React.Fragment>
             ))}
           </div>
 
@@ -805,43 +860,40 @@ function CityListingCard({
   categoryLabel: string;
   onOpenListingPage: (businessId: string, localityId?: string) => void;
 }) {
-  const imageUrl = business.coverImageUrl || business.imageUrl || 'https://images.unsplash.com/photo-1498050108023-c5249f4df085?auto=format&fit=crop&w=720&q=80';
   const badgeLabel = business.featured ? 'Sponsored' : (!business.phone ? 'Unclaimed' : business.verifiedBadge ? 'Verified' : '');
 
+  // Text-only card, same rules as the locality landing page: no photo, no
+  // rating, no review count, and no "Send enquiry" fallback.
   return (
     <article className="overflow-hidden rounded-[18px] border border-[#E6EBF2] bg-white">
-      <button
-        type="button"
-        onClick={() => onOpenListingPage(business.id, business.localityId)}
-        className="block w-full text-left"
-      >
-        <div className="relative aspect-[0.92/1] overflow-hidden bg-[#EEF2F7]">
-          <img src={getMediaProxyUrl(imageUrl)} alt={business.name} className="h-full w-full object-cover" />
-          {badgeLabel ? (
-            <span className={`absolute left-2 top-2 rounded-md px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] ${business.featured ? 'bg-[#FBBF24] text-[#111827]' : 'bg-white/90 text-[#667085]'}`}>
-              {badgeLabel}
-            </span>
-          ) : null}
-          <span className="absolute bottom-2 right-2 inline-flex items-center gap-1 rounded-md bg-white px-2 py-1 text-[11px] font-bold text-[#111827] shadow-sm">
-            <Star className="h-3 w-3 fill-[#F59E0B] text-[#F59E0B]" />
-            {formatRating(business.rating)}
-          </span>
-        </div>
-      </button>
-
       <div className="px-3 pb-3 pt-3">
         <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#C46A00]">{categoryLabel}</div>
-        <div className="mt-2 text-[1rem] font-extrabold leading-5 text-[#111827]">{business.name}</div>
-        <div className="mt-1 text-[12px] text-[#98A2B3]">
-          {getBusinessLocationLabel(business)} | {Math.max(business.reviewCount || 0, 0)} ratings
-        </div>
+        {badgeLabel ? (
+          <span className={`mt-2 inline-block rounded-md px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] ${business.featured ? 'bg-[#FBBF24] text-[#111827]' : 'bg-[#F2F4F7] text-[#667085]'}`}>
+            {badgeLabel}
+          </span>
+        ) : null}
         <button
           type="button"
           onClick={() => onOpenListingPage(business.id, business.localityId)}
-          className={`show-number-action mt-3 w-full rounded-[12px] px-3 py-3 text-sm ${business.phone ? 'bg-[#0F172A] text-white' : 'border border-[#E4E7EC] bg-white text-[#667085]'}`}
+          className="block w-full text-left"
         >
-          {business.phone ? 'Show number' : 'Send enquiry'}
+          <div className="mt-2 text-[0.95rem] font-semibold leading-5 tracking-[-0.01em] text-[#1F2937]">{business.name}</div>
         </button>
+        {business.address ? (
+          <div className="mt-1 line-clamp-2 text-[12px] leading-4 text-[#667085]" title={business.address}>
+            {business.address}
+          </div>
+        ) : null}
+        {business.phone ? (
+          <button
+            type="button"
+            onClick={() => onOpenListingPage(business.id, business.localityId)}
+            className="show-number-action mt-3 w-full rounded-[12px] border border-[#C3D5CD] bg-[#DEE9E4] px-3 py-3 text-sm font-semibold text-[#2F4A41] transition hover:bg-[#D2E1DB]"
+          >
+            Show number
+          </button>
+        ) : null}
       </div>
     </article>
   );

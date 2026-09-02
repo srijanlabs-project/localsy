@@ -102,15 +102,16 @@ export default function ListingDetailUiV1({
     );
   }
 
-  const heroImage = primaryBusiness.imageUrl || 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=1400&q=80';
-
   return (
     <ThemePage>
       <PageContainer>
         <LocalisyPreviewHeader locationLabel={fullLocationLabel} onOpenLivePortal={onOpenLivePortal} />
 
+        {/* Photo panel intentionally removed — this page is text-only, so the
+            detail content spans the full width instead of sharing a 2-column
+            grid with a hero image. */}
         <section className="mt-5 overflow-hidden rounded-[26px] border border-slate-200 bg-white shadow-[0_16px_40px_rgba(15,23,42,0.06)]">
-          <div className="grid gap-8 lg:grid-cols-[1.05fr_0.95fr]">
+          <div>
             <div className="px-8 py-10">
               <div className="inline-flex items-center gap-2 rounded-full bg-[#eef4ff] px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-[#1E3A8A]">
                 {categoryLabel}
@@ -119,11 +120,7 @@ export default function ListingDetailUiV1({
                 {primaryBusiness.name}
               </h1>
               <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-slate-600">
-                <div className="inline-flex items-center gap-1 font-semibold text-slate-700">
-                  <Star className="h-4 w-4 text-amber-500" />
-                  <span>{formatRating(primaryBusiness.rating)}</span>
-                  <span className="text-slate-400">({primaryBusiness.reviewCount} reviews)</span>
-                </div>
+                {/* Rating and review count intentionally not rendered. */}
                 <div className="inline-flex items-center gap-1">
                   <MapPin className="h-4 w-4 text-[#1E3A8A]" />
                   <span>{primaryBusiness.address}</span>
@@ -193,10 +190,6 @@ export default function ListingDetailUiV1({
                   </div>
                 </div>
               </div>
-            </div>
-
-            <div className="relative min-h-[340px] bg-slate-100">
-              <img src={heroImage} alt={primaryBusiness.name} className="h-full w-full object-cover" />
             </div>
           </div>
         </section>

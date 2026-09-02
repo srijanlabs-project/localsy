@@ -120,9 +120,11 @@ export default function GeographyConfigManager({
   const [editingAreaId, setEditingAreaId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [statusText, setStatusText] = useState('');
+  const [statusTone, setStatusTone] = useState<'success' | 'error'>('success');
   const [isImporting, setIsImporting] = useState(false);
   const [isLoadingBoundaries, setIsLoadingBoundaries] = useState(false);
   const [boundaryStatusText, setBoundaryStatusText] = useState('');
+  const [boundaryStatusTone, setBoundaryStatusTone] = useState<'info' | 'error' | 'success'>('info');
 
   useEffect(() => {
     setDraft(config);
@@ -134,7 +136,10 @@ export default function GeographyConfigManager({
     const loadBoundaries = async () => {
       setIsLoadingBoundaries(true);
       try {
-        const response = await fetch('/api/admin/geography/boundaries');
+        const token = typeof window !== 'undefined' ? window.localStorage.getItem('yp_auth_token') : '';
+        const response = await fetch('/api/admin/geography/boundaries', {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok || !payload?.ok) {
           throw new Error(payload?.error || 'Failed to load locality boundaries.');
@@ -142,10 +147,12 @@ export default function GeographyConfigManager({
         if (cancelled) return;
         setBoundaries(Array.isArray(payload.boundaries) ? payload.boundaries : []);
         setBoundaryStatusText('');
+        setBoundaryStatusTone('info');
       } catch (error) {
         if (cancelled) return;
         setBoundaries([]);
         setBoundaryStatusText(error instanceof Error ? error.message : 'Failed to load locality boundaries.');
+        setBoundaryStatusTone('error');
       } finally {
         if (!cancelled) {
           setIsLoadingBoundaries(false);
@@ -176,6 +183,7 @@ export default function GeographyConfigManager({
   const persist = async (nextDraft: GeographyConfigState, successMessage: string) => {
     if (!onSave) {
       setStatusText('Geography save callback is not configured.');
+      setStatusTone('error');
       return;
     }
     setIsSaving(true);
@@ -188,9 +196,11 @@ export default function GeographyConfigManager({
         },
       });
       setStatusText(successMessage);
+      setStatusTone('success');
     } catch (error) {
       setDraft(config);
       setStatusText(error instanceof Error ? error.message : 'Failed to save geography config.');
+      setStatusTone('error');
     } finally {
       setIsSaving(false);
     }
@@ -198,7 +208,7 @@ export default function GeographyConfigManager({
 
   const saveState = async () => {
     const name = stateDraft.name.trim();
-    const takenIds = new Set(draft.states.filter((state) => state.id !== editingStateId).map((state) => state.id));
+    const takenIds = new Set<string>(draft.states.filter((state) => state.id !== editingStateId).map((state) => state.id));
     const existingState = editingStateId
       ? draft.states.find((state) => state.id === editingStateId) || null
       : null;
@@ -207,6 +217,7 @@ export default function GeographyConfigManager({
       : existingState?.id || buildUniqueId(name, takenIds, 'state');
     if (!id || !name) {
       setStatusText('State name is required.');
+      setStatusTone('error');
       return;
     }
     const nextState: StateMaster = { id, name };
@@ -238,7 +249,7 @@ export default function GeographyConfigManager({
 
   const saveCity = async () => {
     const name = cityDraft.name.trim();
-    const takenIds = new Set(draft.cities.filter((city) => city.id !== editingCityId).map((city) => city.id));
+    const takenIds = new Set<string>(draft.cities.filter((city) => city.id !== editingCityId).map((city) => city.id));
     const existingCity = editingCityId
       ? draft.cities.find((city) => city.id === editingCityId) || null
       : null;
@@ -247,6 +258,7 @@ export default function GeographyConfigManager({
       : existingCity?.id || buildUniqueId(name, takenIds, 'city');
     if (!id || !name || !cityDraft.stateId) {
       setStatusText('City name and parent state are required.');
+      setStatusTone('error');
       return;
     }
     const nextCity: CityMaster = { id, stateId: cityDraft.stateId, name };
@@ -276,7 +288,7 @@ export default function GeographyConfigManager({
 
   const saveLocality = async () => {
     const name = localityDraft.name.trim();
-    const takenIds = new Set(draft.localities.filter((locality) => locality.id !== editingLocalityId).map((locality) => locality.id));
+    const takenIds = new Set<string>(draft.localities.filter((locality) => locality.id !== editingLocalityId).map((locality) => locality.id));
     const existingLocality = editingLocalityId
       ? draft.localities.find((locality) => locality.id === editingLocalityId) || null
       : null;
@@ -285,6 +297,7 @@ export default function GeographyConfigManager({
       : existingLocality?.id || buildUniqueId(name, takenIds, 'locality');
     if (!id || !name || !localityDraft.cityId) {
       setStatusText('Locality name and parent city are required.');
+      setStatusTone('error');
       return;
     }
     const nextLocality: LocalityMaster = { id, cityId: localityDraft.cityId, name };
@@ -314,7 +327,7 @@ export default function GeographyConfigManager({
     const name = areaDraft.name.trim();
     const pincode = areaDraft.pincode.replace(/\D/g, '').slice(0, 6);
     const parentLocality = draft.localities.find((locality) => locality.id === areaDraft.localityId) || null;
-    const takenIds = new Set(draft.areas.filter((area) => area.id !== editingAreaId).map((area) => area.id));
+    const takenIds = new Set<string>(draft.areas.filter((area) => area.id !== editingAreaId).map((area) => area.id));
     const existingArea = editingAreaId
       ? draft.areas.find((area) => area.id === editingAreaId) || null
       : null;
@@ -323,6 +336,7 @@ export default function GeographyConfigManager({
       : existingArea?.id || buildUniqueId(`${parentLocality?.id || 'area'}-${name}-${pincode}`, takenIds, 'area');
     if (!id || !name || !parentLocality || pincode.length !== 6) {
       setStatusText('Area name, parent locality, and 6-digit pincode are required.');
+      setStatusTone('error');
       return;
     }
     const nextArea: AreaMaster = {
@@ -443,6 +457,7 @@ export default function GeographyConfigManager({
 
       if (touchedStates.size === 0 && touchedCities.size === 0 && touchedLocalities.size === 0 && touchedAreas.size === 0) {
         setStatusText('No valid geography rows found in the uploaded file.');
+        setStatusTone('error');
         return;
       }
 
@@ -453,6 +468,7 @@ export default function GeographyConfigManager({
       );
     } catch (error) {
       setStatusText(error instanceof Error ? error.message : 'Failed to import geography file.');
+      setStatusTone('error');
     } finally {
       setIsImporting(false);
     }
@@ -490,6 +506,7 @@ export default function GeographyConfigManager({
 
       if (imported === 0) {
         setStatusText('No valid state rows found in the uploaded file.');
+        setStatusTone('error');
         return;
       }
 
@@ -497,6 +514,7 @@ export default function GeographyConfigManager({
       await persist(nextDraft, `Imported ${imported} states${skipped ? `, skipped ${skipped} rows.` : '.'}`);
     } catch (error) {
       setStatusText(error instanceof Error ? error.message : 'Failed to import state file.');
+      setStatusTone('error');
     } finally {
       setIsImporting(false);
     }
@@ -535,6 +553,7 @@ export default function GeographyConfigManager({
 
       if (imported === 0) {
         setStatusText('No valid city rows found in the uploaded file.');
+        setStatusTone('error');
         return;
       }
 
@@ -542,6 +561,7 @@ export default function GeographyConfigManager({
       await persist(nextDraft, `Imported ${imported} cities${skipped ? `, skipped ${skipped} rows.` : '.'}`);
     } catch (error) {
       setStatusText(error instanceof Error ? error.message : 'Failed to import city file.');
+      setStatusTone('error');
     } finally {
       setIsImporting(false);
     }
@@ -580,6 +600,7 @@ export default function GeographyConfigManager({
 
       if (imported === 0) {
         setStatusText('No valid locality rows found in the uploaded file.');
+        setStatusTone('error');
         return;
       }
 
@@ -587,6 +608,7 @@ export default function GeographyConfigManager({
       await persist(nextDraft, `Imported ${imported} localities${skipped ? `, skipped ${skipped} rows.` : '.'}`);
     } catch (error) {
       setStatusText(error instanceof Error ? error.message : 'Failed to import locality file.');
+      setStatusTone('error');
     } finally {
       setIsImporting(false);
     }
@@ -626,6 +648,7 @@ export default function GeographyConfigManager({
 
       if (imported === 0) {
         setStatusText('No valid area rows found in the uploaded file.');
+        setStatusTone('error');
         return;
       }
 
@@ -633,6 +656,7 @@ export default function GeographyConfigManager({
       await persist(nextDraft, `Imported ${imported} areas${skipped ? `, skipped ${skipped} rows.` : '.'}`);
     } catch (error) {
       setStatusText(error instanceof Error ? error.message : 'Failed to import area file.');
+      setStatusTone('error');
     } finally {
       setIsImporting(false);
     }
@@ -656,7 +680,11 @@ export default function GeographyConfigManager({
       </div>
 
       {statusText && (
-        <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-[11px] text-emerald-900">
+        <div className={`rounded-lg px-3 py-2 text-[11px] whitespace-pre-wrap ${
+          statusTone === 'error'
+            ? 'border border-rose-200 bg-rose-50 text-rose-900'
+            : 'border border-emerald-100 bg-emerald-50 text-emerald-900'
+        }`}>
           {statusText}
         </div>
       )}
@@ -673,9 +701,13 @@ export default function GeographyConfigManager({
             type="button"
             onClick={() => {
               setBoundaryStatusText('Refreshing boundary coverage...');
+              setBoundaryStatusTone('info');
               setBoundaries([]);
               setIsLoadingBoundaries(true);
-              fetch('/api/admin/geography/boundaries')
+              const token = typeof window !== 'undefined' ? window.localStorage.getItem('yp_auth_token') : '';
+              fetch('/api/admin/geography/boundaries', {
+                headers: token ? { Authorization: `Bearer ${token}` } : {},
+              })
                 .then((response) => response.json().then((payload) => ({ response, payload })))
                 .then(({ response, payload }) => {
                   if (!response.ok || !payload?.ok) {
@@ -683,10 +715,12 @@ export default function GeographyConfigManager({
                   }
                   setBoundaries(Array.isArray(payload.boundaries) ? payload.boundaries : []);
                   setBoundaryStatusText('Boundary coverage refreshed.');
+                  setBoundaryStatusTone('success');
                 })
                 .catch((error) => {
                   setBoundaries([]);
                   setBoundaryStatusText(error instanceof Error ? error.message : 'Failed to refresh locality boundaries.');
+                  setBoundaryStatusTone('error');
                 })
                 .finally(() => setIsLoadingBoundaries(false));
             }}
@@ -697,7 +731,13 @@ export default function GeographyConfigManager({
         </div>
 
         {boundaryStatusText && (
-          <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-600">
+          <div className={`rounded-lg px-3 py-2 text-[11px] ${
+            boundaryStatusTone === 'error'
+              ? 'border border-rose-200 bg-rose-50 text-rose-900'
+              : boundaryStatusTone === 'success'
+                ? 'border border-emerald-100 bg-emerald-50 text-emerald-900'
+                : 'border border-slate-200 bg-white text-slate-600'
+          }`}>
             {boundaryStatusText}
           </div>
         )}

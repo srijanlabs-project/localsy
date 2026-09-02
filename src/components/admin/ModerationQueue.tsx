@@ -165,7 +165,7 @@ export default function ModerationQueue({
                         type="text"
                         value={editedHrs[business.id] !== undefined ? editedHrs[business.id] : business.hours || '10:00 AM - 08:30 PM'}
                         onChange={(event) => onHoursChange(business.id, event.target.value)}
-                        className="w-44 rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-sans focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        className="w-44 rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-sans focus:outline-none focus:ring-1 focus:ring-[#3B82F6]"
                       />
                     </div>
                     {business.ownerName && (

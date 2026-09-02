@@ -1,7 +1,6 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { MapPin, Search, Check, Sparkles, AlertCircle, X, HelpCircle, ArrowRight } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { MapPin, Search, X } from 'lucide-react';
 import { Locality } from '../types';
-import { motion, AnimatePresence } from 'motion/react';
 
 interface PincodeSelectionModalProps {
   isOpen: boolean;
@@ -12,6 +11,14 @@ interface PincodeSelectionModalProps {
   localities: Locality[];
   defaultLocalityId: string;
 }
+
+type PincodeOption = {
+  pincode: string;
+  localityIds: string[];
+  // Every locality this pincode covers, joined — a shared pincode reads as
+  // "Seawoods & Nerul" on one row rather than appearing twice.
+  localityLabel: string;
+};
 
 export default function PincodeSelectionModal({
   isOpen,
@@ -24,242 +31,203 @@ export default function PincodeSelectionModal({
 }: PincodeSelectionModalProps) {
   const [inputValue, setInputValue] = useState(savedPincode || '');
   const [errorStatus, setErrorStatus] = useState<string | null>(null);
-  const [matchedLocality, setMatchedLocality] = useState<Locality | null>(null);
+  const [highlightIndex, setHighlightIndex] = useState(0);
+  const listRef = useRef<HTMLDivElement | null>(null);
 
-  const defaultLocality = localities.find(l => l.id === defaultLocalityId) || localities[0] || null;
-  const quickGuideItems = useMemo(() => {
-    const seen = new Set<string>();
-    return pincodeMappings
-      .filter((mapping) => {
-        if (seen.has(mapping.pincode)) return false;
-        seen.add(mapping.pincode);
-        return true;
-      })
-      .slice(0, 8)
-      .map((mapping) => {
-        const locality = localities.find((entry) => entry.id === mapping.localityId);
-        const localityLabel = locality?.name.split(',')[0] || mapping.localityId || 'Directory Hub';
-        return {
-          pincode: mapping.pincode,
-          label: `${localityLabel} Hub`,
-        };
-      });
+  const defaultLocality = localities.find((locality) => locality.id === defaultLocalityId) || localities[0] || null;
+
+  // One entry per pincode, carrying every locality it routes to, so the
+  // suggestion list can be searched by digits or by place name.
+  const pincodeOptions = useMemo<PincodeOption[]>(() => {
+    const byPincode = new Map<string, string[]>();
+    pincodeMappings.forEach((mapping) => {
+      const pincode = String(mapping.pincode || '').trim();
+      if (!pincode) return;
+      const existing = byPincode.get(pincode);
+      if (existing) existing.push(mapping.localityId);
+      else byPincode.set(pincode, [mapping.localityId]);
+    });
+    return [...byPincode.entries()]
+      .map(([pincode, localityIds]) => ({
+        pincode,
+        localityIds,
+        localityLabel: localityIds
+          .map((id) => localities.find((locality) => locality.id === id)?.name.split(',')[0]?.trim() || id)
+          .filter(Boolean)
+          .join(' & '),
+      }))
+      .sort((left, right) => left.localityLabel.localeCompare(right.localityLabel) || left.pincode.localeCompare(right.pincode));
   }, [localities, pincodeMappings]);
 
+  // Digits match the pincode, letters match the place name.
+  const suggestions = useMemo(() => {
+    const query = inputValue.trim().toLowerCase();
+    if (!query) return pincodeOptions.slice(0, 60);
+    return pincodeOptions
+      .filter((option) => (
+        option.pincode.startsWith(query)
+        || option.localityLabel.toLowerCase().includes(query)
+      ))
+      .slice(0, 60);
+  }, [inputValue, pincodeOptions]);
+
   useEffect(() => {
-    if (isOpen) {
-      setInputValue(savedPincode || '');
-      setErrorStatus(null);
-    }
+    if (!isOpen) return;
+    setInputValue(savedPincode || '');
+    setErrorStatus(null);
+    setHighlightIndex(0);
   }, [isOpen, savedPincode]);
 
-  // Live matching verification as user types
   useEffect(() => {
-    const trimmed = inputValue.trim();
-    if (trimmed.length === 6) {
-      const match = pincodeMappings.find(m => m.pincode === trimmed);
-      if (match) {
-        const loc = localities.find(l => l.id === match.localityId);
-        if (loc) {
-          setMatchedLocality(loc);
-          setErrorStatus(null);
-          return;
-        }
-      }
-      setMatchedLocality(null);
-      setErrorStatus("Pincode correct format but not currently mapped in directory nodes.");
-    } else {
-      setMatchedLocality(null);
-      setErrorStatus(null);
-    }
-  }, [inputValue, pincodeMappings, localities]);
+    setHighlightIndex(0);
+  }, [inputValue]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && savedPincode) onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isOpen, onClose, savedPincode]);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const trimmed = inputValue.trim();
-    
-    if (!trimmed) {
-      setErrorStatus("Please enter a valid pincode.");
-      return;
-    }
-
-    if (trimmed.length !== 6 || !/^\d{6}$/.test(trimmed)) {
-      setErrorStatus("Indian pincodes must be exactly 6 numeric digits.");
-      return;
-    }
-
-    const mapping = pincodeMappings.find(m => m.pincode === trimmed);
-    if (mapping) {
-      onSavePincode(trimmed, mapping.localityId);
-      onClose();
-    } else {
-      // Pincode is valid 6 digits but not mapped
-      onSavePincode(trimmed, defaultLocality?.id || defaultLocalityId || localities[0]?.id || '');
-      onClose();
-    }
-  };
-
-  const handleSkip = () => {
-    onSavePincode(null, matchedLocality?.id || defaultLocality?.id || defaultLocalityId || localities[0]?.id || '');
+  const applyOption = (option: PincodeOption) => {
+    onSavePincode(option.pincode, option.localityIds.join(','));
     onClose();
   };
 
+  const handleSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
+    const trimmed = inputValue.trim();
+
+    // Enter with the list open takes the highlighted row.
+    if (suggestions[highlightIndex] && !/^\d{6}$/.test(trimmed)) {
+      applyOption(suggestions[highlightIndex]);
+      return;
+    }
+
+    if (!/^\d{6}$/.test(trimmed)) {
+      setErrorStatus('Enter a 6-digit pincode or pick an area from the list.');
+      return;
+    }
+
+    const exact = pincodeOptions.find((option) => option.pincode === trimmed);
+    if (exact) {
+      applyOption(exact);
+      return;
+    }
+
+    // Valid format but not mapped: still let them in, on the default area.
+    onSavePincode(trimmed, defaultLocality?.id || defaultLocalityId || localities[0]?.id || '');
+    onClose();
+  };
+
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+    event.preventDefault();
+    setHighlightIndex((current) => {
+      if (suggestions.length === 0) return 0;
+      const next = event.key === 'ArrowDown' ? current + 1 : current - 1;
+      const bounded = (next + suggestions.length) % suggestions.length;
+      listRef.current?.querySelectorAll('[data-option]')[bounded]?.scrollIntoView({ block: 'nearest' });
+      return bounded;
+    });
+  };
+
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
-      <motion.div
-        initial={{ scale: 0.95, y: 15, opacity: 0 }}
-        animate={{ scale: 1, y: 0, opacity: 1 }}
-        exit={{ scale: 0.95, y: 15, opacity: 0 }}
-        transition={{ type: "spring", duration: 0.4 }}
-        className="bg-white rounded-3xl border border-slate-200 w-full max-w-lg shadow-2xl overflow-hidden flex flex-col"
-      >
-        {/* Header Ribbon containing brand aesthetics */}
-        <div className="bg-gradient-to-r from-indigo-600 via-indigo-700 to-indigo-900 text-white p-6 relative">
-          <div className="flex items-center gap-3">
-            <div className="bg-white/10 p-2.5 rounded-2xl backdrop-blur-md text-amber-300">
-              <MapPin className="w-6 h-6 animate-bounce" />
-            </div>
-            <div>
-              <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-200 font-mono">
-                Location-Based Yellow Pages Routing
-              </span>
-              <h2 className="text-xl font-extrabold tracking-tight leading-tight">
-                Enter Delivery & Services Pincode
-              </h2>
-            </div>
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/55 p-4 pt-[12vh] backdrop-blur-[2px]">
+      <div className="flex max-h-[70vh] w-full max-w-[380px] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+        <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <MapPin className="h-4 w-4 shrink-0 text-indigo-600" />
+            <h2 className="truncate text-[14px] font-bold text-slate-900">Select your area</h2>
           </div>
-          {savedPincode && (
+          {savedPincode ? (
             <button
+              type="button"
               onClick={onClose}
-              className="absolute top-4 right-4 text-white/70 hover:text-white hover:bg-white/15 p-1.5 rounded-xl transition"
+              aria-label="Close"
+              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
             >
-              <X className="w-4 h-4" />
+              <X className="h-4 w-4" />
             </button>
+          ) : null}
+        </div>
+
+        <form onSubmit={handleSubmit} className="border-b border-slate-100 px-4 py-3">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              value={inputValue}
+              onChange={(event) => {
+                setInputValue(event.target.value);
+                setErrorStatus(null);
+              }}
+              onKeyDown={handleKeyDown}
+              placeholder="Pincode or area name"
+              autoFocus
+              autoComplete="off"
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-[13px] font-semibold text-slate-800 placeholder-slate-400 transition focus:border-indigo-500 focus:bg-white focus:outline-none"
+            />
+          </div>
+          {errorStatus ? (
+            <p className="mt-2 text-[11.5px] font-medium text-rose-600">{errorStatus}</p>
+          ) : null}
+        </form>
+
+        <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
+          {suggestions.length === 0 ? (
+            <p className="px-3 py-6 text-center text-[12px] text-slate-500">
+              No area matches that. Enter a 6-digit pincode to continue anyway.
+            </p>
+          ) : (
+            suggestions.map((option, index) => {
+              const isActive = index === highlightIndex;
+              const isCurrent = savedPincode === option.pincode;
+              return (
+                <button
+                  key={option.pincode}
+                  data-option
+                  type="button"
+                  onMouseEnter={() => setHighlightIndex(index)}
+                  onClick={() => applyOption(option)}
+                  className={`flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left transition ${
+                    isActive ? 'bg-indigo-50' : 'bg-transparent'
+                  }`}
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate text-[13px] font-semibold text-slate-900">
+                      {option.localityLabel}
+                    </span>
+                    <span className="block text-[11px] font-medium text-slate-500">{option.pincode}</span>
+                  </span>
+                  {isCurrent ? (
+                    <span className="shrink-0 rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold text-indigo-700">
+                      Current
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })
           )}
         </div>
 
-        {/* Modal content body */}
-        <div className="p-6 md:p-8 space-y-6 flex-1 overflow-y-auto max-h-[75vh]">
-          <p className="text-sm text-slate-500 leading-relaxed">
-            Welcome to <strong className="text-slate-900 font-semibold">Localisy</strong> - A Hyper Local Business Directory. Please share your 6-digit residential area pincode to automatically connect with localized shopkeepers, clinics, restaurants, and salons operating in your municipal sector.
-          </p>
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-slate-700 uppercase tracking-wide flex items-center justify-between">
-                <span>Enter 6-Digit Pincode</span>
-                <span className="font-mono text-[10px] text-slate-400 capitalize">
-                  {defaultLocality ? `${defaultLocality.name.split(',')[0]} Default Hub` : 'Directory Routing'}
-                </span>
-              </label>
-              
-              <div className="relative">
-                <input
-                  type="text"
-                  maxLength={6}
-                  placeholder="e.g. 410210"
-                  value={inputValue}
-                  onChange={(e) => setInputValue(e.target.value.replace(/\D/g, ''))}
-                  className="w-full bg-slate-50 border-2 border-slate-200 focus:border-indigo-600 focus:ring-0 rounded-2xl py-4 pl-12 pr-4 font-mono text-lg font-bold text-slate-800 placeholder-slate-400 select-all transition-all"
-                  autoFocus
-                />
-                <Search className="w-5 h-5 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
-              </div>
-            </div>
-
-            {/* Error notifications */}
-            {errorStatus && (
-              <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 flex gap-2 text-rose-700 text-xs text-left animate-in slide-in-from-top-1 duration-150">
-                <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
-                <div>
-                  <strong className="font-semibold">{errorStatus}</strong>
-                  <p className="mt-0.5 text-rose-600 leading-normal">
-                    You can still submit to browse the directory, and we will place you on the default hub: <span className="font-bold">{defaultLocality?.name.split(',')[0] || 'Directory Home'}</span>.
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {/* Success matches */}
-            {matchedLocality && (
-              <div className="bg-emerald-50 border border-emerald-250 rounded-2xl p-4 flex gap-3 text-emerald-800 text-xs text-left animate-in slide-in-from-top-1 duration-150 shadow-xs">
-                <div className="bg-emerald-500 text-white p-1 rounded-full shrink-0">
-                  <Check className="w-4 h-4" />
-                </div>
-                <div>
-                  <span className="text-[10px] uppercase font-mono tracking-wider font-extrabold text-emerald-600">
-                    Locality Mapped Successfully!
-                  </span>
-                  <h4 className="text-sm font-extrabold text-slate-900 mt-0.5">
-                    {matchedLocality.name}
-                  </h4>
-                  <p className="text-slate-600 mt-1 leading-normal">
-                    {matchedLocality.description}
-                  </p>
-                  <span className="inline-block mt-2 font-mono font-bold bg-white text-emerald-700 px-2.5 py-1 rounded-lg border border-emerald-100">
-                    Route: www.localisy.in/{matchedLocality.slug || matchedLocality.id}
-                  </span>
-                </div>
-              </div>
-            )}
-
-            {/* Master guides list */}
-            <div className="bg-slate-50 rounded-2xl border border-slate-150 p-4 space-y-3">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest font-mono block">
-                Quick Guide: Supported Pincodes
-              </span>
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                {quickGuideItems.map(item => (
-                  <button
-                    key={item.pincode}
-                    type="button"
-                    onClick={() => {
-                      setInputValue(item.pincode);
-                      setErrorStatus(null);
-                    }}
-                    className={`text-left p-2.5 rounded-xl border transition-all flex items-center justify-between ${
-                      inputValue === item.pincode
-                      ? 'bg-indigo-600 border-indigo-500 text-white shadow'
-                      : 'bg-white border-slate-200 hover:border-indigo-400 text-slate-700'
-                    }`}
-                  >
-                    <div>
-                      <strong className="block font-mono font-bold tracking-tight text-xs leading-none">
-                        {item.pincode}
-                      </strong>
-                      <span className={`text-[9px] mt-0.5 block leading-none ${inputValue === item.pincode ? 'text-indigo-200' : 'text-slate-400'}`}>
-                        {item.label}
-                      </span>
-                    </div>
-                    <ArrowRight className={`w-3.5 h-3.5 opacity-50 ${inputValue === item.pincode ? 'text-white' : 'text-slate-400'}`} />
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Actions panel */}
-            <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
-              <button
-                type="submit"
-                className="w-full sm:flex-1 bg-indigo-600 hover:bg-indigo-750 text-white font-bold text-sm py-3 px-5 rounded-2xl shadow-md cursor-pointer transition flex items-center justify-center gap-2"
-              >
-                <Sparkles className="w-4 h-4 text-amber-300 fill-amber-300" />
-                Submit & Open Portal
-              </button>
-
-              <button
-                type="button"
-                onClick={handleSkip}
-                className="w-full sm:w-auto bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-sm py-3 px-5 rounded-2xl cursor-pointer transition"
-              >
-                Skip ({(matchedLocality || defaultLocality)?.name.split(',')[0] || 'Directory Home'})
-              </button>
-            </div>
-          </form>
+        <div className="border-t border-slate-100 px-4 py-2.5">
+          <button
+            type="button"
+            onClick={() => {
+              onSavePincode(null, defaultLocality?.id || defaultLocalityId || localities[0]?.id || '');
+              onClose();
+            }}
+            className="text-[12px] font-semibold text-slate-500 transition hover:text-slate-700"
+          >
+            Skip for now
+          </button>
         </div>
-      </motion.div>
+      </div>
     </div>
   );
 }

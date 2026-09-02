@@ -145,19 +145,27 @@ export const normalizeBusinessTaxonomy = (business: Business): Business => {
   const validCategory = isValidCategoryId(categoryId);
   const validSubcategory = isValidSubcategoryId(categoryId, business.subcategoryId || '');
   const shouldDefaultSubcategory = validCategory && !validSubcategory && !String(business.sourceSubcategoryLabel || '').trim();
-  const normalizedCategoryId = validCategory ? categoryId : '';
+  // Do NOT blank an unrecognized category/subcategory id. The runtime catalog
+  // starts life as the bundled seed and is only replaced once the taxonomy API
+  // resolves, so normalizing a business before that would erase a perfectly
+  // good id for any category added since the seed. Because this normalization
+  // is destructive and re-runs on the already-normalized record, a blanked id
+  // could never be recovered once the real catalog arrived — the listing just
+  // fell into an "uncategorized" bucket forever. The server's value is
+  // authoritative; keep it and let `taxonomyMapped` carry whether it validated.
+  const normalizedCategoryId = validCategory ? categoryId : (business.categoryId || '');
   const normalizedSubcategoryId = validCategory
     ? (
         validSubcategory
           ? (business.subcategoryId || '')
           : (shouldDefaultSubcategory ? resolveDefaultSubcategoryId(categoryId) : '')
       )
-    : '';
+    : (business.subcategoryId || '');
   return {
     ...business,
     categoryId: normalizedCategoryId,
     subcategoryId: normalizedSubcategoryId,
-    taxonomyMapped: normalizedCategoryId !== '' && normalizedSubcategoryId !== '',
+    taxonomyMapped: validCategory && normalizedSubcategoryId !== '',
     pincode: resolveBusinessPincode({ ...business, categoryId: normalizedCategoryId }),
     tags: buildBusinessTags({
       ...business,
@@ -167,11 +175,29 @@ export const normalizeBusinessTaxonomy = (business: Business): Business => {
   };
 };
 
+// Imported listing text carries junk from the source export: runs of "?" where
+// non-Latin characters were lost before the CSV was produced (the raw file has
+// no Devanagari bytes at all, so they are unrecoverable), plus stray leading and
+// trailing punctuation like "@", "#", a lone ".", or a dangling comma. Strip all
+// of it so names and addresses read cleanly. Opening brackets are preserved so
+// "(CTL) Clinitech Laboratory" survives intact, and any bracket left empty once
+// the lost characters are removed is dropped rather than shown as "( )".
+export const cleanImportedText = (value: string | undefined | null): string => {
+  let out = String(value || '');
+  if (!out) return '';
+  out = out.replace(/\?{2,}/g, ' ');
+  out = out.replace(/\(\s*\)/g, ' ').replace(/\[\s*\]/g, ' ');
+  out = out.replace(/^[\s?@#.\-*~|/\\,;:+=_'"!&%$^)\]]+/, '');
+  out = out.replace(/[\s?@#*~|\\,;:+=_'"^-]+$/, '');
+  out = out.replace(/\s{2,}/g, ' ').trim();
+  return out;
+};
+
 export const normalizeStoredBusiness = (business: Business): Business => {
   const sanitizedBusiness: Business = {
     ...business,
     slug: String(business.slug || slugifyBusinessValue(`${business.name || ''}-${business.id || ''}`)).trim() || undefined,
-    name: String(business.name || '').trim(),
+    name: cleanImportedText(business.name) || String(business.name || '').trim(),
     googlePlaceId: business.googlePlaceId ? String(business.googlePlaceId).trim() : undefined,
     categoryId: String(business.categoryId || '').trim(),
     subcategoryId: String(business.subcategoryId || '').trim(),
@@ -183,7 +209,7 @@ export const normalizeStoredBusiness = (business: Business): Business => {
       : undefined,
     sourceCategoryLabel: business.sourceCategoryLabel ? String(business.sourceCategoryLabel).trim() : undefined,
     sourceSubcategoryLabel: business.sourceSubcategoryLabel ? String(business.sourceSubcategoryLabel).trim() : undefined,
-    address: String(business.address || '').trim(),
+    address: cleanImportedText(business.address) || String(business.address || '').trim(),
     phone: String(business.phone || '').trim(),
     website: String(business.website || '').trim(),
     description: String(business.description || '').trim(),

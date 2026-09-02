@@ -156,6 +156,74 @@ export const slugifyAdminValue = (value: string) => value
   .replace(/[^a-z0-9]+/g, '-')
   .replace(/^-+|-+$/g, '');
 
+/** Ported verbatim from AdminConsole.tsx's local `parsePincodeList` (Homepage CMS split, Section 9 Step 4). */
+export const parsePincodeList = (raw: string) => (
+  raw
+    .split(/[\s,]+/)
+    .map((entry) => entry.replace(/\D/g, '').trim())
+    .filter((entry, index, items) => entry.length === 6 && items.indexOf(entry) === index)
+);
+
+/** Ported verbatim from AdminConsole.tsx's local `parseIdList` (Homepage CMS split, Section 9 Step 4). */
+export const parseIdList = (raw: string) => (
+  raw
+    .split(/[\n,]+/)
+    .map((entry) => entry.trim())
+    .filter((entry, index, items) => entry.length > 0 && items.indexOf(entry) === index)
+);
+
+/** Ported verbatim from AdminConsole.tsx's local `createAdminId` (Homepage CMS split, Section 9 Step 4). */
+export const createAdminId = (prefix: string) => `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
+
+/** Ported verbatim from AdminConsole.tsx's local `pruneEmptyPayload` (Homepage CMS split, Section 9 Step 4). */
+export const pruneEmptyPayload = (value: Record<string, unknown>) => (
+  Object.fromEntries(
+    Object.entries(value).filter(([, entry]) => {
+      if (entry === undefined || entry === null || entry === '') return false;
+      if (Array.isArray(entry) && entry.length === 0) return false;
+      return true;
+    })
+  )
+);
+
+/**
+ * Ported from AdminConsole.tsx's local `uploadBannerImage` (Homepage CMS split, Section 9 Step
+ * 4) — same `/api/media/upload` call, generalized to accept an auth token instead of closing
+ * over `userSession` directly, so the new Homepage CMS pages can each supply their own.
+ */
+export const uploadAdminMediaImage = async (file: File, folder: string, authToken?: string) => {
+  const token = authToken || (typeof localStorage !== 'undefined' ? localStorage.getItem('yp_auth_token') : null);
+  if (!token) {
+    throw new Error('Please sign in with a platform admin or developer account before uploading images.');
+  }
+
+  const dataUrl = await readFileAsDataUrl(file);
+  const response = await fetch('/api/media/upload', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      folder,
+      fileName: file.name,
+      mimeType: file.type || 'application/octet-stream',
+      dataUrl,
+    }),
+  });
+
+  const payload = await response.json().catch(() => null);
+  if (!response.ok || !payload?.ok || !payload?.url) {
+    const serverMessage = payload?.error || 'Failed to upload banner image';
+    if (response.status === 401 || response.status === 403) {
+      throw new Error(`${serverMessage}. Uploads require a platform admin or developer login.`);
+    }
+    throw new Error(serverMessage);
+  }
+
+  return String(payload.url);
+};
+
 export const buildUniqueAdminId = (seed: string, takenIds: Set<string>) => {
   const baseId = slugifyAdminValue(seed);
   if (!baseId) return '';

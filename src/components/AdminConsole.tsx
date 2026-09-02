@@ -53,8 +53,16 @@ import {
   slugifyForPath,
   type HeroStatDraft,
 } from '../services/admin/adminConsoleUtils';
+import {
+  buildKeptSeparateBusiness,
+  buildMergedBusinessPair,
+  computeDuplicateReviewCandidates,
+} from '../services/admin/duplicateReview';
+import { createInlineSubcategory as sharedCreateInlineSubcategory } from '../services/admin/taxonomyMapping';
+import { BULK_IMPORT_CHUNK_SIZE } from '../services/admin/bulkImport';
+import { useBulkImportWorkflow } from '../hooks/admin/useBulkImportWorkflow';
 
-interface AdminConsoleProps {
+export interface AdminConsoleProps {
   localities: Locality[];
   businesses: Business[];
   subdomains: SubdomainMapping[];
@@ -69,7 +77,7 @@ interface AdminConsoleProps {
   // Customizable Pincode Routing Props
   pincodeMappings?: Array<{ pincode: string; localityId: string }>;
   onAddPincodeMapping?: (pincode: string, localityId: string) => void;
-  onDeletePincodeMapping?: (pincode: string) => void;
+  onDeletePincodeMapping?: (pincode: string, localityId?: string) => void;
   defaultLocalityId?: string;
   onChangeDefaultLocalityId?: (localityId: string) => void;
   onBulkImportBusinesses?: (rows: Array<{
@@ -147,8 +155,12 @@ interface AdminConsoleProps {
   onRefreshScalablePublishedSnapshots?: () => Promise<unknown> | void;
   onDeleteScalablePublishedSnapshot?: (snapshotId: string) => Promise<unknown> | void;
   onReseedScalableHomepageConfig?: (force?: boolean) => Promise<{ summary?: { templates?: number; assignments?: number; campaigns?: number }; ownership?: ScalableLegacyOwnershipSummary; forced?: boolean } | void> | void;
-  onPublishResolvedHomepages?: (publishRequest?: string[] | ResolvedHomepagePublishRequest) => Promise<{ publishedCount?: number; totalSnapshots?: number } | void> | void;
-  onDeleteResolvedHomepageSnapshots?: (deleteRequest?: ResolvedHomepageSnapshotDeleteRequest) => Promise<{ deletedCount?: number; remainingSnapshots?: number } | void> | void;
+  // The App-level handlers resolve with the server payload, which carries the
+  // snapshot list rather than counts, and can be null when the response body is
+  // unreadable. Both shapes are accepted here; the call sites already check for
+  // a count with `in` before using one.
+  onPublishResolvedHomepages?: (publishRequest?: string[] | ResolvedHomepagePublishRequest) => Promise<{ publishedCount?: number; totalSnapshots?: number; publishedSnapshots?: unknown[] } | void | null> | void;
+  onDeleteResolvedHomepageSnapshots?: (deleteRequest?: ResolvedHomepageSnapshotDeleteRequest) => Promise<{ deletedCount?: number; remainingSnapshots?: number; publishedSnapshots?: unknown[] } | void | null> | void;
   localityCategoryLinks?: LocalityCategoryLink[];
   onCreateLocalityCategoryLink?: (payload: Omit<LocalityCategoryLink, 'id'>) => void;
   onDeleteLocalityCategoryLink?: (id: string) => void;
@@ -156,61 +168,10 @@ interface AdminConsoleProps {
   adminWorkspaceRouteNonce?: number;
 }
 
-type BulkImportRow = {
-  listingId?: string;
-  googlePlaceId?: string;
-  imageUrl?: string;
-  logoUrl?: string;
-  coverImageUrl?: string;
-  galleryUrls?: string;
-  businessName: string;
-  address: string;
-  area: string;
-  locality?: string;
-  city: string;
-  state: string;
-  pin: string;
-  mobile: string;
-  rating: string;
-  reviews: string;
-  services: string;
-  category?: string;
-  subcategory?: string;
-  latitude: string;
-  longitude: string;
-  importAction?: 'create' | 'update';
-  existingBusinessId?: string;
-  localityId?: string;
-  areaId?: string;
-  categoryId?: string;
-  subcategoryId?: string;
-  sourceCategoryLabel?: string;
-  sourceSubcategoryLabel?: string;
-  taxonomyMapped?: boolean;
-  tags?: string[];
-};
+// Bulk-import row/preview types now live in services/admin/bulkImport.ts (shared with the
+// new, separately-routed Bulk Import page — see hooks/admin/useBulkImportWorkflow.ts).
 
-type ImportPreviewRow = BulkImportRow & {
-  rowNumber: number;
-  previewStatus: 'ready' | 'update' | 'fail';
-  errors: string[];
-  normalizedPhone: string;
-  resolvedPincode: string;
-  resolvedLocalityId: string;
-  requiresTaxonomyMapping: boolean;
-  taxonomyStatusLabel: string;
-};
-
-type ResolvedImportGeography = {
-  resolvedPincode: string;
-  resolvedLocalityId: string;
-  resolvedCityId: string;
-  resolvedStateId: string;
-  areaId: string;
-  errors: string[];
-};
-
-type LocalityCategoryLink = {
+export type LocalityCategoryLink = {
   id: string;
   localityId: string;
   categoryId: string;
@@ -218,15 +179,13 @@ type LocalityCategoryLink = {
   slug: string;
 };
 
-type AdminWorkspaceTab = 'moderation' | 'listing-status' | 'bulk-upload' | 'taxonomy-mapping' | 'data-audit';
+export type AdminWorkspaceTab = 'moderation' | 'listing-status' | 'bulk-upload' | 'taxonomy-mapping' | 'data-audit';
 type AdminConsoleSurface = 'admin' | 'operations';
 type AdminOperationsSection = 'listings' | 'homepage' | 'campaigns' | 'geography' | 'content' | 'platform';
 type HomepageCmsSubtab = 'layout' | 'hero' | 'publish' | 'templates' | 'assignments' | 'campaigns' | 'insights';
 type PlatformConfigSubtab = 'api' | 'taxonomy' | 'geography' | 'defaults' | 'seo';
 type GeographyWorkspaceSubtab = 'localities' | 'routing' | 'links';
 type CampaignWorkspaceSubtab = 'offers' | 'ads' | 'leads';
-
-const BULK_IMPORT_CHUNK_SIZE = 3000;
 
 export default function AdminConsole({
   localities,
@@ -318,11 +277,25 @@ export default function AdminConsole({
   const [rejectionActive, setRejectionActive] = useState<Record<string, boolean>>({});
   const [adminNotification, setAdminNotification] = useState<string | null>(null);
   const [editedHrs, setEditedHrs] = useState<Record<string, string>>({});
-  const [importResult, setImportResult] = useState<string>('');
-  const [importPreview, setImportPreview] = useState<ImportPreviewRow[]>([]);
-  const [parsedImportRowCount, setParsedImportRowCount] = useState(0);
-  const [suggestedImportChunkCount, setSuggestedImportChunkCount] = useState(1);
-  const [isImportChunkLimitExceeded, setIsImportChunkLimitExceeded] = useState(false);
+  // Bulk-import state/handlers are shared with the new Bulk Import page — see
+  // hooks/admin/useBulkImportWorkflow.ts and services/admin/bulkImport.ts.
+  const {
+    importResult,
+    importPreview,
+    pagedImportPreview,
+    safeImportPreviewPage,
+    importPreviewTotalPages,
+    parsedImportRowCount,
+    suggestedImportChunkCount,
+    isImportChunkLimitExceeded,
+    handleCsvImport,
+    handleApplyImportPreview,
+    downloadImportPreviewCsv,
+    downloadFailedImportCsv,
+    goToPreviousImportPage,
+    goToNextImportPage,
+    resetImportPreviewPage,
+  } = useBulkImportWorkflow({ businesses, localities, pincodeMappings: pincodeMappings || [], onBulkImportBusinesses });
   const [consoleSurface, setConsoleSurface] = useState<AdminConsoleSurface>('admin');
   const [adminWorkspaceTab, setAdminWorkspaceTab] = useState<AdminWorkspaceTab>(initialAdminWorkspaceTab);
   const [listingStatusFilter, setListingStatusFilter] = useState<ListingStatusFilter>('all');
@@ -334,7 +307,6 @@ export default function AdminConsole({
   const [campaignWorkspaceSubtab, setCampaignWorkspaceSubtab] = useState<CampaignWorkspaceSubtab>('offers');
   const [listingStatusPage, setListingStatusPage] = useState(1);
   const [auditPage, setAuditPage] = useState(1);
-  const [importPreviewPage, setImportPreviewPage] = useState(1);
   const [taxonomyDrafts, setTaxonomyDrafts] = useState<Record<string, { categoryId: string; subcategoryId: string }>>({});
   const [selectedBackendBiz, setSelectedBackendBiz] = useState<Business | null>(null);
   const [backendDraft, setBackendDraft] = useState<Business | null>(null);
@@ -417,7 +389,7 @@ export default function AdminConsole({
   useEffect(() => {
     setAdminWorkspaceTab(initialAdminWorkspaceTab);
     if (initialAdminWorkspaceTab === 'bulk-upload') {
-      setImportPreviewPage(1);
+      resetImportPreviewPage();
     }
   }, [initialAdminWorkspaceTab, adminWorkspaceRouteNonce]);
 
@@ -1431,504 +1403,17 @@ export default function AdminConsole({
     return true;
   });
 
-  const parseCsvLine = (line: string) => {
-    return line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map((s) => s.trim().replace(/^"|"$/g, ''));
-  };
+  // CSV bulk-import parsing/validation/download logic now lives in services/admin/bulkImport.ts
+  // and hooks/admin/useBulkImportWorkflow.ts (destructured above), shared with the new Bulk Import page.
 
-  const normalizePhone = (phone: string) => phone.replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '');
-
-  const resolveCategoryFromImport = (categoryName: string | undefined) => {
-    const normalized = String(categoryName || '').trim().toLowerCase();
-    if (!normalized) return '';
-    const direct = BUSINESS_CATEGORIES.find((category) => (
-      [category.id, category.slug, category.name.toLowerCase()].includes(normalized)
-    ));
-    return direct?.id || '';
-  };
-
-  const resolveSubcategoryFromImport = (subcategoryName: string | undefined, categoryId: string) => {
-    const normalized = String(subcategoryName || '').trim().toLowerCase();
-    if (!normalized || !categoryId) return '';
-    const direct = BUSINESS_SUBCATEGORIES.find((subcategory) => (
-      subcategory.categoryId === categoryId &&
-      [subcategory.id, subcategory.slug, subcategory.name.toLowerCase()].includes(normalized)
-    ));
-    return direct?.id || '';
-  };
-
-  const normalizeImportGeoLookup = (value: string) => slugifyAdminValue(String(value || ''));
-
-  const resolveImportGeography = (row: BulkImportRow): ResolvedImportGeography => {
-    const errors: string[] = [];
-    const requestedPincode = String(row.pin || '').replace(/\D/g, '').slice(0, 6);
-    const requestedAreaId = String(row.areaId || '').trim();
-    const requestedLocalityId = String(row.localityId || '').trim();
-    const requestedLocalityName = String(row.locality || '').trim();
-    const requestedAreaName = String(row.area || '').trim();
-    const requestedCityName = String(row.city || '').trim();
-    const requestedStateName = String(row.state || '').trim();
-
-    const explicitLocality = requestedLocalityId
-      ? MASTER_LOCALITIES.find((locality) => locality.id === requestedLocalityId)
-      : undefined;
-    const namedLocality = requestedLocalityName
-      ? MASTER_LOCALITIES.find((locality) => {
-          const publicLocalityName = localities.find((entry) => entry.id === locality.id)?.name || '';
-          return (
-            normalizeImportGeoLookup(locality.name) === normalizeImportGeoLookup(requestedLocalityName) ||
-            normalizeImportGeoLookup(publicLocalityName) === normalizeImportGeoLookup(requestedLocalityName)
-          );
-        })
-      : undefined;
-    const textMatchedLocality = !explicitLocality && !namedLocality
-      ? MASTER_LOCALITIES.find((locality) => {
-          const publicLocalityName = localities.find((entry) => entry.id === locality.id)?.name || '';
-          const localityNeedle = normalizeImportGeoLookup(locality.name || publicLocalityName);
-          const haystack = normalizeImportGeoLookup(`${requestedAreaName} ${requestedCityName} ${requestedStateName}`);
-          return Boolean(localityNeedle) && haystack.includes(localityNeedle);
-        })
-      : undefined;
-
-    const localityHintId = explicitLocality?.id || namedLocality?.id || textMatchedLocality?.id || '';
-    const requestedAreaLookup = normalizeImportGeoLookup(requestedAreaName);
-    const explicitArea = requestedAreaId
-      ? MASTER_AREAS.find((area) => area.id === requestedAreaId)
-      : undefined;
-    const namedArea = requestedAreaLookup
-      ? MASTER_AREAS.find((area) => {
-          const areaName = normalizeImportGeoLookup(area.name);
-          if (!areaName) return false;
-          if (localityHintId && area.localityId !== localityHintId) return false;
-          return areaName === requestedAreaLookup || areaName.includes(requestedAreaLookup) || requestedAreaLookup.includes(areaName);
-        })
-      : undefined;
-    const pincodeArea = requestedPincode
-      ? MASTER_AREAS.find((area) => area.pincode === requestedPincode && (!localityHintId || area.localityId === localityHintId))
-      : undefined;
-
-    const mappedLocalityId = requestedPincode
-      ? pincodeMappings.find((mapping) => mapping.pincode === requestedPincode)?.localityId || ''
-      : '';
-
-    const resolvedArea = explicitArea || namedArea || pincodeArea;
-    const resolvedLocality = explicitLocality
-      || namedLocality
-      || (resolvedArea ? MASTER_LOCALITIES.find((locality) => locality.id === resolvedArea.localityId) : undefined)
-      || (mappedLocalityId ? MASTER_LOCALITIES.find((locality) => locality.id === mappedLocalityId) : undefined)
-      || textMatchedLocality;
-    const resolvedCity = resolvedArea
-      ? MASTER_CITIES.find((city) => city.id === resolvedArea.cityId)
-      : resolvedLocality
-        ? MASTER_CITIES.find((city) => city.id === resolvedLocality.cityId)
-        : undefined;
-    const resolvedState = resolvedCity
-      ? MASTER_STATES.find((state) => state.id === resolvedCity.stateId)
-      : undefined;
-
-    if (requestedLocalityId && !explicitLocality) {
-      errors.push(`Locality ID "${requestedLocalityId}" was not found in geography master.`);
-    }
-    if (requestedLocalityName && !namedLocality) {
-      errors.push(`Locality "${requestedLocalityName}" was not found in geography master.`);
-    }
-    if (requestedPincode.length !== 6) {
-      errors.push('Valid 6-digit PIN is required.');
-    }
-    if (!resolvedLocality) {
-      errors.push('Could not resolve locality from Locality / Area / PIN mapping. Area is optional, but Locality or a mapped PIN is still required.');
-    }
-    if (mappedLocalityId && resolvedLocality && mappedLocalityId !== resolvedLocality.id) {
-      const mappedLocalityName = localities.find((entry) => entry.id === mappedLocalityId)?.name || mappedLocalityId;
-      errors.push(`PIN ${requestedPincode} is routed to ${mappedLocalityName}, but the row points to ${resolvedLocality.name}.`);
-    }
-    if (requestedCityName && resolvedCity && normalizeImportGeoLookup(resolvedCity.name) !== normalizeImportGeoLookup(requestedCityName)) {
-      errors.push(`City "${requestedCityName}" does not match resolved locality city "${resolvedCity.name}".`);
-    }
-    if (requestedStateName && resolvedState && normalizeImportGeoLookup(resolvedState.name) !== normalizeImportGeoLookup(requestedStateName)) {
-      errors.push(`State "${requestedStateName}" does not match resolved locality state "${resolvedState.name}".`);
-    }
-
-    return {
-      resolvedPincode: requestedPincode || resolvedArea?.pincode || '',
-      resolvedLocalityId: resolvedLocality?.id || '',
-      resolvedCityId: resolvedCity?.id || '',
-      resolvedStateId: resolvedState?.id || '',
-      areaId: resolvedArea?.id || '',
-      errors,
-    };
-  };
-
-  const buildImportPreview = (rows: BulkImportRow[]) => {
-    const reservedExistingIds = new Set(
-      businesses.map((business) => String(business.id || '').trim().toLowerCase()).filter(Boolean)
-    );
-    const previewAssignedIds = new Map<string, number>();
-    const previewAssignedGooglePlaceIds = new Map<string, number>();
-
-    return rows.map((row, idx): ImportPreviewRow => {
-      const rowNumber = idx + 2;
-      const errors: string[] = [];
-      const normalizedPhone = normalizePhone(row.mobile);
-      const geographyResolution = resolveImportGeography(row);
-      const resolvedPincode = geographyResolution.resolvedPincode;
-      const resolvedLocalityId = geographyResolution.resolvedLocalityId;
-      const rawListingId = String(row.listingId || '').trim();
-      const generatedListingSeed = `${row.businessName || 'listing'}-${normalizedPhone || resolvedPincode || rowNumber}`;
-      const listingId = rawListingId || buildUniqueAdminId(`lst-${generatedListingSeed}`, new Set([
-        ...reservedExistingIds,
-        ...previewAssignedIds.keys(),
-      ]));
-      const normalizedListingId = String(listingId || '').trim();
-      const normalizedListingIdKey = normalizedListingId.toLowerCase();
-      const normalizedGooglePlaceId = String(row.googlePlaceId || '').trim();
-      const normalizedGooglePlaceIdKey = normalizedGooglePlaceId.toLowerCase();
-      const categoryId = resolveCategoryFromImport(row.category);
-      const subcategoryId = resolveSubcategoryFromImport(row.subcategory, categoryId);
-      const requiresTaxonomyMapping = !isBusinessTaxonomyMapped({ categoryId, subcategoryId });
-      const taxonomyStatusLabel = !String(row.category || '').trim()
-        ? 'Category missing - send to mapping queue'
-        : !categoryId
-          ? `Category "${row.category}" not found in master data`
-          : !String(row.subcategory || '').trim()
-            ? 'Subcategory missing - send to mapping queue'
-            : !subcategoryId
-              ? `Subcategory "${row.subcategory}" not found under selected category`
-              : 'Mapped to master taxonomy';
-      const tagPayload = buildListingTags(
-        row.services || '',
-        row.category || '',
-        row.subcategory || '',
-        getCategoryById(categoryId)?.name || '',
-        getSubcategoryById(subcategoryId)?.name || '',
-        normalizedPhone,
-        row.businessName
-      );
-
-      if (!row.businessName.trim()) errors.push('Business Name is required.');
-      if (!normalizedListingId) errors.push('Localisy Listing ID is required.');
-      if (normalizedPhone.length > 0 && normalizedPhone.length !== 10) errors.push('Mobile must be blank or a valid 10-digit number.');
-      errors.push(...geographyResolution.errors);
-      if (resolvedLocalityId && !localities.some((locality) => locality.id === resolvedLocalityId)) {
-        errors.push(`Mapped locality "${resolvedLocalityId}" does not exist.`);
-      }
-      const existingBusinessByListingId = normalizedListingIdKey
-        ? businesses.find((business) => String(business.id || '').trim().toLowerCase() === normalizedListingIdKey)
-        : undefined;
-      const existingBusinessByGooglePlaceId = normalizedGooglePlaceIdKey
-        ? businesses.find((business) => String(business.googlePlaceId || '').trim().toLowerCase() === normalizedGooglePlaceIdKey)
-        : undefined;
-      if (normalizedListingIdKey && previewAssignedIds.has(normalizedListingIdKey)) {
-        errors.push(`Localisy Listing ID "${normalizedListingId}" is duplicated in this upload sheet.`);
-      }
-      if (normalizedGooglePlaceIdKey && previewAssignedGooglePlaceIds.has(normalizedGooglePlaceIdKey)) {
-        errors.push(`Google Place ID "${normalizedGooglePlaceId}" is duplicated in this upload sheet.`);
-      }
-
-      const duplicate = businesses.find((biz) => {
-        const bizPincode = biz.pincode || MASTER_AREAS.find((area) => area.id === biz.areaId)?.pincode || '';
-        return (
-          biz.name.trim().toLowerCase() === row.businessName.trim().toLowerCase() &&
-          normalizedPhone.length > 0 &&
-          normalizePhone(biz.phone) === normalizedPhone &&
-          bizPincode === resolvedPincode &&
-          biz.localityId === resolvedLocalityId
-        );
-      });
-      if (rawListingId && duplicate && existingBusinessByListingId && duplicate.id !== existingBusinessByListingId.id) {
-        errors.push(`Localisy Listing ID "${normalizedListingId}" belongs to another listing. Matching listing already exists as "${duplicate.id}".`);
-      }
-      const allowedGooglePlaceBusinessId = existingBusinessByListingId?.id || duplicate?.id || '';
-      if (
-        normalizedGooglePlaceIdKey
-        && existingBusinessByGooglePlaceId
-        && existingBusinessByGooglePlaceId.id !== allowedGooglePlaceBusinessId
-      ) {
-        errors.push(`Google Place ID "${normalizedGooglePlaceId}" already exists on listing "${existingBusinessByGooglePlaceId.id}".`);
-      }
-
-      const previewStatus: ImportPreviewRow['previewStatus'] = errors.length ? 'fail' : (existingBusinessByListingId || duplicate) ? 'update' : 'ready';
-      if (normalizedListingIdKey) {
-        previewAssignedIds.set(normalizedListingIdKey, rowNumber);
-      }
-      if (normalizedGooglePlaceIdKey) {
-        previewAssignedGooglePlaceIds.set(normalizedGooglePlaceIdKey, rowNumber);
-      }
-      return {
-        ...row,
-        listingId: normalizedListingId,
-        googlePlaceId: normalizedGooglePlaceId || undefined,
-      rowNumber,
-      previewStatus,
-      errors,
-      normalizedPhone,
-      resolvedPincode,
-      resolvedLocalityId,
-      requiresTaxonomyMapping,
-      taxonomyStatusLabel,
-      importAction: (existingBusinessByListingId || duplicate) ? 'update' : 'create',
-      existingBusinessId: existingBusinessByListingId?.id || duplicate?.id,
-      localityId: resolvedLocalityId,
-      areaId: geographyResolution.areaId || '',
-      categoryId,
-      subcategoryId,
-      sourceCategoryLabel: row.category?.trim() || undefined,
-        sourceSubcategoryLabel: row.subcategory?.trim() || undefined,
-        taxonomyMapped: !requiresTaxonomyMapping,
-        tags: tagPayload
-      };
-    });
-  };
-
-  const handleCsvImport = async (file: File) => {
-    const text = await file.text();
-    const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
-    if (lines.length < 2) {
-      setImportResult('CSV appears empty or missing rows.');
-      setImportPreview([]);
-      setParsedImportRowCount(0);
-      setSuggestedImportChunkCount(1);
-      setIsImportChunkLimitExceeded(false);
-      return;
-    }
-    const headers = parseCsvLine(lines[0]).map((h) => h.toLowerCase());
-    const rows = lines.slice(1).map((line) => {
-      const cols = parseCsvLine(line);
-      const get = (name: string) => {
-        const idx = headers.indexOf(name.toLowerCase());
-        return idx >= 0 ? (cols[idx] || '') : '';
-      };
-        const photoUrls = [
-          get('Photo 1') || get('Photo1'),
-          get('Photo 2') || get('Photo2'),
-          get('Photo 3') || get('Photo3'),
-          get('Photo 4') || get('Photo4'),
-          get('Photo 5') || get('Photo5'),
-        ].map((value) => String(value || '').trim()).filter(Boolean);
-        return {
-          listingId: get('Localisy Listing ID') || get('Listing ID') || get('LocalisyListingId') || get('ListingId'),
-          googlePlaceId: get('Google Place ID') || get('GooglePlaceId') || get('Place ID') || get('PlaceId'),
-          imageUrl: photoUrls[0] || get('Image URL') || get('ImageUrl'),
-          logoUrl: get('Logo URL') || get('LogoUrl'),
-          coverImageUrl: get('Cover Image URL') || get('CoverImageUrl') || photoUrls[1] || photoUrls[0] || '',
-          galleryUrls: photoUrls.length > 0 ? photoUrls.join(', ') : (get('Gallery URLs') || get('GalleryUrls')),
-          businessName: get('Business Name'),
-          address: get('Address'),
-        area: get('Area'),
-        locality: get('Locality') || get('Locality Name'),
-        localityId: get('Locality ID') || get('LocalityId'),
-        areaId: get('Area ID') || get('AreaId'),
-        city: get('City'),
-        state: get('State'),
-        pin: get('PIN'),
-        mobile: get('Mobile'),
-        rating: get('Rating'),
-        reviews: get('Reviews'),
-        services: get('Services'),
-        category: get('Category'),
-        subcategory: get('Subcategory'),
-        latitude: get('Latitude'),
-        longitude: get('Longitude'),
-      };
-    }).filter((r) => r.businessName.trim());
-
-    setParsedImportRowCount(rows.length);
-    setSuggestedImportChunkCount(Math.max(1, Math.ceil(rows.length / BULK_IMPORT_CHUNK_SIZE)));
-
-    if (rows.length > BULK_IMPORT_CHUNK_SIZE) {
-      setImportPreview([]);
-      setImportPreviewPage(1);
-      setIsImportChunkLimitExceeded(true);
-      setImportResult(
-        `This CSV contains ${rows.length.toLocaleString()} listings. Please split it into ${Math.ceil(rows.length / BULK_IMPORT_CHUNK_SIZE)} files of up to ${BULK_IMPORT_CHUNK_SIZE.toLocaleString()} rows each before previewing or uploading.`
-      );
-      return;
-    }
-
-    const preview = buildImportPreview(rows);
-    setIsImportChunkLimitExceeded(false);
-    setImportPreview(preview);
-    setImportPreviewPage(1);
-    const ready = preview.filter(r => r.previewStatus === 'ready').length;
-    const updates = preview.filter(r => r.previewStatus === 'update').length;
-    const failed = preview.filter(r => r.previewStatus === 'fail').length;
-    const queuedForMapping = preview.filter((row) => row.requiresTaxonomyMapping && row.previewStatus !== 'fail').length;
-    setImportResult(`Preview generated: ${ready} ready, ${updates} existing matches need update confirmation, ${queuedForMapping} queued for taxonomy mapping, ${failed} failed.`);
-  };
-
-  const handleApplyImportPreview = () => {
-    if (!onBulkImportBusinesses) {
-      setImportResult('Bulk import callback is not configured.');
-      return;
-    }
-    if (importPreview.length > BULK_IMPORT_CHUNK_SIZE) {
-      setImportResult(`This preview exceeds the ${BULK_IMPORT_CHUNK_SIZE.toLocaleString()} row rollout limit. Please split the CSV into smaller chunks first.`);
-      return;
-    }
-    const validRows = importPreview.filter(r => r.previewStatus !== 'fail');
-    const updateRows = validRows.filter(r => r.previewStatus === 'update');
-    if (updateRows.length > 0 && !confirm(`${updateRows.length} listing(s) already exist with the same business name, phone, pincode, and locality. Update those records instead of creating duplicates?`)) {
-      return;
-    }
-    const result = onBulkImportBusinesses(validRows);
-    const failed = importPreview.filter(r => r.previewStatus === 'fail').length;
-    setImportPreview(importPreview.filter(r => r.previewStatus === 'fail'));
-    setImportPreviewPage(1);
-    setImportResult(`Upload complete: ${result.imported} created, ${result.skipped} updated/skipped, ${failed} failed rows kept below with error details.`);
-  };
-
-  const downloadFailedImportCsv = () => {
-    const failedRows = importPreview.filter(r => r.previewStatus === 'fail');
-    const header = ['Row', 'Localisy Listing ID', 'Google Place ID', 'Image URL', 'Logo URL', 'Cover Image URL', 'Gallery URLs', 'Business Name', 'Address', 'Area', 'Locality', 'Locality ID', 'Area ID', 'City', 'State', 'PIN', 'Mobile', 'Rating', 'Reviews', 'Services', 'Category', 'Subcategory', 'Latitude', 'Longitude', 'Error Details'];
-    const escapeCsv = (val: string | number) => `"${String(val ?? '').replace(/"/g, '""')}"`;
-    const body = failedRows.map(r => [
-      r.rowNumber, r.listingId || '', r.googlePlaceId || '', r.imageUrl || '', r.logoUrl || '', r.coverImageUrl || '', r.galleryUrls || '', r.businessName, r.address, r.area, r.locality || '', r.localityId || '', r.areaId || '', r.city, r.state, r.pin, r.mobile, r.rating, r.reviews, r.services, r.category || '', r.subcategory || '', r.latitude, r.longitude, r.errors.join('; ')
-    ].map(escapeCsv).join(','));
-    const blob = new Blob([[header.map(escapeCsv).join(','), ...body].join('\n')], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'failed-business-imports.csv';
-    link.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const downloadImportPreviewCsv = () => {
-    const header = ['Row', 'Localisy Listing ID', 'Google Place ID', 'Image URL', 'Logo URL', 'Cover Image URL', 'Gallery URLs', 'Business Name', 'Address', 'Area', 'Locality', 'Locality ID', 'Area ID', 'City', 'State', 'PIN', 'Mobile', 'Rating', 'Reviews', 'Services', 'Category', 'Subcategory', 'Latitude', 'Longitude', 'Preview Status', 'Existing Business ID', 'Error Details'];
-    const escapeCsv = (val: string | number) => `"${String(val ?? '').replace(/"/g, '""')}"`;
-    const body = importPreview.map((row) => [
-      row.rowNumber,
-      row.listingId || '',
-      row.googlePlaceId || '',
-      row.imageUrl || '',
-      row.logoUrl || '',
-      row.coverImageUrl || '',
-      row.galleryUrls || '',
-      row.businessName,
-      row.address,
-      row.area,
-      row.locality || '',
-      row.localityId || '',
-      row.areaId || '',
-      row.city,
-      row.state,
-      row.pin,
-      row.mobile,
-      row.rating,
-      row.reviews,
-      row.services,
-      row.category || '',
-      row.subcategory || '',
-      row.latitude,
-      row.longitude,
-      row.previewStatus,
-      row.existingBusinessId || '',
-      row.errors.join('; ')
-    ].map(escapeCsv).join(','));
-    const blob = new Blob([[header.map(escapeCsv).join(','), ...body].join('\n')], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'listing-import-preview.csv';
-    link.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const normalizeDuplicateText = (value: string) => String(value || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
-  const tokenizeDuplicateText = (value: string) => normalizeDuplicateText(value).split(' ').filter(Boolean);
-  const getTokenOverlapScore = (left: string, right: string) => {
-    const leftTokens = new Set(tokenizeDuplicateText(left));
-    const rightTokens = new Set(tokenizeDuplicateText(right));
-    if (leftTokens.size === 0 || rightTokens.size === 0) return 0;
-    let overlap = 0;
-    leftTokens.forEach((token) => {
-      if (rightTokens.has(token)) overlap += 1;
-    });
-    return overlap / Math.max(leftTokens.size, rightTokens.size);
-  };
-  const getDuplicateConfidenceScore = (left: Business, right: Business) => {
-    if (left.id === right.id) return 0;
-    if (left.localityId !== right.localityId) return 0;
-
-    const leftPhone = String(left.phone || '').replace(/\D/g, '').slice(-10);
-    const rightPhone = String(right.phone || '').replace(/\D/g, '').slice(-10);
-    const leftPincode = String(left.pincode || '').trim();
-    const rightPincode = String(right.pincode || '').trim();
-    const leftName = normalizeDuplicateText(left.name);
-    const rightName = normalizeDuplicateText(right.name);
-    const leftAddress = normalizeDuplicateText(`${left.address} ${left.areaId}`);
-    const rightAddress = normalizeDuplicateText(`${right.address} ${right.areaId}`);
-
-    let score = 0;
-    if (leftPhone && rightPhone && leftPhone === rightPhone) score += 48;
-    if (leftPincode && rightPincode && leftPincode === rightPincode) score += 10;
-    if (leftName && rightName && leftName === rightName) score += 20;
-    score += Math.round(getTokenOverlapScore(left.name, right.name) * 20);
-    score += Math.round(getTokenOverlapScore(left.address, right.address) * 14);
-    if (left.areaId && right.areaId && left.areaId === right.areaId) score += 8;
-    if (left.categoryId && right.categoryId && left.categoryId === right.categoryId) score += 6;
-    if (left.subcategoryId && right.subcategoryId && left.subcategoryId === right.subcategoryId) score += 6;
-    return Math.min(100, score);
-  };
-  const chooseCanonicalBusiness = (left: Business, right: Business) => {
-    const leftScore = (left.status === 'approved' ? 40 : 0)
-      + (left.verifiedBadge ? 15 : 0)
-      + (left.kycStatus === 'verified' ? 10 : 0)
-      + (left.reviewCount || 0)
-      + (left.rating || 0) * 5;
-    const rightScore = (right.status === 'approved' ? 40 : 0)
-      + (right.verifiedBadge ? 15 : 0)
-      + (right.kycStatus === 'verified' ? 10 : 0)
-      + (right.reviewCount || 0)
-      + (right.rating || 0) * 5;
-    if (leftScore === rightScore) {
-      return new Date(left.createdAt).getTime() <= new Date(right.createdAt).getTime()
-        ? { canonical: left, duplicate: right }
-        : { canonical: right, duplicate: left };
-    }
-    return leftScore >= rightScore
-      ? { canonical: left, duplicate: right }
-      : { canonical: right, duplicate: left };
-  };
 
   const pendingBusinesses = businesses.filter(b => b.status === 'pending');
-  const duplicateReviewCandidates = useMemo<DuplicateReviewCandidate[]>(() => {
-    const eligibleBusinesses = businesses.filter((business) => business.status !== 'rejected' && business.duplicateReviewStatus !== 'merged');
-    const candidates: DuplicateReviewCandidate[] = [];
-
-    for (let leftIndex = 0; leftIndex < eligibleBusinesses.length; leftIndex += 1) {
-      for (let rightIndex = leftIndex + 1; rightIndex < eligibleBusinesses.length; rightIndex += 1) {
-        const left = eligibleBusinesses[leftIndex];
-        const right = eligibleBusinesses[rightIndex];
-        const score = getDuplicateConfidenceScore(left, right);
-        if (score < 68) continue;
-
-        const { canonical, duplicate } = chooseCanonicalBusiness(left, right);
-        if (duplicate.duplicateReviewStatus === 'separate' && duplicate.mergedIntoBusinessId === canonical.id) continue;
-
-        const reasons: string[] = [];
-        const canonicalPhone = String(canonical.phone || '').replace(/\D/g, '').slice(-10);
-        const duplicatePhone = String(duplicate.phone || '').replace(/\D/g, '').slice(-10);
-        if (canonicalPhone && canonicalPhone === duplicatePhone) reasons.push('same phone');
-        if (canonical.pincode && canonical.pincode === duplicate.pincode) reasons.push('same pincode');
-        if (normalizeDuplicateText(canonical.name) === normalizeDuplicateText(duplicate.name)) reasons.push('same business name');
-        if (canonical.areaId === duplicate.areaId) reasons.push('same area');
-        if (canonical.categoryId === duplicate.categoryId) reasons.push('same category');
-        if (reasons.length === 0) reasons.push('high text similarity');
-
-        candidates.push({
-          id: `${canonical.id}__${duplicate.id}`,
-          canonical,
-          duplicate,
-          score,
-          reasons,
-        });
-      }
-    }
-
-    return candidates
-      .sort((left, right) => right.score - left.score || right.canonical.reviewCount - left.canonical.reviewCount)
-      .slice(0, 20);
-  }, [businesses]);
+  // Pure duplicate-scoring/merge logic now lives in services/admin/duplicateReview.ts
+  // so the new, separately-routed Listing Directory page can share it.
+  const duplicateReviewCandidates = useMemo<DuplicateReviewCandidate[]>(
+    () => computeDuplicateReviewCandidates(businesses),
+    [businesses]
+  );
 
   const listingStatusItems = [...businesses]
     .filter((business) => {
@@ -1968,13 +1453,8 @@ export default function AdminConsole({
   const auditTotalPages = Math.max(1, Math.ceil(auditLogs.length / AUDIT_PAGE_SIZE));
   const safeAuditPage = Math.min(auditPage, auditTotalPages);
   const pagedAuditLogs = auditLogs.slice((safeAuditPage - 1) * AUDIT_PAGE_SIZE, safeAuditPage * AUDIT_PAGE_SIZE);
-  const IMPORT_PREVIEW_PAGE_SIZE = 20;
-  const importPreviewTotalPages = Math.max(1, Math.ceil(importPreview.length / IMPORT_PREVIEW_PAGE_SIZE));
-  const safeImportPreviewPage = Math.min(importPreviewPage, importPreviewTotalPages);
-  const pagedImportPreview = importPreview.slice(
-    (safeImportPreviewPage - 1) * IMPORT_PREVIEW_PAGE_SIZE,
-    safeImportPreviewPage * IMPORT_PREVIEW_PAGE_SIZE
-  );
+  // importPreviewTotalPages/safeImportPreviewPage/pagedImportPreview now come from
+  // useBulkImportWorkflow (destructured above).
 
   const triggerNotification = (msg: string) => {
     setAdminNotification(msg);
@@ -1983,45 +1463,11 @@ export default function AdminConsole({
 
   const mergeDuplicateCandidate = (candidate: DuplicateReviewCandidate) => {
     if (!onUpdateBusiness) return;
-    const selectedCanonicalId = duplicateMergeTargetByBusinessId[candidate.duplicate.id] || candidate.canonical.id;
-    const canonical = selectedCanonicalId === candidate.duplicate.id ? candidate.duplicate : candidate.canonical;
-    const duplicate = selectedCanonicalId === candidate.duplicate.id ? candidate.canonical : candidate.duplicate;
-    const combinedReviewCount = (canonical.reviewCount || 0) + (duplicate.reviewCount || 0);
-    const weightedRating = combinedReviewCount > 0
-      ? (((canonical.rating || 0) * (canonical.reviewCount || 0)) + ((duplicate.rating || 0) * (duplicate.reviewCount || 0))) / combinedReviewCount
-      : Math.max(canonical.rating || 0, duplicate.rating || 0, 0);
-    const mergedCanonical: Business = {
-      ...canonical,
-      description: canonical.description.length >= duplicate.description.length ? canonical.description : duplicate.description,
-      phone: canonical.phone || duplicate.phone,
-      email: canonical.email || duplicate.email,
-      website: canonical.website || duplicate.website,
-      address: canonical.address || duplicate.address,
-      imageUrl: canonical.imageUrl || duplicate.imageUrl,
-      hours: canonical.hours || duplicate.hours,
-      featured: canonical.featured || duplicate.featured,
-      verifiedBadge: canonical.verifiedBadge || duplicate.verifiedBadge,
-      isSponsored: canonical.isSponsored || duplicate.isSponsored,
-      govRegistered: canonical.govRegistered || duplicate.govRegistered,
-      isHomeBased: canonical.isHomeBased || duplicate.isHomeBased,
-      isWomenLed: canonical.isWomenLed || duplicate.isWomenLed,
-      isPublicService: canonical.isPublicService || duplicate.isPublicService,
-      reviewCount: combinedReviewCount,
-      rating: Number(weightedRating.toFixed(1)),
-      areasOfOperation: Array.from(new Set([...(canonical.areasOfOperation || []), ...(duplicate.areasOfOperation || [])])),
-      tags: Array.from(new Set([...(canonical.tags || []), ...(duplicate.tags || []), 'merged-duplicate'])),
-      sourceLineage: Array.from(new Set([canonical.id, ...(canonical.sourceLineage || []), duplicate.id, ...(duplicate.sourceLineage || [])])),
-      duplicateReviewStatus: undefined,
-      mergedIntoBusinessId: undefined,
-    };
-    const mergedDuplicate: Business = {
-      ...duplicate,
-      status: 'rejected',
-      duplicateReviewStatus: 'merged',
-      mergedIntoBusinessId: canonical.id,
-      rejectionReason: `Merged into canonical listing "${canonical.name}" on July 30, 2026.`,
-      sourceLineage: Array.from(new Set([...(duplicate.sourceLineage || []), canonical.id])),
-    };
+    const { mergedCanonical, mergedDuplicate } = buildMergedBusinessPair(
+      candidate,
+      duplicateMergeTargetByBusinessId,
+      new Date(currentAdminDateIso).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+    );
 
     onUpdateBusiness(mergedCanonical);
     onUpdateBusiness(mergedDuplicate);
@@ -2036,75 +1482,15 @@ export default function AdminConsole({
 
   const keepDuplicateSeparate = (candidate: DuplicateReviewCandidate) => {
     if (!onUpdateBusiness) return;
-    const selectedCanonicalId = duplicateMergeTargetByBusinessId[candidate.duplicate.id] || candidate.canonical.id;
-    const canonical = selectedCanonicalId === candidate.duplicate.id ? candidate.duplicate : candidate.canonical;
-    const duplicate = selectedCanonicalId === candidate.duplicate.id ? candidate.canonical : candidate.duplicate;
-    onUpdateBusiness({
-      ...duplicate,
-      duplicateReviewStatus: 'separate',
-      mergedIntoBusinessId: canonical.id,
-      sourceLineage: Array.from(new Set([...(duplicate.sourceLineage || []), canonical.id])),
-    });
-    triggerNotification(`Marked "${duplicate.name}" as reviewed and kept separate from "${canonical.name}".`);
+    const keptSeparate = buildKeptSeparateBusiness(candidate, duplicateMergeTargetByBusinessId);
+    const canonicalLabel = keptSeparate.mergedIntoBusinessId === candidate.canonical.id ? candidate.canonical.name : candidate.duplicate.name;
+    onUpdateBusiness(keptSeparate);
+    triggerNotification(`Marked "${keptSeparate.name}" as reviewed and kept separate from "${canonicalLabel}".`);
   };
 
-  const createInlineSubcategory = async (categoryId: string, rawName: string) => {
-    if (!businessTaxonomy || !onSaveBusinessTaxonomy) {
-      throw new Error('Taxonomy save is not available in this workspace.');
-    }
-
-    const category = businessTaxonomy.categories.find((entry) => entry.id === categoryId);
-    if (!category) {
-      throw new Error('Choose a valid category before creating a subcategory.');
-    }
-
-    const name = rawName.trim();
-    if (!name) {
-      throw new Error('Subcategory name is required.');
-    }
-
-    const existingMatch = businessTaxonomy.subcategories.find((subcategory) => (
-      subcategory.categoryId === categoryId &&
-      subcategory.name.toLowerCase() === name.toLowerCase()
-    ));
-    if (existingMatch) {
-      triggerNotification(`Subcategory already exists: ${existingMatch.name}`);
-      return existingMatch.id;
-    }
-
-    const nextId = buildUniqueAdminId(name, new Set(businessTaxonomy.subcategories.map((subcategory) => subcategory.id)));
-    if (!nextId) {
-      throw new Error('Could not generate a valid subcategory ID.');
-    }
-
-    const siblingCount = businessTaxonomy.subcategories.filter((subcategory) => subcategory.categoryId === categoryId).length;
-    const nextTaxonomy: BusinessTaxonomyState = {
-      ...businessTaxonomy,
-      subcategories: [
-        ...businessTaxonomy.subcategories,
-        {
-          id: nextId,
-          legacyId: Date.now(),
-          parentLegacyId: category.legacyId,
-          categoryId,
-          name,
-          slug: nextId,
-          icon: 'subcategory_icon',
-          status: 'active',
-          sortOrder: siblingCount + 1,
-        },
-      ],
-      metadata: {
-        ...businessTaxonomy.metadata,
-        seededFromCode: false,
-        updatedAt: new Date().toISOString(),
-      },
-    };
-
-    await onSaveBusinessTaxonomy(nextTaxonomy);
-    triggerNotification(`Created subcategory: ${name}`);
-    return nextId;
-  };
+  const createInlineSubcategory = async (categoryId: string, rawName: string) => (
+    sharedCreateInlineSubcategory(businessTaxonomy, onSaveBusinessTaxonomy, categoryId, rawName, triggerNotification)
+  );
 
   const getTaxonomyDraft = (biz: Business) => (
     taxonomyDrafts[biz.id] || {
@@ -4138,7 +3524,7 @@ export default function AdminConsole({
                     setAdminWorkspaceTab(tab.id);
                     if (tab.id === 'listing-status') setListingStatusPage(1);
                     if (tab.id === 'data-audit') setAuditPage(1);
-                    if (tab.id === 'bulk-upload') setImportPreviewPage(1);
+                    if (tab.id === 'bulk-upload') resetImportPreviewPage();
                   }}
                   className={`inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-bold transition ${
                     adminWorkspaceTab === tab.id
@@ -4252,8 +3638,8 @@ export default function AdminConsole({
             onDownloadPreviewCsv={downloadImportPreviewCsv}
             onDownloadFailedCsv={downloadFailedImportCsv}
             onApplyImportPreview={handleApplyImportPreview}
-            onPreviousPage={() => setImportPreviewPage((prev) => Math.max(1, prev - 1))}
-            onNextPage={() => setImportPreviewPage((prev) => Math.min(importPreviewTotalPages, prev + 1))}
+            onPreviousPage={goToPreviousImportPage}
+            onNextPage={goToNextImportPage}
           />
         )}
         {adminWorkspaceTab === 'taxonomy-mapping' && (
@@ -4686,7 +4072,7 @@ export default function AdminConsole({
               Pincode Routing Engine
             </h3>
             <p className="text-[11px] text-slate-500 mt-0.5">
-              Configure 1:1 or many:1 static bindings mapping postal codes to active Hyper Local pages and their public locality routes.
+              Configure static bindings mapping postal codes to active Hyper Local pages. A pincode can route to more than one locality when it genuinely straddles them — visitors will be asked to pick.
             </p>
           </div>
 
@@ -4714,12 +4100,12 @@ export default function AdminConsole({
               {filteredPincodeMappings.map(mapping => {
                 const matchedLoc = localities.find(l => l.id === mapping.localityId);
                 return (
-                  <div key={mapping.pincode} className="flex justify-between items-center p-2 bg-slate-50 border border-slate-150 rounded-xl font-mono">
-                    <span className="font-bold text-slate-800">ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â°ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âª {mapping.pincode}</span>
+                  <div key={`${mapping.pincode}-${mapping.localityId}`} className="flex justify-between items-center p-2 bg-slate-50 border border-slate-150 rounded-xl font-mono">
+                    <span className="font-bold text-slate-800">PIN {mapping.pincode}</span>
                     <div className="flex items-center gap-2">
                       <span className="font-sans text-[11px] text-slate-600 font-semibold">{matchedLoc?.name.split(',')[0] || mapping.localityId}</span>
                       <button
-                        onClick={() => onDeletePincodeMapping?.(mapping.pincode)}
+                        onClick={() => onDeletePincodeMapping?.(mapping.pincode, mapping.localityId)}
                         className="text-slate-400 hover:text-rose-500 p-1 hover:bg-rose-50 rounded-lg transition-all"
                         title="Delete this binding mapping"
                       >
@@ -4773,13 +4159,24 @@ export default function AdminConsole({
                   alert("Please supply a valid 6-digit Indian Pincode code.");
                   return;
                 }
-                const existing = pincodeMappings.find(m => m.pincode === pin);
-                if (existing) {
-                  alert(`Pincode ${pin} is already assigned to a directory node. Clear the existing route first!`);
+                const exactDuplicate = pincodeMappings.find(m => m.pincode === pin && m.localityId === locId);
+                if (exactDuplicate) {
+                  alert(`Pincode ${pin} is already bound to this directory node.`);
                   return;
                 }
+                // Pincodes can legitimately straddle more than one locality, so a
+                // pincode already owned by a DIFFERENT locality is not blocked here
+                // any more — it's added as an additional shared destination instead
+                // of stealing the binding away from whoever had it first.
+                const sharedWith = pincodeMappings.filter(m => m.pincode === pin);
                 onAddPincodeMapping?.(pin, locId);
                 pinInput.value = '';
+                if (sharedWith.length > 0) {
+                  const otherNames = sharedWith
+                    .map(m => localities.find(l => l.id === m.localityId)?.name.split(',')[0] || m.localityId)
+                    .join(', ');
+                  triggerNotification(`Pincode ${pin} now also routes to this node (shared with ${otherNames}).`);
+                }
               }}
               className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs py-2.5 rounded-xl transition flex items-center justify-center gap-1.5 focus:ring-2 focus:ring-indigo-500/25 cursor-pointer"
             >

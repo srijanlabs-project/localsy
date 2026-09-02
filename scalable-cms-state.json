@@ -1,0 +1,3830 @@
+{
+  "version": 1,
+  "templates": [
+    {
+      "id": "tpl_homepage_roadpali",
+      "name": "Roadpali Homepage",
+      "templateScope": "locality",
+      "localityIds": [
+        "roadpali"
+      ],
+      "status": "active",
+      "priority": 100,
+      "isDefault": false,
+      "isFallback": true,
+      "sections": [
+        {
+          "id": "home_roadpali_template_hero",
+          "sectionType": "hero_banner",
+          "title": "Hero: Roadpali",
+          "subtitle": "Primary launch banner for Roadpali",
+          "status": "active",
+          "visible": true,
+          "sortOrder": 10,
+          "ctaLabel": "Explore Businesses",
+          "ctaType": "search_category",
+          "ctaTarget": "all",
+          "showViewAll": false,
+          "localityIds": [
+            "roadpali"
+          ]
+        },
+        {
+          "id": "home_roadpali_template_search",
+          "sectionType": "search_discovery",
+          "title": "Search & Discover",
+          "subtitle": "Locality-aware search with quick categories",
+          "status": "active",
+          "visible": true,
+          "sortOrder": 20,
+          "showViewAll": false,
+          "localityIds": [
+            "roadpali"
+          ]
+        },
+        {
+          "id": "home_roadpali_template_emergency",
+          "sectionType": "emergency_grid",
+          "title": "Emergency Services",
+          "subtitle": "Critical support nearby",
+          "status": "active",
+          "visible": true,
+          "sortOrder": 30,
+          "categoryIds": [
+            "health-medical",
+            "home-services",
+            "automotive"
+          ],
+          "maxItems": 6,
+          "visibleSlots": 6,
+          "showViewAll": true,
+          "localityIds": [
+            "roadpali"
+          ]
+        },
+        {
+          "id": "home_roadpali_template_promo",
+          "sectionType": "promo_banner",
+          "title": "Roadpali Spotlight",
+          "subtitle": "Live sponsored placements for Roadpali",
+          "status": "active",
+          "visible": true,
+          "sortOrder": 40,
+          "placementKey": "homepage_inline_primary",
+          "showViewAll": false,
+          "localityIds": [
+            "roadpali"
+          ]
+        },
+        {
+          "id": "home_roadpali_template_featured",
+          "sectionType": "featured_businesses",
+          "title": "Featured in Roadpali",
+          "subtitle": "Curated launch picks for Roadpali",
+          "status": "active",
+          "visible": true,
+          "sortOrder": 50,
+          "maxItems": 6,
+          "visibleSlots": 3,
+          "desktopCardCount": 3,
+          "mobileCardCount": 2,
+          "mobileDisplayMode": "carousel",
+          "autoRotate": true,
+          "showViewAll": true,
+          "localityIds": [
+            "roadpali"
+          ],
+          "listingSourceMode": "manual",
+          "pinnedBusinessIds": [
+            "s1",
+            "s3",
+            "b11"
+          ]
+        },
+        {
+          "id": "home_roadpali_template_food_shelf",
+          "sectionType": "business_shelf",
+          "title": "Roadpali Food Favorites",
+          "subtitle": "Curated eateries and homegrown food businesses",
+          "status": "active",
+          "visible": true,
+          "sortOrder": 60,
+          "categoryId": "food-restaurants",
+          "maxItems": 6,
+          "visibleSlots": 4,
+          "desktopCardCount": 4,
+          "mobileCardCount": 2,
+          "mobileDisplayMode": "carousel",
+          "autoRotate": true,
+          "showViewAll": true,
+          "localityIds": [
+            "roadpali"
+          ]
+        },
+        {
+          "id": "home_roadpali_template_health_shelf",
+          "sectionType": "business_shelf",
+          "title": "Roadpali Health Essentials",
+          "subtitle": "Verified care, clinic, and medical support nearby",
+          "status": "active",
+          "visible": true,
+          "sortOrder": 70,
+          "categoryId": "health-medical",
+          "maxItems": 6,
+          "visibleSlots": 4,
+          "desktopCardCount": 4,
+          "mobileCardCount": 2,
+          "mobileDisplayMode": "stack",
+          "autoRotate": true,
+          "showViewAll": true,
+          "localityIds": [
+            "roadpali"
+          ],
+          "listingSourceMode": "manual",
+          "pinnedBusinessIds": [
+            "s3"
+          ]
+        },
+        {
+          "id": "home_roadpali_template_home_shelf",
+          "sectionType": "business_shelf",
+          "title": "Home Services Near You",
+          "subtitle": "Quick access to trusted electricians, plumbers, and repair pros",
+          "status": "active",
+          "visible": false,
+          "sortOrder": 80,
+          "categoryId": "home-services",
+          "maxItems": 6,
+          "visibleSlots": 4,
+          "desktopCardCount": 4,
+          "mobileCardCount": 2,
+          "mobileDisplayMode": "carousel",
+          "autoRotate": true,
+          "showViewAll": true,
+          "localityIds": [
+            "roadpali"
+          ]
+        },
+        {
+          "id": "home_roadpali_template_beauty_shelf",
+          "sectionType": "business_shelf",
+          "title": "Roadpali Beauty & Wellness Picks",
+          "subtitle": "Trusted salons, wellness clinics, and grooming experts",
+          "status": "active",
+          "visible": true,
+          "sortOrder": 90,
+          "categoryId": "beauty-wellness",
+          "maxItems": 6,
+          "visibleSlots": 4,
+          "desktopCardCount": 4,
+          "mobileCardCount": 2,
+          "mobileDisplayMode": "carousel",
+          "autoRotate": true,
+          "showViewAll": true,
+          "localityIds": [
+            "roadpali"
+          ],
+          "listingSourceMode": "manual",
+          "pinnedBusinessIds": [
+            "s1",
+            "s3"
+          ]
+        },
+        {
+          "id": "home_roadpali_template_retail_shelf",
+          "sectionType": "business_shelf",
+          "title": "Groceries & Daily Needs",
+          "subtitle": "Everyday essentials from trusted nearby stores",
+          "status": "active",
+          "visible": false,
+          "sortOrder": 100,
+          "categoryId": "shopping-retail",
+          "maxItems": 6,
+          "visibleSlots": 4,
+          "desktopCardCount": 4,
+          "mobileCardCount": 2,
+          "mobileDisplayMode": "carousel",
+          "autoRotate": true,
+          "showViewAll": true,
+          "localityIds": [
+            "roadpali"
+          ]
+        },
+        {
+          "id": "home_roadpali_template_domestic_strip",
+          "sectionType": "text_business_strip",
+          "title": "Maid & Domestic Help",
+          "subtitle": "Trusted daily support professionals nearby",
+          "status": "active",
+          "visible": false,
+          "sortOrder": 110,
+          "categoryId": "home-services",
+          "maxItems": 4,
+          "visibleSlots": 4,
+          "desktopCardCount": 4,
+          "mobileCardCount": 2,
+          "mobileDisplayMode": "stack",
+          "showViewAll": true,
+          "localityIds": [
+            "roadpali"
+          ]
+        },
+        {
+          "id": "home_roadpali_template_care_strip",
+          "sectionType": "text_business_strip",
+          "title": "Clinic & Care Experts",
+          "subtitle": "Text-first local listings for quick comparison",
+          "status": "active",
+          "visible": false,
+          "sortOrder": 120,
+          "categoryId": "health-medical",
+          "maxItems": 4,
+          "visibleSlots": 4,
+          "desktopCardCount": 4,
+          "mobileCardCount": 2,
+          "mobileDisplayMode": "stack",
+          "showViewAll": true,
+          "localityIds": [
+            "roadpali"
+          ]
+        },
+        {
+          "id": "home_roadpali_template_education_strip",
+          "sectionType": "text_business_strip",
+          "title": "Tutors & Training Experts",
+          "subtitle": "Quick-compare local education and coaching listings",
+          "status": "active",
+          "visible": false,
+          "sortOrder": 130,
+          "categoryId": "education-training",
+          "maxItems": 4,
+          "visibleSlots": 4,
+          "desktopCardCount": 4,
+          "mobileCardCount": 2,
+          "mobileDisplayMode": "stack",
+          "showViewAll": true,
+          "localityIds": [
+            "roadpali"
+          ]
+        },
+        {
+          "id": "home_roadpali_template_categories",
+          "sectionType": "category_grid",
+          "title": "Explore by Categories",
+          "subtitle": "Jump into high-intent categories",
+          "status": "active",
+          "visible": true,
+          "sortOrder": 140,
+          "categoryIds": [
+            "beauty-wellness",
+            "health-medical",
+            "food-restaurants",
+            "home-services",
+            "shopping-retail",
+            "education-training"
+          ],
+          "maxItems": 6,
+          "visibleSlots": 6,
+          "showViewAll": true,
+          "localityIds": [
+            "roadpali"
+          ]
+        },
+        {
+          "id": "home_roadpali_template_offers",
+          "sectionType": "offers_list",
+          "title": "Roadpali Offers",
+          "subtitle": "Live locality-aware deals for UAT",
+          "status": "active",
+          "visible": true,
+          "sortOrder": 150,
+          "maxItems": 4,
+          "showViewAll": true,
+          "localityIds": [
+            "roadpali"
+          ]
+        },
+        {
+          "id": "home_roadpali_template_updates",
+          "sectionType": "updates_feed",
+          "title": "Roadpali Updates",
+          "subtitle": "Fresh operational and merchant updates",
+          "status": "active",
+          "visible": true,
+          "sortOrder": 160,
+          "maxItems": 4,
+          "showViewAll": true,
+          "localityIds": [
+            "roadpali"
+          ]
+        },
+        {
+          "id": "home_roadpali_template_verified",
+          "sectionType": "verified_business_grid",
+          "title": "Verified Around Roadpali",
+          "subtitle": "Trusted approved listings for this locality",
+          "status": "active",
+          "visible": true,
+          "sortOrder": 170,
+          "maxItems": 6,
+          "visibleSlots": 4,
+          "desktopCardCount": 4,
+          "mobileCardCount": 2,
+          "mobileDisplayMode": "stack",
+          "autoRotate": true,
+          "showViewAll": true,
+          "localityIds": [
+            "roadpali"
+          ]
+        },
+        {
+          "id": "home_roadpali_template_trust",
+          "sectionType": "trust_strip",
+          "title": "Trust Highlights",
+          "subtitle": "Closing reassurance and platform trust points",
+          "status": "active",
+          "visible": true,
+          "sortOrder": 180,
+          "showViewAll": false,
+          "localityIds": [
+            "roadpali"
+          ]
+        }
+      ],
+      "metadata": {
+        "source": "legacy_homepage_layout",
+        "legacyLayoutId": "homepage_roadpali"
+      },
+      "updatedAt": "2026-06-13T10:00:00.000Z"
+    },
+    {
+      "id": "tpl_homepage_kalamboli",
+      "name": "Kalamboli Homepage",
+      "templateScope": "locality",
+      "localityIds": [
+        "kalamboli"
+      ],
+      "status": "active",
+      "priority": 100,
+      "isDefault": false,
+      "isFallback": true,
+      "sections": [
+        {
+          "id": "home_kalamboli_template_hero",
+          "sectionType": "hero_banner",
+          "title": "Hero: Kalamboli",
+          "subtitle": "Primary launch banner for Kalamboli",
+          "status": "active",
+          "visible": true,
+          "sortOrder": 10,
+          "ctaLabel": "Explore Businesses",
+          "ctaType": "search_category",
+          "ctaTarget": "all",
+          "showViewAll": false,
+          "localityIds": [
+            "kalamboli"
+          ]
+        },
+        {
+          "id": "home_kalamboli_template_search",
+          "sectionType": "search_discovery",
+          "title": "Search & Discover",
+          "subtitle": "Locality-aware search with quick categories",
+          "status": "active",
+          "visible": true,
+          "sortOrder": 20,
+          "showViewAll": false,
+          "localityIds": [
+            "kalamboli"
+          ]
+        },
+        {
+          "id": "home_kalamboli_template_emergency",
+          "sectionType": "emergency_grid",
+          "title": "Emergency Services",
+          "subtitle": "Critical support nearby",
+          "status": "active",
+          "visible": true,
+          "sortOrder": 30,
+          "categoryIds": [
+            "health-medical",
+            "home-services",
+            "automotive"
+          ],
+          "maxItems": 6,
+          "visibleSlots": 6,
+          "showViewAll": true,
+          "localityIds": [
+            "kalamboli"
+          ]
+        },
+        {
+          "id": "home_kalamboli_template_promo",
+          "sectionType": "promo_banner",
+          "title": "Kalamboli Spotlight",
+          "subtitle": "Live sponsored placements for Kalamboli",
+          "status": "active",
+          "visible": true,
+          "sortOrder": 40,
+          "placementKey": "homepage_inline_primary",
+          "showViewAll": false,
+          "localityIds": [
+            "kalamboli"
+          ]
+        },
+        {
+          "id": "home_kalamboli_template_featured",
+          "sectionType": "featured_businesses",
+          "title": "Featured in Kalamboli",
+          "subtitle": "Curated launch picks for Kalamboli",
+          "status": "active",
+          "visible": true,
+          "sortOrder": 50,
+          "maxItems": 6,
+          "visibleSlots": 3,
+          "desktopCardCount": 3,
+          "mobileCardCount": 2,
+          "mobileDisplayMode": "carousel",
+          "autoRotate": true,
+          "showViewAll": true,
+          "localityIds": [
+            "kalamboli"
+          ],
+          "listingSourceMode": "manual",
+          "pinnedBusinessIds": [
+            "s2",
+            "s4",
+            "b12"
+          ]
+        },
+        {
+          "id": "home_kalamboli_template_food_shelf",
+          "sectionType": "business_shelf",
+          "title": "Kalamboli Food Favorites",
+          "subtitle": "Curated eateries and homegrown food businesses",
+          "status": "active",
+          "visible": false,
+          "sortOrder": 60,
+          "categoryId": "food-restaurants",
+          "maxItems": 6,
+          "visibleSlots": 4,
+          "desktopCardCount": 4,
+          "mobileCardCount": 2,
+          "mobileDisplayMode": "carousel",
+          "autoRotate": true,
+          "showViewAll": true,
+          "localityIds": [
+            "kalamboli"
+          ]
+        },
+        {
+          "id": "home_kalamboli_template_health_shelf",
+          "sectionType": "business_shelf",
+          "title": "Kalamboli Health Essentials",
+          "subtitle": "Verified care, clinic, and medical support nearby",
+          "status": "active",
+          "visible": true,
+          "sortOrder": 70,
+          "categoryId": "health-medical",
+          "maxItems": 6,
+          "visibleSlots": 4,
+          "desktopCardCount": 4,
+          "mobileCardCount": 2,
+          "mobileDisplayMode": "stack",
+          "autoRotate": true,
+          "showViewAll": true,
+          "localityIds": [
+            "kalamboli"
+          ],
+          "listingSourceMode": "manual",
+          "pinnedBusinessIds": [
+            "b12"
+          ]
+        },
+        {
+          "id": "home_kalamboli_template_home_shelf",
+          "sectionType": "business_shelf",
+          "title": "Home Services Near You",
+          "subtitle": "Quick access to trusted electricians, plumbers, and repair pros",
+          "status": "active",
+          "visible": false,
+          "sortOrder": 80,
+          "categoryId": "home-services",
+          "maxItems": 6,
+          "visibleSlots": 4,
+          "desktopCardCount": 4,
+          "mobileCardCount": 2,
+          "mobileDisplayMode": "carousel",
+          "autoRotate": true,
+          "showViewAll": true,
+          "localityIds": [
+            "kalamboli"
+          ]
+        },
+        {
+          "id": "home_kalamboli_template_beauty_shelf",
+          "sectionType": "business_shelf",
+          "title": "Kalamboli Beauty & Wellness Picks",
+          "subtitle": "Trusted salons, wellness clinics, and grooming experts",
+          "status": "active",
+          "visible": true,
+          "sortOrder": 90,
+          "categoryId": "beauty-wellness",
+          "maxItems": 6,
+          "visibleSlots": 4,
+          "desktopCardCount": 4,
+          "mobileCardCount": 2,
+          "mobileDisplayMode": "carousel",
+          "autoRotate": true,
+          "showViewAll": true,
+          "localityIds": [
+            "kalamboli"
+          ],
+          "listingSourceMode": "manual",
+          "pinnedBusinessIds": [
+            "s2",
+            "s4"
+          ]
+        },
+        {
+          "id": "home_kalamboli_template_retail_shelf",
+          "sectionType": "business_shelf",
+          "title": "Groceries & Daily Needs",
+          "subtitle": "Everyday essentials from trusted nearby stores",
+          "status": "active",
+          "visible": false,
+          "sortOrder": 100,
+          "categoryId": "shopping-retail",
+          "maxItems": 6,
+          "visibleSlots": 4,
+          "desktopCardCount": 4,
+          "mobileCardCount": 2,
+          "mobileDisplayMode": "carousel",
+          "autoRotate": true,
+          "showViewAll": true,
+          "localityIds": [
+            "kalamboli"
+          ]
+        },
+        {
+          "id": "home_kalamboli_template_domestic_strip",
+          "sectionType": "text_business_strip",
+          "title": "Maid & Domestic Help",
+          "subtitle": "Trusted daily support professionals nearby",
+          "status": "active",
+          "visible": false,
+          "sortOrder": 110,
+          "categoryId": "home-services",
+          "maxItems": 4,
+          "visibleSlots": 4,
+          "desktopCardCount": 4,
+          "mobileCardCount": 2,
+          "mobileDisplayMode": "stack",
+          "showViewAll": true,
+          "localityIds": [
+            "kalamboli"
+          ]
+        },
+        {
+          "id": "home_kalamboli_template_care_strip",
+          "sectionType": "text_business_strip",
+          "title": "Clinic & Care Experts",
+          "subtitle": "Text-first local listings for quick comparison",
+          "status": "active",
+          "visible": false,
+          "sortOrder": 120,
+          "categoryId": "health-medical",
+          "maxItems": 4,
+          "visibleSlots": 4,
+          "desktopCardCount": 4,
+          "mobileCardCount": 2,
+          "mobileDisplayMode": "stack",
+          "showViewAll": true,
+          "localityIds": [
+            "kalamboli"
+          ]
+        },
+        {
+          "id": "home_kalamboli_template_education_strip",
+          "sectionType": "text_business_strip",
+          "title": "Tutors & Training Experts",
+          "subtitle": "Quick-compare local education and coaching listings",
+          "status": "active",
+          "visible": false,
+          "sortOrder": 130,
+          "categoryId": "education-training",
+          "maxItems": 4,
+          "visibleSlots": 4,
+          "desktopCardCount": 4,
+          "mobileCardCount": 2,
+          "mobileDisplayMode": "stack",
+          "showViewAll": true,
+          "localityIds": [
+            "kalamboli"
+          ]
+        },
+        {
+          "id": "home_kalamboli_template_categories",
+          "sectionType": "category_grid",
+          "title": "Explore by Categories",
+          "subtitle": "Jump into high-intent categories",
+          "status": "active",
+          "visible": true,
+          "sortOrder": 140,
+          "categoryIds": [
+            "beauty-wellness",
+            "health-medical",
+            "food-restaurants",
+            "home-services",
+            "shopping-retail",
+            "education-training"
+          ],
+          "maxItems": 6,
+          "visibleSlots": 6,
+          "showViewAll": true,
+          "localityIds": [
+            "kalamboli"
+          ]
+        },
+        {
+          "id": "home_kalamboli_template_offers",
+          "sectionType": "offers_list",
+          "title": "Kalamboli Offers",
+          "subtitle": "Live locality-aware deals for UAT",
+          "status": "active",
+          "visible": true,
+          "sortOrder": 150,
+          "maxItems": 4,
+          "showViewAll": true,
+          "localityIds": [
+            "kalamboli"
+          ]
+        },
+        {
+          "id": "home_kalamboli_template_updates",
+          "sectionType": "updates_feed",
+          "title": "Kalamboli Updates",
+          "subtitle": "Fresh operational and merchant updates",
+          "status": "active",
+          "visible": true,
+          "sortOrder": 160,
+          "maxItems": 4,
+          "showViewAll": true,
+          "localityIds": [
+            "kalamboli"
+          ]
+        },
+        {
+          "id": "home_kalamboli_template_verified",
+          "sectionType": "verified_business_grid",
+          "title": "Verified Around Kalamboli",
+          "subtitle": "Trusted approved listings for this locality",
+          "status": "active",
+          "visible": true,
+          "sortOrder": 170,
+          "maxItems": 6,
+          "visibleSlots": 4,
+          "desktopCardCount": 4,
+          "mobileCardCount": 2,
+          "mobileDisplayMode": "stack",
+          "autoRotate": true,
+          "showViewAll": true,
+          "localityIds": [
+            "kalamboli"
+          ]
+        },
+        {
+          "id": "home_kalamboli_template_trust",
+          "sectionType": "trust_strip",
+          "title": "Trust Highlights",
+          "subtitle": "Closing reassurance and platform trust points",
+          "status": "active",
+          "visible": true,
+          "sortOrder": 180,
+          "showViewAll": false,
+          "localityIds": [
+            "kalamboli"
+          ]
+        }
+      ],
+      "metadata": {
+        "source": "legacy_homepage_layout",
+        "legacyLayoutId": "homepage_kalamboli"
+      },
+      "updatedAt": "2026-06-13T10:00:00.000Z"
+    },
+    {
+      "id": "tpl_homepage_cbdbelapur",
+      "name": "CBD Belapur Homepage",
+      "templateScope": "locality",
+      "localityIds": [
+        "cbdbelapur"
+      ],
+      "status": "active",
+      "priority": 100,
+      "isDefault": false,
+      "isFallback": true,
+      "sections": [
+        {
+          "id": "home_cbdbelapur_template_hero",
+          "sectionType": "hero_banner",
+          "title": "Hero: CBD Belapur",
+          "subtitle": "Primary visual banner for CBD Belapur",
+          "status": "active",
+          "visible": true,
+          "sortOrder": 10,
+          "ctaLabel": "Explore Businesses",
+          "ctaType": "search_category",
+          "ctaTarget": "all",
+          "showViewAll": false,
+          "localityIds": [
+            "cbdbelapur"
+          ],
+          "pincodes": [],
+          "categoryIds": [],
+          "maxItems": 6,
+          "visibleSlots": 4,
+          "desktopCardCount": 4,
+          "mobileCardCount": 2,
+          "mobileDisplayMode": "carousel",
+          "listingSourceMode": "auto",
+          "pinnedBusinessIds": [],
+          "autoRotate": true,
+          "rotationIntervalSec": 3,
+          "startDate": "2026-08-23"
+        },
+        {
+          "id": "home_cbdbelapur_template_search",
+          "sectionType": "search_discovery",
+          "title": "Search & Discover",
+          "subtitle": "Locality-aware search with quick categories",
+          "status": "active",
+          "visible": true,
+          "sortOrder": 20,
+          "showViewAll": false,
+          "localityIds": [
+            "cbdbelapur"
+          ],
+          "pincodes": [],
+          "categoryIds": [],
+          "ctaType": "none",
+          "maxItems": 6,
+          "visibleSlots": 4,
+          "desktopCardCount": 4,
+          "mobileCardCount": 2,
+          "mobileDisplayMode": "carousel",
+          "listingSourceMode": "auto",
+          "pinnedBusinessIds": [],
+          "autoRotate": true,
+          "rotationIntervalSec": 3
+        },
+        {
+          "id": "home_cbdbelapur_template_emergency",
+          "sectionType": "emergency_grid",
+          "title": "Emergency Services",
+          "subtitle": "Critical support nearby",
+          "status": "active",
+          "visible": true,
+          "sortOrder": 30,
+          "categoryIds": [
+            "health-medical",
+            "home-services",
+            "automotive"
+          ],
+          "maxItems": 8,
+          "visibleSlots": 8,
+          "showViewAll": true,
+          "localityIds": [
+            "cbdbelapur"
+          ],
+          "pincodes": [],
+          "ctaType": "none",
+          "desktopCardCount": 8,
+          "mobileCardCount": 2,
+          "mobileDisplayMode": "carousel",
+          "listingSourceMode": "auto",
+          "pinnedBusinessIds": [],
+          "autoRotate": true,
+          "rotationIntervalSec": 3
+        },
+        {
+          "id": "home_cbdbelapur_template_promo",
+          "sectionType": "promo_banner",
+          "title": "Promoted This Week",
+          "subtitle": "Scheduled paid banner placement",
+          "status": "active",
+          "visible": true,
+          "sortOrder": 40,
+          "placementKey": "homepage_inline_primary",
+          "showViewAll": false,
+          "localityIds": [
+            "cbdbelapur"
+          ],
+          "pincodes": [],
+          "categoryIds": [],
+          "ctaType": "none",
+          "maxItems": 6,
+          "visibleSlots": 4,
+          "desktopCardCount": 4,
+          "mobileCardCount": 2,
+          "mobileDisplayMode": "carousel",
+          "listingSourceMode": "auto",
+          "pinnedBusinessIds": [],
+          "autoRotate": true,
+          "rotationIntervalSec": 3
+        },
+        {
+          "id": "home_cbdbelapur_template_featured",
+          "sectionType": "featured_businesses",
+          "title": "Premium Featured Businesses",
+          "subtitle": "Priority merchants in this locality",
+          "status": "active",
+          "visible": true,
+          "sortOrder": 50,
+          "maxItems": 6,
+          "visibleSlots": 3,
+          "desktopCardCount": 3,
+          "mobileCardCount": 2,
+          "mobileDisplayMode": "carousel",
+          "autoRotate": true,
+          "showViewAll": true,
+          "localityIds": [
+            "cbdbelapur"
+          ],
+          "pincodes": [],
+          "categoryIds": [],
+          "ctaType": "none",
+          "listingSourceMode": "auto",
+          "pinnedBusinessIds": [],
+          "rotationIntervalSec": 3
+        },
+        {
+          "id": "home_cbdbelapur_template_food_shelf",
+          "sectionType": "business_shelf",
+          "title": "Home Kitchens & Bakers",
+          "subtitle": "Curated shelf with repeatable category merchandising",
+          "status": "active",
+          "visible": true,
+          "sortOrder": 60,
+          "categoryId": "food-restaurants",
+          "maxItems": 6,
+          "visibleSlots": 4,
+          "desktopCardCount": 4,
+          "mobileCardCount": 2,
+          "mobileDisplayMode": "carousel",
+          "autoRotate": true,
+          "showViewAll": true,
+          "localityIds": [
+            "cbdbelapur"
+          ],
+          "pincodes": [],
+          "categoryIds": [],
+          "ctaType": "none",
+          "listingSourceMode": "auto",
+          "pinnedBusinessIds": [],
+          "rotationIntervalSec": 3
+        },
+        {
+          "id": "home_cbdbelapur_template_health_shelf",
+          "sectionType": "business_shelf",
+          "title": "Doctors & Clinics",
+          "subtitle": "Verified health and care businesses in this locality",
+          "status": "active",
+          "visible": true,
+          "sortOrder": 70,
+          "categoryId": "health-medical",
+          "maxItems": 6,
+          "visibleSlots": 4,
+          "desktopCardCount": 4,
+          "mobileCardCount": 2,
+          "mobileDisplayMode": "stack",
+          "autoRotate": true,
+          "showViewAll": true,
+          "localityIds": [
+            "cbdbelapur"
+          ],
+          "pincodes": [],
+          "categoryIds": [],
+          "ctaType": "none",
+          "listingSourceMode": "auto",
+          "pinnedBusinessIds": [],
+          "rotationIntervalSec": 3
+        },
+        {
+          "id": "home_cbdbelapur_template_home_shelf",
+          "sectionType": "business_shelf",
+          "title": "Home Services Near You",
+          "subtitle": "Quick access to trusted electricians, plumbers, and repair pros",
+          "status": "active",
+          "visible": true,
+          "sortOrder": 80,
+          "categoryId": "home-services",
+          "maxItems": 6,
+          "visibleSlots": 4,
+          "desktopCardCount": 4,
+          "mobileCardCount": 2,
+          "mobileDisplayMode": "carousel",
+          "autoRotate": true,
+          "showViewAll": true,
+          "localityIds": [
+            "cbdbelapur"
+          ],
+          "pincodes": [],
+          "categoryIds": [],
+          "ctaType": "none",
+          "listingSourceMode": "auto",
+          "pinnedBusinessIds": [],
+          "rotationIntervalSec": 3
+        },
+        {
+          "id": "home_cbdbelapur_template_domestic_strip",
+          "sectionType": "text_business_strip",
+          "title": "Maid & Domestic Help",
+          "subtitle": "Trusted daily support professionals nearby",
+          "status": "active",
+          "visible": true,
+          "sortOrder": 90,
+          "categoryId": "home-services",
+          "maxItems": 4,
+          "visibleSlots": 4,
+          "desktopCardCount": 4,
+          "mobileCardCount": 2,
+          "mobileDisplayMode": "stack",
+          "showViewAll": true,
+          "localityIds": [
+            "cbdbelapur"
+          ],
+          "pincodes": [],
+          "categoryIds": [],
+          "ctaType": "none",
+          "listingSourceMode": "auto",
+          "pinnedBusinessIds": [],
+          "autoRotate": true,
+          "rotationIntervalSec": 3
+        },
+        {
+          "id": "home_cbdbelapur_template_beauty_shelf",
+          "sectionType": "business_shelf",
+          "title": "Beauty & Wellness Picks",
+          "subtitle": "Salons, skin care, and grooming experts around you",
+          "status": "active",
+          "visible": true,
+          "sortOrder": 100,
+          "categoryId": "beauty-wellness",
+          "maxItems": 6,
+          "visibleSlots": 4,
+          "desktopCardCount": 4,
+          "mobileCardCount": 2,
+          "mobileDisplayMode": "carousel",
+          "autoRotate": true,
+          "showViewAll": true,
+          "localityIds": [
+            "cbdbelapur"
+          ],
+          "pincodes": [],
+          "categoryIds": [],
+          "ctaType": "none",
+          "listingSourceMode": "auto",
+          "pinnedBusinessIds": [],
+          "rotationIntervalSec": 3
+        },
+        {
+          "id": "home_cbdbelapur_template_retail_shelf",
+          "sectionType": "business_shelf",
+          "title": "Groceries & Daily Needs",
+          "subtitle": "Everyday essentials from trusted nearby stores",
+          "status": "active",
+          "visible": true,
+          "sortOrder": 110,
+          "categoryId": "shopping-retail",
+          "maxItems": 6,
+          "visibleSlots": 4,
+          "desktopCardCount": 4,
+          "mobileCardCount": 2,
+          "mobileDisplayMode": "carousel",
+          "autoRotate": true,
+          "showViewAll": true,
+          "localityIds": [
+            "cbdbelapur"
+          ],
+          "pincodes": [],
+          "categoryIds": [],
+          "ctaType": "none",
+          "listingSourceMode": "auto",
+          "pinnedBusinessIds": [],
+          "rotationIntervalSec": 3
+        },
+        {
+          "id": "home_cbdbelapur_template_care_strip",
+          "sectionType": "text_business_strip",
+          "title": "Clinic & Care Experts",
+          "subtitle": "Text-first local listings for quick comparison",
+          "status": "active",
+          "visible": true,
+          "sortOrder": 120,
+          "categoryId": "health-medical",
+          "maxItems": 4,
+          "visibleSlots": 4,
+          "desktopCardCount": 4,
+          "mobileCardCount": 2,
+          "mobileDisplayMode": "stack",
+          "showViewAll": true,
+          "localityIds": [
+            "cbdbelapur"
+          ],
+          "pincodes": [],
+          "categoryIds": [],
+          "ctaType": "none",
+          "listingSourceMode": "auto",
+          "pinnedBusinessIds": [],
+          "autoRotate": true,
+          "rotationIntervalSec": 3
+        },
+        {
+          "id": "home_cbdbelapur_template_education_strip",
+          "sectionType": "text_business_strip",
+          "title": "Tutors & Training Experts",
+          "subtitle": "Quick-compare local education and coaching listings",
+          "status": "active",
+          "visible": true,
+          "sortOrder": 130,
+          "categoryId": "education-training",
+          "maxItems": 4,
+          "visibleSlots": 4,
+          "desktopCardCount": 4,
+          "mobileCardCount": 2,
+          "mobileDisplayMode": "stack",
+          "showViewAll": true,
+          "localityIds": [
+            "cbdbelapur"
+          ],
+          "pincodes": [],
+          "categoryIds": [],
+          "ctaType": "none",
+          "listingSourceMode": "auto",
+          "pinnedBusinessIds": [],
+          "autoRotate": true,
+          "rotationIntervalSec": 3
+        },
+        {
+          "id": "home_cbdbelapur_template_categories",
+          "sectionType": "category_grid",
+          "title": "Explore by Categories",
+          "subtitle": "Jump into high-intent categories",
+          "status": "active",
+          "visible": true,
+          "sortOrder": 140,
+          "categoryIds": [
+            "food-restaurants",
+            "health-medical",
+            "beauty-wellness",
+            "home-services",
+            "shopping-retail",
+            "education-training",
+            "professional-services",
+            "automotive"
+          ],
+          "maxItems": 12,
+          "visibleSlots": 12,
+          "showViewAll": true,
+          "localityIds": [
+            "cbdbelapur"
+          ],
+          "pincodes": [],
+          "ctaType": "none",
+          "desktopCardCount": 12,
+          "mobileCardCount": 2,
+          "mobileDisplayMode": "carousel",
+          "listingSourceMode": "auto",
+          "pinnedBusinessIds": [],
+          "autoRotate": true,
+          "rotationIntervalSec": 3
+        },
+        {
+          "id": "home_cbdbelapur_template_offers",
+          "sectionType": "offers_list",
+          "title": "Offers & Deals",
+          "subtitle": "Scheduled offers filtered by locality and pincode",
+          "status": "active",
+          "visible": true,
+          "sortOrder": 150,
+          "maxItems": 4,
+          "showViewAll": true,
+          "localityIds": [
+            "cbdbelapur"
+          ],
+          "pincodes": [],
+          "categoryIds": [],
+          "ctaType": "none",
+          "visibleSlots": 4,
+          "desktopCardCount": 4,
+          "mobileCardCount": 2,
+          "mobileDisplayMode": "carousel",
+          "listingSourceMode": "auto",
+          "pinnedBusinessIds": [],
+          "autoRotate": true,
+          "rotationIntervalSec": 3
+        },
+        {
+          "id": "home_cbdbelapur_template_updates",
+          "sectionType": "updates_feed",
+          "title": "CBD Belapur Updates",
+          "subtitle": "Timed announcements and community updates",
+          "status": "active",
+          "visible": true,
+          "sortOrder": 160,
+          "maxItems": 4,
+          "showViewAll": true,
+          "localityIds": [
+            "cbdbelapur"
+          ],
+          "pincodes": [],
+          "categoryIds": [],
+          "ctaType": "none",
+          "visibleSlots": 4,
+          "desktopCardCount": 4,
+          "mobileCardCount": 2,
+          "mobileDisplayMode": "carousel",
+          "listingSourceMode": "auto",
+          "pinnedBusinessIds": [],
+          "autoRotate": true,
+          "rotationIntervalSec": 3
+        },
+        {
+          "id": "home_cbdbelapur_template_verified",
+          "sectionType": "verified_business_grid",
+          "title": "Verified Businesses Near You",
+          "subtitle": "Trusted approved listings for this locality",
+          "status": "active",
+          "visible": true,
+          "sortOrder": 170,
+          "maxItems": 9,
+          "visibleSlots": 5,
+          "desktopCardCount": 5,
+          "mobileCardCount": 2,
+          "mobileDisplayMode": "stack",
+          "autoRotate": true,
+          "showViewAll": true,
+          "localityIds": [
+            "cbdbelapur"
+          ],
+          "pincodes": [],
+          "categoryIds": [],
+          "ctaType": "none",
+          "listingSourceMode": "auto",
+          "pinnedBusinessIds": [],
+          "rotationIntervalSec": 3
+        },
+        {
+          "id": "home_cbdbelapur_template_trust",
+          "sectionType": "trust_strip",
+          "title": "Trust Highlights",
+          "subtitle": "Closing reassurance and platform trust points",
+          "status": "active",
+          "visible": true,
+          "sortOrder": 180,
+          "showViewAll": false,
+          "localityIds": [
+            "cbdbelapur"
+          ],
+          "pincodes": [],
+          "categoryIds": [],
+          "ctaType": "none",
+          "maxItems": 6,
+          "visibleSlots": 4,
+          "desktopCardCount": 4,
+          "mobileCardCount": 2,
+          "mobileDisplayMode": "carousel",
+          "listingSourceMode": "auto",
+          "pinnedBusinessIds": [],
+          "autoRotate": true,
+          "rotationIntervalSec": 3
+        }
+      ],
+      "metadata": {
+        "source": "legacy_homepage_layout",
+        "legacyLayoutId": "homepage_cbdbelapur"
+      },
+      "updatedAt": "2026-08-23T18:48:26.285Z"
+    }
+  ],
+  "assignments": [
+    {
+      "id": "assign_tpl_homepage_roadpali_1",
+      "localityId": "roadpali",
+      "templateId": "tpl_homepage_roadpali",
+      "categoryId": "",
+      "subcategoryId": "",
+      "pincode": "",
+      "status": "active",
+      "priority": 100,
+      "isFallback": true,
+      "metadata": {
+        "source": "legacy_homepage_layout"
+      },
+      "updatedAt": "2026-06-13T10:00:00.000Z"
+    },
+    {
+      "id": "assign_tpl_homepage_kalamboli_2",
+      "localityId": "kalamboli",
+      "templateId": "tpl_homepage_kalamboli",
+      "categoryId": "",
+      "subcategoryId": "",
+      "pincode": "",
+      "status": "active",
+      "priority": 100,
+      "isFallback": true,
+      "metadata": {
+        "source": "legacy_homepage_layout"
+      },
+      "updatedAt": "2026-06-13T10:00:00.000Z"
+    },
+    {
+      "id": "assign_roadpali",
+      "localityId": "roadpali",
+      "templateId": "tpl_homepage_roadpali",
+      "categoryId": "",
+      "subcategoryId": "",
+      "pincode": "",
+      "status": "active",
+      "priority": 100,
+      "isFallback": true,
+      "metadata": {
+        "source": "legacy_homepage_assignment",
+        "legacyLayoutId": "homepage_roadpali"
+      },
+      "updatedAt": "2026-06-13T10:00:00.000Z"
+    },
+    {
+      "id": "assign_kalamboli",
+      "localityId": "kalamboli",
+      "templateId": "tpl_homepage_kalamboli",
+      "categoryId": "",
+      "subcategoryId": "",
+      "pincode": "",
+      "status": "active",
+      "priority": 100,
+      "isFallback": true,
+      "metadata": {
+        "source": "legacy_homepage_assignment",
+        "legacyLayoutId": "homepage_kalamboli"
+      },
+      "updatedAt": "2026-06-13T10:00:00.000Z"
+    },
+    {
+      "id": "assign_cbdbelapur",
+      "localityId": "cbdbelapur",
+      "templateId": "tpl_homepage_cbdbelapur",
+      "categoryId": "",
+      "subcategoryId": "",
+      "pincode": "",
+      "status": "active",
+      "priority": 100,
+      "isFallback": true,
+      "metadata": {
+        "source": "legacy_homepage_assignment",
+        "legacyLayoutId": "homepage_cbdbelapur"
+      },
+      "updatedAt": "2026-08-23T18:48:26.285Z"
+    }
+  ],
+  "campaigns": [
+    {
+      "id": "ad_ad_roadpali_salon_spotlight",
+      "name": "Roadpali Premium Salon Week",
+      "campaignType": "listing_ad",
+      "status": "active",
+      "priority": 100,
+      "isFallback": true,
+      "startDate": "2026-06-13",
+      "endDate": "2026-07-31",
+      "deviceTarget": "all",
+      "placementKeys": [
+        "homepage_inline_primary"
+      ],
+      "targets": {
+        "localityIds": [
+          "roadpali"
+        ],
+        "categoryIds": [
+          "beauty-wellness"
+        ],
+        "subcategoryIds": [],
+        "pincodes": [
+          "410218"
+        ],
+        "devices": [
+          "all"
+        ],
+        "pageTypes": [
+          "homepage",
+          "listing_results"
+        ],
+        "placementKeys": [
+          "homepage_inline_primary"
+        ]
+      },
+      "payload": {
+        "id": "ad_roadpali_salon_spotlight",
+        "title": "Roadpali Premium Salon Week",
+        "description": "Launch-season bridal styling, hair spa, and grooming packages from verified premium salons.",
+        "badge": "Sponsored Spotlight",
+        "ctaText": "View Featured Listing",
+        "backgroundColor": "#0f766e",
+        "imageUrl": "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=640&q=80",
+        "startDate": "2026-06-13",
+        "endDate": "2026-07-31",
+        "actionType": "landing_listing",
+        "targetBusinessId": "s1",
+        "sellerBusinessId": "s1",
+        "localityIds": [
+          "roadpali"
+        ],
+        "pincodes": [
+          "410218"
+        ],
+        "categoryIds": [
+          "beauty-wellness"
+        ],
+        "placementKey": "homepage_inline_primary",
+        "deviceTarget": "all",
+        "mobileRowPosition": 3,
+        "isActive": true
+      },
+      "metadata": {
+        "source": "legacy_listing_ad"
+      },
+      "updatedAt": "2026-08-07T06:42:57.196Z"
+    },
+    {
+      "id": "ad_ad_roadpali_family_dining",
+      "name": "Weekend Dining Picks in Roadpali",
+      "campaignType": "listing_ad",
+      "status": "active",
+      "priority": 100,
+      "isFallback": true,
+      "startDate": "2026-06-13",
+      "endDate": "2026-07-31",
+      "deviceTarget": "all",
+      "placementKeys": [
+        "homepage_inline_primary"
+      ],
+      "targets": {
+        "localityIds": [
+          "roadpali"
+        ],
+        "categoryIds": [
+          "food-restaurants"
+        ],
+        "subcategoryIds": [],
+        "pincodes": [
+          "410218"
+        ],
+        "devices": [
+          "all"
+        ],
+        "pageTypes": [
+          "homepage",
+          "listing_results"
+        ],
+        "placementKeys": [
+          "homepage_inline_primary"
+        ]
+      },
+      "payload": {
+        "id": "ad_roadpali_family_dining",
+        "title": "Weekend Dining Picks in Roadpali",
+        "description": "Family-friendly dining, quick tables, and pure veg favourites curated for Roadpali evenings.",
+        "badge": "Local Dining Ad",
+        "ctaText": "See Restaurant",
+        "backgroundColor": "#b45309",
+        "imageUrl": "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=640&q=80",
+        "startDate": "2026-06-13",
+        "endDate": "2026-07-31",
+        "actionType": "landing_listing",
+        "targetBusinessId": "b11",
+        "sellerBusinessId": "b11",
+        "localityIds": [
+          "roadpali"
+        ],
+        "pincodes": [
+          "410218"
+        ],
+        "categoryIds": [
+          "food-restaurants"
+        ],
+        "placementKey": "homepage_inline_primary",
+        "deviceTarget": "all",
+        "mobileRowPosition": 4,
+        "isActive": true
+      },
+      "metadata": {
+        "source": "legacy_listing_ad"
+      },
+      "updatedAt": "2026-08-07T06:42:57.196Z"
+    },
+    {
+      "id": "ad_ad_kalamboli_academy_spotlight",
+      "name": "Kalamboli Bridal & Academy Launch Offers",
+      "campaignType": "listing_ad",
+      "status": "active",
+      "priority": 100,
+      "isFallback": true,
+      "startDate": "2026-06-13",
+      "endDate": "2026-07-31",
+      "deviceTarget": "all",
+      "placementKeys": [
+        "homepage_inline_primary"
+      ],
+      "targets": {
+        "localityIds": [
+          "kalamboli"
+        ],
+        "categoryIds": [
+          "beauty-wellness"
+        ],
+        "subcategoryIds": [],
+        "pincodes": [
+          "410218"
+        ],
+        "devices": [
+          "all"
+        ],
+        "pageTypes": [
+          "homepage",
+          "listing_results"
+        ],
+        "placementKeys": [
+          "homepage_inline_primary"
+        ]
+      },
+      "payload": {
+        "id": "ad_kalamboli_academy_spotlight",
+        "title": "Kalamboli Bridal & Academy Launch Offers",
+        "description": "Professional bridal makeovers, spa packages, and beauty training admissions in one promoted slot.",
+        "badge": "Sponsored Launch",
+        "ctaText": "Explore Featured Business",
+        "backgroundColor": "#7c3aed",
+        "imageUrl": "https://images.unsplash.com/photo-1521590832167-7bcbfaa6381f?auto=format&fit=crop&w=640&q=80",
+        "startDate": "2026-06-13",
+        "endDate": "2026-07-31",
+        "actionType": "landing_listing",
+        "targetBusinessId": "s2",
+        "sellerBusinessId": "s2",
+        "localityIds": [
+          "kalamboli"
+        ],
+        "pincodes": [
+          "410218"
+        ],
+        "categoryIds": [
+          "beauty-wellness"
+        ],
+        "placementKey": "homepage_inline_primary",
+        "deviceTarget": "all",
+        "mobileRowPosition": 3,
+        "isActive": true
+      },
+      "metadata": {
+        "source": "legacy_listing_ad"
+      },
+      "updatedAt": "2026-08-07T06:42:57.196Z"
+    },
+    {
+      "id": "sponsored_s1",
+      "name": "5 Elements | Family Salon",
+      "campaignType": "sponsored_listing",
+      "status": "active",
+      "priority": 150,
+      "isFallback": true,
+      "startDate": "",
+      "endDate": "",
+      "deviceTarget": "all",
+      "placementKeys": [],
+      "targets": {
+        "localityIds": [
+          "roadpali"
+        ],
+        "categoryIds": [
+          "beauty-wellness"
+        ],
+        "subcategoryIds": [
+          "salons"
+        ],
+        "pincodes": [
+          "410218"
+        ],
+        "devices": [
+          "all"
+        ],
+        "pageTypes": [
+          "homepage",
+          "listing_results"
+        ],
+        "placementKeys": []
+      },
+      "maxItems": 1,
+      "payload": {
+        "businessIds": [
+          "s1"
+        ],
+        "sellerBusinessId": "s1",
+        "businessName": "5 Elements | Family Salon"
+      },
+      "metadata": {
+        "source": "legacy_business_sponsorship"
+      },
+      "updatedAt": "2026-08-23T18:42:14.889Z"
+    },
+    {
+      "id": "sponsored_s2",
+      "name": "Majestic Salon Spa & Academy",
+      "campaignType": "sponsored_listing",
+      "status": "active",
+      "priority": 200,
+      "isFallback": true,
+      "startDate": "",
+      "endDate": "",
+      "deviceTarget": "all",
+      "placementKeys": [],
+      "targets": {
+        "localityIds": [
+          "kalamboli"
+        ],
+        "categoryIds": [
+          "beauty-wellness"
+        ],
+        "subcategoryIds": [
+          "salons"
+        ],
+        "pincodes": [
+          "410218"
+        ],
+        "devices": [
+          "all"
+        ],
+        "pageTypes": [
+          "homepage",
+          "listing_results"
+        ],
+        "placementKeys": []
+      },
+      "maxItems": 1,
+      "payload": {
+        "businessIds": [
+          "s2"
+        ],
+        "sellerBusinessId": "s2",
+        "businessName": "Majestic Salon Spa & Academy"
+      },
+      "metadata": {
+        "source": "legacy_business_sponsorship"
+      },
+      "updatedAt": "2026-08-23T18:42:14.889Z"
+    },
+    {
+      "id": "sponsored_b_kh2",
+      "name": "Aura Glow Salon & Medi-Spa",
+      "campaignType": "sponsored_listing",
+      "status": "active",
+      "priority": 180,
+      "isFallback": true,
+      "startDate": "",
+      "endDate": "",
+      "deviceTarget": "all",
+      "placementKeys": [],
+      "targets": {
+        "localityIds": [
+          "roadpali"
+        ],
+        "categoryIds": [
+          "beauty-wellness"
+        ],
+        "subcategoryIds": [
+          "salons"
+        ],
+        "pincodes": [
+          "410218"
+        ],
+        "devices": [
+          "all"
+        ],
+        "pageTypes": [
+          "homepage",
+          "listing_results"
+        ],
+        "placementKeys": []
+      },
+      "maxItems": 1,
+      "payload": {
+        "businessIds": [
+          "b_kh2"
+        ],
+        "sellerBusinessId": "b_kh2",
+        "businessName": "Aura Glow Salon & Medi-Spa"
+      },
+      "metadata": {
+        "source": "legacy_business_sponsorship"
+      },
+      "updatedAt": "2026-08-23T18:42:14.889Z"
+    },
+    {
+      "id": "sponsored_b_tj1",
+      "name": "Taloja Industrial Tooling Corp",
+      "campaignType": "sponsored_listing",
+      "status": "active",
+      "priority": 150,
+      "isFallback": true,
+      "startDate": "",
+      "endDate": "",
+      "deviceTarget": "all",
+      "placementKeys": [],
+      "targets": {
+        "localityIds": [
+          "roadpali"
+        ],
+        "categoryIds": [
+          "professional-services"
+        ],
+        "subcategoryIds": [
+          "business-consultants"
+        ],
+        "pincodes": [
+          "410218"
+        ],
+        "devices": [
+          "all"
+        ],
+        "pageTypes": [
+          "homepage",
+          "listing_results"
+        ],
+        "placementKeys": []
+      },
+      "maxItems": 1,
+      "payload": {
+        "businessIds": [
+          "b_tj1"
+        ],
+        "sellerBusinessId": "b_tj1",
+        "businessName": "Taloja Industrial Tooling Corp"
+      },
+      "metadata": {
+        "source": "legacy_business_sponsorship"
+      },
+      "updatedAt": "2026-08-23T18:42:14.890Z"
+    },
+    {
+      "id": "hero_hero_kharghar",
+      "name": "Hyper Local Directory for Kharghar",
+      "campaignType": "hero_banner",
+      "status": "active",
+      "priority": 100,
+      "isFallback": true,
+      "startDate": "2026-01-01",
+      "endDate": "2027-01-01",
+      "deviceTarget": "all",
+      "placementKeys": [],
+      "targets": {
+        "localityIds": [
+          "kharghar"
+        ],
+        "categoryIds": [],
+        "subcategoryIds": [],
+        "pincodes": [],
+        "devices": [
+          "all"
+        ],
+        "pageTypes": [
+          "homepage"
+        ],
+        "placementKeys": []
+      },
+      "payload": {
+        "id": "hero_kharghar",
+        "localityId": "kharghar",
+        "title": "Hyper Local Directory for Kharghar",
+        "subtitle": "Find premium cafes, sports courts, wellness lounges, and educational consulting services in the highly aesthetic node of Kharghar. verified reviews, location-grabbing utilities, and dynamic approval tracking.",
+        "imageUrl": "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=800&q=80",
+        "startDate": "2026-01-01",
+        "endDate": "2027-01-01",
+        "ctaLabel": "Explore Businesses",
+        "ctaType": "search_category",
+        "ctaTarget": "all",
+        "isActive": true
+      },
+      "metadata": {
+        "source": "legacy_hero_banner"
+      },
+      "updatedAt": "2026-08-23T18:48:36.560Z"
+    },
+    {
+      "id": "hero_hero_kamothe",
+      "name": "Hyper Local Directory for Kamothe",
+      "campaignType": "hero_banner",
+      "status": "active",
+      "priority": 100,
+      "isFallback": true,
+      "startDate": "2026-01-01",
+      "endDate": "2027-01-01",
+      "deviceTarget": "all",
+      "placementKeys": [],
+      "targets": {
+        "localityIds": [
+          "kamothe"
+        ],
+        "categoryIds": [],
+        "subcategoryIds": [],
+        "pincodes": [],
+        "devices": [
+          "all"
+        ],
+        "pageTypes": [
+          "homepage"
+        ],
+        "placementKeys": []
+      },
+      "payload": {
+        "id": "hero_kamothe",
+        "localityId": "kamothe",
+        "title": "Hyper Local Directory for Kamothe",
+        "subtitle": "Connect with local supermarkets, home appliances workshops, tuition centers, and dental clinics across Kamothe nodes. verified reviews, location-grabbing utilities, and dynamic approval tracking.",
+        "imageUrl": "https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=800&q=80",
+        "startDate": "2026-01-01",
+        "endDate": "2027-01-01",
+        "ctaLabel": "Explore Businesses",
+        "ctaType": "search_category",
+        "ctaTarget": "all",
+        "isActive": true
+      },
+      "metadata": {
+        "source": "legacy_hero_banner"
+      },
+      "updatedAt": "2026-08-23T18:48:36.560Z"
+    },
+    {
+      "id": "hero_hero_panvel",
+      "name": "Hyper Local Directory for Panvel",
+      "campaignType": "hero_banner",
+      "status": "active",
+      "priority": 100,
+      "isFallback": true,
+      "startDate": "2026-01-01",
+      "endDate": "2027-01-01",
+      "deviceTarget": "all",
+      "placementKeys": [],
+      "targets": {
+        "localityIds": [
+          "panvel"
+        ],
+        "categoryIds": [],
+        "subcategoryIds": [],
+        "pincodes": [],
+        "devices": [
+          "all"
+        ],
+        "pageTypes": [
+          "homepage"
+        ],
+        "placementKeys": []
+      },
+      "payload": {
+        "id": "hero_panvel",
+        "localityId": "panvel",
+        "title": "Hyper Local Directory for Panvel",
+        "subtitle": "Explore the traditional commercial capital of Navi Mumbai with historical food courts, diagnostic healthcare clinics, and transport centers. verified reviews, location-grabbing utilities, and dynamic approval tracking.",
+        "imageUrl": "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=800&q=80",
+        "startDate": "2026-01-01",
+        "endDate": "2027-01-01",
+        "ctaLabel": "Explore Businesses",
+        "ctaType": "search_category",
+        "ctaTarget": "all",
+        "isActive": true
+      },
+      "metadata": {
+        "source": "legacy_hero_banner"
+      },
+      "updatedAt": "2026-08-23T18:48:36.560Z"
+    },
+    {
+      "id": "hero_hero_taloja",
+      "name": "Hyper Local Directory for Taloja",
+      "campaignType": "hero_banner",
+      "status": "active",
+      "priority": 100,
+      "isFallback": true,
+      "startDate": "2026-01-01",
+      "endDate": "2027-01-01",
+      "deviceTarget": "all",
+      "placementKeys": [],
+      "targets": {
+        "localityIds": [
+          "taloja"
+        ],
+        "categoryIds": [],
+        "subcategoryIds": [],
+        "pincodes": [],
+        "devices": [
+          "all"
+        ],
+        "pageTypes": [
+          "homepage"
+        ],
+        "placementKeys": []
+      },
+      "payload": {
+        "id": "hero_taloja",
+        "localityId": "taloja",
+        "title": "Hyper Local Directory for Taloja",
+        "subtitle": "Discover massive tooling industries, hardware stores, professional technical consultants, and logistics solutions based in Taloja. verified reviews, location-grabbing utilities, and dynamic approval tracking.",
+        "imageUrl": "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=800&q=80",
+        "startDate": "2026-01-01",
+        "endDate": "2027-01-01",
+        "ctaLabel": "Explore Businesses",
+        "ctaType": "search_category",
+        "ctaTarget": "all",
+        "isActive": true
+      },
+      "metadata": {
+        "source": "legacy_hero_banner"
+      },
+      "updatedAt": "2026-08-23T18:48:36.560Z"
+    },
+    {
+      "id": "hero_hero_roadpali",
+      "name": "Roadpali Business Guide, Ready for Daily Discovery",
+      "campaignType": "hero_banner",
+      "status": "active",
+      "priority": 100,
+      "isFallback": true,
+      "startDate": "2026-06-13",
+      "endDate": "2026-07-31",
+      "deviceTarget": "all",
+      "placementKeys": [],
+      "targets": {
+        "localityIds": [
+          "roadpali"
+        ],
+        "categoryIds": [],
+        "subcategoryIds": [],
+        "pincodes": [
+          "410218"
+        ],
+        "devices": [
+          "all"
+        ],
+        "pageTypes": [
+          "homepage"
+        ],
+        "placementKeys": []
+      },
+      "payload": {
+        "id": "hero_roadpali",
+        "localityId": "roadpali",
+        "title": "Roadpali Business Guide, Ready for Daily Discovery",
+        "subtitle": "Explore verified salons, family dining, clinics, and daily-use services curated for Roadpali residents and nearby sectors.",
+        "imageUrl": "https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=800&q=80",
+        "startDate": "2026-06-13",
+        "endDate": "2026-07-31",
+        "ctaLabel": "Explore Businesses",
+        "ctaType": "search_category",
+        "ctaTarget": "all",
+        "pincodes": [
+          "410218"
+        ],
+        "heroStats": [
+          {
+            "enabled": true,
+            "label": "Trusted Listings",
+            "value": "180+",
+            "localityIds": [
+              "roadpali"
+            ],
+            "pincodes": [
+              "410218"
+            ]
+          },
+          {
+            "enabled": true,
+            "label": "Premium Picks",
+            "value": "25+",
+            "localityIds": [
+              "roadpali"
+            ],
+            "pincodes": [
+              "410218"
+            ]
+          },
+          {
+            "enabled": true,
+            "label": "Avg Rating",
+            "value": "4.7",
+            "localityIds": [
+              "roadpali"
+            ],
+            "pincodes": [
+              "410218"
+            ]
+          }
+        ],
+        "isActive": true
+      },
+      "metadata": {
+        "source": "legacy_hero_banner"
+      },
+      "updatedAt": "2026-08-23T18:48:36.560Z"
+    },
+    {
+      "id": "hero_hero_kalamboli",
+      "name": "Kalamboli Local Services, Offers, and Verified Merchants",
+      "campaignType": "hero_banner",
+      "status": "active",
+      "priority": 100,
+      "isFallback": true,
+      "startDate": "2026-06-13",
+      "endDate": "2026-07-31",
+      "deviceTarget": "all",
+      "placementKeys": [],
+      "targets": {
+        "localityIds": [
+          "kalamboli"
+        ],
+        "categoryIds": [],
+        "subcategoryIds": [],
+        "pincodes": [
+          "410218"
+        ],
+        "devices": [
+          "all"
+        ],
+        "pageTypes": [
+          "homepage"
+        ],
+        "placementKeys": []
+      },
+      "payload": {
+        "id": "hero_kalamboli",
+        "localityId": "kalamboli",
+        "title": "Kalamboli Local Services, Offers, and Verified Merchants",
+        "subtitle": "Browse launch-ready Kalamboli salons, academies, pharmacies, and neighbourhood essentials from one locality-aware homepage.",
+        "imageUrl": "https://images.unsplash.com/photo-1521590832167-7bcbfaa6381f?auto=format&fit=crop&w=800&q=80",
+        "startDate": "2026-06-13",
+        "endDate": "2026-07-31",
+        "ctaLabel": "Explore Businesses",
+        "ctaType": "search_category",
+        "ctaTarget": "all",
+        "pincodes": [
+          "410218"
+        ],
+        "heroStats": [
+          {
+            "enabled": true,
+            "label": "Verified Merchants",
+            "value": "140+",
+            "localityIds": [
+              "kalamboli"
+            ],
+            "pincodes": [
+              "410218"
+            ]
+          },
+          {
+            "enabled": true,
+            "label": "Live Offers",
+            "value": "12+",
+            "localityIds": [
+              "kalamboli"
+            ],
+            "pincodes": [
+              "410218"
+            ]
+          },
+          {
+            "enabled": true,
+            "label": "Response Speed",
+            "value": "< 15m",
+            "localityIds": [
+              "kalamboli"
+            ],
+            "pincodes": [
+              "410218"
+            ]
+          }
+        ],
+        "isActive": true
+      },
+      "metadata": {
+        "source": "legacy_hero_banner"
+      },
+      "updatedAt": "2026-08-23T18:48:36.560Z"
+    },
+    {
+      "id": "offer_cpn_roadpali_elements_june",
+      "name": "Roadpali Hair Spa Launch Offer",
+      "campaignType": "offer",
+      "status": "active",
+      "priority": 100,
+      "isFallback": true,
+      "startDate": "2026-06-13",
+      "endDate": "2026-07-15",
+      "deviceTarget": "all",
+      "placementKeys": [],
+      "targets": {
+        "localityIds": [
+          "roadpali"
+        ],
+        "categoryIds": [
+          "beauty-wellness"
+        ],
+        "subcategoryIds": [
+          "salons"
+        ],
+        "pincodes": [
+          "410218"
+        ],
+        "devices": [
+          "all"
+        ],
+        "pageTypes": [
+          "homepage",
+          "listing_results"
+        ],
+        "placementKeys": []
+      },
+      "payload": {
+        "id": "cpn_roadpali_elements_june",
+        "businessId": "s1",
+        "targetBusinessId": "s1",
+        "title": "Roadpali Hair Spa Launch Offer",
+        "code": "ROADPALI-GLOW20",
+        "discount": "20% Off",
+        "description": "Flat 20% off on hair spa and global styling packages during the UAT launch window.",
+        "startDate": "2026-06-13",
+        "endDate": "2026-07-15",
+        "expiryDate": "2026-07-15",
+        "usageCount": 0,
+        "isActive": true,
+        "localityIds": [
+          "roadpali"
+        ],
+        "pincodes": [
+          "410218"
+        ],
+        "categoryIds": [
+          "beauty-wellness"
+        ],
+        "badgeText": "Launch Offer",
+        "ctaText": "Claim at Salon"
+      },
+      "metadata": {
+        "source": "legacy_coupon"
+      },
+      "updatedAt": "2026-08-23T18:48:36.586Z"
+    },
+    {
+      "id": "offer_cpn_roadpali_utsav_family",
+      "name": "Roadpali Family Dining Combo",
+      "campaignType": "offer",
+      "status": "active",
+      "priority": 100,
+      "isFallback": true,
+      "startDate": "2026-06-13",
+      "endDate": "2026-07-20",
+      "deviceTarget": "all",
+      "placementKeys": [],
+      "targets": {
+        "localityIds": [
+          "roadpali"
+        ],
+        "categoryIds": [
+          "food-restaurants"
+        ],
+        "subcategoryIds": [
+          "restaurants"
+        ],
+        "pincodes": [
+          "410218"
+        ],
+        "devices": [
+          "all"
+        ],
+        "pageTypes": [
+          "homepage",
+          "listing_results"
+        ],
+        "placementKeys": []
+      },
+      "payload": {
+        "id": "cpn_roadpali_utsav_family",
+        "businessId": "b11",
+        "targetBusinessId": "b11",
+        "title": "Roadpali Family Dining Combo",
+        "code": "ROADPALI-DINE10",
+        "discount": "10% Off",
+        "description": "Save on family dining combos and weekend dinner bookings at Utsav Grand.",
+        "startDate": "2026-06-13",
+        "endDate": "2026-07-20",
+        "expiryDate": "2026-07-20",
+        "usageCount": 0,
+        "isActive": true,
+        "localityIds": [
+          "roadpali"
+        ],
+        "pincodes": [
+          "410218"
+        ],
+        "categoryIds": [
+          "food-restaurants"
+        ],
+        "badgeText": "Dining Deal",
+        "ctaText": "View Restaurant"
+      },
+      "metadata": {
+        "source": "legacy_coupon"
+      },
+      "updatedAt": "2026-08-23T18:48:36.586Z"
+    },
+    {
+      "id": "offer_cpn_kalamboli_majestic_bridal",
+      "name": "Kalamboli Bridal Trial Package",
+      "campaignType": "offer",
+      "status": "active",
+      "priority": 100,
+      "isFallback": true,
+      "startDate": "2026-06-13",
+      "endDate": "2026-07-18",
+      "deviceTarget": "all",
+      "placementKeys": [],
+      "targets": {
+        "localityIds": [
+          "kalamboli"
+        ],
+        "categoryIds": [
+          "beauty-wellness"
+        ],
+        "subcategoryIds": [
+          "salons"
+        ],
+        "pincodes": [
+          "410218"
+        ],
+        "devices": [
+          "all"
+        ],
+        "pageTypes": [
+          "homepage",
+          "listing_results"
+        ],
+        "placementKeys": []
+      },
+      "payload": {
+        "id": "cpn_kalamboli_majestic_bridal",
+        "businessId": "s2",
+        "targetBusinessId": "s2",
+        "title": "Kalamboli Bridal Trial Package",
+        "code": "KALAMBOLI-BRIDE",
+        "discount": "Rs 1000 Off",
+        "description": "Launch-period discount on bridal trial styling and pre-booked academy consultations.",
+        "startDate": "2026-06-13",
+        "endDate": "2026-07-18",
+        "expiryDate": "2026-07-18",
+        "usageCount": 0,
+        "isActive": true,
+        "localityIds": [
+          "kalamboli"
+        ],
+        "pincodes": [
+          "410218"
+        ],
+        "categoryIds": [
+          "beauty-wellness"
+        ],
+        "badgeText": "Bridal Offer",
+        "ctaText": "Book Consultation"
+      },
+      "metadata": {
+        "source": "legacy_coupon"
+      },
+      "updatedAt": "2026-08-23T18:48:36.586Z"
+    },
+    {
+      "id": "offer_cpn_kalamboli_cutz_course",
+      "name": "Beauty Course Starter Discount",
+      "campaignType": "offer",
+      "status": "active",
+      "priority": 100,
+      "isFallback": true,
+      "startDate": "2026-06-13",
+      "endDate": "2026-07-25",
+      "deviceTarget": "all",
+      "placementKeys": [],
+      "targets": {
+        "localityIds": [
+          "kalamboli"
+        ],
+        "categoryIds": [
+          "beauty-wellness"
+        ],
+        "subcategoryIds": [
+          "salons"
+        ],
+        "pincodes": [
+          "410218"
+        ],
+        "devices": [
+          "all"
+        ],
+        "pageTypes": [
+          "homepage",
+          "listing_results"
+        ],
+        "placementKeys": []
+      },
+      "payload": {
+        "id": "cpn_kalamboli_cutz_course",
+        "businessId": "s4",
+        "targetBusinessId": "s4",
+        "title": "Beauty Course Starter Discount",
+        "code": "CUTZ-COURSE15",
+        "discount": "15% Off",
+        "description": "Discount on starter grooming and salon training courses for new Kalamboli learners.",
+        "startDate": "2026-06-13",
+        "endDate": "2026-07-25",
+        "expiryDate": "2026-07-25",
+        "usageCount": 0,
+        "isActive": true,
+        "localityIds": [
+          "kalamboli"
+        ],
+        "pincodes": [
+          "410218"
+        ],
+        "categoryIds": [
+          "beauty-wellness"
+        ],
+        "badgeText": "Course Offer",
+        "ctaText": "See Course Deal"
+      },
+      "metadata": {
+        "source": "legacy_coupon"
+      },
+      "updatedAt": "2026-08-23T18:48:36.586Z"
+    },
+    {
+      "id": "content_upd_roadpali_launch_1",
+      "name": "Roadpali launch week: featured salons and dining now live",
+      "campaignType": "content_block",
+      "status": "active",
+      "priority": 100,
+      "isFallback": true,
+      "startDate": "2026-06-12",
+      "endDate": "",
+      "deviceTarget": "all",
+      "placementKeys": [],
+      "targets": {
+        "localityIds": [
+          "roadpali"
+        ],
+        "categoryIds": [],
+        "subcategoryIds": [],
+        "pincodes": [],
+        "devices": [
+          "all"
+        ],
+        "pageTypes": [
+          "homepage"
+        ],
+        "placementKeys": []
+      },
+      "payload": {
+        "id": "upd_roadpali_launch_1",
+        "type": "post",
+        "title": "Roadpali launch week: featured salons and dining now live",
+        "content": "The Roadpali homepage now highlights verified premium salons, family dining picks, and launch-window offers for nearby residents.",
+        "authorName": "Localisy Content Desk",
+        "createdAt": "2026-06-12T08:30:00Z",
+        "publishAt": "2026-06-12T08:30:00Z",
+        "localityId": "roadpali",
+        "likes": 12,
+        "status": "published",
+        "image": "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=640&q=80"
+      },
+      "metadata": {
+        "source": "legacy_community_item"
+      },
+      "updatedAt": "2026-08-23T18:48:36.600Z"
+    },
+    {
+      "id": "content_upd_roadpali_deal_1",
+      "name": "Launch deal: hair spa and grooming offers in Roadpali",
+      "campaignType": "content_block",
+      "status": "active",
+      "priority": 120,
+      "isFallback": true,
+      "startDate": "2026-06-13",
+      "endDate": "",
+      "deviceTarget": "all",
+      "placementKeys": [],
+      "targets": {
+        "localityIds": [
+          "roadpali"
+        ],
+        "categoryIds": [],
+        "subcategoryIds": [],
+        "pincodes": [],
+        "devices": [
+          "all"
+        ],
+        "pageTypes": [
+          "homepage"
+        ],
+        "placementKeys": []
+      },
+      "payload": {
+        "id": "upd_roadpali_deal_1",
+        "type": "deal",
+        "title": "Launch deal: hair spa and grooming offers in Roadpali",
+        "content": "5 Elements is running a locality-targeted launch offer for hair spa, styling, and festive grooming appointments this month.",
+        "authorName": "Vikas Jaiswal",
+        "createdAt": "2026-06-13T07:00:00Z",
+        "publishAt": "2026-06-13T07:00:00Z",
+        "businessId": "s1",
+        "localityId": "roadpali",
+        "likes": 18,
+        "dealPromoCode": "ROADPALI-GLOW20",
+        "isSponsored": true,
+        "status": "published",
+        "image": "https://images.unsplash.com/photo-1562322140-8baeececf3df?auto=format&fit=crop&w=640&q=80"
+      },
+      "metadata": {
+        "source": "legacy_community_item"
+      },
+      "updatedAt": "2026-08-23T18:48:36.600Z"
+    },
+    {
+      "id": "content_upd_kalamboli_event_1",
+      "name": "Kalamboli bridal workshop and academy admissions weekend",
+      "campaignType": "content_block",
+      "status": "active",
+      "priority": 100,
+      "isFallback": true,
+      "startDate": "2026-06-13",
+      "endDate": "",
+      "deviceTarget": "all",
+      "placementKeys": [],
+      "targets": {
+        "localityIds": [
+          "kalamboli"
+        ],
+        "categoryIds": [],
+        "subcategoryIds": [],
+        "pincodes": [],
+        "devices": [
+          "all"
+        ],
+        "pageTypes": [
+          "homepage"
+        ],
+        "placementKeys": []
+      },
+      "payload": {
+        "id": "upd_kalamboli_event_1",
+        "type": "event",
+        "title": "Kalamboli bridal workshop and academy admissions weekend",
+        "content": "Majestic Salon Spa & Academy is hosting a bridal styling workshop and counselling desk for new academy admissions.",
+        "authorName": "Priya Shinde",
+        "createdAt": "2026-06-13T09:00:00Z",
+        "publishAt": "2026-06-13T09:00:00Z",
+        "businessId": "s2",
+        "localityId": "kalamboli",
+        "likes": 16,
+        "eventDate": "2026-06-20 11:00 AM",
+        "status": "published",
+        "image": "https://images.unsplash.com/photo-1521590832167-7bcbfaa6381f?auto=format&fit=crop&w=640&q=80"
+      },
+      "metadata": {
+        "source": "legacy_community_item"
+      },
+      "updatedAt": "2026-08-23T18:48:36.600Z"
+    },
+    {
+      "id": "content_upd_kalamboli_health_1",
+      "name": "Kalamboli residents can now quickly find 24-hour pharmacy support",
+      "campaignType": "content_block",
+      "status": "active",
+      "priority": 100,
+      "isFallback": true,
+      "startDate": "2026-06-13",
+      "endDate": "",
+      "deviceTarget": "all",
+      "placementKeys": [],
+      "targets": {
+        "localityIds": [
+          "kalamboli"
+        ],
+        "categoryIds": [],
+        "subcategoryIds": [],
+        "pincodes": [],
+        "devices": [
+          "all"
+        ],
+        "pageTypes": [
+          "homepage"
+        ],
+        "placementKeys": []
+      },
+      "payload": {
+        "id": "upd_kalamboli_health_1",
+        "type": "recommendation",
+        "title": "Kalamboli residents can now quickly find 24-hour pharmacy support",
+        "content": "Apollo Pharmacy is now surfaced in the Kalamboli health section for urgent medicine lookup and late-hour essentials.",
+        "authorName": "Localisy Content Desk",
+        "createdAt": "2026-06-13T10:15:00Z",
+        "publishAt": "2026-06-13T10:15:00Z",
+        "businessId": "b12",
+        "localityId": "kalamboli",
+        "likes": 9,
+        "status": "published",
+        "image": "https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=640&q=80"
+      },
+      "metadata": {
+        "source": "legacy_community_item"
+      },
+      "updatedAt": "2026-08-23T18:48:36.600Z"
+    }
+  ],
+  "publishedSnapshots": [
+    {
+      "id": "snapshot_kalamboli_all_all_all_all_all_homepage",
+      "localityId": "kalamboli",
+      "categoryId": "",
+      "subcategoryId": "",
+      "pincode": "",
+      "placementKey": "",
+      "deviceTarget": "all",
+      "pageType": "homepage",
+      "payload": {
+        "context": {
+          "localityId": "kalamboli",
+          "categoryId": "",
+          "subcategoryId": "",
+          "pincode": "",
+          "device": "all",
+          "pageType": "homepage",
+          "placementKey": "",
+          "date": "2026-08-23"
+        },
+        "template": {
+          "id": "tpl_homepage_kalamboli",
+          "name": "Kalamboli Homepage",
+          "templateScope": "locality",
+          "isFallback": true
+        },
+        "sections": [
+          {
+            "id": "home_kalamboli_template_hero",
+            "sectionType": "hero_banner",
+            "title": "Hero: Kalamboli",
+            "subtitle": "Primary launch banner for Kalamboli",
+            "status": "active",
+            "visible": true,
+            "sortOrder": 10,
+            "ctaLabel": "Explore Businesses",
+            "ctaType": "search_category",
+            "ctaTarget": "all",
+            "showViewAll": false,
+            "localityIds": [
+              "kalamboli"
+            ]
+          },
+          {
+            "id": "home_kalamboli_template_search",
+            "sectionType": "search_discovery",
+            "title": "Search & Discover",
+            "subtitle": "Locality-aware search with quick categories",
+            "status": "active",
+            "visible": true,
+            "sortOrder": 20,
+            "showViewAll": false,
+            "localityIds": [
+              "kalamboli"
+            ]
+          },
+          {
+            "id": "home_kalamboli_template_emergency",
+            "sectionType": "emergency_grid",
+            "title": "Emergency Services",
+            "subtitle": "Critical support nearby",
+            "status": "active",
+            "visible": true,
+            "sortOrder": 30,
+            "categoryIds": [
+              "health-medical",
+              "home-services",
+              "automotive"
+            ],
+            "maxItems": 6,
+            "visibleSlots": 6,
+            "showViewAll": true,
+            "localityIds": [
+              "kalamboli"
+            ]
+          },
+          {
+            "id": "home_kalamboli_template_promo",
+            "sectionType": "promo_banner",
+            "title": "Kalamboli Spotlight",
+            "subtitle": "Live sponsored placements for Kalamboli",
+            "status": "active",
+            "visible": true,
+            "sortOrder": 40,
+            "placementKey": "homepage_inline_primary",
+            "showViewAll": false,
+            "localityIds": [
+              "kalamboli"
+            ]
+          },
+          {
+            "id": "home_kalamboli_template_featured",
+            "sectionType": "featured_businesses",
+            "title": "Featured in Kalamboli",
+            "subtitle": "Curated launch picks for Kalamboli",
+            "status": "active",
+            "visible": true,
+            "sortOrder": 50,
+            "maxItems": 6,
+            "visibleSlots": 3,
+            "desktopCardCount": 3,
+            "mobileCardCount": 2,
+            "mobileDisplayMode": "carousel",
+            "autoRotate": true,
+            "showViewAll": true,
+            "localityIds": [
+              "kalamboli"
+            ],
+            "listingSourceMode": "manual",
+            "pinnedBusinessIds": [
+              "s2",
+              "s4",
+              "b12"
+            ]
+          },
+          {
+            "id": "home_kalamboli_template_health_shelf",
+            "sectionType": "business_shelf",
+            "title": "Kalamboli Health Essentials",
+            "subtitle": "Verified care, clinic, and medical support nearby",
+            "status": "active",
+            "visible": true,
+            "sortOrder": 70,
+            "categoryId": "health-medical",
+            "maxItems": 6,
+            "visibleSlots": 4,
+            "desktopCardCount": 4,
+            "mobileCardCount": 2,
+            "mobileDisplayMode": "stack",
+            "autoRotate": true,
+            "showViewAll": true,
+            "localityIds": [
+              "kalamboli"
+            ],
+            "listingSourceMode": "manual",
+            "pinnedBusinessIds": [
+              "b12"
+            ]
+          },
+          {
+            "id": "home_kalamboli_template_beauty_shelf",
+            "sectionType": "business_shelf",
+            "title": "Kalamboli Beauty & Wellness Picks",
+            "subtitle": "Trusted salons, wellness clinics, and grooming experts",
+            "status": "active",
+            "visible": true,
+            "sortOrder": 90,
+            "categoryId": "beauty-wellness",
+            "maxItems": 6,
+            "visibleSlots": 4,
+            "desktopCardCount": 4,
+            "mobileCardCount": 2,
+            "mobileDisplayMode": "carousel",
+            "autoRotate": true,
+            "showViewAll": true,
+            "localityIds": [
+              "kalamboli"
+            ],
+            "listingSourceMode": "manual",
+            "pinnedBusinessIds": [
+              "s2",
+              "s4"
+            ]
+          },
+          {
+            "id": "home_kalamboli_template_categories",
+            "sectionType": "category_grid",
+            "title": "Explore by Categories",
+            "subtitle": "Jump into high-intent categories",
+            "status": "active",
+            "visible": true,
+            "sortOrder": 140,
+            "categoryIds": [
+              "beauty-wellness",
+              "health-medical",
+              "food-restaurants",
+              "home-services",
+              "shopping-retail",
+              "education-training"
+            ],
+            "maxItems": 6,
+            "visibleSlots": 6,
+            "showViewAll": true,
+            "localityIds": [
+              "kalamboli"
+            ]
+          },
+          {
+            "id": "home_kalamboli_template_offers",
+            "sectionType": "offers_list",
+            "title": "Kalamboli Offers",
+            "subtitle": "Live locality-aware deals for UAT",
+            "status": "active",
+            "visible": true,
+            "sortOrder": 150,
+            "maxItems": 4,
+            "showViewAll": true,
+            "localityIds": [
+              "kalamboli"
+            ]
+          },
+          {
+            "id": "home_kalamboli_template_updates",
+            "sectionType": "updates_feed",
+            "title": "Kalamboli Updates",
+            "subtitle": "Fresh operational and merchant updates",
+            "status": "active",
+            "visible": true,
+            "sortOrder": 160,
+            "maxItems": 4,
+            "showViewAll": true,
+            "localityIds": [
+              "kalamboli"
+            ]
+          },
+          {
+            "id": "home_kalamboli_template_verified",
+            "sectionType": "verified_business_grid",
+            "title": "Verified Around Kalamboli",
+            "subtitle": "Trusted approved listings for this locality",
+            "status": "active",
+            "visible": true,
+            "sortOrder": 170,
+            "maxItems": 6,
+            "visibleSlots": 4,
+            "desktopCardCount": 4,
+            "mobileCardCount": 2,
+            "mobileDisplayMode": "stack",
+            "autoRotate": true,
+            "showViewAll": true,
+            "localityIds": [
+              "kalamboli"
+            ]
+          },
+          {
+            "id": "home_kalamboli_template_trust",
+            "sectionType": "trust_strip",
+            "title": "Trust Highlights",
+            "subtitle": "Closing reassurance and platform trust points",
+            "status": "active",
+            "visible": true,
+            "sortOrder": 180,
+            "showViewAll": false,
+            "localityIds": [
+              "kalamboli"
+            ]
+          }
+        ],
+        "sectionBusinessIdsBySection": {
+          "home_kalamboli_template_featured": [
+            "s2",
+            "b12"
+          ],
+          "home_kalamboli_template_health_shelf": [
+            "b12"
+          ],
+          "home_kalamboli_template_beauty_shelf": [
+            "s2"
+          ],
+          "home_kalamboli_template_verified": [
+            "s15",
+            "b12",
+            "s12",
+            "s9"
+          ]
+        },
+        "heroBanners": [],
+        "listingAds": [],
+        "sponsoredListings": [],
+        "sponsoredCampaigns": [],
+        "offers": [],
+        "contentBlocks": [
+          {
+            "id": "upd_kalamboli_event_1",
+            "type": "event",
+            "title": "Kalamboli bridal workshop and academy admissions weekend",
+            "content": "Majestic Salon Spa & Academy is hosting a bridal styling workshop and counselling desk for new academy admissions.",
+            "authorName": "Priya Shinde",
+            "createdAt": "2026-06-13T09:00:00Z",
+            "publishAt": "2026-06-13T09:00:00Z",
+            "businessId": "s2",
+            "localityId": "kalamboli",
+            "likes": 16,
+            "eventDate": "2026-06-20 11:00 AM",
+            "status": "published",
+            "image": "https://images.unsplash.com/photo-1521590832167-7bcbfaa6381f?auto=format&fit=crop&w=640&q=80"
+          },
+          {
+            "id": "upd_kalamboli_health_1",
+            "type": "recommendation",
+            "title": "Kalamboli residents can now quickly find 24-hour pharmacy support",
+            "content": "Apollo Pharmacy is now surfaced in the Kalamboli health section for urgent medicine lookup and late-hour essentials.",
+            "authorName": "Localisy Content Desk",
+            "createdAt": "2026-06-13T10:15:00Z",
+            "publishAt": "2026-06-13T10:15:00Z",
+            "businessId": "b12",
+            "localityId": "kalamboli",
+            "likes": 9,
+            "status": "published",
+            "image": "https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=640&q=80"
+          }
+        ],
+        "resolvedAt": "2026-08-23T18:48:36.669Z"
+      },
+      "publishedAt": "2026-08-23T18:48:36.669Z",
+      "updatedAt": "2026-08-23T18:48:36.669Z"
+    },
+    {
+      "id": "snapshot_roadpali_all_all_all_all_all_homepage",
+      "localityId": "roadpali",
+      "categoryId": "",
+      "subcategoryId": "",
+      "pincode": "",
+      "placementKey": "",
+      "deviceTarget": "all",
+      "pageType": "homepage",
+      "payload": {
+        "context": {
+          "localityId": "roadpali",
+          "categoryId": "",
+          "subcategoryId": "",
+          "pincode": "",
+          "device": "all",
+          "pageType": "homepage",
+          "placementKey": "",
+          "date": "2026-08-23"
+        },
+        "template": {
+          "id": "tpl_homepage_roadpali",
+          "name": "Roadpali Homepage",
+          "templateScope": "locality",
+          "isFallback": true
+        },
+        "sections": [
+          {
+            "id": "home_roadpali_template_hero",
+            "sectionType": "hero_banner",
+            "title": "Hero: Roadpali",
+            "subtitle": "Primary launch banner for Roadpali",
+            "status": "active",
+            "visible": true,
+            "sortOrder": 10,
+            "ctaLabel": "Explore Businesses",
+            "ctaType": "search_category",
+            "ctaTarget": "all",
+            "showViewAll": false,
+            "localityIds": [
+              "roadpali"
+            ]
+          },
+          {
+            "id": "home_roadpali_template_search",
+            "sectionType": "search_discovery",
+            "title": "Search & Discover",
+            "subtitle": "Locality-aware search with quick categories",
+            "status": "active",
+            "visible": true,
+            "sortOrder": 20,
+            "showViewAll": false,
+            "localityIds": [
+              "roadpali"
+            ]
+          },
+          {
+            "id": "home_roadpali_template_emergency",
+            "sectionType": "emergency_grid",
+            "title": "Emergency Services",
+            "subtitle": "Critical support nearby",
+            "status": "active",
+            "visible": true,
+            "sortOrder": 30,
+            "categoryIds": [
+              "health-medical",
+              "home-services",
+              "automotive"
+            ],
+            "maxItems": 6,
+            "visibleSlots": 6,
+            "showViewAll": true,
+            "localityIds": [
+              "roadpali"
+            ]
+          },
+          {
+            "id": "home_roadpali_template_promo",
+            "sectionType": "promo_banner",
+            "title": "Roadpali Spotlight",
+            "subtitle": "Live sponsored placements for Roadpali",
+            "status": "active",
+            "visible": true,
+            "sortOrder": 40,
+            "placementKey": "homepage_inline_primary",
+            "showViewAll": false,
+            "localityIds": [
+              "roadpali"
+            ]
+          },
+          {
+            "id": "home_roadpali_template_featured",
+            "sectionType": "featured_businesses",
+            "title": "Featured in Roadpali",
+            "subtitle": "Curated launch picks for Roadpali",
+            "status": "active",
+            "visible": true,
+            "sortOrder": 50,
+            "maxItems": 6,
+            "visibleSlots": 3,
+            "desktopCardCount": 3,
+            "mobileCardCount": 2,
+            "mobileDisplayMode": "carousel",
+            "autoRotate": true,
+            "showViewAll": true,
+            "localityIds": [
+              "roadpali"
+            ],
+            "listingSourceMode": "manual",
+            "pinnedBusinessIds": [
+              "s1",
+              "s3",
+              "b11"
+            ]
+          },
+          {
+            "id": "home_roadpali_template_food_shelf",
+            "sectionType": "business_shelf",
+            "title": "Roadpali Food Favorites",
+            "subtitle": "Curated eateries and homegrown food businesses",
+            "status": "active",
+            "visible": true,
+            "sortOrder": 60,
+            "categoryId": "food-restaurants",
+            "maxItems": 6,
+            "visibleSlots": 4,
+            "desktopCardCount": 4,
+            "mobileCardCount": 2,
+            "mobileDisplayMode": "carousel",
+            "autoRotate": true,
+            "showViewAll": true,
+            "localityIds": [
+              "roadpali"
+            ]
+          },
+          {
+            "id": "home_roadpali_template_health_shelf",
+            "sectionType": "business_shelf",
+            "title": "Roadpali Health Essentials",
+            "subtitle": "Verified care, clinic, and medical support nearby",
+            "status": "active",
+            "visible": true,
+            "sortOrder": 70,
+            "categoryId": "health-medical",
+            "maxItems": 6,
+            "visibleSlots": 4,
+            "desktopCardCount": 4,
+            "mobileCardCount": 2,
+            "mobileDisplayMode": "stack",
+            "autoRotate": true,
+            "showViewAll": true,
+            "localityIds": [
+              "roadpali"
+            ],
+            "listingSourceMode": "manual",
+            "pinnedBusinessIds": [
+              "s3"
+            ]
+          },
+          {
+            "id": "home_roadpali_template_beauty_shelf",
+            "sectionType": "business_shelf",
+            "title": "Roadpali Beauty & Wellness Picks",
+            "subtitle": "Trusted salons, wellness clinics, and grooming experts",
+            "status": "active",
+            "visible": true,
+            "sortOrder": 90,
+            "categoryId": "beauty-wellness",
+            "maxItems": 6,
+            "visibleSlots": 4,
+            "desktopCardCount": 4,
+            "mobileCardCount": 2,
+            "mobileDisplayMode": "carousel",
+            "autoRotate": true,
+            "showViewAll": true,
+            "localityIds": [
+              "roadpali"
+            ],
+            "listingSourceMode": "manual",
+            "pinnedBusinessIds": [
+              "s1",
+              "s3"
+            ]
+          },
+          {
+            "id": "home_roadpali_template_categories",
+            "sectionType": "category_grid",
+            "title": "Explore by Categories",
+            "subtitle": "Jump into high-intent categories",
+            "status": "active",
+            "visible": true,
+            "sortOrder": 140,
+            "categoryIds": [
+              "beauty-wellness",
+              "health-medical",
+              "food-restaurants",
+              "home-services",
+              "shopping-retail",
+              "education-training"
+            ],
+            "maxItems": 6,
+            "visibleSlots": 6,
+            "showViewAll": true,
+            "localityIds": [
+              "roadpali"
+            ]
+          },
+          {
+            "id": "home_roadpali_template_offers",
+            "sectionType": "offers_list",
+            "title": "Roadpali Offers",
+            "subtitle": "Live locality-aware deals for UAT",
+            "status": "active",
+            "visible": true,
+            "sortOrder": 150,
+            "maxItems": 4,
+            "showViewAll": true,
+            "localityIds": [
+              "roadpali"
+            ]
+          },
+          {
+            "id": "home_roadpali_template_updates",
+            "sectionType": "updates_feed",
+            "title": "Roadpali Updates",
+            "subtitle": "Fresh operational and merchant updates",
+            "status": "active",
+            "visible": true,
+            "sortOrder": 160,
+            "maxItems": 4,
+            "showViewAll": true,
+            "localityIds": [
+              "roadpali"
+            ]
+          },
+          {
+            "id": "home_roadpali_template_verified",
+            "sectionType": "verified_business_grid",
+            "title": "Verified Around Roadpali",
+            "subtitle": "Trusted approved listings for this locality",
+            "status": "active",
+            "visible": true,
+            "sortOrder": 170,
+            "maxItems": 6,
+            "visibleSlots": 4,
+            "desktopCardCount": 4,
+            "mobileCardCount": 2,
+            "mobileDisplayMode": "stack",
+            "autoRotate": true,
+            "showViewAll": true,
+            "localityIds": [
+              "roadpali"
+            ]
+          },
+          {
+            "id": "home_roadpali_template_trust",
+            "sectionType": "trust_strip",
+            "title": "Trust Highlights",
+            "subtitle": "Closing reassurance and platform trust points",
+            "status": "active",
+            "visible": true,
+            "sortOrder": 180,
+            "showViewAll": false,
+            "localityIds": [
+              "roadpali"
+            ]
+          }
+        ],
+        "sectionBusinessIdsBySection": {
+          "home_roadpali_template_featured": [
+            "s1",
+            "s3",
+            "b11"
+          ],
+          "home_roadpali_template_food_shelf": [
+            "b_kh1",
+            "b11",
+            "b_pv2"
+          ],
+          "home_roadpali_template_health_shelf": [
+            "s3"
+          ],
+          "home_roadpali_template_beauty_shelf": [
+            "s1",
+            "s3"
+          ],
+          "home_roadpali_template_verified": [
+            "s13",
+            "s8",
+            "s10",
+            "s7",
+            "s4",
+            "s11",
+            "b_tj2",
+            "b_km2",
+            "b_pv2",
+            "s14",
+            "s6",
+            "s5"
+          ]
+        },
+        "heroBanners": [],
+        "listingAds": [],
+        "sponsoredListings": [],
+        "sponsoredCampaigns": [],
+        "offers": [],
+        "contentBlocks": [
+          {
+            "id": "upd_roadpali_deal_1",
+            "type": "deal",
+            "title": "Launch deal: hair spa and grooming offers in Roadpali",
+            "content": "5 Elements is running a locality-targeted launch offer for hair spa, styling, and festive grooming appointments this month.",
+            "authorName": "Vikas Jaiswal",
+            "createdAt": "2026-06-13T07:00:00Z",
+            "publishAt": "2026-06-13T07:00:00Z",
+            "businessId": "s1",
+            "localityId": "roadpali",
+            "likes": 18,
+            "dealPromoCode": "ROADPALI-GLOW20",
+            "isSponsored": true,
+            "status": "published",
+            "image": "https://images.unsplash.com/photo-1562322140-8baeececf3df?auto=format&fit=crop&w=640&q=80"
+          },
+          {
+            "id": "upd_roadpali_launch_1",
+            "type": "post",
+            "title": "Roadpali launch week: featured salons and dining now live",
+            "content": "The Roadpali homepage now highlights verified premium salons, family dining picks, and launch-window offers for nearby residents.",
+            "authorName": "Localisy Content Desk",
+            "createdAt": "2026-06-12T08:30:00Z",
+            "publishAt": "2026-06-12T08:30:00Z",
+            "localityId": "roadpali",
+            "likes": 12,
+            "status": "published",
+            "image": "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=640&q=80"
+          }
+        ],
+        "resolvedAt": "2026-08-23T18:48:36.669Z"
+      },
+      "publishedAt": "2026-08-23T18:48:36.669Z",
+      "updatedAt": "2026-08-23T18:48:36.669Z"
+    },
+    {
+      "id": "snapshot_taloja_all_all_all_all_all_homepage",
+      "localityId": "taloja",
+      "categoryId": "",
+      "subcategoryId": "",
+      "pincode": "",
+      "placementKey": "",
+      "deviceTarget": "all",
+      "pageType": "homepage",
+      "payload": {
+        "context": {
+          "localityId": "taloja",
+          "categoryId": "",
+          "subcategoryId": "",
+          "pincode": "",
+          "device": "all",
+          "pageType": "homepage",
+          "placementKey": "",
+          "date": "2026-08-23"
+        },
+        "template": null,
+        "sections": [],
+        "sectionBusinessIdsBySection": {},
+        "heroBanners": [
+          {
+            "id": "hero_taloja",
+            "localityId": "taloja",
+            "title": "Hyper Local Directory for Taloja",
+            "subtitle": "Discover massive tooling industries, hardware stores, professional technical consultants, and logistics solutions based in Taloja. verified reviews, location-grabbing utilities, and dynamic approval tracking.",
+            "imageUrl": "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=800&q=80",
+            "startDate": "2026-01-01",
+            "endDate": "2027-01-01",
+            "ctaLabel": "Explore Businesses",
+            "ctaType": "search_category",
+            "ctaTarget": "all",
+            "isActive": true
+          }
+        ],
+        "listingAds": [],
+        "sponsoredListings": [],
+        "sponsoredCampaigns": [],
+        "offers": [],
+        "contentBlocks": [],
+        "resolvedAt": "2026-08-23T18:48:36.617Z"
+      },
+      "publishedAt": "2026-08-23T18:48:36.617Z",
+      "updatedAt": "2026-08-23T18:48:36.617Z"
+    },
+    {
+      "id": "snapshot_panvel_all_all_all_all_all_homepage",
+      "localityId": "panvel",
+      "categoryId": "",
+      "subcategoryId": "",
+      "pincode": "",
+      "placementKey": "",
+      "deviceTarget": "all",
+      "pageType": "homepage",
+      "payload": {
+        "context": {
+          "localityId": "panvel",
+          "categoryId": "",
+          "subcategoryId": "",
+          "pincode": "",
+          "device": "all",
+          "pageType": "homepage",
+          "placementKey": "",
+          "date": "2026-08-23"
+        },
+        "template": null,
+        "sections": [],
+        "sectionBusinessIdsBySection": {},
+        "heroBanners": [
+          {
+            "id": "hero_panvel",
+            "localityId": "panvel",
+            "title": "Hyper Local Directory for Panvel",
+            "subtitle": "Explore the traditional commercial capital of Navi Mumbai with historical food courts, diagnostic healthcare clinics, and transport centers. verified reviews, location-grabbing utilities, and dynamic approval tracking.",
+            "imageUrl": "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=800&q=80",
+            "startDate": "2026-01-01",
+            "endDate": "2027-01-01",
+            "ctaLabel": "Explore Businesses",
+            "ctaType": "search_category",
+            "ctaTarget": "all",
+            "isActive": true
+          }
+        ],
+        "listingAds": [],
+        "sponsoredListings": [],
+        "sponsoredCampaigns": [],
+        "offers": [],
+        "contentBlocks": [],
+        "resolvedAt": "2026-08-23T18:48:36.617Z"
+      },
+      "publishedAt": "2026-08-23T18:48:36.617Z",
+      "updatedAt": "2026-08-23T18:48:36.617Z"
+    },
+    {
+      "id": "snapshot_cbdbelapur_all_all_all_all_all_homepage",
+      "localityId": "cbdbelapur",
+      "categoryId": "",
+      "subcategoryId": "",
+      "pincode": "",
+      "placementKey": "",
+      "deviceTarget": "all",
+      "pageType": "homepage",
+      "payload": {
+        "context": {
+          "localityId": "cbdbelapur",
+          "categoryId": "",
+          "subcategoryId": "",
+          "pincode": "",
+          "device": "all",
+          "pageType": "homepage",
+          "placementKey": "",
+          "date": "2026-08-23"
+        },
+        "template": {
+          "id": "tpl_homepage_cbdbelapur",
+          "name": "CBD Belapur Homepage",
+          "templateScope": "locality",
+          "isFallback": true
+        },
+        "sections": [
+          {
+            "id": "home_cbdbelapur_template_hero",
+            "sectionType": "hero_banner",
+            "title": "Hero: CBD Belapur",
+            "subtitle": "Primary visual banner for CBD Belapur",
+            "status": "active",
+            "visible": true,
+            "sortOrder": 10,
+            "ctaLabel": "Explore Businesses",
+            "ctaType": "search_category",
+            "ctaTarget": "all",
+            "showViewAll": false,
+            "localityIds": [
+              "cbdbelapur"
+            ],
+            "pincodes": [],
+            "categoryIds": [],
+            "maxItems": 6,
+            "visibleSlots": 4,
+            "desktopCardCount": 4,
+            "mobileCardCount": 2,
+            "mobileDisplayMode": "carousel",
+            "listingSourceMode": "auto",
+            "pinnedBusinessIds": [],
+            "autoRotate": true,
+            "rotationIntervalSec": 3,
+            "startDate": "2026-08-23"
+          },
+          {
+            "id": "home_cbdbelapur_template_search",
+            "sectionType": "search_discovery",
+            "title": "Search & Discover",
+            "subtitle": "Locality-aware search with quick categories",
+            "status": "active",
+            "visible": true,
+            "sortOrder": 20,
+            "showViewAll": false,
+            "localityIds": [
+              "cbdbelapur"
+            ],
+            "pincodes": [],
+            "categoryIds": [],
+            "ctaType": "none",
+            "maxItems": 6,
+            "visibleSlots": 4,
+            "desktopCardCount": 4,
+            "mobileCardCount": 2,
+            "mobileDisplayMode": "carousel",
+            "listingSourceMode": "auto",
+            "pinnedBusinessIds": [],
+            "autoRotate": true,
+            "rotationIntervalSec": 3
+          },
+          {
+            "id": "home_cbdbelapur_template_emergency",
+            "sectionType": "emergency_grid",
+            "title": "Emergency Services",
+            "subtitle": "Critical support nearby",
+            "status": "active",
+            "visible": true,
+            "sortOrder": 30,
+            "categoryIds": [
+              "health-medical",
+              "home-services",
+              "automotive"
+            ],
+            "maxItems": 8,
+            "visibleSlots": 8,
+            "showViewAll": true,
+            "localityIds": [
+              "cbdbelapur"
+            ],
+            "pincodes": [],
+            "ctaType": "none",
+            "desktopCardCount": 8,
+            "mobileCardCount": 2,
+            "mobileDisplayMode": "carousel",
+            "listingSourceMode": "auto",
+            "pinnedBusinessIds": [],
+            "autoRotate": true,
+            "rotationIntervalSec": 3
+          },
+          {
+            "id": "home_cbdbelapur_template_promo",
+            "sectionType": "promo_banner",
+            "title": "Promoted This Week",
+            "subtitle": "Scheduled paid banner placement",
+            "status": "active",
+            "visible": true,
+            "sortOrder": 40,
+            "placementKey": "homepage_inline_primary",
+            "showViewAll": false,
+            "localityIds": [
+              "cbdbelapur"
+            ],
+            "pincodes": [],
+            "categoryIds": [],
+            "ctaType": "none",
+            "maxItems": 6,
+            "visibleSlots": 4,
+            "desktopCardCount": 4,
+            "mobileCardCount": 2,
+            "mobileDisplayMode": "carousel",
+            "listingSourceMode": "auto",
+            "pinnedBusinessIds": [],
+            "autoRotate": true,
+            "rotationIntervalSec": 3
+          },
+          {
+            "id": "home_cbdbelapur_template_featured",
+            "sectionType": "featured_businesses",
+            "title": "Premium Featured Businesses",
+            "subtitle": "Priority merchants in this locality",
+            "status": "active",
+            "visible": true,
+            "sortOrder": 50,
+            "maxItems": 6,
+            "visibleSlots": 3,
+            "desktopCardCount": 3,
+            "mobileCardCount": 2,
+            "mobileDisplayMode": "carousel",
+            "autoRotate": true,
+            "showViewAll": true,
+            "localityIds": [
+              "cbdbelapur"
+            ],
+            "pincodes": [],
+            "categoryIds": [],
+            "ctaType": "none",
+            "listingSourceMode": "auto",
+            "pinnedBusinessIds": [],
+            "rotationIntervalSec": 3
+          },
+          {
+            "id": "home_cbdbelapur_template_food_shelf",
+            "sectionType": "business_shelf",
+            "title": "Home Kitchens & Bakers",
+            "subtitle": "Curated shelf with repeatable category merchandising",
+            "status": "active",
+            "visible": true,
+            "sortOrder": 60,
+            "categoryId": "food-restaurants",
+            "maxItems": 6,
+            "visibleSlots": 4,
+            "desktopCardCount": 4,
+            "mobileCardCount": 2,
+            "mobileDisplayMode": "carousel",
+            "autoRotate": true,
+            "showViewAll": true,
+            "localityIds": [
+              "cbdbelapur"
+            ],
+            "pincodes": [],
+            "categoryIds": [],
+            "ctaType": "none",
+            "listingSourceMode": "auto",
+            "pinnedBusinessIds": [],
+            "rotationIntervalSec": 3
+          },
+          {
+            "id": "home_cbdbelapur_template_health_shelf",
+            "sectionType": "business_shelf",
+            "title": "Doctors & Clinics",
+            "subtitle": "Verified health and care businesses in this locality",
+            "status": "active",
+            "visible": true,
+            "sortOrder": 70,
+            "categoryId": "health-medical",
+            "maxItems": 6,
+            "visibleSlots": 4,
+            "desktopCardCount": 4,
+            "mobileCardCount": 2,
+            "mobileDisplayMode": "stack",
+            "autoRotate": true,
+            "showViewAll": true,
+            "localityIds": [
+              "cbdbelapur"
+            ],
+            "pincodes": [],
+            "categoryIds": [],
+            "ctaType": "none",
+            "listingSourceMode": "auto",
+            "pinnedBusinessIds": [],
+            "rotationIntervalSec": 3
+          },
+          {
+            "id": "home_cbdbelapur_template_home_shelf",
+            "sectionType": "business_shelf",
+            "title": "Home Services Near You",
+            "subtitle": "Quick access to trusted electricians, plumbers, and repair pros",
+            "status": "active",
+            "visible": true,
+            "sortOrder": 80,
+            "categoryId": "home-services",
+            "maxItems": 6,
+            "visibleSlots": 4,
+            "desktopCardCount": 4,
+            "mobileCardCount": 2,
+            "mobileDisplayMode": "carousel",
+            "autoRotate": true,
+            "showViewAll": true,
+            "localityIds": [
+              "cbdbelapur"
+            ],
+            "pincodes": [],
+            "categoryIds": [],
+            "ctaType": "none",
+            "listingSourceMode": "auto",
+            "pinnedBusinessIds": [],
+            "rotationIntervalSec": 3
+          },
+          {
+            "id": "home_cbdbelapur_template_domestic_strip",
+            "sectionType": "text_business_strip",
+            "title": "Maid & Domestic Help",
+            "subtitle": "Trusted daily support professionals nearby",
+            "status": "active",
+            "visible": true,
+            "sortOrder": 90,
+            "categoryId": "home-services",
+            "maxItems": 4,
+            "visibleSlots": 4,
+            "desktopCardCount": 4,
+            "mobileCardCount": 2,
+            "mobileDisplayMode": "stack",
+            "showViewAll": true,
+            "localityIds": [
+              "cbdbelapur"
+            ],
+            "pincodes": [],
+            "categoryIds": [],
+            "ctaType": "none",
+            "listingSourceMode": "auto",
+            "pinnedBusinessIds": [],
+            "autoRotate": true,
+            "rotationIntervalSec": 3
+          },
+          {
+            "id": "home_cbdbelapur_template_beauty_shelf",
+            "sectionType": "business_shelf",
+            "title": "Beauty & Wellness Picks",
+            "subtitle": "Salons, skin care, and grooming experts around you",
+            "status": "active",
+            "visible": true,
+            "sortOrder": 100,
+            "categoryId": "beauty-wellness",
+            "maxItems": 6,
+            "visibleSlots": 4,
+            "desktopCardCount": 4,
+            "mobileCardCount": 2,
+            "mobileDisplayMode": "carousel",
+            "autoRotate": true,
+            "showViewAll": true,
+            "localityIds": [
+              "cbdbelapur"
+            ],
+            "pincodes": [],
+            "categoryIds": [],
+            "ctaType": "none",
+            "listingSourceMode": "auto",
+            "pinnedBusinessIds": [],
+            "rotationIntervalSec": 3
+          },
+          {
+            "id": "home_cbdbelapur_template_retail_shelf",
+            "sectionType": "business_shelf",
+            "title": "Groceries & Daily Needs",
+            "subtitle": "Everyday essentials from trusted nearby stores",
+            "status": "active",
+            "visible": true,
+            "sortOrder": 110,
+            "categoryId": "shopping-retail",
+            "maxItems": 6,
+            "visibleSlots": 4,
+            "desktopCardCount": 4,
+            "mobileCardCount": 2,
+            "mobileDisplayMode": "carousel",
+            "autoRotate": true,
+            "showViewAll": true,
+            "localityIds": [
+              "cbdbelapur"
+            ],
+            "pincodes": [],
+            "categoryIds": [],
+            "ctaType": "none",
+            "listingSourceMode": "auto",
+            "pinnedBusinessIds": [],
+            "rotationIntervalSec": 3
+          },
+          {
+            "id": "home_cbdbelapur_template_care_strip",
+            "sectionType": "text_business_strip",
+            "title": "Clinic & Care Experts",
+            "subtitle": "Text-first local listings for quick comparison",
+            "status": "active",
+            "visible": true,
+            "sortOrder": 120,
+            "categoryId": "health-medical",
+            "maxItems": 4,
+            "visibleSlots": 4,
+            "desktopCardCount": 4,
+            "mobileCardCount": 2,
+            "mobileDisplayMode": "stack",
+            "showViewAll": true,
+            "localityIds": [
+              "cbdbelapur"
+            ],
+            "pincodes": [],
+            "categoryIds": [],
+            "ctaType": "none",
+            "listingSourceMode": "auto",
+            "pinnedBusinessIds": [],
+            "autoRotate": true,
+            "rotationIntervalSec": 3
+          },
+          {
+            "id": "home_cbdbelapur_template_education_strip",
+            "sectionType": "text_business_strip",
+            "title": "Tutors & Training Experts",
+            "subtitle": "Quick-compare local education and coaching listings",
+            "status": "active",
+            "visible": true,
+            "sortOrder": 130,
+            "categoryId": "education-training",
+            "maxItems": 4,
+            "visibleSlots": 4,
+            "desktopCardCount": 4,
+            "mobileCardCount": 2,
+            "mobileDisplayMode": "stack",
+            "showViewAll": true,
+            "localityIds": [
+              "cbdbelapur"
+            ],
+            "pincodes": [],
+            "categoryIds": [],
+            "ctaType": "none",
+            "listingSourceMode": "auto",
+            "pinnedBusinessIds": [],
+            "autoRotate": true,
+            "rotationIntervalSec": 3
+          },
+          {
+            "id": "home_cbdbelapur_template_categories",
+            "sectionType": "category_grid",
+            "title": "Explore by Categories",
+            "subtitle": "Jump into high-intent categories",
+            "status": "active",
+            "visible": true,
+            "sortOrder": 140,
+            "categoryIds": [
+              "food-restaurants",
+              "health-medical",
+              "beauty-wellness",
+              "home-services",
+              "shopping-retail",
+              "education-training",
+              "professional-services",
+              "automotive"
+            ],
+            "maxItems": 12,
+            "visibleSlots": 12,
+            "showViewAll": true,
+            "localityIds": [
+              "cbdbelapur"
+            ],
+            "pincodes": [],
+            "ctaType": "none",
+            "desktopCardCount": 12,
+            "mobileCardCount": 2,
+            "mobileDisplayMode": "carousel",
+            "listingSourceMode": "auto",
+            "pinnedBusinessIds": [],
+            "autoRotate": true,
+            "rotationIntervalSec": 3
+          },
+          {
+            "id": "home_cbdbelapur_template_offers",
+            "sectionType": "offers_list",
+            "title": "Offers & Deals",
+            "subtitle": "Scheduled offers filtered by locality and pincode",
+            "status": "active",
+            "visible": true,
+            "sortOrder": 150,
+            "maxItems": 4,
+            "showViewAll": true,
+            "localityIds": [
+              "cbdbelapur"
+            ],
+            "pincodes": [],
+            "categoryIds": [],
+            "ctaType": "none",
+            "visibleSlots": 4,
+            "desktopCardCount": 4,
+            "mobileCardCount": 2,
+            "mobileDisplayMode": "carousel",
+            "listingSourceMode": "auto",
+            "pinnedBusinessIds": [],
+            "autoRotate": true,
+            "rotationIntervalSec": 3
+          },
+          {
+            "id": "home_cbdbelapur_template_updates",
+            "sectionType": "updates_feed",
+            "title": "CBD Belapur Updates",
+            "subtitle": "Timed announcements and community updates",
+            "status": "active",
+            "visible": true,
+            "sortOrder": 160,
+            "maxItems": 4,
+            "showViewAll": true,
+            "localityIds": [
+              "cbdbelapur"
+            ],
+            "pincodes": [],
+            "categoryIds": [],
+            "ctaType": "none",
+            "visibleSlots": 4,
+            "desktopCardCount": 4,
+            "mobileCardCount": 2,
+            "mobileDisplayMode": "carousel",
+            "listingSourceMode": "auto",
+            "pinnedBusinessIds": [],
+            "autoRotate": true,
+            "rotationIntervalSec": 3
+          },
+          {
+            "id": "home_cbdbelapur_template_verified",
+            "sectionType": "verified_business_grid",
+            "title": "Verified Businesses Near You",
+            "subtitle": "Trusted approved listings for this locality",
+            "status": "active",
+            "visible": true,
+            "sortOrder": 170,
+            "maxItems": 9,
+            "visibleSlots": 5,
+            "desktopCardCount": 5,
+            "mobileCardCount": 2,
+            "mobileDisplayMode": "stack",
+            "autoRotate": true,
+            "showViewAll": true,
+            "localityIds": [
+              "cbdbelapur"
+            ],
+            "pincodes": [],
+            "categoryIds": [],
+            "ctaType": "none",
+            "listingSourceMode": "auto",
+            "pinnedBusinessIds": [],
+            "rotationIntervalSec": 3
+          },
+          {
+            "id": "home_cbdbelapur_template_trust",
+            "sectionType": "trust_strip",
+            "title": "Trust Highlights",
+            "subtitle": "Closing reassurance and platform trust points",
+            "status": "active",
+            "visible": true,
+            "sortOrder": 180,
+            "showViewAll": false,
+            "localityIds": [
+              "cbdbelapur"
+            ],
+            "pincodes": [],
+            "categoryIds": [],
+            "ctaType": "none",
+            "maxItems": 6,
+            "visibleSlots": 4,
+            "desktopCardCount": 4,
+            "mobileCardCount": 2,
+            "mobileDisplayMode": "carousel",
+            "listingSourceMode": "auto",
+            "pinnedBusinessIds": [],
+            "autoRotate": true,
+            "rotationIntervalSec": 3
+          }
+        ],
+        "sectionBusinessIdsBySection": {
+          "home_cbdbelapur_template_featured": [],
+          "home_cbdbelapur_template_food_shelf": [],
+          "home_cbdbelapur_template_health_shelf": [],
+          "home_cbdbelapur_template_home_shelf": [],
+          "home_cbdbelapur_template_domestic_strip": [],
+          "home_cbdbelapur_template_beauty_shelf": [],
+          "home_cbdbelapur_template_retail_shelf": [],
+          "home_cbdbelapur_template_care_strip": [],
+          "home_cbdbelapur_template_education_strip": [],
+          "home_cbdbelapur_template_verified": []
+        },
+        "heroBanners": [],
+        "listingAds": [],
+        "sponsoredListings": [],
+        "sponsoredCampaigns": [],
+        "offers": [],
+        "contentBlocks": [],
+        "resolvedAt": "2026-08-23T18:48:36.616Z"
+      },
+      "publishedAt": "2026-08-23T18:48:36.616Z",
+      "updatedAt": "2026-08-23T18:48:36.616Z"
+    },
+    {
+      "id": "snapshot_kharghar_all_all_all_all_all_homepage",
+      "localityId": "kharghar",
+      "categoryId": "",
+      "subcategoryId": "",
+      "pincode": "",
+      "placementKey": "",
+      "deviceTarget": "all",
+      "pageType": "homepage",
+      "payload": {
+        "context": {
+          "localityId": "kharghar",
+          "categoryId": "",
+          "subcategoryId": "",
+          "pincode": "",
+          "device": "all",
+          "pageType": "homepage",
+          "placementKey": "",
+          "date": "2026-08-23"
+        },
+        "template": null,
+        "sections": [],
+        "sectionBusinessIdsBySection": {},
+        "heroBanners": [
+          {
+            "id": "hero_kharghar",
+            "localityId": "kharghar",
+            "title": "Hyper Local Directory for Kharghar",
+            "subtitle": "Find premium cafes, sports courts, wellness lounges, and educational consulting services in the highly aesthetic node of Kharghar. verified reviews, location-grabbing utilities, and dynamic approval tracking.",
+            "imageUrl": "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=800&q=80",
+            "startDate": "2026-01-01",
+            "endDate": "2027-01-01",
+            "ctaLabel": "Explore Businesses",
+            "ctaType": "search_category",
+            "ctaTarget": "all",
+            "isActive": true
+          }
+        ],
+        "listingAds": [],
+        "sponsoredListings": [],
+        "sponsoredCampaigns": [],
+        "offers": [],
+        "contentBlocks": [],
+        "resolvedAt": "2026-08-23T18:48:36.616Z"
+      },
+      "publishedAt": "2026-08-23T18:48:36.616Z",
+      "updatedAt": "2026-08-23T18:48:36.616Z"
+    },
+    {
+      "id": "snapshot_kamothe_all_all_all_all_all_homepage",
+      "localityId": "kamothe",
+      "categoryId": "",
+      "subcategoryId": "",
+      "pincode": "",
+      "placementKey": "",
+      "deviceTarget": "all",
+      "pageType": "homepage",
+      "payload": {
+        "context": {
+          "localityId": "kamothe",
+          "categoryId": "",
+          "subcategoryId": "",
+          "pincode": "",
+          "device": "all",
+          "pageType": "homepage",
+          "placementKey": "",
+          "date": "2026-08-23"
+        },
+        "template": null,
+        "sections": [],
+        "sectionBusinessIdsBySection": {},
+        "heroBanners": [
+          {
+            "id": "hero_kamothe",
+            "localityId": "kamothe",
+            "title": "Hyper Local Directory for Kamothe",
+            "subtitle": "Connect with local supermarkets, home appliances workshops, tuition centers, and dental clinics across Kamothe nodes. verified reviews, location-grabbing utilities, and dynamic approval tracking.",
+            "imageUrl": "https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=800&q=80",
+            "startDate": "2026-01-01",
+            "endDate": "2027-01-01",
+            "ctaLabel": "Explore Businesses",
+            "ctaType": "search_category",
+            "ctaTarget": "all",
+            "isActive": true
+          }
+        ],
+        "listingAds": [],
+        "sponsoredListings": [],
+        "sponsoredCampaigns": [],
+        "offers": [],
+        "contentBlocks": [],
+        "resolvedAt": "2026-08-23T18:48:36.616Z"
+      },
+      "publishedAt": "2026-08-23T18:48:36.616Z",
+      "updatedAt": "2026-08-23T18:48:36.616Z"
+    }
+  ],
+  "metadata": {
+    "seededFromLegacy": true,
+    "notes": "Seeded automatically from legacy homepage configuration and sponsored listing flags.",
+    "updatedAt": "2026-08-23T18:48:36.670Z"
+  }
+}
