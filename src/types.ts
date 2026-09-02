@@ -11,6 +11,7 @@ export interface Locality {
     numPending: number;
   };
   carouselImages?: string[]; // Multiple hero banners
+  cityId?: string;
 }
 
 export interface PincodeRoutingMapping {
@@ -60,7 +61,7 @@ export interface Business {
   
   // discovery engine properties
   distance?: number; // Distance in km
-  priceRange?: 'â‚¹' | 'â‚¹â‚¹' | 'â‚¹â‚¹â‚¹' | 'â‚¹â‚¹â‚¹â‚¹';
+  priceRange?: '₹' | '₹₹' | '₹₹₹' | '₹₹₹₹';
   deliveryAvailable?: boolean;
   hasOffers?: boolean;
   languagesSpoken?: string[];
@@ -178,6 +179,7 @@ export interface MarketingCoupon {
   badgeText?: string;
   ctaText?: string;
   targetBusinessId?: string;
+  status?: string;
 }
 
 export interface ListingAd {
@@ -260,6 +262,7 @@ export interface HeroBanner {
   pincodes?: string[];
   heroStats?: HeroBannerStat[];
   isActive: boolean;
+  updatedAt?: string;
 }
 
 export interface HeroBannerStat {

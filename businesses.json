@@ -6,7 +6,7 @@
     "subcategoryId": "salons",
     "localityId": "roadpali",
     "stateId": "mh",
-    "cityId": "navimumbai",
+    "cityId": "panvel",
     "areaId": "roadpali-sec17",
     "areasOfOperation": [
       "roadpali-sec17",
@@ -29,7 +29,14 @@
       "Styling",
       "Facial",
       "Grooming",
-      "Family Salon"
+      "Family Salon",
+      "Premier family salon in Sector 17 providing luxury haircuts",
+      "dynamic hair styling",
+      "refreshing facials",
+      "and personalized grooming services inside an elite ambience.",
+      "beauty-wellness",
+      "salons",
+      "Beauty & Wellness"
     ],
     "hours": "09:00 AM - 09:30 PM",
     "ownerName": "Vikas Jaiswal",
@@ -62,7 +69,38 @@
     "repeatCustomerScore": 92,
     "isMonthlySubscriber": true,
     "subscriptionPlan": "premium",
-    "pincode": "410218"
+    "pincode": "410218",
+    "slug": "5-elements-family-salon-s1",
+    "businessTypes": [
+      "Beauty & Wellness"
+    ],
+    "serviceTypes": [
+      "Salons"
+    ],
+    "logoUrl": "https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=500&q=80",
+    "coverImageUrl": "https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=500&q=80",
+    "galleryUrls": [
+      "https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=500&q=80"
+    ],
+    "verificationTags": [
+      "Verified listing",
+      "KYC verified",
+      "Gov registered"
+    ],
+    "domainMappingTags": [
+      "roadpali",
+      "beauty-wellness",
+      "salons"
+    ],
+    "seoPremiumEnabled": true,
+    "taxonomyMapped": true
   },
   {
     "id": "s2",
@@ -71,7 +109,7 @@
     "subcategoryId": "salons",
     "localityId": "kalamboli",
     "stateId": "mh",
-    "cityId": "navimumbai",
+    "cityId": "panvel",
     "areaId": "kalamboli-sec11",
     "areasOfOperation": [
       "kalamboli-sec11",
@@ -94,7 +132,13 @@
       "Hair Academy",
       "Bridal",
       "Course",
-      "Nail Art"
+      "Nail Art",
+      "Elite cosmetic training institute and full-service beauty spa specializing in bridal transformations",
+      "deep therapeutic spa processes",
+      "and certified hairdressing styles.",
+      "beauty-wellness",
+      "salons",
+      "Beauty & Wellness"
     ],
     "hours": "10:00 AM - 09:00 PM",
     "ownerName": "Priya Shinde",
@@ -127,7 +171,38 @@
     "repeatCustomerScore": 88,
     "isMonthlySubscriber": true,
     "subscriptionPlan": "premium",
-    "pincode": "410218"
+    "pincode": "410218",
+    "slug": "majestic-salon-spa-and-academy-s2",
+    "businessTypes": [
+      "Beauty & Wellness"
+    ],
+    "serviceTypes": [
+      "Salons"
+    ],
+    "logoUrl": "https://images.unsplash.com/photo-1521590832167-7bcbfaa6381f?auto=format&fit=crop&w=500&q=80",
+    "coverImageUrl": "https://images.unsplash.com/photo-1521590832167-7bcbfaa6381f?auto=format&fit=crop&w=500&q=80",
+    "galleryUrls": [
+      "https://images.unsplash.com/photo-1521590832167-7bcbfaa6381f?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1521590832167-7bcbfaa6381f?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1521590832167-7bcbfaa6381f?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1521590832167-7bcbfaa6381f?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1521590832167-7bcbfaa6381f?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1521590832167-7bcbfaa6381f?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1521590832167-7bcbfaa6381f?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1521590832167-7bcbfaa6381f?auto=format&fit=crop&w=500&q=80"
+    ],
+    "verificationTags": [
+      "Verified listing",
+      "KYC verified",
+      "Gov registered"
+    ],
+    "domainMappingTags": [
+      "kalamboli",
+      "beauty-wellness",
+      "salons"
+    ],
+    "seoPremiumEnabled": true,
+    "taxonomyMapped": true
   },
   {
     "id": "s3",
@@ -136,7 +211,7 @@
     "subcategoryId": "salons",
     "localityId": "roadpali",
     "stateId": "mh",
-    "cityId": "navimumbai",
+    "cityId": "panvel",
     "areaId": "roadpali-sec9e",
     "areasOfOperation": [
       "roadpali-sec9e",
@@ -158,7 +233,14 @@
       "Hair Coloring",
       "Botox Treatment",
       "Skin Clinic",
-      "Spa"
+      "Spa",
+      "International benchmark standards in hair highlights",
+      "advanced Keratin and Botox hair therapies",
+      "facial clinical aesthetics",
+      "and expert beauty counseling.",
+      "beauty-wellness",
+      "salons",
+      "Beauty & Wellness"
     ],
     "hours": "10:00 AM - 08:30 PM",
     "ownerName": "Meenakshi Shetty",
@@ -190,16 +272,47 @@
     "repeatCustomerScore": 86,
     "isMonthlySubscriber": true,
     "subscriptionPlan": "basic",
-    "pincode": "410218"
+    "pincode": "410218",
+    "slug": "colorq-international-salon-beauty-and-wellness-clinic-s3",
+    "businessTypes": [
+      "Beauty & Wellness"
+    ],
+    "serviceTypes": [
+      "Salons"
+    ],
+    "logoUrl": "https://images.unsplash.com/photo-1562322140-8baeececf3df?auto=format&fit=crop&w=500&q=80",
+    "coverImageUrl": "https://images.unsplash.com/photo-1562322140-8baeececf3df?auto=format&fit=crop&w=500&q=80",
+    "galleryUrls": [
+      "https://images.unsplash.com/photo-1562322140-8baeececf3df?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1562322140-8baeececf3df?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1562322140-8baeececf3df?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1562322140-8baeececf3df?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1562322140-8baeececf3df?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1562322140-8baeececf3df?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1562322140-8baeececf3df?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1562322140-8baeececf3df?auto=format&fit=crop&w=500&q=80"
+    ],
+    "verificationTags": [
+      "Verified listing",
+      "KYC verified",
+      "Gov registered"
+    ],
+    "domainMappingTags": [
+      "roadpali",
+      "beauty-wellness",
+      "salons"
+    ],
+    "seoPremiumEnabled": false,
+    "taxonomyMapped": true
   },
   {
     "id": "s4",
     "name": "Cutz N Curlz Unisex Salon & Academy",
     "categoryId": "beauty-wellness",
     "subcategoryId": "salons",
-    "localityId": "kalamboli",
+    "localityId": "roadpali",
     "stateId": "mh",
-    "cityId": "navimumbai",
+    "cityId": "panvel",
     "areaId": "roadpali-sec17",
     "areasOfOperation": [
       "roadpali-sec17",
@@ -219,7 +332,13 @@
       "Hair Styling",
       "Unisex Grooming",
       "Barber",
-      "Nails"
+      "Nails",
+      "Popular unisex styling parlour and training institute with complete courses in hairdressing",
+      "barbering",
+      "and skin care programs.",
+      "beauty-wellness",
+      "salons",
+      "Beauty & Wellness"
     ],
     "hours": "09:30 AM - 09:00 PM",
     "ownerName": "Zubair Shaikh",
@@ -251,7 +370,38 @@
     "repeatCustomerScore": 84,
     "isMonthlySubscriber": false,
     "subscriptionPlan": "free",
-    "pincode": "410218"
+    "pincode": "410218",
+    "slug": "cutz-n-curlz-unisex-salon-and-academy-s4",
+    "businessTypes": [
+      "Beauty & Wellness"
+    ],
+    "serviceTypes": [
+      "Salons"
+    ],
+    "logoUrl": "https://images.unsplash.com/photo-1605497746444-ac9dbd4d3ce9?auto=format&fit=crop&w=500&q=80",
+    "coverImageUrl": "https://images.unsplash.com/photo-1605497746444-ac9dbd4d3ce9?auto=format&fit=crop&w=500&q=80",
+    "galleryUrls": [
+      "https://images.unsplash.com/photo-1605497746444-ac9dbd4d3ce9?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1605497746444-ac9dbd4d3ce9?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1605497746444-ac9dbd4d3ce9?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1605497746444-ac9dbd4d3ce9?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1605497746444-ac9dbd4d3ce9?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1605497746444-ac9dbd4d3ce9?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1605497746444-ac9dbd4d3ce9?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1605497746444-ac9dbd4d3ce9?auto=format&fit=crop&w=500&q=80"
+    ],
+    "verificationTags": [
+      "Verified listing",
+      "KYC verified",
+      "Gov registered"
+    ],
+    "domainMappingTags": [
+      "kalamboli",
+      "beauty-wellness",
+      "salons"
+    ],
+    "seoPremiumEnabled": false,
+    "taxonomyMapped": true
   },
   {
     "id": "s5",
@@ -260,7 +410,7 @@
     "subcategoryId": "salons",
     "localityId": "roadpali",
     "stateId": "mh",
-    "cityId": "navimumbai",
+    "cityId": "panvel",
     "areaId": "roadpali-sec15",
     "areasOfOperation": [
       "roadpali-sec15",
@@ -279,7 +429,14 @@
     "tags": [
       "Haircut",
       "Grooming",
-      "Beard Trim"
+      "Beard Trim",
+      "Bespoke grooming services",
+      "modern hair setups",
+      "beard contouring",
+      "and express facials for families on Sector 15.",
+      "beauty-wellness",
+      "salons",
+      "Beauty & Wellness"
     ],
     "hours": "10:00 AM - 09:30 PM",
     "ownerName": "Vicky Rajput",
@@ -310,7 +467,34 @@
     "repeatCustomerScore": 75,
     "isMonthlySubscriber": false,
     "subscriptionPlan": "free",
-    "pincode": "410218"
+    "pincode": "410218",
+    "slug": "vroyal-family-salon-s5",
+    "businessTypes": [
+      "Beauty & Wellness"
+    ],
+    "serviceTypes": [
+      "Salons"
+    ],
+    "logoUrl": "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=500&q=80",
+    "coverImageUrl": "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=500&q=80",
+    "galleryUrls": [
+      "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=500&q=80"
+    ],
+    "verificationTags": [],
+    "domainMappingTags": [
+      "roadpali",
+      "beauty-wellness",
+      "salons"
+    ],
+    "seoPremiumEnabled": false,
+    "taxonomyMapped": true
   },
   {
     "id": "s7",
@@ -319,7 +503,7 @@
     "subcategoryId": "salons",
     "localityId": "roadpali",
     "stateId": "mh",
-    "cityId": "navimumbai",
+    "cityId": "panvel",
     "areaId": "roadpali-sec17",
     "areasOfOperation": [
       "roadpali-sec17"
@@ -338,7 +522,13 @@
       "Family Salon",
       "Barber Shop",
       "Hot Towel",
-      "Head Massage"
+      "Head Massage",
+      "Laid-back premium gentlemen & family grooming zone featuring high-tech reclining barber chairs",
+      "hot towel massages",
+      "and bespoke aesthetic cuts.",
+      "beauty-wellness",
+      "salons",
+      "Beauty & Wellness"
     ],
     "hours": "09:00 AM - 10:00 PM",
     "ownerName": "John DSouza",
@@ -370,7 +560,38 @@
     "repeatCustomerScore": 85,
     "isMonthlySubscriber": false,
     "subscriptionPlan": "free",
-    "pincode": "410218"
+    "pincode": "410218",
+    "slug": "goodfellas-family-salon-s7",
+    "businessTypes": [
+      "Beauty & Wellness"
+    ],
+    "serviceTypes": [
+      "Salons"
+    ],
+    "logoUrl": "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=500&q=80",
+    "coverImageUrl": "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=500&q=80",
+    "galleryUrls": [
+      "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=500&q=80"
+    ],
+    "verificationTags": [
+      "Verified listing",
+      "KYC verified",
+      "Gov registered"
+    ],
+    "domainMappingTags": [
+      "roadpali",
+      "beauty-wellness",
+      "salons"
+    ],
+    "seoPremiumEnabled": false,
+    "taxonomyMapped": true
   },
   {
     "id": "s8",
@@ -379,7 +600,7 @@
     "subcategoryId": "salons",
     "localityId": "roadpali",
     "stateId": "mh",
-    "cityId": "navimumbai",
+    "cityId": "panvel",
     "areaId": "roadpali-sec17",
     "areasOfOperation": [
       "roadpali-sec17",
@@ -399,7 +620,13 @@
       "Haircut",
       "Family Grooming",
       "Kids Cut",
-      "Nails"
+      "Nails",
+      "Luxurious family hair parlour and nail clinic with standard kids haircuts",
+      "modern hair spa treatments",
+      "and high-fashion aesthetics coloring.",
+      "beauty-wellness",
+      "salons",
+      "Beauty & Wellness"
     ],
     "hours": "10:00 AM - 09:30 PM",
     "ownerName": "Nisha Thakur",
@@ -432,16 +659,46 @@
     "repeatCustomerScore": 90,
     "isMonthlySubscriber": false,
     "subscriptionPlan": "free",
-    "pincode": "410218"
+    "pincode": "410218",
+    "slug": "barberry-bliss-family-salon-s8",
+    "businessTypes": [
+      "Beauty & Wellness"
+    ],
+    "serviceTypes": [
+      "Salons"
+    ],
+    "logoUrl": "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+    "coverImageUrl": "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+    "galleryUrls": [
+      "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80"
+    ],
+    "verificationTags": [
+      "Verified listing",
+      "Gov registered"
+    ],
+    "domainMappingTags": [
+      "roadpali",
+      "beauty-wellness",
+      "salons"
+    ],
+    "seoPremiumEnabled": false,
+    "taxonomyMapped": true
   },
   {
     "id": "s6",
     "name": "Final Touch Unisex Salon",
     "categoryId": "beauty-wellness",
     "subcategoryId": "salons",
-    "localityId": "kalamboli",
+    "localityId": "roadpali",
     "stateId": "mh",
-    "cityId": "navimumbai",
+    "cityId": "panvel",
     "areaId": "roadpali-sec9e",
     "areasOfOperation": [
       "roadpali-sec9e",
@@ -461,7 +718,14 @@
       "Haircut",
       "Beauty",
       "Unisex Salon",
-      "Nails"
+      "Nails",
+      "Expert highlights",
+      "skin clarifying therapies",
+      "complete bridal groom packages",
+      "and dynamic haircuts for all age brackets.",
+      "beauty-wellness",
+      "salons",
+      "Beauty & Wellness"
     ],
     "hours": "10:00 AM - 09:00 PM",
     "ownerName": "Imran Khan",
@@ -492,7 +756,34 @@
     "repeatCustomerScore": 70,
     "isMonthlySubscriber": false,
     "subscriptionPlan": "free",
-    "pincode": "410218"
+    "pincode": "410218",
+    "slug": "final-touch-unisex-salon-s6",
+    "businessTypes": [
+      "Beauty & Wellness"
+    ],
+    "serviceTypes": [
+      "Salons"
+    ],
+    "logoUrl": "https://images.unsplash.com/photo-1562322140-8baeececf3df?auto=format&fit=crop&w=500&q=80",
+    "coverImageUrl": "https://images.unsplash.com/photo-1562322140-8baeececf3df?auto=format&fit=crop&w=500&q=80",
+    "galleryUrls": [
+      "https://images.unsplash.com/photo-1562322140-8baeececf3df?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1562322140-8baeececf3df?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1562322140-8baeececf3df?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1562322140-8baeececf3df?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1562322140-8baeececf3df?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1562322140-8baeececf3df?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1562322140-8baeececf3df?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1562322140-8baeececf3df?auto=format&fit=crop&w=500&q=80"
+    ],
+    "verificationTags": [],
+    "domainMappingTags": [
+      "kalamboli",
+      "beauty-wellness",
+      "salons"
+    ],
+    "seoPremiumEnabled": false,
+    "taxonomyMapped": true
   },
   {
     "id": "s9",
@@ -501,7 +792,7 @@
     "subcategoryId": "salons",
     "localityId": "kalamboli",
     "stateId": "mh",
-    "cityId": "navimumbai",
+    "cityId": "panvel",
     "areaId": "kalamboli-sec5",
     "areasOfOperation": [
       "kalamboli-sec5",
@@ -521,7 +812,14 @@
       "Ladies Salon",
       "Beauty Services",
       "Facials",
-      "Mehendi"
+      "Mehendi",
+      "Exclusive ladies-only salon setting specialized in waxing",
+      "organic facial therapies",
+      "threading",
+      "and traditional mehendi decorations.",
+      "beauty-wellness",
+      "salons",
+      "Beauty & Wellness"
     ],
     "hours": "11:00 AM - 08:00 PM",
     "ownerName": "Kaya Deshmukh",
@@ -552,7 +850,36 @@
     "repeatCustomerScore": 80,
     "isMonthlySubscriber": false,
     "subscriptionPlan": "free",
-    "pincode": "410218"
+    "pincode": "410218",
+    "slug": "kaya-ladies-beauty-parlour-s9",
+    "businessTypes": [
+      "Beauty & Wellness"
+    ],
+    "serviceTypes": [
+      "Salons"
+    ],
+    "logoUrl": "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+    "coverImageUrl": "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+    "galleryUrls": [
+      "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80"
+    ],
+    "verificationTags": [
+      "Gov registered"
+    ],
+    "domainMappingTags": [
+      "kalamboli",
+      "beauty-wellness",
+      "salons"
+    ],
+    "seoPremiumEnabled": false,
+    "taxonomyMapped": true
   },
   {
     "id": "s10",
@@ -561,7 +888,7 @@
     "subcategoryId": "salons",
     "localityId": "roadpali",
     "stateId": "mh",
-    "cityId": "navimumbai",
+    "cityId": "panvel",
     "areaId": "roadpali-sec20",
     "areasOfOperation": [
       "roadpali-sec20",
@@ -581,7 +908,13 @@
       "Hair Styling",
       "Facial",
       "Grooming",
-      "Nail Art"
+      "Nail Art",
+      "Exquisite salon setup utilizing foreign cosmetic brands for deep nourishing facials",
+      "hair volume blowouts",
+      "and precise grooming.",
+      "beauty-wellness",
+      "salons",
+      "Beauty & Wellness"
     ],
     "hours": "10:00 AM - 09:00 PM",
     "ownerName": "Sonali Patil",
@@ -614,7 +947,37 @@
     "repeatCustomerScore": 86,
     "isMonthlySubscriber": false,
     "subscriptionPlan": "free",
-    "pincode": "410218"
+    "pincode": "410218",
+    "slug": "adaa-salon-s10",
+    "businessTypes": [
+      "Beauty & Wellness"
+    ],
+    "serviceTypes": [
+      "Salons"
+    ],
+    "logoUrl": "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+    "coverImageUrl": "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+    "galleryUrls": [
+      "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80"
+    ],
+    "verificationTags": [
+      "Verified listing",
+      "Gov registered"
+    ],
+    "domainMappingTags": [
+      "roadpali",
+      "beauty-wellness",
+      "salons"
+    ],
+    "seoPremiumEnabled": false,
+    "taxonomyMapped": true
   },
   {
     "id": "s11",
@@ -623,7 +986,7 @@
     "subcategoryId": "salons",
     "localityId": "roadpali",
     "stateId": "mh",
-    "cityId": "navimumbai",
+    "cityId": "panvel",
     "areaId": "roadpali-sec20",
     "areasOfOperation": [
       "roadpali-sec20",
@@ -642,7 +1005,14 @@
     "tags": [
       "Hair Styling",
       "Grooming",
-      "Barbering"
+      "Barbering",
+      "Expert scissors architecture",
+      "contemporary shaving sessions",
+      "smoothing organic hair therapies",
+      "and express herbal grooming packages.",
+      "beauty-wellness",
+      "salons",
+      "Beauty & Wellness"
     ],
     "hours": "09:30 AM - 09:30 PM",
     "ownerName": "Ajay Mishra",
@@ -673,7 +1043,34 @@
     "repeatCustomerScore": 82,
     "isMonthlySubscriber": false,
     "subscriptionPlan": "free",
-    "pincode": "410218"
+    "pincode": "410218",
+    "slug": "dieu-unisex-salon-s11",
+    "businessTypes": [
+      "Beauty & Wellness"
+    ],
+    "serviceTypes": [
+      "Salons"
+    ],
+    "logoUrl": "https://images.unsplash.com/photo-1605497746444-ac9dbd4d3ce9?auto=format&fit=crop&w=500&q=80",
+    "coverImageUrl": "https://images.unsplash.com/photo-1605497746444-ac9dbd4d3ce9?auto=format&fit=crop&w=500&q=80",
+    "galleryUrls": [
+      "https://images.unsplash.com/photo-1605497746444-ac9dbd4d3ce9?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1605497746444-ac9dbd4d3ce9?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1605497746444-ac9dbd4d3ce9?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1605497746444-ac9dbd4d3ce9?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1605497746444-ac9dbd4d3ce9?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1605497746444-ac9dbd4d3ce9?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1605497746444-ac9dbd4d3ce9?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1605497746444-ac9dbd4d3ce9?auto=format&fit=crop&w=500&q=80"
+    ],
+    "verificationTags": [],
+    "domainMappingTags": [
+      "roadpali",
+      "beauty-wellness",
+      "salons"
+    ],
+    "seoPremiumEnabled": false,
+    "taxonomyMapped": true
   },
   {
     "id": "s12",
@@ -682,7 +1079,7 @@
     "subcategoryId": "salons",
     "localityId": "kalamboli",
     "stateId": "mh",
-    "cityId": "navimumbai",
+    "cityId": "panvel",
     "areaId": "kalamboli-sec2",
     "areasOfOperation": [
       "kalamboli-sec2",
@@ -702,7 +1099,14 @@
       "Beauty Treatments",
       "Hair Services",
       "Gold Facial",
-      "Manicure"
+      "Manicure",
+      "Cosmetology parlor featuring deep pore hydration",
+      "facial gold mask treatments",
+      "dandruff control regimes",
+      "and nail manicure therapies.",
+      "beauty-wellness",
+      "salons",
+      "Beauty & Wellness"
     ],
     "hours": "10:30 AM - 08:30 PM",
     "ownerName": "Snehal Patil",
@@ -733,7 +1137,38 @@
     "repeatCustomerScore": 81,
     "isMonthlySubscriber": false,
     "subscriptionPlan": "free",
-    "pincode": "410218"
+    "pincode": "410218",
+    "slug": "bliss-beauty-s12",
+    "businessTypes": [
+      "Beauty & Wellness"
+    ],
+    "serviceTypes": [
+      "Salons"
+    ],
+    "logoUrl": "https://images.unsplash.com/photo-1562322140-8baeececf3df?auto=format&fit=crop&w=500&q=80",
+    "coverImageUrl": "https://images.unsplash.com/photo-1562322140-8baeececf3df?auto=format&fit=crop&w=500&q=80",
+    "galleryUrls": [
+      "https://images.unsplash.com/photo-1562322140-8baeececf3df?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1562322140-8baeececf3df?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1562322140-8baeececf3df?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1562322140-8baeececf3df?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1562322140-8baeececf3df?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1562322140-8baeececf3df?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1562322140-8baeececf3df?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1562322140-8baeececf3df?auto=format&fit=crop&w=500&q=80"
+    ],
+    "verificationTags": [
+      "Verified listing",
+      "KYC verified",
+      "Gov registered"
+    ],
+    "domainMappingTags": [
+      "kalamboli",
+      "beauty-wellness",
+      "salons"
+    ],
+    "seoPremiumEnabled": false,
+    "taxonomyMapped": true
   },
   {
     "id": "s13",
@@ -742,7 +1177,7 @@
     "subcategoryId": "salons",
     "localityId": "roadpali",
     "stateId": "mh",
-    "cityId": "navimumbai",
+    "cityId": "panvel",
     "areaId": "roadpali-sec17",
     "areasOfOperation": [
       "roadpali-sec17",
@@ -762,7 +1197,13 @@
       "Haircut",
       "Beard Styling",
       "Men Grooming",
-      "Scalp Care"
+      "Scalp Care",
+      "Budget-friendly mens hair salon crafting trendsetting look designs",
+      "sleek beard trims",
+      "and relaxing head oil massage sessions.",
+      "beauty-wellness",
+      "salons",
+      "Beauty & Wellness"
     ],
     "hours": "08:30 AM - 09:30 PM",
     "ownerName": "Sanjay Salunkhe",
@@ -793,16 +1234,43 @@
     "repeatCustomerScore": 92,
     "isMonthlySubscriber": false,
     "subscriptionPlan": "free",
-    "pincode": "410218"
+    "pincode": "410218",
+    "slug": "royal-salon-s13",
+    "businessTypes": [
+      "Beauty & Wellness"
+    ],
+    "serviceTypes": [
+      "Salons"
+    ],
+    "logoUrl": "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=500&q=80",
+    "coverImageUrl": "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=500&q=80",
+    "galleryUrls": [
+      "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=500&q=80"
+    ],
+    "verificationTags": [],
+    "domainMappingTags": [
+      "roadpali",
+      "beauty-wellness",
+      "salons"
+    ],
+    "seoPremiumEnabled": false,
+    "taxonomyMapped": true
   },
   {
     "id": "s14",
     "name": "RK Skin & Hair Studio",
     "categoryId": "beauty-wellness",
     "subcategoryId": "salons",
-    "localityId": "kalamboli",
+    "localityId": "roadpali",
     "stateId": "mh",
-    "cityId": "navimumbai",
+    "cityId": "panvel",
     "areaId": "roadpali-sec9e",
     "areasOfOperation": [
       "roadpali-sec9e",
@@ -822,7 +1290,15 @@
       "Hair Treatment",
       "Skin Services",
       "Trichologist",
-      "Clinic"
+      "Clinic",
+      "Professional trichology care",
+      "hair fall mitigation therapies",
+      "clinical facials",
+      "skin brightening",
+      "and expert styling setups.",
+      "beauty-wellness",
+      "salons",
+      "Beauty & Wellness"
     ],
     "hours": "10:00 AM - 08:30 PM",
     "ownerName": "Dr. R. K. Sawant",
@@ -855,7 +1331,38 @@
     "repeatCustomerScore": 84,
     "isMonthlySubscriber": false,
     "subscriptionPlan": "free",
-    "pincode": "410218"
+    "pincode": "410218",
+    "slug": "rk-skin-and-hair-studio-s14",
+    "businessTypes": [
+      "Beauty & Wellness"
+    ],
+    "serviceTypes": [
+      "Salons"
+    ],
+    "logoUrl": "https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=500&q=80",
+    "coverImageUrl": "https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=500&q=80",
+    "galleryUrls": [
+      "https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=500&q=80"
+    ],
+    "verificationTags": [
+      "Verified listing",
+      "KYC verified",
+      "Gov registered"
+    ],
+    "domainMappingTags": [
+      "kalamboli",
+      "beauty-wellness",
+      "salons"
+    ],
+    "seoPremiumEnabled": false,
+    "taxonomyMapped": true
   },
   {
     "id": "s15",
@@ -864,7 +1371,7 @@
     "subcategoryId": "salons",
     "localityId": "kalamboli",
     "stateId": "mh",
-    "cityId": "navimumbai",
+    "cityId": "panvel",
     "areaId": "kalamboli-sec11",
     "areasOfOperation": [
       "kalamboli-sec11",
@@ -884,7 +1391,13 @@
       "Beauty Parlour",
       "Boutique",
       "Tailoring",
-      "Ladies Wear"
+      "Ladies Wear",
+      "Elite home style ladies beauty parlor and handcrafted designer clothing boutique. Specialized in tailored bloused",
+      "anarkali suits",
+      "and facial treatments.",
+      "beauty-wellness",
+      "salons",
+      "Beauty & Wellness"
     ],
     "hours": "11:00 AM - 08:30 PM",
     "ownerName": "Krishna Sharma",
@@ -915,7 +1428,37 @@
     "repeatCustomerScore": 94,
     "isMonthlySubscriber": false,
     "subscriptionPlan": "free",
-    "pincode": "410218"
+    "pincode": "410218",
+    "slug": "krishna-beauty-parlour-and-boutique-s15",
+    "businessTypes": [
+      "Beauty & Wellness"
+    ],
+    "serviceTypes": [
+      "Salons"
+    ],
+    "logoUrl": "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+    "coverImageUrl": "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+    "galleryUrls": [
+      "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80"
+    ],
+    "verificationTags": [
+      "Verified listing",
+      "KYC verified"
+    ],
+    "domainMappingTags": [
+      "kalamboli",
+      "beauty-wellness",
+      "salons"
+    ],
+    "seoPremiumEnabled": false,
+    "taxonomyMapped": true
   },
   {
     "id": "b11",
@@ -924,7 +1467,7 @@
     "subcategoryId": "restaurants",
     "localityId": "roadpali",
     "stateId": "mh",
-    "cityId": "navimumbai",
+    "cityId": "panvel",
     "areaId": "roadpali-sec17",
     "areasOfOperation": [
       "roadpali-sec17",
@@ -945,7 +1488,14 @@
       "Pure Veg",
       "North Indian",
       "Family Dining",
-      "Dosa"
+      "Dosa",
+      "Famous family restaurant serving pure vegetarian North Indian delis",
+      "authentic South Indian crispy dosa plates",
+      "sizzling paneer",
+      "and rich kulfis.",
+      "food-restaurants",
+      "restaurants",
+      "Food & Restaurants"
     ],
     "hours": "11:00 AM - 11:30 PM",
     "ownerName": "Harish Shetty",
@@ -978,7 +1528,38 @@
     "repeatCustomerScore": 85,
     "isMonthlySubscriber": true,
     "subscriptionPlan": "basic",
-    "pincode": "410218"
+    "pincode": "410218",
+    "slug": "utsav-grand-pure-veg-restaurant-b11",
+    "businessTypes": [
+      "Food & Restaurants"
+    ],
+    "serviceTypes": [
+      "Restaurants"
+    ],
+    "logoUrl": "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=500&q=80",
+    "coverImageUrl": "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=500&q=80",
+    "galleryUrls": [
+      "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=500&q=80"
+    ],
+    "verificationTags": [
+      "Verified listing",
+      "KYC verified",
+      "Gov registered"
+    ],
+    "domainMappingTags": [
+      "roadpali",
+      "food-restaurants",
+      "restaurants"
+    ],
+    "seoPremiumEnabled": false,
+    "taxonomyMapped": true
   },
   {
     "id": "b12",
@@ -987,7 +1568,7 @@
     "subcategoryId": "clinics",
     "localityId": "kalamboli",
     "stateId": "mh",
-    "cityId": "navimumbai",
+    "cityId": "panvel",
     "areaId": "kalamboli-sec11",
     "areasOfOperation": [
       "kalamboli-sec11",
@@ -1008,7 +1589,16 @@
       "Pharmacy",
       "24 Hours",
       "Medicines",
-      "Medical Store"
+      "Medical Store",
+      "24",
+      "7 diagnostic pharmacy stocking pediatric medications",
+      "wellness supplements",
+      "surgical gloves",
+      "life-critical drugs",
+      "and baby nutrition supplies.",
+      "health-medical",
+      "clinics",
+      "Health & Medical"
     ],
     "hours": "24 Hours Open",
     "ownerName": "Apollo Group",
@@ -1041,16 +1631,47 @@
     "repeatCustomerScore": 94,
     "isMonthlySubscriber": false,
     "subscriptionPlan": "free",
-    "pincode": "410218"
+    "pincode": "410218",
+    "slug": "apollo-pharmacy-kalamboli-b12",
+    "businessTypes": [
+      "Health & Medical"
+    ],
+    "serviceTypes": [
+      "Clinics"
+    ],
+    "logoUrl": "https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=500&q=80",
+    "coverImageUrl": "https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=500&q=80",
+    "galleryUrls": [
+      "https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=500&q=80"
+    ],
+    "verificationTags": [
+      "Verified listing",
+      "KYC verified",
+      "Gov registered"
+    ],
+    "domainMappingTags": [
+      "kalamboli",
+      "health-medical",
+      "clinics"
+    ],
+    "seoPremiumEnabled": false,
+    "taxonomyMapped": true
   },
   {
     "id": "b_kh1",
     "name": "The Central Perks Cafe & Bakery",
     "categoryId": "food-restaurants",
     "subcategoryId": "restaurants",
-    "localityId": "kharghar",
+    "localityId": "roadpali",
     "stateId": "mh",
-    "cityId": "navimumbai",
+    "cityId": "panvel",
     "areaId": "roadpali-sec17",
     "areasOfOperation": [
       "roadpali-sec17",
@@ -1070,7 +1691,14 @@
       "Cafe",
       "Bakery",
       "Coffee",
-      "Custom Cakes"
+      "Custom Cakes",
+      "Trendy student-friendly cafe and premium artisan bakery specializing in customized tiered cakes",
+      "sourdough breads",
+      "espresso blends",
+      "and delicious Italian pastas.",
+      "food-restaurants",
+      "restaurants",
+      "Food & Restaurants"
     ],
     "hours": "10:00 AM - 11:00 PM",
     "ownerName": "Sumit Mehra",
@@ -1101,16 +1729,47 @@
     "repeatCustomerScore": 90,
     "isMonthlySubscriber": true,
     "subscriptionPlan": "basic",
-    "pincode": "410218"
+    "pincode": "410218",
+    "slug": "the-central-perks-cafe-and-bakery-b-kh1",
+    "businessTypes": [
+      "Food & Restaurants"
+    ],
+    "serviceTypes": [
+      "Restaurants"
+    ],
+    "logoUrl": "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=500&q=80",
+    "coverImageUrl": "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=500&q=80",
+    "galleryUrls": [
+      "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=500&q=80"
+    ],
+    "verificationTags": [
+      "Verified listing",
+      "KYC verified",
+      "Gov registered"
+    ],
+    "domainMappingTags": [
+      "kharghar",
+      "food-restaurants",
+      "restaurants"
+    ],
+    "seoPremiumEnabled": false,
+    "taxonomyMapped": true
   },
   {
     "id": "b_kh2",
     "name": "Aura Glow Salon & Medi-Spa",
     "categoryId": "beauty-wellness",
     "subcategoryId": "salons",
-    "localityId": "kharghar",
+    "localityId": "roadpali",
     "stateId": "mh",
-    "cityId": "navimumbai",
+    "cityId": "panvel",
     "areaId": "roadpali-sec17",
     "areasOfOperation": [
       "roadpali-sec17"
@@ -1129,7 +1788,14 @@
       "Premium Spa",
       "Bridal Makeover",
       "Skin Care",
-      "Wellness"
+      "Wellness",
+      "Expert skin clinical therapies",
+      "therapeutic full body couples therapies",
+      "premium bridal makeover registries",
+      "and advanced cosmetic hair treatments by globally certified aesthetics practitioners.",
+      "beauty-wellness",
+      "salons",
+      "Beauty & Wellness"
     ],
     "hours": "10:00 AM - 09:30 PM",
     "ownerName": "Ananya Sen",
@@ -1162,16 +1828,47 @@
     "repeatCustomerScore": 94,
     "isMonthlySubscriber": true,
     "subscriptionPlan": "premium",
-    "pincode": "410218"
+    "pincode": "410218",
+    "slug": "aura-glow-salon-and-medi-spa-b-kh2",
+    "businessTypes": [
+      "Beauty & Wellness"
+    ],
+    "serviceTypes": [
+      "Salons"
+    ],
+    "logoUrl": "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+    "coverImageUrl": "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+    "galleryUrls": [
+      "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=500&q=80"
+    ],
+    "verificationTags": [
+      "Verified listing",
+      "KYC verified",
+      "Gov registered"
+    ],
+    "domainMappingTags": [
+      "kharghar",
+      "beauty-wellness",
+      "salons"
+    ],
+    "seoPremiumEnabled": true,
+    "taxonomyMapped": true
   },
   {
     "id": "b_km1",
     "name": "Kamothe Wellness Dental Clinic",
     "categoryId": "health-medical",
     "subcategoryId": "clinics",
-    "localityId": "kamothe",
+    "localityId": "roadpali",
     "stateId": "mh",
-    "cityId": "navimumbai",
+    "cityId": "panvel",
     "areaId": "roadpali-sec17",
     "areasOfOperation": [
       "roadpali-sec17"
@@ -1190,7 +1887,15 @@
       "Dentist",
       "Root Canal",
       "Implants",
-      "Orthodontist"
+      "Orthodontist",
+      "Comprehensive family dental treatments: pain-free root canals",
+      "orthodontic braces",
+      "pediatric oral care",
+      "cosmetic tooth whitening",
+      "and advanced implants under absolute clean clinical environments.",
+      "health-medical",
+      "clinics",
+      "Health & Medical"
     ],
     "hours": "11:00 AM - 09:00 PM",
     "ownerName": "Dr. Vivek Patil",
@@ -1222,16 +1927,47 @@
     "repeatCustomerScore": 88,
     "isMonthlySubscriber": true,
     "subscriptionPlan": "basic",
-    "pincode": "410218"
+    "pincode": "410218",
+    "slug": "kamothe-wellness-dental-clinic-b-km1",
+    "businessTypes": [
+      "Health & Medical"
+    ],
+    "serviceTypes": [
+      "Clinics"
+    ],
+    "logoUrl": "https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=500&q=80",
+    "coverImageUrl": "https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=500&q=80",
+    "galleryUrls": [
+      "https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=500&q=80"
+    ],
+    "verificationTags": [
+      "Verified listing",
+      "KYC verified",
+      "Gov registered"
+    ],
+    "domainMappingTags": [
+      "kamothe",
+      "health-medical",
+      "clinics"
+    ],
+    "seoPremiumEnabled": false,
+    "taxonomyMapped": true
   },
   {
     "id": "b_km2",
     "name": "Techno Home Appliances & Repair",
     "categoryId": "home-services",
     "subcategoryId": "electricians",
-    "localityId": "kamothe",
+    "localityId": "roadpali",
     "stateId": "mh",
-    "cityId": "navimumbai",
+    "cityId": "panvel",
     "areaId": "roadpali-sec17",
     "areasOfOperation": [
       "roadpali-sec17"
@@ -1249,7 +1985,15 @@
     "tags": [
       "AC Repair",
       "Washing Machine Repair",
-      "Refrigerator Specialist"
+      "Refrigerator Specialist",
+      "On-demand doorstep repair and general maintenance for washing machines",
+      "split AC units",
+      "double-door refrigerators",
+      "microwave ovens",
+      "and induction chimneys with 90-day parts warranty.",
+      "home-services",
+      "electricians",
+      "Home Services"
     ],
     "hours": "09:00 AM - 08:30 PM",
     "ownerName": "Sandip Thorat",
@@ -1279,16 +2023,47 @@
     "repeatCustomerScore": 82,
     "isMonthlySubscriber": false,
     "subscriptionPlan": "free",
-    "pincode": "410218"
+    "pincode": "410218",
+    "slug": "techno-home-appliances-and-repair-b-km2",
+    "businessTypes": [
+      "Home Services"
+    ],
+    "serviceTypes": [
+      "Electricians"
+    ],
+    "logoUrl": "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=500&q=80",
+    "coverImageUrl": "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=500&q=80",
+    "galleryUrls": [
+      "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=500&q=80"
+    ],
+    "verificationTags": [
+      "Verified listing",
+      "KYC verified",
+      "Gov registered"
+    ],
+    "domainMappingTags": [
+      "kamothe",
+      "home-services",
+      "electricians"
+    ],
+    "seoPremiumEnabled": false,
+    "taxonomyMapped": true
   },
   {
     "id": "b_pv1",
     "name": "Panvel Diagnostic Center & Lab",
     "categoryId": "health-medical",
     "subcategoryId": "clinics",
-    "localityId": "panvel",
+    "localityId": "roadpali",
     "stateId": "mh",
-    "cityId": "navimumbai",
+    "cityId": "panvel",
     "areaId": "roadpali-sec17",
     "areasOfOperation": [
       "roadpali-sec17"
@@ -1307,7 +2082,16 @@
       "Blood Test",
       "Diagnostics",
       "X-Ray",
-      "Health Checkup"
+      "Health Checkup",
+      "Fully automated medical diagnostic laboratory providing full body checkups",
+      "thyroid panels",
+      "digital X-Rays",
+      "high resolution sonography",
+      "ECG",
+      "and free doorstep blood sample collection services.",
+      "health-medical",
+      "clinics",
+      "Health & Medical"
     ],
     "hours": "07:30 AM - 09:30 PM",
     "ownerName": "Dr. Suresh Jha",
@@ -1339,16 +2123,47 @@
     "repeatCustomerScore": 91,
     "isMonthlySubscriber": true,
     "subscriptionPlan": "basic",
-    "pincode": "410218"
+    "pincode": "410218",
+    "slug": "panvel-diagnostic-center-and-lab-b-pv1",
+    "businessTypes": [
+      "Health & Medical"
+    ],
+    "serviceTypes": [
+      "Clinics"
+    ],
+    "logoUrl": "https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=500&q=80",
+    "coverImageUrl": "https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=500&q=80",
+    "galleryUrls": [
+      "https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=500&q=80"
+    ],
+    "verificationTags": [
+      "Verified listing",
+      "KYC verified",
+      "Gov registered"
+    ],
+    "domainMappingTags": [
+      "panvel",
+      "health-medical",
+      "clinics"
+    ],
+    "seoPremiumEnabled": false,
+    "taxonomyMapped": true
   },
   {
     "id": "b_pv2",
     "name": "Hotel Sharan Fine Dine & Banquet",
     "categoryId": "food-restaurants",
     "subcategoryId": "restaurants",
-    "localityId": "panvel",
+    "localityId": "roadpali",
     "stateId": "mh",
-    "cityId": "navimumbai",
+    "cityId": "panvel",
     "areaId": "roadpali-sec17",
     "areasOfOperation": [
       "roadpali-sec17"
@@ -1367,7 +2182,14 @@
       "Fine Dine",
       "Maharashtrian Thali",
       "Biryani",
-      "Family Restaurant"
+      "Family Restaurant",
+      "Legendary multi-cuisine restaurant serving traditional Maharashtrian Thalis",
+      "rich slow-cooked Dum Biryanis",
+      "Butter Chicken",
+      "and exotic Chinese dishes with spacious family seating.",
+      "food-restaurants",
+      "restaurants",
+      "Food & Restaurants"
     ],
     "hours": "11:00 AM - 11:30 PM",
     "ownerName": "Ramesh Sawant",
@@ -1399,16 +2221,47 @@
     "repeatCustomerScore": 89,
     "isMonthlySubscriber": false,
     "subscriptionPlan": "free",
-    "pincode": "410218"
+    "pincode": "410218",
+    "slug": "hotel-sharan-fine-dine-and-banquet-b-pv2",
+    "businessTypes": [
+      "Food & Restaurants"
+    ],
+    "serviceTypes": [
+      "Restaurants"
+    ],
+    "logoUrl": "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=500&q=80",
+    "coverImageUrl": "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=500&q=80",
+    "galleryUrls": [
+      "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=500&q=80"
+    ],
+    "verificationTags": [
+      "Verified listing",
+      "KYC verified",
+      "Gov registered"
+    ],
+    "domainMappingTags": [
+      "panvel",
+      "food-restaurants",
+      "restaurants"
+    ],
+    "seoPremiumEnabled": false,
+    "taxonomyMapped": true
   },
   {
     "id": "b_tj1",
     "name": "Taloja Industrial Tooling Corp",
     "categoryId": "professional-services",
     "subcategoryId": "business-consultants",
-    "localityId": "taloja",
+    "localityId": "roadpali",
     "stateId": "mh",
-    "cityId": "navimumbai",
+    "cityId": "panvel",
     "areaId": "roadpali-sec17",
     "areasOfOperation": [
       "roadpali-sec17"
@@ -1427,7 +2280,16 @@
       "MIDC Tooling",
       "CNC Machining",
       "Steel Fabrication",
-      "Engineering"
+      "Engineering",
+      "High-precision steel CNC tooling",
+      "customized machine component engineering",
+      "custom aluminum castings",
+      "sheet metal stamping",
+      "and specialized industrial design services for manufacturing plants.",
+      "professional-services",
+      "business-consultants",
+      "Professional Services",
+      "Business Consultants"
     ],
     "hours": "09:00 AM - 06:00 PM",
     "ownerName": "Vipin Sangwan",
@@ -1459,16 +2321,47 @@
     "repeatCustomerScore": 92,
     "isMonthlySubscriber": true,
     "subscriptionPlan": "premium",
-    "pincode": "410218"
+    "pincode": "410218",
+    "slug": "taloja-industrial-tooling-corp-b-tj1",
+    "businessTypes": [
+      "Professional Services"
+    ],
+    "serviceTypes": [
+      "Business Consultants"
+    ],
+    "logoUrl": "https://images.unsplash.com/photo-1544197150-b99a580bb7a8?auto=format&fit=crop&w=500&q=80",
+    "coverImageUrl": "https://images.unsplash.com/photo-1544197150-b99a580bb7a8?auto=format&fit=crop&w=500&q=80",
+    "galleryUrls": [
+      "https://images.unsplash.com/photo-1544197150-b99a580bb7a8?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1544197150-b99a580bb7a8?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1544197150-b99a580bb7a8?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1544197150-b99a580bb7a8?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1544197150-b99a580bb7a8?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1544197150-b99a580bb7a8?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1544197150-b99a580bb7a8?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1544197150-b99a580bb7a8?auto=format&fit=crop&w=500&q=80"
+    ],
+    "verificationTags": [
+      "Verified listing",
+      "KYC verified",
+      "Gov registered"
+    ],
+    "domainMappingTags": [
+      "taloja",
+      "professional-services",
+      "business-consultants"
+    ],
+    "seoPremiumEnabled": true,
+    "taxonomyMapped": true
   },
   {
     "id": "b_tj2",
     "name": "Steel City Building Materials & Tools",
     "categoryId": "shopping-retail",
     "subcategoryId": "grocery-stores",
-    "localityId": "taloja",
+    "localityId": "roadpali",
     "stateId": "mh",
-    "cityId": "navimumbai",
+    "cityId": "panvel",
     "areaId": "roadpali-sec17",
     "areasOfOperation": [
       "roadpali-sec17"
@@ -1486,7 +2379,17 @@
     "tags": [
       "Hardware Store",
       "Cement rods",
-      "Construction Materials"
+      "Construction Materials",
+      "Primary wholesale dealers for premium cement",
+      "structural steel rods",
+      "building aggregates",
+      "premium brass sanitary fittings",
+      "plumbing essentials",
+      "and general power construction tools.",
+      "shopping-retail",
+      "grocery-stores",
+      "Shopping & Retail",
+      "Grocery Stores"
     ],
     "hours": "08:30 AM - 07:30 PM",
     "ownerName": "Madan Lal",
@@ -1517,7 +2420,38 @@
     "repeatCustomerScore": 86,
     "isMonthlySubscriber": false,
     "subscriptionPlan": "free",
-    "pincode": "410218"
+    "pincode": "410218",
+    "slug": "steel-city-building-materials-and-tools-b-tj2",
+    "businessTypes": [
+      "Shopping & Retail"
+    ],
+    "serviceTypes": [
+      "Grocery Stores"
+    ],
+    "logoUrl": "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=500&q=80",
+    "coverImageUrl": "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=500&q=80",
+    "galleryUrls": [
+      "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=500&q=80"
+    ],
+    "verificationTags": [
+      "Verified listing",
+      "KYC verified",
+      "Gov registered"
+    ],
+    "domainMappingTags": [
+      "taloja",
+      "shopping-retail",
+      "grocery-stores"
+    ],
+    "seoPremiumEnabled": false,
+    "taxonomyMapped": true
   },
   {
     "id": "b8_pending",
@@ -1541,12 +2475,20 @@
     "reviewCount": 0,
     "imageUrl": "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=500&q=80",
     "featured": false,
-    "status": "pending",
+    "status": "rejected",
     "createdAt": "2026-05-18T05:00:00Z",
     "tags": [
       "Organic Food",
       "Pantry",
-      "Pesticide Free"
+      "Pesticide Free",
+      "Organic natural pulses",
+      "farm-fresh millets",
+      "cold-pressed mustard oil",
+      "and pesticide-free multi-grain flours for health-first cooking.",
+      "shopping-retail",
+      "grocery-stores",
+      "Shopping & Retail",
+      "Grocery Stores"
     ],
     "hours": "09:00 AM - 09:00 PM",
     "ownerName": "Rajesh Patil",
@@ -1577,6 +2519,36 @@
     "repeatCustomerScore": 0,
     "isMonthlySubscriber": false,
     "subscriptionPlan": "free",
-    "pincode": "410218"
+    "pincode": "410218",
+    "slug": "roadpali-organic-food-store-b8-pending",
+    "businessTypes": [
+      "Shopping & Retail"
+    ],
+    "serviceTypes": [
+      "Grocery Stores"
+    ],
+    "logoUrl": "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=500&q=80",
+    "coverImageUrl": "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=500&q=80",
+    "galleryUrls": [
+      "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=500&q=80",
+      "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=500&q=80"
+    ],
+    "verificationTags": [
+      "Gov registered"
+    ],
+    "domainMappingTags": [
+      "roadpali",
+      "shopping-retail",
+      "grocery-stores"
+    ],
+    "seoPremiumEnabled": false,
+    "taxonomyMapped": true,
+    "rejectionReason": "wrong"
   }
 ]

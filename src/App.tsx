@@ -16,7 +16,7 @@ import crmContactsBootstrap from '../crm-contacts.json';
 import { 
   Layout, Smartphone, Shield, BookOpen, Layers, RefreshCw, 
   User, CheckCircle, ShieldAlert, KeyRound, Wrench, Briefcase, HelpCircle,
-  Sliders, Settings, X, Database, MapPin, Search, LogOut, ChevronDown, Menu
+  Sliders, Settings, X, Database, MapPin, Search, LogOut, ChevronDown, Menu, AlertCircle
 } from 'lucide-react';
 import {
   BUSINESS_CATEGORIES,
@@ -135,7 +135,9 @@ const normalizeUserRole = (role?: string | null, userType?: string | null): User
   return 'buyer';
 };
 
-const normalizeUserSessionRecord = (value: Partial<UserSession> & { role?: string | null; userType?: string | null }): UserSession => ({
+const normalizeUserSessionRecord = (
+  value: Omit<Partial<UserSession>, 'role' | 'userType'> & { role?: string | null; userType?: string | null },
+): UserSession => ({
   ...buildGuestUserSession(),
   ...value,
   role: normalizeUserRole(value.role, value.userType),
@@ -694,7 +696,11 @@ const normalizeFallbackListingAdTemplate = (
   mobileRowPosition: Number.isFinite(Number(ad.mobileRowPosition)) ? Number(ad.mobileRowPosition) : undefined,
 });
 
-const homepageDefaultsBootstrapDraftDefaults = HOMEPAGE_DEFAULTS_BOOTSTRAP.heroBannerDraftDefaults || {};
+// The bootstrap JSON does not always carry this key, so TypeScript infers `{}`
+// and every property read below is an error. It is untrusted config either way,
+// so read it through a partial type.
+const homepageDefaultsBootstrapDraftDefaults: Partial<HeroBannerDraftDefaults> =
+  (HOMEPAGE_DEFAULTS_BOOTSTRAP.heroBannerDraftDefaults as Partial<HeroBannerDraftDefaults> | undefined) || {};
 
 const DEFAULT_MANAGED_HERO_BANNER_DRAFT_DEFAULTS: HeroBannerDraftDefaults = {
   ctaLabel: String(homepageDefaultsBootstrapDraftDefaults.ctaLabel || 'Explore Businesses'),
@@ -785,7 +791,7 @@ const normalizeHomepageDefaultsConfigState = (
     : (Array.isArray(HOMEPAGE_DEFAULTS_BOOTSTRAP.sectionTemplates) ? HOMEPAGE_DEFAULTS_BOOTSTRAP.sectionTemplates : []).map((section, index) => normalizeHomepageSection(section as HomepageSection, 'template', index)),
   fallbackListingAds: Array.isArray(value?.fallbackListingAds)
     ? value.fallbackListingAds.map(normalizeFallbackListingAdTemplate)
-    : (Array.isArray(HOMEPAGE_DEFAULTS_BOOTSTRAP.fallbackListingAds) ? HOMEPAGE_DEFAULTS_BOOTSTRAP.fallbackListingAds : []).map((ad) => normalizeFallbackListingAdTemplate(ad as FallbackListingAdTemplate)),
+    : (Array.isArray(HOMEPAGE_DEFAULTS_BOOTSTRAP.fallbackListingAds) ? HOMEPAGE_DEFAULTS_BOOTSTRAP.fallbackListingAds : []).map((ad, index) => normalizeFallbackListingAdTemplate(ad as FallbackListingAdTemplate, index)),
   heroStatTemplates: Array.isArray(value?.heroStatTemplates) && value.heroStatTemplates.length > 0
     ? value.heroStatTemplates.map(normalizeHeroStatTemplate)
     : DEFAULT_MANAGED_HERO_STAT_TEMPLATES.map(normalizeHeroStatTemplate),
@@ -1417,7 +1423,7 @@ type ScalableLegacyCampaignSourceTag =
 const WebPortal = lazy(() => import('./components/WebPortal'));
 const ProposalPanel = lazy(() => import('./components/ProposalPanel'));
 const AndroidSimulator = lazy(() => import('./components/AndroidSimulator'));
-const AdminConsole = lazy(() => import('./components/AdminConsole'));
+const AdminApp = lazy(() => import('./components/admin/AdminApp'));
 const LocalityLandingMockV1 = lazy(() => import('./components/ux/LocalityLandingMockV1'));
 const LocalityLandingUiV1 = lazy(() => import('./components/ux/LocalityLandingUiV1'));
 const CityDirectoryUiV1 = lazy(() => import('./components/ux/CityDirectoryUiV1'));
@@ -1661,12 +1667,18 @@ export default function App() {
     return seededHeroBanners.map(normalizeStoredHeroBanner);
   });
 
+  // Non-blocking banner shown when an optimistic background save is rejected.
+  const [syncFailureNotice, setSyncFailureNotice] = useState<string | null>(null);
   const [urlCategoryFilter, setUrlCategoryFilter] = useState<string | null>(null);
   const [urlSubcategoryFilter, setUrlSubcategoryFilter] = useState<string | null>(null);
   const [urlSearchFilter, setUrlSearchFilter] = useState<string | null>(null);
   const [urlIsSearchResults, setUrlIsSearchResults] = useState(false);
   const [urlFilterNonce, setUrlFilterNonce] = useState(0);
   const [urlSelectedBusinessId, setUrlSelectedBusinessId] = useState<string | null>(null);
+  // Set when the path names a listing we could not resolve yet (the business
+  // list is still loading). While this is set the portal must not canonicalise
+  // the address bar, or the listing segment is destroyed before it can be read.
+  const [urlPendingListingSlug, setUrlPendingListingSlug] = useState<string | null>(null);
   const [urlSelectionNonce, setUrlSelectionNonce] = useState(0);
   const [liveExperienceRoute, setLiveExperienceRoute] = useState<
     { page: 'locality' } |
@@ -2014,13 +2026,76 @@ export default function App() {
 
   useEffect(() => {
     if (localities.length === 0) return;
+    // Wait for the real locality list to arrive from the routing API before
+    // validating anything against it. The bundled bootstrap seed is a smaller,
+    // older list, so running this early would judge a perfectly valid saved
+    // locality (one added since the seed) as unknown and reset it — which then
+    // gets written back to localStorage by the URL parser, silently losing the
+    // visitor's actual locality.
+    if (!localityRoutingConfigReady) return;
     if (!localities.some((locality) => locality.id === defaultLocalityId)) {
       setDefaultLocalityId(localities[0].id);
     }
-    if (!localities.some((locality) => locality.id === activeLocalityId)) {
+    // activeLocalityId can hold more than one id, comma-joined, when a
+    // shared pincode resolves to several localities at once — validate each
+    // id individually instead of matching the whole joined string against a
+    // single locality's id (which would always fail and stomp the
+    // multi-locality selection straight back to a single locality).
+    const activeIds = activeLocalityId.split(',').map((value) => value.trim()).filter(Boolean);
+    const allActiveIdsValid = activeIds.length > 0 && activeIds.every(
+      (id) => localities.some((locality) => locality.id === id)
+    );
+    if (!allActiveIdsValid) {
       setActiveLocalityId(localities[0].id);
     }
-  }, [localities, activeLocalityId, defaultLocalityId]);
+  }, [localities, activeLocalityId, defaultLocalityId, localityRoutingConfigReady]);
+
+  // Keep the active locality honest about the saved pincode. The two can drift
+  // apart — a pincode entered before the routing table finished loading looks
+  // "unmapped", so it routes to the default locality while still being saved —
+  // leaving the header reading e.g. "Roadpali | 400614" when 400614 actually
+  // belongs to CBD Belapur, and the listings scoped to the wrong pincode.
+  // Once the real mappings are in, re-point the locality at whoever owns the
+  // saved pincode (all of them, when it is shared).
+  useEffect(() => {
+    if (!localityRoutingConfigReady || localities.length === 0) return;
+    const normalizedPin = String(savedPincode || '').replace(/\D/g, '');
+    if (normalizedPin.length !== 6) return;
+    const owners = pincodeMappings
+      .filter((mapping) => mapping.pincode === normalizedPin)
+      .map((mapping) => mapping.localityId)
+      .filter((id) => localities.some((locality) => locality.id === id));
+    if (owners.length === 0) return;
+    const activeIds = activeLocalityId.split(',').map((value) => value.trim()).filter(Boolean);
+    // Already pointing at exactly the right set? Leave it alone.
+    if (activeIds.length === owners.length && owners.every((id) => activeIds.includes(id))) return;
+    // The visitor may have deliberately narrowed a shared pincode to one of its
+    // localities — respect that instead of re-expanding it every render.
+    if (activeIds.length > 0 && activeIds.every((id) => owners.includes(id))) return;
+
+    // When the address bar names a locality, that URL is the visitor's explicit
+    // intent and wins over a pincode left in storage from an earlier visit.
+    // Moving the locality here would also fight the URL parser, which re-asserts
+    // the path's locality — the two would ping-pong and the header would end up
+    // pairing one locality with another's pincode ("Roadpali - 410210"). So in
+    // that case correct the PINCODE to this locality's own instead.
+    const pathLocalitySlug = (window.location.pathname.split('/').filter(Boolean)[0] || '').toLowerCase();
+    const pathLocality = localities.find((locality) => (
+      locality.id.toLowerCase() === pathLocalitySlug || String(locality.slug || '').toLowerCase() === pathLocalitySlug
+    ));
+    if (pathLocality && activeIds.includes(pathLocality.id)) {
+      const localityPincode = pincodeMappings.find((mapping) => mapping.localityId === pathLocality.id)?.pincode || '';
+      if (localityPincode && localityPincode !== normalizedPin) {
+        setSavedPincode(localityPincode);
+        localStorage.setItem('yp_saved_pincode', localityPincode);
+      }
+      return;
+    }
+
+    const nextLocalityId = owners.join(',');
+    setActiveLocalityId(nextLocalityId);
+    localStorage.setItem('yp_saved_locality_id', nextLocalityId);
+  }, [localityRoutingConfigReady, localities, pincodeMappings, savedPincode, activeLocalityId]);
 
   useEffect(() => {
     if (!homepageDefaultsConfigReady || localities.length === 0) return;
@@ -2034,8 +2109,9 @@ export default function App() {
     }
     setHomepageLayouts(nextLayouts);
     if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint && homepageConfigLoadedRef.current) {
-      void persistHomepageLayoutCollectionMutation(nextLayouts).catch(() => {
+      void persistHomepageLayoutCollectionMutation(nextLayouts).catch((error) => {
         lastHomepageSyncSignatureRef.current = '';
+        reportSyncFailure(error);
       });
     }
   }, [
@@ -2308,6 +2384,14 @@ export default function App() {
   const auditEventDedupRef = useRef<Map<string, number>>(new Map());
   const lastAutomatedAuditPostAtRef = useRef(0);
   const autoLocationAttemptedRef = useRef(false);
+  // Tracks the locality routing config across multiple synchronous
+  // syncLocalityRoutingConfigInBackground calls made within the same event
+  // handler (e.g. creating a locality plus several pincode mappings in one
+  // submit). React state setters do not update `localities`/`subdomains`/
+  // `pincodeMappings` until the next render, so without this ref each call
+  // would rebuild its payload from the same stale pre-update state and the
+  // last call to persist would silently overwrite every earlier one.
+  const pendingLocalityRoutingConfigRef = useRef<LocalityRoutingConfigState | null>(null);
 
   const buildHomepageConfigPayload = (): HomepageConfigState => ({
     heroBanners,
@@ -2406,6 +2490,23 @@ export default function App() {
 
   const setHomepageConfigSyncSignatureForOverrides = (overrides: Partial<HomepageConfigState>) => {
     lastHomepageSyncSignatureRef.current = JSON.stringify(buildHomepageConfigPayloadWithOverrides(overrides));
+  };
+
+  // These mutations update React state optimistically and then persist in the
+  // background. Every failure used to be swallowed by an empty .catch(), so a
+  // rejected write (an expired admin token returns 401) looked exactly like a
+  // success: the new offer/ad/banner appeared in the UI, was never saved, and
+  // vanished on the next reload with nothing explaining why. Surface it.
+  const reportSyncFailure = (error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error || 'Unknown error');
+    const isAuthFailure = /unauthor|forbidden|401|403|insufficient privileges/i.test(message);
+    console.error('Background save failed:', error);
+    setSyncFailureNotice(
+      isAuthFailure
+        ? 'Not saved — your admin session has expired. Sign in again and retry; the change is only on this screen.'
+        : `Not saved — ${message}. The change is only on this screen until it saves.`
+    );
+    logAuditEvent('data_entry', 'Background save failed', message);
   };
 
   const persistHomepageConfigCollectionMutation = async (
@@ -2934,6 +3035,7 @@ export default function App() {
       let resolvedCategoryId: string | null = null;
       let resolvedSearch: string | null = null;
       let resolvedBusinessId: string | null = null;
+      let pendingListingSlug: string | null = null;
       let shouldOpenSearchResults = false;
       let nextExperienceRoute: { page: 'locality' } | { page: 'city'; cityId: string } | { page: 'national' } | { page: 'seller'; sellerBusinessId: string } = { page: 'locality' };
 
@@ -3003,8 +3105,17 @@ export default function App() {
         if (scopedSegments.length > 1) {
           const listingSegment = scopedSegments[1];
           const possibleBusinessId = listingSegment.split('-').pop() || '';
+          const bySlug = businesses.find((biz) => String(biz.slug || '').toLowerCase() === listingSegment);
           if (possibleBusinessId && businesses.some((biz) => biz.id === possibleBusinessId)) {
             resolvedBusinessId = possibleBusinessId;
+          } else if (bySlug) {
+            // buildListingRoutePath prefers biz.slug, so a stored slug that does
+            // not end in the id has to be matched directly.
+            resolvedBusinessId = bySlug.id;
+          } else {
+            // The path names a listing but the business list has not arrived
+            // yet. Remember it so the URL survives until it can be resolved.
+            pendingListingSlug = listingSegment;
           }
         }
       }
@@ -3057,6 +3168,7 @@ export default function App() {
       setUrlSearchFilter(resolvedSearch || null);
       setUrlIsSearchResults(shouldOpenSearchResults);
       setUrlSelectedBusinessId(resolvedBusinessId);
+      setUrlPendingListingSlug(pendingListingSlug);
       setUrlFilterNonce((prev) => prev + 1);
       setUrlSelectionNonce((prev) => prev + 1);
     };
@@ -3282,8 +3394,9 @@ export default function App() {
     }
     setCommunityItems(nextCommunityItems);
     if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
-      void persistHomepageConfigCollectionMutation('community-items', 'POST', { communityItem: fresh }).catch(() => {
+      void persistHomepageConfigCollectionMutation('community-items', 'POST', { communityItem: fresh }).catch((error) => {
         lastHomepageSyncSignatureRef.current = '';
+        reportSyncFailure(error);
       });
     }
     logAuditEvent('data_entry', `Created community board discussion: "${item.title}"`, `Category type: ${item.type} | Region shard: ${item.localityId}`);
@@ -3297,8 +3410,9 @@ export default function App() {
     }
     setCommunityItems(nextCommunityItems);
     if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
-      void persistHomepageConfigCollectionMutation(`community-items/${encodeURIComponent(item.id)}`, 'PUT', { communityItem: normalizedItem }).catch(() => {
+      void persistHomepageConfigCollectionMutation(`community-items/${encodeURIComponent(item.id)}`, 'PUT', { communityItem: normalizedItem }).catch((error) => {
         lastHomepageSyncSignatureRef.current = '';
+        reportSyncFailure(error);
       });
     }
     logAuditEvent('data_entry', `Updated locality update`, `Update ID: ${item.id} | Locality: ${item.localityId}`);
@@ -3311,8 +3425,9 @@ export default function App() {
     }
     setCommunityItems(nextCommunityItems);
     if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
-      void persistHomepageConfigCollectionMutation(`community-items/${encodeURIComponent(itemId)}`, 'DELETE').catch(() => {
+      void persistHomepageConfigCollectionMutation(`community-items/${encodeURIComponent(itemId)}`, 'DELETE').catch((error) => {
         lastHomepageSyncSignatureRef.current = '';
+        reportSyncFailure(error);
       });
     }
     logAuditEvent('data_entry', `Deleted locality update`, `Update ID: ${itemId}`);
@@ -3349,8 +3464,9 @@ export default function App() {
     }
     setCoupons(nextCoupons);
     if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
-      void persistHomepageConfigCollectionMutation('coupons', 'POST', { coupon: fresh }).catch(() => {
+      void persistHomepageConfigCollectionMutation('coupons', 'POST', { coupon: fresh }).catch((error) => {
         lastHomepageSyncSignatureRef.current = '';
+        reportSyncFailure(error);
       });
     }
     logAuditEvent('data_entry', `Launched promotional listing coupon code: "${coupon.code}"`, `Discount: ${coupon.discount} | Business ID: ${coupon.businessId}`);
@@ -3364,8 +3480,9 @@ export default function App() {
     }
     setCoupons(nextCoupons);
     if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
-      void persistHomepageConfigCollectionMutation(`coupons/${encodeURIComponent(coupon.id)}`, 'PUT', { coupon: normalizedCoupon }).catch(() => {
+      void persistHomepageConfigCollectionMutation(`coupons/${encodeURIComponent(coupon.id)}`, 'PUT', { coupon: normalizedCoupon }).catch((error) => {
         lastHomepageSyncSignatureRef.current = '';
+        reportSyncFailure(error);
       });
     }
     logAuditEvent('data_entry', `Updated promotional listing coupon code`, `Coupon ID: ${coupon.id} | Business ID: ${coupon.businessId}`);
@@ -3378,8 +3495,9 @@ export default function App() {
     }
     setCoupons(nextCoupons);
     if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
-      void persistHomepageConfigCollectionMutation(`coupons/${encodeURIComponent(couponId)}`, 'DELETE').catch(() => {
+      void persistHomepageConfigCollectionMutation(`coupons/${encodeURIComponent(couponId)}`, 'DELETE').catch((error) => {
         lastHomepageSyncSignatureRef.current = '';
+        reportSyncFailure(error);
       });
     }
     logAuditEvent('data_entry', `Deleted promotional listing coupon code`, `Coupon ID: ${couponId}`);
@@ -3396,8 +3514,9 @@ export default function App() {
     }
     setListingAds(nextListingAds);
     if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
-      void persistHomepageConfigCollectionMutation('listing-ads', 'POST', { listingAd: freshAd }).catch(() => {
+      void persistHomepageConfigCollectionMutation('listing-ads', 'POST', { listingAd: freshAd }).catch((error) => {
         lastHomepageSyncSignatureRef.current = '';
+        reportSyncFailure(error);
       });
     }
     logAuditEvent('data_entry', `Created listing ad banner`, `Ad: "${adInput.title}" | Action: ${adInput.actionType}`);
@@ -3411,8 +3530,9 @@ export default function App() {
     }
     setListingAds(nextListingAds);
     if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
-      void persistHomepageConfigCollectionMutation(`listing-ads/${encodeURIComponent(ad.id)}`, 'PUT', { listingAd: normalizedAd }).catch(() => {
+      void persistHomepageConfigCollectionMutation(`listing-ads/${encodeURIComponent(ad.id)}`, 'PUT', { listingAd: normalizedAd }).catch((error) => {
         lastHomepageSyncSignatureRef.current = '';
+        reportSyncFailure(error);
       });
     }
     logAuditEvent('data_entry', `Updated listing ad banner`, `Ad ID: ${ad.id}`);
@@ -3450,8 +3570,9 @@ export default function App() {
     setListingAds(nextListingAds);
     setAdLeads(nextAdLeads);
     if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
-      void persistHomepageConfigCollectionMutation(`listing-ads/${encodeURIComponent(adId)}`, 'DELETE').catch(() => {
+      void persistHomepageConfigCollectionMutation(`listing-ads/${encodeURIComponent(adId)}`, 'DELETE').catch((error) => {
         lastHomepageSyncSignatureRef.current = '';
+        reportSyncFailure(error);
       });
     }
     if (apiConfiguration.syncMode === 'api' && apiConfiguration.adLeadsEndpoint) {
@@ -3478,8 +3599,9 @@ export default function App() {
     }
     setHeroBanners(nextHeroBanners);
     if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
-      void persistHomepageConfigCollectionMutation('hero-banners', 'POST', { banner: freshBanner }).catch(() => {
+      void persistHomepageConfigCollectionMutation('hero-banners', 'POST', { banner: freshBanner }).catch((error) => {
         lastHomepageSyncSignatureRef.current = '';
+        reportSyncFailure(error);
       });
     }
     logAuditEvent('data_entry', `Created hero banner`, `Locality: ${bannerInput.localityId}`);
@@ -3493,8 +3615,9 @@ export default function App() {
     }
     setHeroBanners(nextHeroBanners);
     if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
-      void persistHomepageConfigCollectionMutation(`hero-banners/${encodeURIComponent(banner.id)}`, 'PUT', { banner: normalizedBanner }).catch(() => {
+      void persistHomepageConfigCollectionMutation(`hero-banners/${encodeURIComponent(banner.id)}`, 'PUT', { banner: normalizedBanner }).catch((error) => {
         lastHomepageSyncSignatureRef.current = '';
+        reportSyncFailure(error);
       });
     }
     logAuditEvent('data_entry', `Updated hero banner`, `Hero ID: ${banner.id}`);
@@ -3507,8 +3630,9 @@ export default function App() {
     }
     setHeroBanners(nextHeroBanners);
     if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
-      void persistHomepageConfigCollectionMutation(`hero-banners/${encodeURIComponent(bannerId)}`, 'DELETE').catch(() => {
+      void persistHomepageConfigCollectionMutation(`hero-banners/${encodeURIComponent(bannerId)}`, 'DELETE').catch((error) => {
         lastHomepageSyncSignatureRef.current = '';
+        reportSyncFailure(error);
       });
     }
     logAuditEvent('data_entry', `Deleted hero banner`, `Hero ID: ${bannerId}`);
@@ -3867,7 +3991,13 @@ export default function App() {
   const syncLocalityRoutingConfigInBackground = (
     mutator: (config: LocalityRoutingConfigState) => LocalityRoutingConfigState,
   ) => {
-    const nextConfig = normalizeLocalityRoutingConfigState(mutator(buildLocalityRoutingConfigPayload()));
+    // Read from the in-flight ref (if a prior call already ran this tick)
+    // instead of always rebuilding from possibly-stale React state, so a
+    // burst of synchronous calls (e.g. create locality + add N pincode
+    // mappings) compose onto each other instead of clobbering one another.
+    const baseConfig = pendingLocalityRoutingConfigRef.current || buildLocalityRoutingConfigPayload();
+    const nextConfig = normalizeLocalityRoutingConfigState(mutator(baseConfig));
+    pendingLocalityRoutingConfigRef.current = nextConfig;
     setLocalities(nextConfig.localities);
     setSubdomains(nextConfig.subdomains);
     setPincodeMappings(nextConfig.pincodeMappings);
@@ -3880,6 +4010,13 @@ export default function App() {
       });
     }
   };
+
+  useEffect(() => {
+    // Once localities/subdomains/pincodeMappings/defaultLocalityId actually
+    // commit to React state, the ref is no longer needed until the next
+    // burst of synchronous updates.
+    pendingLocalityRoutingConfigRef.current = null;
+  }, [localities, subdomains, pincodeMappings, defaultLocalityId]);
 
   const handleSaveBusinessTaxonomy = async (nextTaxonomy: BusinessTaxonomyState) => {
     const normalized = normalizeBusinessTaxonomyState(nextTaxonomy);
@@ -5095,8 +5232,9 @@ export default function App() {
     }
     setLocalityCategoryLinks(nextLocalityCategoryLinks);
     if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
-      void persistHomepageConfigCollectionMutation('locality-category-links', 'POST', { localityCategoryLink: linkRecord }).catch(() => {
+      void persistHomepageConfigCollectionMutation('locality-category-links', 'POST', { localityCategoryLink: linkRecord }).catch((error) => {
         lastHomepageSyncSignatureRef.current = '';
+        reportSyncFailure(error);
       });
     }
     logAuditEvent(
@@ -5113,8 +5251,9 @@ export default function App() {
     }
     setLocalityCategoryLinks(nextLocalityCategoryLinks);
     if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
-      void persistHomepageConfigCollectionMutation(`locality-category-links/${encodeURIComponent(id)}`, 'DELETE').catch(() => {
+      void persistHomepageConfigCollectionMutation(`locality-category-links/${encodeURIComponent(id)}`, 'DELETE').catch((error) => {
         lastHomepageSyncSignatureRef.current = '';
+        reportSyncFailure(error);
       });
     }
     logAuditEvent('data_entry', 'Deleted locality-category URL mapping', `Mapping ID: ${id}`);
@@ -5133,7 +5272,7 @@ export default function App() {
             return b;
           }
           logAuditEvent('data_entry', `Approved business listing registration: "${b.name}"`, `Successfully validated SLA & activated routing headers for ID ${bizId}`);
-          return { ...alignedBusiness, status: 'approved' };
+          return { ...alignedBusiness, status: 'approved' as const };
         }
         return b;
       });
@@ -5147,7 +5286,7 @@ export default function App() {
       const next = prev.map(b => {
         if (b.id === bizId) {
           logAuditEvent('data_entry', `Rejected business listing application: "${b.name}"`, `Reason of refusal: "${reason}" | App ID ${bizId} flag rejected`);
-          return { ...b, status: 'rejected', rejectionReason: reason };
+          return { ...b, status: 'rejected' as const, rejectionReason: reason };
         }
         return b;
       });
@@ -5199,8 +5338,9 @@ export default function App() {
     }
     setHomepageLayouts(nextLayouts);
     if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
-      void persistHomepageLayoutMutation(id, 'PUT', nextLayout).catch(() => {
+      void persistHomepageLayoutMutation(id, 'PUT', nextLayout).catch((error) => {
         lastHomepageSyncSignatureRef.current = '';
+        reportSyncFailure(error);
       });
     }
     logAuditEvent('data_entry', `Provisioned new municipal zone shard database and SSL routing: "${name}"`, `Virtual host bound to: ${subdomain}`);
@@ -5229,8 +5369,9 @@ export default function App() {
     }
     setHomepageLayouts(nextLayouts);
     if (apiConfiguration.syncMode === 'api' && apiConfiguration.homepageConfigEndpoint) {
-      void persistHomepageLayoutMutation(locId, 'DELETE').catch(() => {
+      void persistHomepageLayoutMutation(locId, 'DELETE').catch((error) => {
         lastHomepageSyncSignatureRef.current = '';
+        reportSyncFailure(error);
       });
     }
     // Re-route if deleting current active locality
@@ -5527,7 +5668,10 @@ export default function App() {
       setApiConfiguration(DEFAULT_API_CONFIGURATION);
       lastHomepageSyncSignatureRef.current = '';
       setSubdomains(DEFAULT_MANAGED_LOCALITY_ROUTING_CONFIG.subdomains.map(normalizeStoredSubdomain));
-      setViewedBusinessIds(DEFAULT_GUEST_VIEWED_BUSINESS_IDS);
+      // A reset returns the visitor to a clean guest state, so nothing is
+      // unlocked. This referenced an undeclared constant and would have thrown
+      // a ReferenceError the moment the reset ran.
+      setViewedBusinessIds([]);
       setUserSession({
         role: 'buyer',
         userName: 'Karan Malhotra (Verified Citizen)',
@@ -5624,9 +5768,20 @@ export default function App() {
     setActiveLocalityId(matchedLocalityId);
     setUrlCategoryFilter(null);
     setUrlSearchFilter(null);
+    // Changing pincode always lands on the locality HOME page. This flag was
+    // left alone before, so once a visitor had been to the results page in
+    // this session it stayed true, and the nonce bump below replayed it —
+    // picking a pincode from the home page threw you onto the listing page.
+    setUrlIsSearchResults(false);
+    setUrlSelectedBusinessId(null);
     setUrlFilterNonce((prev) => prev + 1);
-    const matchedLocality = localities.find((locality) => locality.id === matchedLocalityId);
-    const localitySlug = matchedLocality?.slug || matchedLocalityId;
+    // matchedLocalityId can be a comma-joined list when a shared pincode
+    // resolves to more than one locality — the visible URL still points at
+    // just the first (primary) locality's route, while the page itself
+    // shows businesses and names from every locality in the list.
+    const primaryLocalityId = matchedLocalityId.split(',')[0]?.trim() || matchedLocalityId;
+    const matchedLocality = localities.find((locality) => locality.id === primaryLocalityId);
+    const localitySlug = matchedLocality?.slug || primaryLocalityId;
     window.history.pushState({}, '', `/${localitySlug}`);
     logAuditEvent('data_entry', `Pincode Routing Executed`, `Mapped pin: ${pincode || 'Skipped'}. Routed interface view to: "${matchedLocalityId}"`);
   };
@@ -5634,8 +5789,14 @@ export default function App() {
   const handleAddPincodeMapping = (pincode: string, localityId: string) => {
     syncLocalityRoutingConfigInBackground((config) => ({
       ...config,
+      // A pincode can legitimately be shared by more than one locality (many
+      // real-world postal codes straddle several named areas), so this only
+      // dedupes an exact (pincode, localityId) re-add — it no longer strips
+      // out OTHER localities that already own this pincode. Previously this
+      // filtered by pincode alone, so binding a shared pincode to a second
+      // locality silently stole it away from the first.
       pincodeMappings: [
-        ...config.pincodeMappings.filter((mapping) => mapping.pincode !== pincode),
+        ...config.pincodeMappings.filter((mapping) => !(mapping.pincode === pincode && mapping.localityId === localityId)),
         { pincode, localityId },
       ],
       metadata: {
@@ -5647,17 +5808,25 @@ export default function App() {
     logAuditEvent('data_entry', `Added dynamic route mapping`, `Bind Postal: "${pincode}" -> Regional Node: "${localityId}"`);
   };
 
-  const handleDeletePincodeMapping = (pincode: string) => {
+  const handleDeletePincodeMapping = (pincode: string, localityId?: string) => {
     syncLocalityRoutingConfigInBackground((config) => ({
       ...config,
-      pincodeMappings: config.pincodeMappings.filter((mapping) => mapping.pincode !== pincode),
+      // When localityId is supplied, remove only that one (pincode, localityId)
+      // binding so other localities sharing the same pincode are unaffected.
+      // Falling back to deleting every binding for the pincode keeps this
+      // backward compatible with any caller that only has the pincode.
+      pincodeMappings: config.pincodeMappings.filter((mapping) => (
+        localityId
+          ? !(mapping.pincode === pincode && mapping.localityId === localityId)
+          : mapping.pincode !== pincode
+      )),
       metadata: {
         ...config.metadata,
         seededFromCode: false,
         updatedAt: new Date().toISOString(),
       },
     }));
-    logAuditEvent('data_entry', `Deleted route mapping`, `De-registered routing for Pincode: "${pincode}"`);
+    logAuditEvent('data_entry', `Deleted route mapping`, `De-registered routing for Pincode: "${pincode}"${localityId ? ` -> "${localityId}"` : ''}`);
   };
 
   const handleChangeDefaultLocalityId = (localityId: string) => {
@@ -6207,7 +6376,12 @@ export default function App() {
     setUrlSearchFilter(null);
     setUrlFilterNonce((prev) => prev + 1);
     const normalizedPin = savedPincode?.replace(/\D/g, '') || '';
-    if (/^\d{6}$/.test(normalizedPin)) {
+    // Prefer the locality already active this session over re-deriving one
+    // from the pincode: a shared pincode (e.g. one the visitor resolved via
+    // the "which locality?" picker) can match more than one mapping, and
+    // re-picking the first match here could silently switch them to a
+    // different locality than the one they actually chose.
+    if (!activeLocalityId && /^\d{6}$/.test(normalizedPin)) {
       const matched = pincodeMappings.find((mapping) => mapping.pincode === normalizedPin);
       if (matched) {
         setActiveLocalityId(matched.localityId);
@@ -6326,7 +6500,10 @@ export default function App() {
   const handleOpenLiveCityPage = (localityId?: string) => {
     const targetLocalityId = localityId || activeLocality?.id || activeLocalityId || defaultLocalityId || localities[0]?.id || '';
     const targetLocality = localities.find((locality) => locality.id === targetLocalityId) || activeLocality || localities[0];
-    const matchedCity = MASTER_CITIES.find((city) => city.id === targetLocality?.cityId);
+    const targetLocalityCityId = targetLocality?.cityId
+      || MASTER_LOCALITIES.find((locality) => locality.id === targetLocality?.id)?.cityId
+      || '';
+    const matchedCity = MASTER_CITIES.find((city) => city.id === targetLocalityCityId);
     if (targetLocality?.id) {
       setActiveLocalityId(targetLocality.id);
     }
@@ -7046,6 +7223,7 @@ export default function App() {
                 initialResultsPage={urlIsSearchResults}
                 filterNonce={urlFilterNonce}
                 initialSelectedBusinessId={urlSelectedBusinessId}
+                hasPendingListingRoute={Boolean(urlPendingListingSlug)}
                 selectionNonce={urlSelectionNonce}
                 onLocalityChange={setActiveLocalityId}
                 userSession={userSession}
@@ -7111,6 +7289,9 @@ export default function App() {
               businesses={businesses}
               categories={portalCategories.filter((category) => category.id !== 'all')}
               localities={localities}
+              recentSearches={[]}
+              onClearRecentSearches={() => {}}
+              onSearchSubmit={() => {}}
               onOpenLivePortal={handleExitUxMock}
               onOpenCityPage={handleOpenUiCityPreview}
               onOpenCategoryPage={handleOpenUiCategoryPreview}
@@ -7189,7 +7370,7 @@ export default function App() {
 
         {activeView === 'admin' && canAccessAdmin && (
           <Suspense fallback={<div className="text-xs text-slate-500">Loading admin console...</div>}>
-            <AdminConsole 
+            <AdminApp
               localities={localities}
               businesses={businesses}
               subdomains={subdomains}
@@ -7266,6 +7447,9 @@ export default function App() {
             />
           </Suspense>
         )}
+        {/* AdminApp (src/components/admin/AdminApp.tsx) owns its own react-router-dom routes
+            for /admin/* and renders the legacy AdminConsole internally for screens not yet
+            split into their own pages — see admin-backend-ux-spec.md Section 9. */}
 
       </main>
 
@@ -7442,7 +7626,28 @@ export default function App() {
         )}
       </div>}
 
-      <PincodeSelectionModal 
+      {/* Background-save failure notice. Optimistic mutations used to fail
+          silently, so an unsaved change was indistinguishable from a saved one. */}
+      {syncFailureNotice && (
+        <div className="fixed inset-x-0 top-0 z-[60] flex justify-center px-4 pt-3">
+          <div className="flex w-full max-w-2xl items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 shadow-lg">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-500" />
+            <div className="min-w-0 flex-1 text-xs leading-relaxed text-rose-800">
+              <strong className="block font-bold">Change not saved</strong>
+              <span>{syncFailureNotice}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSyncFailureNotice(null)}
+              className="shrink-0 rounded-lg px-2 py-1 text-xs font-bold text-rose-600 transition hover:bg-rose-100"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+
+      <PincodeSelectionModal
         isOpen={showPincodeModal}
         onClose={() => setShowPincodeModal(false)}
         savedPincode={savedPincode}

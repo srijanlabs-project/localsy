@@ -119,7 +119,7 @@ export default function NationalDirectoryPage({
         <div className="mt-5 grid gap-6 lg:grid-cols-[1.85fr_0.95fr]">
           <div>
             <SectionTitle title="Top categories across Localisy" actionLabel="Open live search" />
-            <div className="mt-4 grid grid-cols-2 gap-4 md:grid-cols-4 xl:grid-cols-4">
+            <div className="mt-4 flex flex-wrap gap-2.5">
               {topCategories.map(({ category, count }) => (
                 <CategoryChip key={category.id} category={category} count={count} onClick={(categoryId) => onOpenCategoryPage(categoryId, summary.localityHighlights[0]?.locality.id)} />
               ))}

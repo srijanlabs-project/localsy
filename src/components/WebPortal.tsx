@@ -246,6 +246,8 @@ interface WebPortalProps {
   initialResultsPage?: boolean;
   filterNonce?: number;
   initialSelectedBusinessId?: string | null;
+  // True while the address bar names a listing that has not been resolved yet.
+  hasPendingListingRoute?: boolean;
   selectionNonce?: number;
   onLocalityChange: (id: string) => void;
   userSession: UserSession;
@@ -304,6 +306,7 @@ export default function WebPortal({
   initialResultsPage = false,
   filterNonce = 0,
   initialSelectedBusinessId = null,
+  hasPendingListingRoute = false,
   selectionNonce = 0,
   onLocalityChange,
   userSession,
@@ -407,6 +410,8 @@ export default function WebPortal({
   
   // Hero Image Carousel slide index
   const [carouselIndex, setCarouselIndex] = useState(0);
+  // Junior hero (companion banner beside the main hero) rotation index
+  const [juniorBannerIndex, setJuniorBannerIndex] = useState(0);
 
   // OTP modal visibility controls
   const [showOtpModal, setShowOtpModal] = useState(false);
@@ -435,6 +440,9 @@ export default function WebPortal({
   const [formAreasOfOperation, setFormAreasOfOperation] = useState<string[]>(initialPrimaryArea?.id ? [initialPrimaryArea.id] : []);
 
   // Review submission state
+  // The detail panel shows an "Add review & rating" button; the form itself is
+  // revealed only after it is pressed.
+  const [isReviewFormOpen, setIsReviewFormOpen] = useState(false);
   const [newRating, setNewRating] = useState(5);
   const [newComment, setNewComment] = useState('');
   const [reviewPhotoUrl, setReviewPhotoUrl] = useState('');
@@ -466,6 +474,13 @@ export default function WebPortal({
   const [filterPaymentMethod, setFilterPaymentMethod] = useState('all');
   const [filterExperience, setFilterExperience] = useState<'all' | '5' | '10'>('all');
   const [sortBy, setSortBy] = useState<'recommended' | 'popular' | 'rating' | 'nearest' | 'newest'>('recommended');
+  // Mobile results filter panel. Collapsed by default, and it edits a draft:
+  // the selects only take effect on Apply, which is what lets the applied set
+  // be shown as removable chips instead of the panel having to stay open.
+  const [isMobileFilterOpen, setIsMobileFilterOpen] = useState(false);
+  const [draftCategory, setDraftCategory] = useState('all');
+  const [draftSubcategory, setDraftSubcategory] = useState('all');
+  const [draftSort, setDraftSort] = useState<'recommended' | 'popular' | 'rating' | 'nearest' | 'newest'>('recommended');
   const [resultsViewMode, setResultsViewMode] = useState<'grid' | 'map'>('grid');
   const [activeMapBusinessId, setActiveMapBusinessId] = useState<string | null>(null);
 
@@ -521,6 +536,15 @@ export default function WebPortal({
   const [isResultsPage, setIsResultsPage] = useState(false);
   const [isSearchInputFocused, setIsSearchInputFocused] = useState(false);
   const trackedAdImpressionIdsRef = useRef<Set<string>>(new Set());
+  // Guards the URL-canonicalising effect until the incoming URL's filters have
+  // actually been applied, so a deep link is never overwritten before it is read.
+  const hasConsumedUrlFiltersRef = useRef(false);
+  // The sync effect and the canonicalising effect run in the SAME commit, so
+  // right after a URL sync the canonicaliser still sees the pre-sync state
+  // (selectedCategory 'all', empty searchQuery) and would rewrite the deep link
+  // away before React re-renders. Skip that one stale pass; the effect re-runs
+  // with the settled state immediately after.
+  const skipCanonicaliseOnceRef = useRef(false);
   const [resolvedHomepagePayload, setResolvedHomepagePayload] = useState<ResolvedHomepagePayload | null>(null);
   const [resolvedHomepageSource, setResolvedHomepageSource] = useState<'published_snapshot' | 'live_resolver' | 'legacy_fallback'>('legacy_fallback');
   const [resolvedHomepageHydrated, setResolvedHomepageHydrated] = useState(false);
@@ -635,6 +659,11 @@ export default function WebPortal({
     setSelectedCategory(initialCategoryFilter ?? 'all');
     setSelectedSubcategory('all');
     setSearchQuery(initialSearchFilter ?? '');
+    // The incoming URL has now been consumed, so the canonicalising effect
+    // below is free to rewrite the address bar. Until this flips, rewriting
+    // would destroy the very query string we are waiting to read.
+    hasConsumedUrlFiltersRef.current = true;
+    skipCanonicaliseOnceRef.current = true;
   }, [filterNonce, initialCategoryFilter, initialSearchFilter, initialResultsPage]);
 
   // Auto-rotating slider effect
@@ -649,30 +678,59 @@ export default function WebPortal({
     localities[0];
   const currentLocalityMaster =
     MASTER_LOCALITIES.find((locality) => locality.id === currentLocality?.id) ||
-    MASTER_LOCALITIES.find((locality) => locality.slug === currentLocality?.slug) ||
+    MASTER_LOCALITIES.find((locality) => (
+      currentLocality?.slug
+      && slugifyForUrl(String(locality.name || '').split(',')[0]) === String(currentLocality.slug)
+    )) ||
     MASTER_LOCALITIES.find((locality) => locality.id === selectedLocalityIds[0]);
   const nearbyCityLocalities = currentLocalityMaster
     ? MASTER_LOCALITIES
         .filter((locality) => locality.cityId === currentLocalityMaster.cityId && locality.id !== currentLocalityMaster.id)
         .slice(0, 6)
     : [];
-  const selectedLocalityMappedPincodes = localityMappedPincodes.length > 0
+  // The visitor's own pincode wins. They asked for this pincode, so listings
+  // are scoped to it even if the active locality label has drifted out of sync
+  // (which it can, e.g. a pincode entered before the routing table finished
+  // loading falls back to the default locality while keeping the pincode).
+  // Only when there is no usable saved pincode do we fall back to the whole
+  // pincode set the active locality page covers.
+  const normalizedSavedPincode = String(savedPincode || '').replace(/\D/g, '');
+  // Only honour the saved pincode when it actually belongs to the locality
+  // being viewed. A pincode left over from an earlier visit (or another
+  // locality's page) must not scope this page's listings, or pair itself with
+  // this locality in the header — that produced "Roadpali - 410210", where
+  // 410210 is Kharghar's pincode.
+  const savedPincodeIsMapped = normalizedSavedPincode.length === 6
+    && pincodeMappings.some((mapping) => (
+      mapping.pincode === normalizedSavedPincode && selectedLocalityIds.includes(mapping.localityId)
+    ));
+  const localityScopedPincodes = localityMappedPincodes.length > 0
     ? localityMappedPincodes
     : pincodeMappings
         .filter((mapping) => selectedLocalityIds.includes(mapping.localityId))
         .map((mapping) => mapping.pincode);
+  const selectedLocalityMappedPincodes = savedPincodeIsMapped
+    ? [normalizedSavedPincode]
+    : localityScopedPincodes;
   const selectedLocalityNames = activeLocalityId
     .split(',')
     .map((id) => id.trim())
     .filter(Boolean)
-    .map((id) => localities.find((l) => l.id === id)?.name || id)
-    .join(', ');
+    .map((id) => localities.find((l) => l.id === id)?.name.split(',')[0] || id)
+    .join(' & ');
   const currentLocalityLabel = currentLocality?.name.split(',')[0] || 'your area';
   const recentSearchStorageKey = `localsy:recent-searches:${currentLocality?.id || 'global'}`;
   const communityHashtag = `#${slugifyForUrl(currentLocalityLabel || 'community').replace(/-/g, '_')}_community`;
+  // Same pincode-first scoping as the main listing filter.
   const aiRecommendationPool = businesses
     .filter((business) => business.status === 'approved')
-    .filter((business) => browsingLocalityIds.length === 0 || browsingLocalityIds.includes(business.localityId));
+    .filter((business) => {
+      const businessPincode = business.pincode || MASTER_AREAS.find((area) => area.id === business.areaId)?.pincode || '';
+      if (selectedLocalityMappedPincodes.length > 0) {
+        return selectedLocalityMappedPincodes.includes(businessPincode);
+      }
+      return browsingLocalityIds.length === 0 || browsingLocalityIds.includes(business.localityId);
+    });
   const todayIso = new Date().toISOString().slice(0, 10);
   const hasResolvedHomepagePayload = resolvedHomepagePayload !== null;
   const cmsHeroBanners = hasResolvedHomepagePayload
@@ -683,11 +741,16 @@ export default function WebPortal({
     currentLocality?.id &&
     !resolvedHomepageHydrated
   );
-  const cmsListingAds = shouldDeferResolvedListingAds
-    ? []
-    : hasResolvedHomepagePayload
-      ? (resolvedHomepagePayload?.listingAds || [])
-      : listingAds;
+  // Kept in this exact shape on purpose: when a resolved payload exists it is
+  // trusted even if its listingAds array is empty, rather than falling back to
+  // the legacy list. scripts/resolved-homepage-smoke.mjs asserts on it.
+  const cmsListingAds = hasResolvedHomepagePayload
+    ? (resolvedHomepagePayload?.listingAds || [])
+    : listingAds;
+  // Separate concern: while the resolved endpoint is configured but has not
+  // hydrated yet, hold the list empty for that one beat so legacy inventory
+  // does not flash before the resolved payload arrives.
+  const deliverableCmsListingAds = shouldDeferResolvedListingAds ? [] : cmsListingAds;
   const cmsCoupons = hasResolvedHomepagePayload
     ? (resolvedHomepagePayload?.offers || [])
     : coupons;
@@ -698,8 +761,8 @@ export default function WebPortal({
     ? (resolvedHomepagePayload?.sections || [])
     : [];
   const resolvedSectionBusinessIdsBySection = resolvedHomepagePayload?.sectionBusinessIdsBySection || {};
-  const resolvedSponsoredBusinessIds = new Set(
-    (resolvedHomepagePayload?.sponsoredListings || []).map((business) => business.id)
+  const resolvedSponsoredBusinessIds = new Set<string>(
+    (resolvedHomepagePayload?.sponsoredListings || []).map((business) => String(business.id))
   );
   const activeHeroBanners = cmsHeroBanners.filter((banner) => {
     if (!banner.isActive) return false;
@@ -830,10 +893,19 @@ export default function WebPortal({
     query = searchQuery
   ) => {
     const params = new URLSearchParams();
-    const keyword = getSearchResultsKeyword(categoryId, query);
-    params.set('srp', keyword);
+    // Only carry `srp` when there is a genuine typed query. It used to be set
+    // to the category name unconditionally, which meant a category URL
+    // re-applied that name as a text search every time it was opened or
+    // reloaded — the filter looked stuck on "restaurant" and could not be
+    // cleared. The category/subcategory params carry browse intent instead.
+    const trimmedQuery = String(query || '').trim();
+    if (trimmedQuery) params.set('srp', trimmedQuery);
     if (categoryId && categoryId !== 'all') params.set('category', categoryId);
     if (subcategoryId && subcategoryId !== 'all') params.set('subcategory', subcategoryId);
+    // "Browse everything" still needs to land on the results page rather than
+    // the locality home, and category=all is what the route parser reads as
+    // "open results, no filter".
+    if (!params.has('srp') && !params.has('category')) params.set('category', 'all');
     return `/${currentLocalitySlug}?${params.toString()}`;
   };
   const buildListingRoutePath = (biz: Business) => {
@@ -901,10 +973,12 @@ export default function WebPortal({
     });
   };
   const openResultsForCategory = (categoryId: string, subcategoryId = 'all') => {
-    const categoryKeyword = subcategoryId !== 'all'
-      ? getSubcategoryById(subcategoryId)?.name || getCategoryById(categoryId)?.name || categoryId
-      : getCategoryById(categoryId)?.name || (categoryId === 'all' ? '' : categoryId);
-    openResultsFromSearch(categoryId, categoryId === 'all' ? 'all' : subcategoryId, categoryKeyword);
+    // Browsing a category is NOT a text search. This used to pass the category
+    // name in as the search query, so clicking "Food & Restaurants" ran a
+    // keyword match for "Food & Restaurants" on top of the category filter and
+    // silently dropped every business whose text didn't happen to contain those
+    // words. The category (and subcategory) filter alone is the whole intent.
+    openResultsFromSearch(categoryId, categoryId === 'all' ? 'all' : subcategoryId, '');
   };
   const handleCategoryShortcut = (categoryId: string, subcategoryId = 'all') => {
     openResultsForCategory(categoryId, subcategoryId);
@@ -986,6 +1060,7 @@ export default function WebPortal({
     window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer');
   };
   const closeBusinessDetails = () => {
+    setIsReviewFormOpen(false);
     setSelectedBiz(null);
     pushHistoryIfNeeded(buildCategoryRoutePath(selectedCategory));
   };
@@ -1009,11 +1084,32 @@ export default function WebPortal({
     setSelectedBiz(matched);
   }, [selectionNonce, initialSelectedBusinessId, businesses]);
 
+  // Canonicalise the address bar to the SEO category route. This must NOT run
+  // before the incoming URL has been read: on a cold load selectedCategory is
+  // still 'all', so this used to immediately rewrite /roadpali?category=x (or
+  // /roadpali/restaurant) down to /roadpali — and App then re-parsed that
+  // stripped URL once data finished loading and fell back to the homepage.
+  // That broke every shared link, bookmark, refresh-on-filter and crawler hit.
   useEffect(() => {
+    if (!hasConsumedUrlFiltersRef.current) return;
+    if (skipCanonicaliseOnceRef.current) {
+      // Stale pass from the same commit as the URL sync — see the ref's comment.
+      skipCanonicaliseOnceRef.current = false;
+      return;
+    }
     if (activePortalTab !== 'listings') return;
     if (selectedBiz) return;
+    // A listing URL must never be canonicalised away. On a cold load the
+    // business list arrives after the first parse, so without these two guards
+    // the rewrite stripped the listing segment before it could be read — App
+    // then re-parsed the shortened path and fell back to the locality page.
+    if (hasPendingListingRoute) return;
+    if (initialSelectedBusinessId) return;
+    // A text search owns its URL (?srp=...); canonicalising to a category path
+    // would silently drop the query the visitor typed.
+    if (String(searchQuery || '').trim()) return;
     pushHistoryIfNeeded(buildCategoryRoutePath(selectedCategory));
-  }, [activePortalTab, selectedBiz, selectedCategory, currentLocalitySlug]);
+  }, [activePortalTab, selectedBiz, selectedCategory, searchQuery, currentLocalitySlug, hasPendingListingRoute, initialSelectedBusinessId]);
 
   useEffect(() => {
     setFeaturedPage(1);
@@ -1369,13 +1465,18 @@ export default function WebPortal({
     }
   };
 
-  // Filter approved listings relevant to search keyword + category ID
+  // Filter approved listings relevant to search keyword + category ID.
+  // Scoping is by PINCODE, not by the locality a business is tagged with: a
+  // page covering 400706 lists every approved business in 400706 whether it
+  // was filed under Seawoods or Nerul. Locality ids are only the fallback for
+  // a page with no mapped pincodes, so it isn't left showing nothing.
   const approvedInLocality = businesses.filter((b) => {
+    if (b.status !== 'approved') return false;
     const businessPincode = b.pincode || MASTER_AREAS.find((area) => area.id === b.areaId)?.pincode || '';
-    const matchesMappedPincode = selectedLocalityMappedPincodes.length === 0
-      ? true
-      : selectedLocalityMappedPincodes.includes(businessPincode);
-    return browsingLocalityIds.includes(b.localityId) && b.status === 'approved' && matchesMappedPincode;
+    if (selectedLocalityMappedPincodes.length > 0) {
+      return selectedLocalityMappedPincodes.includes(businessPincode);
+    }
+    return browsingLocalityIds.length === 0 || browsingLocalityIds.includes(b.localityId);
   });
   const availableCityOptions = useMemo(() => {
     const cityIds = Array.from(new Set(approvedInLocality.map((business) => business.cityId).filter(Boolean)));
@@ -1386,19 +1487,20 @@ export default function WebPortal({
       }))
       .sort((left, right) => left.name.localeCompare(right.name));
   }, [approvedInLocality]);
-  const filteredBusinesses = approvedInLocality.filter(b => {
+  // Everything except the category/subcategory choice. Facet counts in the
+  // sidebar are computed from THIS set, so the numbers describe the real
+  // result set (and picking a category doesn't zero out its siblings).
+  const businessesBeforeTaxonomyFilter = approvedInLocality.filter(b => {
     const matchesSearch = matchesBusinessSearch(b, normalizedActiveSearch);
-    
-    // Check if matching primary category
-    const matchesCategory = selectedCategory === 'all' || b.categoryId === selectedCategory;
-    const matchesSubcategory = selectedSubcategory === 'all' || b.subcategoryId === selectedSubcategory;
     const matchesCity = filterCityId === 'all' || b.cityId === filterCityId;
 
     // Discovery Filter: Distance
     const matchesDistance = filterDistance === 'all' || (b.distance !== undefined && b.distance <= parseFloat(filterDistance));
 
-    // Discovery Filter: Rating min check
-    const matchesRating = filterRating === 0 || b.rating >= filterRating;
+    // Ratings are not surfaced anywhere in the product, so they must never
+    // filter results either. A leftover filterRating used to silently drop
+    // listings with no visible control to clear it.
+    const matchesRating = true;
 
     // Discovery Filter: Open now check 
     const businessHours = String(b.hours || '');
@@ -1425,12 +1527,28 @@ export default function WebPortal({
     // Discovery Filter: Experience min years
     const matchesExperience = filterExperience === 'all' || (b.experienceYears !== undefined && b.experienceYears >= parseFloat(filterExperience));
 
-    return matchesSearch && matchesCategory && matchesSubcategory && matchesCity && matchesDistance && matchesRating && matchesOpenNow && matchesPrice && matchesDelivery && matchesOffers && matchesVerified && matchesLanguage && matchesPayment && matchesExperience;
+    return matchesSearch && matchesCity && matchesDistance && matchesRating && matchesOpenNow && matchesPrice && matchesDelivery && matchesOffers && matchesVerified && matchesLanguage && matchesPayment && matchesExperience;
+  });
+
+  const filteredBusinesses = businessesBeforeTaxonomyFilter.filter((b) => {
+    const matchesCategory = selectedCategory === 'all' || b.categoryId === selectedCategory;
+    const matchesSubcategory = selectedSubcategory === 'all' || b.subcategoryId === selectedSubcategory;
+    return matchesCategory && matchesSubcategory;
   });
   const dedupedFilteredBusinesses = dedupeBusinessesForExperience(filteredBusinesses, normalizedActiveSearch, 'results');
 
+  // A listing with no contactable phone renders as "Number hidden" with no
+  // action button, so it is the least useful result. It sinks below every
+  // contactable listing regardless of which sort is active; the chosen sort
+  // then orders within each of the two groups.
+  const hasContactablePhone = (business: Business) => (
+    Boolean(String(business.phone || '').replace(/\D/g, '').slice(-10))
+  );
+
   // Apply sorting rules
   const sortedBusinesses = [...dedupedFilteredBusinesses].sort((a, b) => {
+    const phoneRank = Number(hasContactablePhone(b)) - Number(hasContactablePhone(a));
+    if (phoneRank !== 0) return phoneRank;
     if (sortBy === 'recommended') {
       const scoreDiff = getBusinessRecommendedScore(b, normalizedActiveSearch, 'results') - getBusinessRecommendedScore(a, normalizedActiveSearch, 'results');
       if (scoreDiff !== 0) return scoreDiff;
@@ -1451,6 +1569,8 @@ export default function WebPortal({
     return 0;
   });
   const homepageSortedBusinesses = dedupeBusinessesForExperience(approvedInLocality, '', 'homepage').sort((a, b) => {
+    const phoneRank = Number(hasContactablePhone(b)) - Number(hasContactablePhone(a));
+    if (phoneRank !== 0) return phoneRank;
     const scoreDiff = getBusinessRecommendedScore(b, '', 'homepage') - getBusinessRecommendedScore(a, '', 'homepage');
     if (scoreDiff !== 0) return scoreDiff;
     return (b.reviewCount - a.reviewCount) || b.name.localeCompare(a.name);
@@ -1746,7 +1866,7 @@ export default function WebPortal({
     if (normalizedPincodes.length === 0) return true;
     return normalizedPincodes.some((pincode) => scopedPincodes.has(pincode) || (!!fallbackPincode && fallbackPincode === pincode));
   };
-  const activeListingAds = cmsListingAds.filter((ad) => {
+  const activeListingAds = deliverableCmsListingAds.filter((ad) => {
     if (!ad.isActive) return false;
     if (!['approved', 'live'].includes(ad.workflowStatus || 'draft')) return false;
     if (!matchesDateWindow(ad.startDate, ad.endDate)) return false;
@@ -2850,7 +2970,8 @@ export default function WebPortal({
       const heroCtaType = activeHeroSlide?.ctaType || section.ctaType;
       const heroCtaTarget = activeHeroSlide?.ctaTarget || section.ctaTarget || 'all';
       return (
-        <section key={sectionKey} className="relative w-full min-w-0 overflow-hidden rounded-[26px] bg-white shadow-sm md:min-h-[400px]">
+        <div key={sectionKey} className="flex flex-col gap-4 md:flex-row md:items-stretch">
+        <section className="relative w-full min-w-0 overflow-hidden rounded-[26px] bg-white shadow-sm md:min-h-[400px] md:flex-[4]">
           <div className="absolute inset-y-0 right-0 hidden w-[62%] md:block">
             <img
               src={carouselImages[carouselIndex]}
@@ -2975,6 +3096,8 @@ export default function WebPortal({
             )}
           </div>
         </section>
+        {renderHeroJuniorBanner()}
+        </div>
       );
     }
 
@@ -3779,7 +3902,7 @@ export default function WebPortal({
         }
       ];
   const shouldUseFallbackAds = !shouldDeferResolvedListingAds && resolvedHomepageSource === 'legacy_fallback' && activeListingAds.length === 0;
-  const fallbackSidebarAds: ListingAd[] = (homepageDefaultsConfig?.fallbackListingAds || (Array.isArray(HOMEPAGE_DEFAULTS_BOOTSTRAP.fallbackListingAds) ? HOMEPAGE_DEFAULTS_BOOTSTRAP.fallbackListingAds : []) as Array<Record<string, unknown>>).map((ad, index) => ({
+  const fallbackSidebarAds: ListingAd[] = (homepageDefaultsConfig?.fallbackListingAds || (Array.isArray(HOMEPAGE_DEFAULTS_BOOTSTRAP.fallbackListingAds) ? HOMEPAGE_DEFAULTS_BOOTSTRAP.fallbackListingAds : []) as unknown as Array<Record<string, unknown>>).map((ad, index) => ({
     id: String(ad.id || `fallback_ad_${index + 1}`),
     title: String(ad.title || 'Fallback Ad'),
     description: String(ad.description || ''),
@@ -3827,6 +3950,10 @@ export default function WebPortal({
   const desktopSidebarAds = rankAdsForDelivery(homepageAdInventory, 'homepage_sidebar')
     .filter((ad) => (ad.deviceTarget || 'all') !== 'mobile')
     .slice(0, 4);
+  // Junior hero: companion banner beside the main hero carousel, rotates through up to 6 slides.
+  const homepageHeroJuniorAds = rankAdsForDelivery(homepageAdInventory, 'homepage_hero_junior')
+    .filter((ad) => (ad.deviceTarget || 'all') !== 'mobile')
+    .slice(0, 6);
   const contextualListingAds = rankAdsForDelivery(getAdsForBusinessContext(sortedBusinesses, homepageAdInventory), 'listing_results');
   const desktopResultAds = contextualListingAds.filter((ad) => (ad.deviceTarget || 'all') !== 'mobile');
   const mobileResultAds = contextualListingAds.filter((ad) => (ad.deviceTarget || 'all') !== 'desktop');
@@ -3834,6 +3961,60 @@ export default function WebPortal({
     .filter((ad) => (ad.deviceTarget || 'all') !== 'desktop')
     .filter((ad) => (ad.mobileRowPosition || 0) > 0)
     .sort((a, b) => (a.mobileRowPosition || 0) - (b.mobileRowPosition || 0) || (getAdDeliveryScore(b, 'mobile_inline') - getAdDeliveryScore(a, 'mobile_inline')));
+  const juniorBannerCount = homepageHeroJuniorAds.length;
+  useEffect(() => {
+    if (juniorBannerCount === 0) return;
+    const interval = setInterval(() => {
+      setJuniorBannerIndex((prev) => (prev + 1) % juniorBannerCount);
+    }, 4800);
+    return () => clearInterval(interval);
+  }, [juniorBannerCount]);
+  const renderHeroJuniorBanner = () => {
+    if (homepageHeroJuniorAds.length === 0) return null;
+    const ad = homepageHeroJuniorAds[juniorBannerIndex % homepageHeroJuniorAds.length];
+    const adImage = getMediaProxyUrl(ad.imageUrl);
+    return (
+      <aside className="hidden md:block md:w-[20%] md:flex-shrink-0">
+        <button
+          type="button"
+          onClick={() => handleListingAdAction(ad)}
+          className="relative block h-full min-h-[220px] w-full overflow-hidden rounded-[26px] text-left text-white shadow-sm md:min-h-[400px]"
+          style={{ backgroundColor: ad.backgroundColor || '#0D1B2A' }}
+        >
+          {adImage ? (
+            <>
+              <img src={adImage} alt={ad.title} className="absolute inset-0 h-full w-full object-cover" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/30 to-transparent" />
+            </>
+          ) : null}
+          <div className="relative z-10 flex h-full min-h-[220px] flex-col justify-end p-5 md:min-h-[400px]">
+            <span className="inline-flex w-fit rounded-full bg-white/90 px-2.5 py-1 text-[9px] font-bold uppercase tracking-wide text-slate-900">
+              {ad.badge || 'Ad'}
+            </span>
+            <h4 className="mt-3 text-base font-extrabold leading-tight">{ad.title}</h4>
+            {ad.description && (
+              <p className="mt-1.5 line-clamp-2 text-xs text-white/75">{ad.description}</p>
+            )}
+            <span className="mt-3 text-xs font-bold text-white underline underline-offset-2">
+              {ad.ctaText || 'Learn more'} →
+            </span>
+          </div>
+          {homepageHeroJuniorAds.length > 1 && (
+            <div className="absolute bottom-3 left-5 z-10 flex gap-1.5">
+              {homepageHeroJuniorAds.map((_, dotIndex) => (
+                <span
+                  key={dotIndex}
+                  className={`h-1.5 rounded-full transition-all ${
+                    dotIndex === juniorBannerIndex % homepageHeroJuniorAds.length ? 'w-4 bg-white' : 'w-1.5 bg-white/40'
+                  }`}
+                />
+              ))}
+            </div>
+          )}
+        </button>
+      </aside>
+    );
+  };
   useEffect(() => {
     if (!onTrackListingAdInteraction) return;
     const visibleAds = [
@@ -4027,7 +4208,7 @@ export default function WebPortal({
       if (seen.has(ad.id)) return false;
       seen.add(ad.id);
       return true;
-    }).slice(0, 4);
+    }).slice(0, 6);
   }, [desktopResultAds, desktopSidebarAds]);
 
   const desktopResultsInlineAds = useMemo(() => {
@@ -4040,15 +4221,49 @@ export default function WebPortal({
     });
   }, [desktopResultAds, desktopSidebarAds]);
 
-  const desktopResultsCategories = useMemo(() => (
-    BUSINESS_CATEGORIES
-      .map((category) => ({
-        id: category.id,
-        name: category.name,
-        count: approvedInLocality.filter((business) => business.categoryId === category.id).length,
+  // Category facets built from the actual result set rather than a fixed list:
+  // every category genuinely present gets an entry, ordered by how many results
+  // it has, with no arbitrary cap.
+  const desktopResultsCategories = useMemo(() => {
+    const counts = new Map<string, number>();
+    businessesBeforeTaxonomyFilter.forEach((business) => {
+      const key = String(business.categoryId || '').trim();
+      if (!key) return;
+      counts.set(key, (counts.get(key) || 0) + 1);
+    });
+    return [...counts.entries()]
+      .map(([id, count]) => ({
+        id,
+        name: BUSINESS_CATEGORIES.find((category) => category.id === id)?.name
+          || getCategoryById(id)?.name
+          || id,
+        count,
       }))
-      .filter((category) => category.count > 0)
-  ), [approvedInLocality]);
+      .sort((left, right) => right.count - left.count || left.name.localeCompare(right.name));
+  }, [businessesBeforeTaxonomyFilter]);
+
+  // Subcategory facets, scoped to the chosen category when there is one so the
+  // list stays relevant instead of showing every subcategory in the directory.
+  const desktopResultsSubcategories = useMemo(() => {
+    const pool = selectedCategory === 'all'
+      ? businessesBeforeTaxonomyFilter
+      : businessesBeforeTaxonomyFilter.filter((business) => business.categoryId === selectedCategory);
+    const counts = new Map<string, number>();
+    pool.forEach((business) => {
+      const key = String(business.subcategoryId || '').trim();
+      if (!key) return;
+      counts.set(key, (counts.get(key) || 0) + 1);
+    });
+    return [...counts.entries()]
+      .map(([id, count]) => ({
+        id,
+        name: BUSINESS_SUBCATEGORIES.find((subcategory) => subcategory.id === id)?.name
+          || getSubcategoryById(id)?.name
+          || id,
+        count,
+      }))
+      .sort((left, right) => right.count - left.count || left.name.localeCompare(right.name));
+  }, [businessesBeforeTaxonomyFilter, selectedCategory]);
 
   const desktopResultsStream = useMemo(() => {
     const rows: Array<
@@ -4057,9 +4272,9 @@ export default function WebPortal({
     > = [];
     pagedSearchResultBusinesses.forEach((business, index) => {
       rows.push({ type: 'listing', id: business.id, business });
-      const shouldInsertAd = desktopResultsInlineAds.length > 0 && (index + 1) % 3 === 0 && index !== pagedSearchResultBusinesses.length - 1;
+      const shouldInsertAd = desktopResultsInlineAds.length > 0 && (index + 1) % 5 === 0 && index !== pagedSearchResultBusinesses.length - 1;
       if (shouldInsertAd) {
-        const ad = desktopResultsInlineAds[Math.floor(index / 3) % desktopResultsInlineAds.length];
+        const ad = desktopResultsInlineAds[Math.floor(index / 5) % desktopResultsInlineAds.length];
         rows.push({ type: 'ad', id: `${ad.id}-inline-${index}`, ad });
       }
     });
@@ -4071,8 +4286,10 @@ export default function WebPortal({
     if (selectedCategory !== 'all') {
       parts.push(getCategoryById(selectedCategory)?.name || selectedCategory);
     }
-    if (filterRating === 4.5) parts.push('4.5 & up');
-    if (filterRating === 4) parts.push('4.0 & up');
+    if (selectedSubcategory !== 'all') {
+      parts.push(getSubcategoryById(selectedSubcategory)?.name || selectedSubcategory);
+    }
+    // Rating filter is no longer offered, so it never appears in the summary.
     if (filterVerifiedOnly) parts.push('verified number');
     const sortLabelMap: Record<string, string> = {
       recommended: 'recommended',
@@ -4083,9 +4300,92 @@ export default function WebPortal({
     };
     parts.push(`sorted by ${sortLabelMap[sortBy] || 'recommended'}`);
     return parts;
-  }, [filterOpenNow, filterRating, filterVerifiedOnly, selectedCategory, sortBy]);
+  }, [filterOpenNow, filterRating, filterVerifiedOnly, selectedCategory, selectedSubcategory, sortBy]);
+
+  // Subcategory options for the DRAFT category, which can differ from the
+  // applied one while the panel is open.
+  const draftSubcategoryOptions = useMemo(() => {
+    const pool = draftCategory === 'all'
+      ? businessesBeforeTaxonomyFilter
+      : businessesBeforeTaxonomyFilter.filter((business) => business.categoryId === draftCategory);
+    const counts = new Map<string, number>();
+    pool.forEach((business) => {
+      const key = String(business.subcategoryId || '').trim();
+      if (!key) return;
+      counts.set(key, (counts.get(key) || 0) + 1);
+    });
+    return [...counts.entries()]
+      .map(([id, count]) => ({
+        id,
+        name: BUSINESS_SUBCATEGORIES.find((subcategory) => subcategory.id === id)?.name
+          || getSubcategoryById(id)?.name
+          || id,
+        count,
+      }))
+      .sort((left, right) => right.count - left.count || left.name.localeCompare(right.name));
+  }, [businessesBeforeTaxonomyFilter, draftCategory]);
+
+  const openMobileFilterPanel = () => {
+    setDraftCategory(selectedCategory);
+    setDraftSubcategory(selectedSubcategory);
+    setDraftSort(sortBy);
+    setIsMobileFilterOpen(true);
+  };
+
+  const applyMobileResultFilters = () => {
+    setSelectedCategory(draftCategory);
+    setSelectedSubcategory(draftCategory === 'all' ? 'all' : draftSubcategory);
+    setSortBy(draftSort);
+    setIsMobileFilterOpen(false);
+  };
+
+  const mobileSortLabels: Record<string, string> = {
+    recommended: 'Recommended',
+    popular: 'Most reviewed',
+    rating: 'Rating',
+    nearest: 'Nearest',
+    newest: 'Newest',
+  };
+
+  // What is applied right now, as removable chips. Sort only appears once it
+  // has been moved off the default.
+  const appliedMobileResultFilters = useMemo(() => {
+    const chips: Array<{ key: string; label: string; onRemove: () => void }> = [];
+    if (selectedCategory !== 'all') {
+      chips.push({
+        key: 'category',
+        label: getCategoryById(selectedCategory)?.name || selectedCategory,
+        onRemove: () => {
+          setSelectedCategory('all');
+          setSelectedSubcategory('all');
+        },
+      });
+    }
+    if (selectedSubcategory !== 'all') {
+      chips.push({
+        key: 'subcategory',
+        label: getSubcategoryById(selectedSubcategory)?.name || selectedSubcategory,
+        onRemove: () => setSelectedSubcategory('all'),
+      });
+    }
+    if (filterVerifiedOnly) {
+      chips.push({ key: 'verified', label: 'Verified number', onRemove: () => setFilterVerifiedOnly(false) });
+    }
+    if (filterOpenNow) {
+      chips.push({ key: 'open', label: 'Open now', onRemove: () => setFilterOpenNow(false) });
+    }
+    if (sortBy !== 'recommended') {
+      chips.push({
+        key: 'sort',
+        label: `Sorted: ${mobileSortLabels[sortBy] || sortBy}`,
+        onRemove: () => setSortBy('recommended'),
+      });
+    }
+    return chips;
+  }, [filterOpenNow, filterVerifiedOnly, selectedCategory, selectedSubcategory, sortBy]);
 
   const clearDesktopResultsFilters = () => {
+    setIsMobileFilterOpen(false);
     setSelectedCategory('all');
     setSelectedSubcategory('all');
     setFilterRating(0);
@@ -4146,7 +4446,6 @@ export default function WebPortal({
   };
 
   const renderDesktopSearchResultRow = (biz: Business) => {
-    const imageUrl = getBusinessImageUrl(biz);
     const listingTags = getDesktopListingTags(biz);
     const showPrimaryButton = Boolean((biz.phone || '').replace(/\D/g, '').slice(-10));
     const eyebrow = [getBusinessSubcategoryLabel(biz), getBusinessAreaName(biz)]
@@ -4154,6 +4453,7 @@ export default function WebPortal({
       .filter(Boolean)
       .join(' · ');
     const description = String(biz.description || '').trim() || `${biz.name} is listed in ${getBusinessCategoryLabel(biz)} for ${getBusinessAreaName(biz) || currentLocalityLabel}.`;
+    const desktopAddressText = String(biz.address || '').trim() || String(getBusinessAreaName(biz) || '').trim();
 
     return (
       <article
@@ -4161,39 +4461,33 @@ export default function WebPortal({
         onClick={() => openBusinessDetails(biz)}
         className={`overflow-hidden rounded-[24px] border bg-white p-4 shadow-sm transition hover:border-[#F59E0B] ${biz.featured || biz.isSponsored ? 'border-[#F59E0B]' : 'border-[#E5E7EB]'}`}
       >
-        <div className="grid grid-cols-[200px_minmax(0,1fr)_190px] gap-5">
-          <div className="relative overflow-hidden rounded-[18px] bg-slate-100">
-            <img
-              src={imageUrl}
-              alt={biz.name}
-              onError={(e) => {
-                (e.target as HTMLImageElement).src = getCategoryFallbackImage(biz.categoryId);
-              }}
-              className={`h-full min-h-[160px] w-full ${hasUploadedBusinessImage(biz) ? 'object-cover' : 'object-contain p-4'}`}
-            />
-            {biz.featured || biz.isSponsored ? (
-              <span className="absolute left-3 top-3 rounded-md bg-[#F59E0B] px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[#111827]">
-                Sponsored
-              </span>
-            ) : null}
-          </div>
-
+        {/* Result rows are text-only — the photo column is deliberately not
+            rendered, so the layout drops to content + actions. The Sponsored
+            badge that used to sit on the image moves inline with the eyebrow. */}
+        <div className="grid grid-cols-[minmax(0,1fr)_190px] gap-5">
           <div className="min-w-0 py-1">
-            {eyebrow ? (
-              <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#C46A00]">
-                {eyebrow.toUpperCase()}
-              </div>
-            ) : null}
+            <div className="flex flex-wrap items-center gap-2">
+              {eyebrow ? (
+                <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#C46A00]">
+                  {eyebrow.toUpperCase()}
+                </div>
+              ) : null}
+              {biz.featured || biz.isSponsored ? (
+                <span className="rounded-md bg-[#F59E0B] px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[#111827]">
+                  Sponsored
+                </span>
+              ) : null}
+            </div>
             <h3 className="mt-2 text-[2rem] font-extrabold leading-tight tracking-[-0.04em] text-[#111827]">
               {biz.name}
             </h3>
-            <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-[#667085]">
-              <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2 py-1 font-bold text-white">
-                <Star className="h-3.5 w-3.5 fill-current" />
-                {biz.rating.toFixed(1)}
-              </span>
-              <span>{biz.reviewCount || 0} ratings</span>
-            </div>
+            {/* Rating badge and review count intentionally not rendered. */}
+            {desktopAddressText ? (
+              <div className="mt-2 flex items-start gap-2 text-[14px] leading-6 text-[#667085]">
+                <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-[#98A2B3]" />
+                <span className="line-clamp-2 max-w-[620px]">{desktopAddressText}</span>
+              </div>
+            ) : null}
             <p className="mt-3 max-w-[620px] text-[15px] leading-7 text-[#667085]">
               {description}
             </p>
@@ -4210,22 +4504,19 @@ export default function WebPortal({
             <div className="text-[1.65rem] font-bold leading-tight text-[#111827]">
               {showPrimaryButton ? maskBusinessPhone(biz.phone) : 'Number hidden'}
             </div>
-            <div className="mt-4 space-y-3">
-              <button
-                type="button"
-                onClick={(event) => {
-                  if (showPrimaryButton) {
-                    handlePrimaryBusinessAction(biz, event);
-                  } else {
-                    event.stopPropagation();
-                    openBusinessDetails(biz);
-                  }
-                }}
-                className={`show-number-action w-full rounded-[14px] px-4 py-3 text-sm ${showPrimaryButton ? 'bg-[#111827] text-white' : 'border border-[#E4E7EC] bg-white text-[#667085]'}`}
-              >
-                {showPrimaryButton ? 'Show number' : 'Send enquiry'}
-              </button>
-            </div>
+            {/* Only a real phone gets an action — the "Send enquiry" fallback
+                is not rendered anywhere. */}
+            {showPrimaryButton ? (
+              <div className="mt-4 space-y-3">
+                <button
+                  type="button"
+                  onClick={(event) => handlePrimaryBusinessAction(biz, event)}
+                  className="show-number-action w-full rounded-[10px] border border-[#C3D5CD] bg-[#DEE9E4] px-3 py-2 text-[12px] font-semibold text-[#2F4A41] transition hover:bg-[#D2E1DB]"
+                >
+                  Show number
+                </button>
+              </div>
+            ) : null}
           </div>
         </div>
       </article>
@@ -4233,7 +4524,6 @@ export default function WebPortal({
   };
 
   const renderMobileSearchResultRow = (biz: Business) => {
-    const imageUrl = getBusinessImageUrl(biz);
     const showPrimaryButton = Boolean((biz.phone || '').replace(/\D/g, '').slice(-10));
     const addressText = String(biz.address || '').trim() || `${getBusinessAreaName(biz) || currentLocalityLabel}`;
     const hoursText = String(biz.hours || '').trim() || 'Hours not confirmed';
@@ -4249,18 +4539,8 @@ export default function WebPortal({
         onClick={() => openBusinessDetails(biz)}
         className={`overflow-hidden rounded-[24px] border bg-white p-6 shadow-sm transition ${biz.featured || biz.isSponsored ? 'border-[3px] border-[#F59E0B]' : 'border-[#D9E0EA]'}`}
       >
+        {/* Text-only result row: the thumbnail column is deliberately omitted. */}
         <div className="flex gap-5">
-          <div className="relative h-[118px] w-[118px] shrink-0 overflow-hidden rounded-[18px] bg-slate-100">
-            <img
-              src={imageUrl}
-              alt={biz.name}
-              onError={(event) => {
-                (event.target as HTMLImageElement).src = getCategoryFallbackImage(biz.categoryId);
-              }}
-              className={`h-full w-full ${hasUploadedBusinessImage(biz) ? 'object-cover' : 'object-contain p-3'}`}
-            />
-          </div>
-
           <div className="min-w-0 flex-1">
             {biz.featured || biz.isSponsored ? (
               <span className="inline-flex rounded-[10px] bg-[#FEF3C7] px-3 py-1 text-[11px] font-bold uppercase tracking-[0.12em] text-[#B45309]">
@@ -4270,14 +4550,7 @@ export default function WebPortal({
             <h3 className="mt-2 text-[1.45rem] font-extrabold leading-tight tracking-[-0.04em] text-[#111827]">
               {biz.name}
             </h3>
-            <div className="mt-2 flex flex-wrap items-center gap-2 text-[15px] text-[#667085]">
-              <span className="inline-flex items-center gap-1">
-                <Star className="h-4 w-4 fill-current text-[#667085]" />
-                <span>{biz.rating.toFixed(1)}</span>
-              </span>
-              <span>·</span>
-              <span>{biz.reviewCount || 0} ratings</span>
-            </div>
+            {/* Rating and review count intentionally not rendered. */}
             <div className="mt-2 flex items-start gap-2 text-[15px] leading-6 text-[#667085]">
               <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-[#98A2B3]" />
               <span className="line-clamp-2">{addressText}</span>
@@ -4285,28 +4558,25 @@ export default function WebPortal({
           </div>
         </div>
 
-        <div className="mt-6 grid grid-cols-[minmax(0,1fr)_178px] gap-4">
-          <button
-            type="button"
-            onClick={(event) => {
-              if (showPrimaryButton) {
-                handlePrimaryBusinessAction(biz, event);
-              } else {
-                event.stopPropagation();
-                openBusinessDetails(biz);
-              }
-            }}
-            className="show-number-action rounded-[16px] bg-[#0F172A] px-5 py-4 text-[17px] text-white"
-          >
-            {showPrimaryButton ? 'Show number' : 'Send enquiry'}
-          </button>
+        {/* No "Send enquiry" fallback: a listing without a phone just shows
+            Directions, so the action grid collapses to one column. */}
+        <div className={`mt-6 grid gap-4 ${showPrimaryButton ? 'grid-cols-[minmax(0,1fr)_178px]' : 'grid-cols-1'}`}>
+          {showPrimaryButton ? (
+            <button
+              type="button"
+              onClick={(event) => handlePrimaryBusinessAction(biz, event)}
+              className="show-number-action rounded-[10px] border border-[#C3D5CD] bg-[#DEE9E4] px-3 py-2 text-[12px] font-semibold text-[#2F4A41] transition hover:bg-[#D2E1DB]"
+            >
+              Show number
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={(event) => {
               event.stopPropagation();
               openBusinessDirectionsDirect(biz);
             }}
-            className="rounded-[16px] border border-[#D0D5DD] bg-white px-5 py-4 text-[17px] font-semibold text-[#344054]"
+            className="rounded-[10px] border border-[#D0D5DD] bg-white px-3 py-2 text-[12px] font-semibold text-[#344054]"
           >
             Directions
           </button>
@@ -4472,7 +4742,7 @@ export default function WebPortal({
         <div>
           <div id="homepage-results-anchor" className="scroll-mt-24" />
           <LocalityLandingUiV1
-            activeLocalityId={currentLocality.id}
+            activeLocalityId={selectedLocalityIds.length > 0 ? selectedLocalityIds.join(',') : currentLocality.id}
             businesses={businesses}
             categories={categories.filter((category) => category.id !== 'all')}
             heroBanners={activeHeroBanners}
@@ -4483,8 +4753,9 @@ export default function WebPortal({
             onSearchSubmit={(query) => openResultsFromSearch('all', 'all', query)}
             onOpenHeroCta={(banner) => handleConfiguredCta(banner.ctaType, banner.ctaTarget, banner.ctaLabel || 'Explore')}
             onOpenListingAd={handleListingAdAction}
-            displayedPincode={savedPincode || selectedLocalityMappedPincodes[0] || businesses.find((business) => business.localityId === currentLocality.id && business.pincode)?.pincode || ''}
-            activeNodeLabel={currentLocalityLabel}
+            displayedPincode={selectedLocalityMappedPincodes[0] || businesses.find((business) => business.localityId === currentLocality.id && business.pincode)?.pincode || ''}
+            scopedPincodes={selectedLocalityMappedPincodes}
+            activeNodeLabel={selectedLocalityNames || currentLocalityLabel}
             userSession={userSession}
             onOpenPincodeModal={onOpenPincodeModal}
             onRequestAuth={onRequestAuth}
@@ -4495,14 +4766,24 @@ export default function WebPortal({
             onOpenPlatform={onOpenPlatform}
             onOpenCityPage={openModernHomeCityPage}
             onOpenCategoryPage={openModernHomeCategoryPage}
+            onOpenSubcategoryPage={(categoryId, subcategoryId) => openResultsFromSearch(categoryId, subcategoryId, '')}
             onOpenListingPage={openModernHomeListingPage}
+            onShowNumber={(businessId, event) => {
+              const business = businesses.find((entry) => entry.id === businessId);
+              if (business) handlePrimaryBusinessAction(business, event);
+            }}
+            revealedPhoneBusinessIds={viewedBusinessIds}
+            offers={activeCoupons}
           />
         </div>
       )}
       {activePortalTab === 'listings' && isResultsPage && (
         <>
         <div id="results-page-top" className="hidden scroll-mt-20 lg:block">
-          <div className="bg-[#111827] px-8 py-5 text-white shadow-[0_1px_0_rgba(255,255,255,0.04)]">
+          {/* Light header, matching the homepage. This bar used to be a dark
+              #111827 slab, which made the listing page look like a different
+              site than the locality landing page. */}
+          <div className="border-b border-slate-200 bg-white px-8 py-5 text-slate-900">
             <div className="mx-auto flex max-w-[1460px] items-center justify-between gap-8">
               <div className="flex min-w-0 items-center gap-8">
                 <button type="button" onClick={openHomePage} className="flex items-center">
@@ -4511,18 +4792,20 @@ export default function WebPortal({
                 <button
                   type="button"
                   onClick={onOpenPincodeModal || openHomePage}
-                  className="inline-flex shrink-0 cursor-pointer items-baseline gap-2 text-left"
+                  className="inline-flex shrink-0 cursor-pointer items-center gap-2 rounded-full border border-indigo-100 bg-indigo-50 px-4 py-2 text-left shadow-sm transition hover:border-indigo-200"
+                  title="Click to switch regional portal using pincode"
                 >
-                  <span className="text-[13px] font-normal uppercase tracking-[0.26em] text-[#F59E0B]">
-                    {currentLocalityLabel} | {savedPincode || selectedLocalityMappedPincodes[0] || businesses.find((business) => business.localityId === currentLocality.id && business.pincode)?.pincode || '410218'}
+                  <MapPin className="h-3.5 w-3.5 shrink-0 text-indigo-600" />
+                  <span className="text-xs font-bold text-indigo-950">
+                    {selectedLocalityNames || currentLocalityLabel} | {selectedLocalityMappedPincodes[0] || businesses.find((business) => business.localityId === currentLocality.id && business.pincode)?.pincode || '410218'}
                   </span>
-                  <span className="cursor-pointer text-[13px] font-normal uppercase tracking-[0.22em] text-[#4F46E5] underline-offset-4 transition hover:underline">
-                    (Change)
+                  <span className="text-[10px] font-bold text-indigo-600 underline underline-offset-2">
+                    Change
                   </span>
                 </button>
               </div>
               <div className="relative min-w-0 max-w-[660px] flex-1">
-                <div className="flex items-center rounded-[16px] border border-white/12 bg-white px-4 py-2 shadow-[0_10px_28px_rgba(2,6,23,0.22)]">
+                <div className="flex items-center rounded-[16px] border border-slate-200 bg-white px-4 py-2 shadow-sm">
                   <Search className="h-4 w-4 text-[#98A2B3]" />
                   <input
                     id="public-listing-search-input"
@@ -4559,7 +4842,7 @@ export default function WebPortal({
                       }
                       setActivePortalTab(userSession.isAuthenticated ? 'merchant' : 'listings');
                     }}
-                    className="cursor-pointer border-b-2 border-[#F59E0B] pb-1 text-[13px] font-normal text-white transition hover:text-white/85"
+                    className="cursor-pointer border-b-2 border-[#F59E0B] pb-1 text-[13px] font-normal text-slate-700 transition hover:text-slate-900"
                   >
                     {['admin', 'moderator', 'developer', 'operator'].includes(userSession.role || '') ? 'Admin Console' : 'Platform'}
                   </button>
@@ -4567,14 +4850,14 @@ export default function WebPortal({
                 <button
                   type="button"
                   onClick={() => setShowApplyModal(true)}
-                  className={`cursor-pointer border-b-2 pb-1 text-[13px] font-normal text-white transition hover:text-white/85 ${showApplyModal ? 'border-[#F59E0B]' : 'border-transparent'}`}
+                  className={`cursor-pointer border-b-2 pb-1 text-[13px] font-normal text-slate-700 transition hover:text-slate-900 ${showApplyModal ? 'border-[#F59E0B]' : 'border-transparent'}`}
                 >
                   Advertise Business
                 </button>
                 {userSession.isAuthenticated && (userSession.userPhone || ['admin', 'moderator', 'developer', 'operator'].includes(userSession.role || '')) ? (
-                  <div className={`flex items-center gap-3 border-b-2 pb-1 text-[13px] font-normal text-white ${isAccountActive ? 'border-[#F59E0B]' : 'border-transparent'}`}>
+                  <div className={`flex items-center gap-3 border-b-2 pb-1 text-[13px] font-normal text-slate-700 ${isAccountActive ? 'border-[#F59E0B]' : 'border-transparent'}`}>
                     <span>{userSession.userName?.split(' ')[0] || 'Account'}</span>
-                    <button type="button" onClick={onLogout} className="text-[13px] font-normal text-white/80 transition hover:text-white">
+                    <button type="button" onClick={onLogout} className="text-[13px] font-normal text-slate-500 transition hover:text-slate-800">
                       Log Out
                     </button>
                   </div>
@@ -4582,7 +4865,7 @@ export default function WebPortal({
                   <button
                     type="button"
                     onClick={onRequestAuth}
-                    className={`cursor-pointer border-b-2 pb-1 text-[13px] font-normal text-white transition hover:text-white/85 ${isAccountActive ? 'border-[#F59E0B]' : 'border-transparent'}`}
+                    className={`cursor-pointer border-b-2 pb-1 text-[13px] font-normal text-slate-700 transition hover:text-slate-900 ${isAccountActive ? 'border-[#F59E0B]' : 'border-transparent'}`}
                   >
                     Sign In
                   </button>
@@ -4605,48 +4888,63 @@ export default function WebPortal({
                   </button>
                 </div>
 
-                <div className="mt-6">
-                  <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#98A2B3]">Category</div>
-                  <div className="mt-4 space-y-3">
-                    {desktopResultsCategories.slice(0, 6).map((category) => (
-                      <label key={category.id} className="flex cursor-pointer items-center justify-between gap-3 text-[1rem] text-[#475467]">
-                        <span className="flex items-center gap-3">
-                          <input
-                            type="checkbox"
-                            checked={selectedCategory === category.id}
-                            onChange={() => {
-                              setSelectedCategory((current) => current === category.id ? 'all' : category.id);
-                              setSelectedSubcategory('all');
-                            }}
-                            className="h-5 w-5 rounded border border-[#CBD5E1] text-[#111827] focus:ring-0"
-                          />
-                          <span>{category.name}</span>
-                        </span>
-                        <span className="text-sm text-[#98A2B3]">{category.count}</span>
-                      </label>
-                    ))}
+                {/* Category facets — generated from the result set, every
+                    category present, scrollable rather than capped. */}
+                {desktopResultsCategories.length > 0 ? (
+                  <div className="mt-6">
+                    <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#98A2B3]">
+                      Category
+                    </div>
+                    <div className="mt-4 max-h-[260px] space-y-3 overflow-y-auto pr-1">
+                      {desktopResultsCategories.map((category) => (
+                        <label key={category.id} className="flex cursor-pointer items-center justify-between gap-3 text-[1rem] text-[#475467]">
+                          <span className="flex min-w-0 items-center gap-3">
+                            <input
+                              type="checkbox"
+                              checked={selectedCategory === category.id}
+                              onChange={() => {
+                                setSelectedCategory((current) => current === category.id ? 'all' : category.id);
+                                setSelectedSubcategory('all');
+                              }}
+                              className="h-5 w-5 shrink-0 rounded border border-[#CBD5E1] text-[#111827] focus:ring-0"
+                            />
+                            <span className="truncate">{category.name}</span>
+                          </span>
+                          <span className="shrink-0 text-sm text-[#98A2B3]">{category.count}</span>
+                        </label>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                ) : null}
 
-                <div className="mt-8 border-t border-[#EAECF0] pt-6">
-                  <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#98A2B3]">Rating</div>
-                  <div className="mt-4 flex flex-wrap gap-3">
-                    {[
-                      { label: '4.5 & up', value: 4.5 },
-                      { label: '4.0 & up', value: 4 },
-                      { label: 'Any', value: 0 },
-                    ].map((rating) => (
-                      <button
-                        key={rating.label}
-                        type="button"
-                        onClick={() => setFilterRating(rating.value as 0 | 4 | 4.5)}
-                        className={`rounded-full px-4 py-2 text-sm font-semibold ${filterRating === rating.value ? 'bg-[#111827] text-white' : 'border border-[#E4E7EC] bg-white text-[#667085]'}`}
-                      >
-                        {rating.label}
-                      </button>
-                    ))}
+                {/* Subcategory facets, narrowed to the selected category. */}
+                {desktopResultsSubcategories.length > 0 ? (
+                  <div className="mt-8 border-t border-[#EAECF0] pt-6">
+                    <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#98A2B3]">
+                      Subcategory
+                    </div>
+                    <div className="mt-4 max-h-[260px] space-y-3 overflow-y-auto pr-1">
+                      {desktopResultsSubcategories.map((subcategory) => (
+                        <label key={subcategory.id} className="flex cursor-pointer items-center justify-between gap-3 text-[1rem] text-[#475467]">
+                          <span className="flex min-w-0 items-center gap-3">
+                            <input
+                              type="checkbox"
+                              checked={selectedSubcategory === subcategory.id}
+                              onChange={() => {
+                                setSelectedSubcategory((current) => current === subcategory.id ? 'all' : subcategory.id);
+                              }}
+                              className="h-5 w-5 shrink-0 rounded border border-[#CBD5E1] text-[#111827] focus:ring-0"
+                            />
+                            <span className="truncate">{subcategory.name}</span>
+                          </span>
+                          <span className="shrink-0 text-sm text-[#98A2B3]">{subcategory.count}</span>
+                        </label>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                ) : null}
+
+                {/* Rating filter removed — ratings are not surfaced in the UI. */}
               </aside>
 
               <section className="space-y-5">
@@ -4684,16 +4982,7 @@ export default function WebPortal({
                       {(getCategoryById(selectedCategory)?.name || selectedCategory)} ×
                     </button>
                   ) : null}
-                  {filterRating === 4.5 ? (
-                    <button type="button" onClick={() => setFilterRating(0)} className="rounded-full bg-[#111827] px-4 py-2 text-sm font-semibold text-white">
-                      4.5 & up
-                    </button>
-                  ) : null}
-                  {filterRating === 4 ? (
-                    <button type="button" onClick={() => setFilterRating(0)} className="rounded-full bg-[#111827] px-4 py-2 text-sm font-semibold text-white">
-                      4.0 & up
-                    </button>
-                  ) : null}
+                  {/* Rating chips removed with the rating filter. */}
                   {filterVerifiedOnly ? <span className="rounded-full border border-[#D0D5DD] bg-white px-4 py-2 text-sm font-semibold text-[#667085]">Verified number</span> : null}
                 </div>
 
@@ -4737,7 +5026,7 @@ export default function WebPortal({
             </div>
           </div>
         </div>
-        <div className="space-y-4 scroll-mt-20 lg:hidden">
+        <div className="space-y-4 scroll-mt-20 px-4 pb-28 lg:hidden">
           <div className="rounded-[24px] bg-white px-4 py-5">
             <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-[#98A2B3]">
               <button type="button" onClick={openHomePage} className="text-[#4F46E5]">
@@ -4752,6 +5041,136 @@ export default function WebPortal({
             <p className="mt-2 text-[17px] leading-7 text-[#667085]">
               {desktopActiveFilterSummary.join(' · ')}
             </p>
+          </div>
+
+          {/* MOBILE FILTERS
+              Below `lg` the only faceted UI was the desktop sidebar
+              (`hidden lg:block`), so a phone had no filter at all. Collapsed to
+              a single "Filter" row by default; opening it reveals the selects,
+              which edit a draft until Apply. Options come from the same
+              result-derived facet memos as the desktop sidebar, so they only
+              ever offer values that return something. */}
+          <div className="rounded-[20px] border border-[#E6EBF2] bg-white">
+            <button
+              type="button"
+              onClick={() => (isMobileFilterOpen ? setIsMobileFilterOpen(false) : openMobileFilterPanel())}
+              aria-expanded={isMobileFilterOpen}
+              className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left"
+            >
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.16em] text-[#475467]">
+                <SlidersHorizontal className="h-3.5 w-3.5" />
+                Filter
+                {appliedMobileResultFilters.length > 0 ? (
+                  <span className="ml-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-[#4F46E5] px-1 text-[10px] font-bold text-white">
+                    {appliedMobileResultFilters.length}
+                  </span>
+                ) : null}
+              </span>
+              <ChevronDown className={`h-4 w-4 shrink-0 text-[#98A2B3] transition ${isMobileFilterOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {/* Applied filters stay visible while the panel is shut, each with
+                its own remove link, so the active scope is never hidden. */}
+            {appliedMobileResultFilters.length > 0 ? (
+              <div className="flex flex-wrap items-center gap-2 border-t border-[#F2F5F9] px-3 py-2.5">
+                {appliedMobileResultFilters.map((filter) => (
+                  <span
+                    key={`applied-${filter.key}`}
+                    className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-[#E0E7FF] bg-[#EEF2FF] py-1 pl-3 pr-1.5 text-[12px] font-semibold text-[#3730A3]"
+                  >
+                    <span className="truncate">{filter.label}</span>
+                    <button
+                      type="button"
+                      onClick={filter.onRemove}
+                      aria-label={`Remove ${filter.label}`}
+                      className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[#C7D2FE] text-[#3730A3]"
+                    >
+                      <X className="h-2.5 w-2.5" />
+                    </button>
+                  </span>
+                ))}
+                <button
+                  type="button"
+                  onClick={clearDesktopResultsFilters}
+                  className="text-[11.5px] font-bold text-[#4F46E5] underline underline-offset-2"
+                >
+                  Clear all
+                </button>
+              </div>
+            ) : null}
+
+            {isMobileFilterOpen ? (
+              <div className="border-t border-[#F2F5F9] px-3 py-3">
+                <div className="grid grid-cols-1 gap-2.5">
+                  <label className="block">
+                    <span className="mb-1 block text-[11px] font-bold text-[#667085]">Category</span>
+                    <select
+                      value={draftCategory}
+                      onChange={(e) => {
+                        setDraftCategory(e.target.value);
+                        setDraftSubcategory('all');
+                      }}
+                      className="w-full rounded-[10px] border border-[#E6EBF2] bg-white px-3 py-2 text-[12.5px] font-semibold text-[#111827] focus:outline-none"
+                    >
+                      <option value="all">All categories</option>
+                      {desktopResultsCategories.map((category) => (
+                        <option key={`m-cat-${category.id}`} value={category.id}>
+                          {category.name} ({category.count})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="block">
+                    <span className="mb-1 block text-[11px] font-bold text-[#667085]">Subcategory</span>
+                    <select
+                      value={draftSubcategory}
+                      onChange={(e) => setDraftSubcategory(e.target.value)}
+                      disabled={draftSubcategoryOptions.length === 0}
+                      className="w-full rounded-[10px] border border-[#E6EBF2] bg-white px-3 py-2 text-[12.5px] font-semibold text-[#111827] focus:outline-none disabled:opacity-50"
+                    >
+                      <option value="all">All subcategories</option>
+                      {draftSubcategoryOptions.map((subcategory) => (
+                        <option key={`m-sub-${subcategory.id}`} value={subcategory.id}>
+                          {subcategory.name} ({subcategory.count})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="block">
+                    <span className="mb-1 block text-[11px] font-bold text-[#667085]">Sort by</span>
+                    <select
+                      value={draftSort}
+                      onChange={(e) => setDraftSort(e.target.value as typeof sortBy)}
+                      className="w-full rounded-[10px] border border-[#E6EBF2] bg-white px-3 py-2 text-[12.5px] font-semibold text-[#111827] focus:outline-none"
+                    >
+                      <option value="recommended">Recommended</option>
+                      <option value="popular">Most reviewed</option>
+                      <option value="nearest">Nearest</option>
+                      <option value="newest">Newest</option>
+                    </select>
+                  </label>
+                </div>
+
+                <div className="mt-3 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={applyMobileResultFilters}
+                    className="flex-1 rounded-[10px] bg-[#4F46E5] px-3 py-2 text-[12px] font-bold text-white"
+                  >
+                    Apply filters
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsMobileFilterOpen(false)}
+                    className="rounded-[10px] border border-[#E6EBF2] bg-white px-3 py-2 text-[12px] font-bold text-[#475467]"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </div>
 
           {searchResultBusinesses.length === 0 ? (
@@ -5039,6 +5458,44 @@ export default function WebPortal({
 
               {/* Grid of Sliders and Multi-select states */}
               <div className="grid grid-cols-2 gap-4 text-xs lg:grid-cols-5">
+                {/* Category + Subcategory — options come from the current result
+                    set, so they only ever offer filters that return something. */}
+                <div>
+                  <label className="block text-slate-500 font-bold mb-1">Category</label>
+                  <select
+                    value={selectedCategory}
+                    onChange={(e) => {
+                      setSelectedCategory(e.target.value);
+                      setSelectedSubcategory('all');
+                    }}
+                    className="w-full p-2 bg-white rounded-lg border border-slate-200 focus:outline-none text-[11px]"
+                  >
+                    <option value="all">All categories</option>
+                    {desktopResultsCategories.map((category) => (
+                      <option key={category.id} value={category.id}>
+                        {category.name} ({category.count})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-slate-500 font-bold mb-1">Subcategory</label>
+                  <select
+                    value={selectedSubcategory}
+                    onChange={(e) => setSelectedSubcategory(e.target.value)}
+                    disabled={desktopResultsSubcategories.length === 0}
+                    className="w-full p-2 bg-white rounded-lg border border-slate-200 focus:outline-none text-[11px] disabled:opacity-50"
+                  >
+                    <option value="all">All subcategories</option>
+                    {desktopResultsSubcategories.map((subcategory) => (
+                      <option key={subcategory.id} value={subcategory.id}>
+                        {subcategory.name} ({subcategory.count})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
                 {/* 1. Distance filter */}
                 <div>
                   <label className="block text-slate-500 font-bold mb-1">Max Distance Radius</label>
@@ -5069,19 +5526,7 @@ export default function WebPortal({
                   </select>
                 </div>
 
-                {/* 3. Rating min check */}
-                <div>
-                  <label className="block text-slate-500 font-bold mb-1">Customer Star rating</label>
-                  <select 
-                    value={filterRating}
-                    onChange={(e) => setFilterRating(parseFloat(e.target.value) as any)}
-                    className="w-full p-2 bg-white rounded-lg border border-slate-200 focus:outline-none text-[11px]"
-                  >
-                    <option value="0">Show all feedback</option>
-                    <option value="4">Highly rated (4.0★+)</option>
-                    <option value="4.5">Elite Quality (4.5★+)</option>
-                  </select>
-                </div>
+                {/* Rating filter removed — ratings are not surfaced in the UI. */}
 
                 {/* 4. Price scale filter */}
                 <div>
@@ -5458,9 +5903,9 @@ export default function WebPortal({
                     {pagedSearchResultBusinesses.map((biz, index) => {
                       const hasViewed = viewedBusinessIds.includes(biz.id);
                       const resultAds = desktopResultAds.length > 0 ? desktopResultAds : mobileResultAds;
-                      const injectAd = resultAds.length > 0 && (index + 1) % 4 === 0;
+                      const injectAd = resultAds.length > 0 && (index + 1) % 5 === 0;
                       const ad = resultAds.length > 0
-                        ? resultAds[Math.floor(index / 4) % resultAds.length]
+                        ? resultAds[Math.floor(index / 5) % resultAds.length]
                         : null;
 
                       return (
@@ -5566,44 +6011,31 @@ export default function WebPortal({
 
                           {injectAd && ad && (
                             <div
-                              className="min-h-[220px] overflow-hidden rounded-2xl border border-slate-200 bg-white text-slate-950 shadow-sm"
+                              className="col-span-1 overflow-hidden rounded-2xl border border-slate-200 shadow-sm md:col-span-2 lg:col-span-4 xl:col-span-5"
                               style={{ backgroundColor: ad.backgroundColor || '#0f172a' }}
                             >
-                              <div className="hidden">
-                                <div className="bg-amber-400 text-slate-950 p-3 rounded-full flex-shrink-0 animate-bounce shadow">
-                                  <Megaphone className="w-5 h-5" />
-                                </div>
-                                <div className="text-center md:text-left space-y-1">
-                                  <span className="inline-flex bg-amber-500/15 text-amber-400 font-mono text-[9px] px-2.5 py-0.5 rounded-md border border-amber-500/20 uppercase font-bold tracking-wider mb-1">
-                                    📢 {ad.badge} Sponsored Highlight
-                                  </span>
-                                  <h4 className="text-base font-bold text-white font-sans">{ad.title}</h4>
-                                  <p className="text-xs text-slate-300 leading-relaxed max-w-2xl">{ad.description}</p>
-                                  <span className="text-[10px] text-slate-200 font-mono">
-                                    Action: {ad.actionType.replace('_', ' ')}
-                                  </span>
-                                </div>
-                              </div>
                               <button
                                 onClick={() => handleListingAdAction(ad)}
-                                className="h-full min-h-[220px] w-full cursor-pointer overflow-hidden rounded-2xl text-left"
+                                className="relative flex min-h-[96px] w-full cursor-pointer items-center justify-between gap-6 overflow-hidden rounded-2xl px-6 py-6 text-left text-white"
                               >
                                 {getMediaProxyUrl(ad.imageUrl) ? (
-                                  <img
-                                    src={getMediaProxyUrl(ad.imageUrl)}
-                                    alt={ad.title}
-                                    className="h-full min-h-[220px] w-full rounded-2xl object-cover"
-                                  />
-                                ) : (
-                                  <div className="flex h-full min-h-[220px] flex-col justify-between p-4 text-white">
-                                    <span className="text-[10px] font-bold uppercase tracking-wide text-white/70">{ad.badge}</span>
-                                    <div>
-                                      <h4 className="text-lg font-extrabold leading-tight">{ad.title}</h4>
-                                      <p className="mt-2 line-clamp-3 text-xs text-white/80">{ad.description}</p>
-                                    </div>
-                                    <span className="inline-flex rounded-xl bg-white px-4 py-2 text-xs font-bold text-slate-900">{ad.ctaText}</span>
-                                  </div>
-                                )}
+                                  <>
+                                    <img
+                                      src={getMediaProxyUrl(ad.imageUrl)}
+                                      alt={ad.title}
+                                      className="absolute inset-0 h-full w-full object-cover opacity-30"
+                                    />
+                                    <div className="absolute inset-0 bg-gradient-to-r from-black/80 via-black/50 to-black/10" />
+                                  </>
+                                ) : null}
+                                <div className="relative z-10 min-w-0">
+                                  <span className="text-[10px] font-bold uppercase tracking-wide text-white/70">{ad.badge || 'Advertisement'}</span>
+                                  <h4 className="mt-1 text-lg font-extrabold leading-tight">{ad.title}</h4>
+                                  <p className="mt-1 line-clamp-1 text-xs text-white/80">{ad.description}</p>
+                                </div>
+                                <span className="relative z-10 inline-flex flex-shrink-0 rounded-xl bg-white px-4 py-2 text-xs font-bold text-slate-900">
+                                  {ad.ctaText}
+                                </span>
                               </button>
                             </div>
                           )}
@@ -6525,9 +6957,6 @@ export default function WebPortal({
                     )}
                   </div>
 
-                  <span className="bg-amber-100 text-amber-800 text-xs px-2.5 py-1 rounded-full font-bold" title="Google Ratings">
-                    ★ {selectedBiz.rating} ({selectedBiz.reviewCount} verified reviews)
-                  </span>
                 </div>
                 <div className="flex flex-wrap gap-1.5 pt-1">
                   <span className="text-xs bg-slate-100 text-slate-800 px-2.5 py-0.5 rounded-full font-mono font-medium">
@@ -6622,52 +7051,36 @@ export default function WebPortal({
                   <span className="text-indigo-600 text-sm">📞</span>
                   <div>
                     <span className="block font-bold font-sans text-[10px] text-slate-400 uppercase">Proprietor Contact:</span>
-                    {viewedBusinessIds.includes(selectedBiz.id) ? (
-                      <div className="flex items-center gap-2">
-                        {selectedBiz.phone ? (
-                          <a href={`tel:${selectedBiz.phone}`} className="hover:underline text-indigo-600 font-bold">{selectedBiz.phone}</a>
-                        ) : (
-                          <span className="text-slate-400">Not provided</span>
-                        )}
-                        <span className="bg-emerald-500/10 text-emerald-600 text-[9px] px-2 py-0.5 rounded-full font-bold border border-emerald-500/20">
-                          ✓ Viewed Previously
-                        </span>
-                      </div>
-                    ) : (
+                    {/* Same control as the home and results pages: one
+                        "Show number" button, no wording about verification.
+                        The unlock flow behind it is unchanged. */}
+                    {viewedBusinessIds.includes(selectedBiz.id) && selectedBiz.phone ? (
+                      <a href={`tel:${selectedBiz.phone}`} className="font-bold text-indigo-600 hover:underline">{selectedBiz.phone}</a>
+                    ) : selectedBiz.phone ? (
                       <button
-                        onClick={(e) => initContactUnlockFlow(selectedBiz, e)}
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white text-[9px] px-2.5 py-1 rounded-lg font-bold transition font-mono flex items-center gap-1 mt-1"
+                        type="button"
+                        onClick={(event) => handlePrimaryBusinessAction(selectedBiz, event)}
+                        className="show-number-action mt-1 rounded-[10px] border border-[#C3D5CD] bg-[#DEE9E4] px-3 py-2 text-[12px] font-semibold text-[#2F4A41] transition hover:bg-[#D2E1DB]"
                       >
-                        <Unlock className="w-3 h-3" /> OTP verify to unlock phone
+                        Show number
                       </button>
+                    ) : (
+                      <span className="text-slate-400">Not provided</span>
                     )}
                   </div>
                 </div>
 
                 {/* Email (Optional!) */}
-                {selectedBiz.email && (
+                {selectedBiz.email && viewedBusinessIds.includes(selectedBiz.id) && (
                   <div className="flex items-start gap-2.5">
                     <span className="text-indigo-600 text-sm">✉️</span>
                     <div>
                       <span className="block font-bold font-sans text-[10px] text-slate-400 uppercase">Business Email:</span>
-                      {viewedBusinessIds.includes(selectedBiz.id) ? (
-                        <a href={`mailto:${selectedBiz.email}`} className="hover:underline text-slate-800 font-bold">{selectedBiz.email}</a>
-                      ) : (
-                        <span className="text-slate-400 italic">Gated behind OTP</span>
-                      )}
+                      <a href={`mailto:${selectedBiz.email}`} className="hover:underline text-slate-800 font-bold">{selectedBiz.email}</a>
                     </div>
                   </div>
                 )}
 
-                {selectedBiz.hours && (
-                  <div className="flex items-start gap-2.5">
-                    <span className="text-indigo-600 text-sm">⏱️</span>
-                    <div>
-                      <span className="block font-bold font-sans text-[10px] text-slate-400 uppercase">Working Hours:</span>
-                      <span className="text-slate-800">{selectedBiz.hours}</span>
-                    </div>
-                  </div>
-                )}
                 {selectedBiz.ownerName && (
                   <div className="flex items-start gap-2.5">
                     <span className="text-indigo-600 text-sm">👤</span>
@@ -6805,59 +7218,40 @@ export default function WebPortal({
                 </div>
               )}
 
-              {/* Audited reviews List Module */}
+              {/* REVIEWS
+                  The rating badge and the review list are gone from this panel
+                  — it now offers the action only. The button reveals the form
+                  for a signed-in visitor and otherwise starts the existing
+                  unlock flow, with no explanatory verification copy. */}
               <div className="space-y-3 pt-4 border-t border-slate-100">
-                <h4 className="text-sm font-bold text-slate-900 font-sans flex items-center gap-1.5">
-                  <MessageSquare className="w-4 h-4 text-indigo-500" />
-                  Verified Customer Reviews ({selectedBizReviews.length})
-                </h4>
-
-                <div className="space-y-2.5 max-h-56 overflow-y-auto">
-                  {selectedBizReviews.length === 0 ? (
-                    <p className="text-slate-400 italic text-[11px] py-2 text-center bg-slate-50 rounded-lg">
-                      No customer reviews yet. Be the first to verify and post matching feedback!
-                    </p>
-                  ) : (
-                    pagedSelectedBizReviews.map(rev => (
-                      <div key={rev.id} className="bg-slate-50 border border-slate-100 p-3 rounded-2xl text-xs space-y-1">
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-slate-800 flex items-center gap-1">
-                            👤 {rev.userName} 
-                            <span className="bg-emerald-50 text-emerald-800 text-[9px] px-1.5 rounded border border-emerald-150 font-bold flex items-center gap-0.5" title="OTP Verified review creator">
-                              ✓ OTP Verified
-                            </span>
-                          </span>
-                          <span className="text-[10px] text-amber-600 font-mono font-bold">
-                            {'★'.repeat(rev.rating)}{'☆'.repeat(5 - rev.rating)}
-                          </span>
-                        </div>
-                        <p className="text-slate-650 leading-relaxed font-sans">{rev.comment}</p>
-                        <span className="text-[9px] text-slate-450 block font-mono">Posted: {new Date(rev.createdAt).toLocaleDateString()}</span>
-                      </div>
-                    ))
-                  )}
-                </div>
-                <PaginationControls
-                  compact
-                  currentPage={safeReviewsPage}
-                  totalPages={reviewsTotalPages}
-                  onPageChange={setReviewsPage}
-                />
-
-                {/* Submit Ratings after verification check */}
-                {userSession.isAuthenticated && userSession.userPhone ? (
-                  <form onSubmit={handlePostReview} className="bg-indigo-55/40 border border-indigo-100 rounded-2xl p-4 mt-2 space-y-3">
+                {!isReviewFormOpen ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (userSession.isAuthenticated && userSession.userPhone) {
+                        setIsReviewFormOpen(true);
+                        return;
+                      }
+                      setOtpTargetBiz(selectedBiz);
+                      setShowOtpModal(true);
+                    }}
+                    className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white py-2.5 text-xs font-bold text-slate-700 transition hover:bg-slate-50"
+                  >
+                    <Star className="h-3.5 w-3.5 text-amber-500" />
+                    Add review &amp; rating
+                  </button>
+                ) : (
+                  <form onSubmit={(event) => { handlePostReview(event); setIsReviewFormOpen(false); }} className="bg-indigo-55/40 border border-indigo-100 rounded-2xl p-4 space-y-3">
                     <div className="flex items-center justify-between">
-                      <span className="font-bold text-slate-850">Leave Verified review:</span>
-                      
+                      <span className="font-bold text-slate-850 text-xs">Your rating</span>
                       <div className="flex items-center gap-1">
-                        <span className="text-[10px] text-slate-400 mr-2 uppercase font-mono font-bold">Score rating:</span>
                         {[1, 2, 3, 4, 5].map(starNum => (
                           <button
                             type="button"
                             key={starNum}
                             onClick={() => setNewRating(starNum)}
-                            className="text-amber-500 hover:scale-110 active:scale-95 transition"
+                            aria-label={`${starNum} star`}
+                            className="text-amber-500 transition hover:scale-110 active:scale-95"
                           >
                             <Star className={`w-4 h-4 ${newRating >= starNum ? 'fill-amber-500 text-amber-500' : 'text-slate-300'}`} />
                           </button>
@@ -6869,46 +7263,43 @@ export default function WebPortal({
                       required
                       value={newComment}
                       onChange={(e) => setNewComment(e.target.value)}
-                      rows={2}
-                      placeholder="Share your authentic consumer service experience..."
+                      rows={3}
+                      placeholder="What was your experience?"
                       className="w-full text-xs p-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none"
                     />
 
-                    <button
-                      type="submit"
-                      className="w-full bg-slate-900 hover:bg-slate-850 text-white font-mono font-bold text-[10px] py-2 rounded-xl shadow-xs transition"
-                    >
-                      Post Audited Review Packet
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="submit"
+                        className="flex-1 rounded-xl bg-slate-900 py-2 text-xs font-bold text-white transition hover:bg-slate-800"
+                      >
+                        Post review
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsReviewFormOpen(false)}
+                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 transition hover:bg-slate-50"
+                      >
+                        Cancel
+                      </button>
+                    </div>
                   </form>
-                ) : (
-                  <div className="bg-slate-50 border border-slate-200 border-dashed rounded-2xl p-4 mt-2 text-center space-y-2.5">
-                    <p className="text-[11px] text-slate-600 leading-normal">
-                      🔒 You must authenticate your mobile number via safe OTP check before uploading verified rating comments. This prevents scraper bot spam campaigns.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setOtpTargetBiz(selectedBiz);
-                        setShowOtpModal(true);
-                      }}
-                      className="bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] px-3.5 py-1.5 rounded-lg font-bold transition font-mono shadow-sm inline-flex items-center gap-1.5"
-                    >
-                      <Lock className="w-3.5 h-3.5" /> Authenticate Phone via SMS OTP
-                    </button>
-                  </div>
                 )}
               </div>
 
               <div className="grid grid-cols-2 gap-3 pt-4 border-t border-slate-100">
-                <a 
-                  href={selectedBiz.website || buildAbsoluteListingUrl(selectedBiz)}
-                  target="_blank" 
-                  rel="noreferrer"
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-mono font-bold text-xs py-2.5 rounded-xl text-center shadow flex items-center justify-center gap-1.5 transition"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" /> {selectedBiz.website ? 'Visit Website' : 'Open Listing'}
-                </a>
+                {/* No "Open Listing" fallback — this panel IS the listing. The
+                    link renders only when the business has a real website. */}
+                {selectedBiz.website ? (
+                  <a
+                    href={selectedBiz.website}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white font-mono font-bold text-xs py-2.5 rounded-xl text-center shadow flex items-center justify-center gap-1.5 transition"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" /> Visit Website
+                  </a>
+                ) : null}
                 <button
                   type="button"
                   onClick={() => openBusinessDirectionsDirect(selectedBiz)}
@@ -6929,22 +7320,6 @@ export default function WebPortal({
                   className="bg-emerald-600 hover:bg-emerald-700 text-white font-mono font-bold text-xs py-2.5 rounded-xl flex items-center justify-center gap-1.5 transition"
                 >
                   <MessageSquare className="w-3.5 h-3.5" /> WhatsApp
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const result = onToggleComparedBusiness(selectedBiz.id);
-                    if (!result.allowed && result.reason) {
-                      alert(result.reason);
-                    }
-                  }}
-                  className={`col-span-2 font-mono font-bold text-xs py-2.5 rounded-xl flex items-center justify-center gap-1.5 transition ${
-                    isBusinessCompared(selectedBiz.id)
-                      ? 'bg-indigo-600 text-white hover:bg-indigo-700'
-                      : 'bg-slate-100 text-slate-800 hover:bg-slate-200'
-                  }`}
-                >
-                  <CheckSquare className="w-3.5 h-3.5" /> {isBusinessCompared(selectedBiz.id) ? 'Added to Compare' : 'Add to Compare'}
                 </button>
                 <button
                   type="button"
@@ -7599,19 +7974,36 @@ export default function WebPortal({
         </div>
       )}
 
-      <nav className="fixed inset-x-3 bottom-3 z-50 rounded-[26px] border border-slate-200 bg-white/95 px-4 py-3 shadow-2xl backdrop-blur md:hidden">
+      {/* Mobile tab bar. Home used to only scroll to the top (so from a results
+          page it went nowhere), Search relied on an element that isn't on the
+          results page, and Saved/Profile were the same no-op for signed-out
+          visitors. Each tab now performs a real action. Breakpoint aligned to
+          lg so it matches the mobile layout above it — at md–lg the mobile page
+          rendered with no tab bar at all. */}
+      <nav className="fixed inset-x-3 bottom-3 z-50 rounded-[26px] border border-slate-200 bg-white/95 px-4 py-3 shadow-2xl backdrop-blur lg:hidden">
         <div className="grid grid-cols-5 items-end gap-2 text-[11px] font-semibold text-slate-500">
           <button
             type="button"
-            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-            className="flex flex-col items-center gap-1 text-indigo-600"
+            onClick={() => {
+              openHomePage();
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            className={`flex flex-col items-center gap-1 ${!isResultsPage && activePortalTab === 'listings' ? 'text-indigo-600' : ''}`}
           >
-            <Home className="h-5 w-5 fill-indigo-100" />
+            <Home className={`h-5 w-5 ${!isResultsPage && activePortalTab === 'listings' ? 'fill-indigo-100' : ''}`} />
             <span>Home</span>
           </button>
           <button
             type="button"
-            onClick={scrollToPublicSearch}
+            onClick={() => {
+              setActivePortalTab('listings');
+              if (isResultsPage) {
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                window.requestAnimationFrame(() => document.getElementById('public-listing-search-input')?.focus());
+                return;
+              }
+              scrollToPublicSearch();
+            }}
             className="flex flex-col items-center gap-1"
           >
             <Search className="h-5 w-5" />
@@ -7629,7 +8021,14 @@ export default function WebPortal({
           </button>
           <button
             type="button"
-            onClick={() => setActivePortalTab('merchant')}
+            onClick={() => {
+              if (!userSession?.isAuthenticated) {
+                onRequestAuth?.();
+                return;
+              }
+              setActivePortalTab('merchant');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
             className="flex flex-col items-center gap-1"
           >
             <Bookmark className="h-5 w-5" />
@@ -7637,8 +8036,15 @@ export default function WebPortal({
           </button>
           <button
             type="button"
-            onClick={() => setActivePortalTab('merchant')}
-            className="flex flex-col items-center gap-1"
+            onClick={() => {
+              if (!userSession?.isAuthenticated) {
+                onRequestAuth?.();
+                return;
+              }
+              setActivePortalTab('merchant');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            className={`flex flex-col items-center gap-1 ${activePortalTab === 'merchant' ? 'text-indigo-600' : ''}`}
           >
             <User className="h-5 w-5" />
             <span>Profile</span>

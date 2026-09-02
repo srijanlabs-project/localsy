@@ -304,7 +304,9 @@ export default function AndroidSimulator({
             <span className="font-semibold">09:00 AM</span>
             <div className="flex items-center gap-1.5">
               {offlineMode ? (
-                <WifiOff className="w-3 h-3 text-red-400 font-bold" title="Offline Cache Mode Activates" />
+                <span title="Offline Cache Mode Activates" className="inline-flex">
+                  <WifiOff className="w-3 h-3 text-red-400 font-bold" />
+                </span>
               ) : (
                 <Wifi className="w-3 h-3 text-emerald-400" />
               )}

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  BarChart3,
   CheckCircle2,
   Database,
   ListFilter,
@@ -24,11 +25,25 @@ type ListingStatusWorkspaceProps = {
   listingStatusItemsLength: number;
   listingStatusFilter: ListingStatusFilter;
   onFilterChange: (filter: ListingStatusFilter) => void;
-  duplicateReviewCandidates: DuplicateReviewCandidate[];
-  duplicateMergeTargetByBusinessId: Record<string, string>;
-  onSelectCanonical: (duplicateBusinessId: string, canonicalBusinessId: string) => void;
-  onMergeDuplicate: (candidate: DuplicateReviewCandidate) => void;
-  onKeepSeparate: (candidate: DuplicateReviewCandidate) => void;
+  /**
+   * Duplicate Review (spec 5.3) and Listing Analytics (5.8) can render inline (legacy
+   * AdminConsole.tsx's Listing Status tab, unchanged behavior — omit both `embed*` props
+   * below to keep that) or be split into their own routed screens (the new, separately-
+   * routed Listing Directory page passes embedDuplicateReview/embedAnalytics={false} and
+   * gets a compact summary card + nav callback instead). See admin-backend-ux-spec.md
+   * Section 9 build step 2.
+   */
+  embedDuplicateReview?: boolean;
+  embedAnalytics?: boolean;
+  duplicateReviewCandidates?: DuplicateReviewCandidate[];
+  duplicateMergeTargetByBusinessId?: Record<string, string>;
+  onSelectCanonical?: (duplicateBusinessId: string, canonicalBusinessId: string) => void;
+  onMergeDuplicate?: (candidate: DuplicateReviewCandidate) => void;
+  onKeepSeparate?: (candidate: DuplicateReviewCandidate) => void;
+  /** Used for the compact summary card's badge when embedDuplicateReview is false. */
+  duplicateCandidateCount?: number;
+  onNavigateToDuplicateReview?: () => void;
+  onNavigateToListingAnalytics?: () => void;
   listingStatusPageItems: Business[];
   allBusinesses: Business[];
   auditLogs?: AuditEvent[];
@@ -110,11 +125,16 @@ export default function ListingStatusWorkspace({
   listingStatusItemsLength,
   listingStatusFilter,
   onFilterChange,
-  duplicateReviewCandidates,
-  duplicateMergeTargetByBusinessId,
-  onSelectCanonical,
-  onMergeDuplicate,
-  onKeepSeparate,
+  embedDuplicateReview = true,
+  embedAnalytics = true,
+  duplicateReviewCandidates = [],
+  duplicateMergeTargetByBusinessId = {},
+  onSelectCanonical = () => {},
+  onMergeDuplicate = () => {},
+  onKeepSeparate = () => {},
+  duplicateCandidateCount,
+  onNavigateToDuplicateReview,
+  onNavigateToListingAnalytics,
   listingStatusPageItems,
   allBusinesses,
   auditLogs = [],
@@ -288,13 +308,30 @@ export default function ListingStatusWorkspace({
         </div>
       </div>
 
-      <ListingAnalyticsPanel businesses={allBusinesses} auditLogs={auditLogs} adLeads={adLeads} />
+      {embedAnalytics ? (
+        <ListingAnalyticsPanel businesses={allBusinesses} auditLogs={auditLogs} adLeads={adLeads} />
+      ) : (
+        <button
+          type="button"
+          onClick={onNavigateToListingAnalytics}
+          className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-slate-50/70 p-4 text-left transition hover:border-[#3B82F6]/40 hover:bg-[#3B82F6]/5"
+        >
+          <div className="flex items-center gap-2">
+            <BarChart3 className="h-4 w-4 text-[#1E3A8A]" />
+            <div>
+              <div className="text-sm font-bold text-slate-950">Listing Analytics</div>
+              <div className="text-xs text-slate-500">Views, clicks, unlocks, reviews, and SEO performance for the directory.</div>
+            </div>
+          </div>
+          <span className="rounded-lg bg-white px-3 py-1.5 text-xs font-bold text-[#1E3A8A] shadow-sm">View full analytics</span>
+        </button>
+      )}
 
       <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 space-y-4">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div>
             <div className="text-sm font-bold text-slate-950 flex items-center gap-2">
-              <ListFilter className="h-4 w-4 text-indigo-600" />
+              <ListFilter className="h-4 w-4 text-[#1E3A8A]" />
               Operational filters and bulk actions
             </div>
             <p className="mt-1 text-xs text-slate-500">
@@ -313,7 +350,7 @@ export default function ListingStatusWorkspace({
               type="button"
               onClick={() => onFilterChange(filter.id)}
               className={`rounded-lg px-3 py-1.5 text-xs font-bold ${
-                listingStatusFilter === filter.id ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 border border-slate-200'
+                listingStatusFilter === filter.id ? 'bg-[#1E3A8A] text-white' : 'bg-white text-slate-600 border border-slate-200'
               }`}
             >
               {filter.label}
@@ -352,14 +389,38 @@ export default function ListingStatusWorkspace({
         </div>
       </div>
 
-      <DuplicateReviewQueue
-        duplicateReviewCandidates={duplicateReviewCandidates}
-        duplicateMergeTargetByBusinessId={duplicateMergeTargetByBusinessId}
-        onSelectCanonical={onSelectCanonical}
-        onMergeDuplicate={onMergeDuplicate}
-        onKeepSeparate={onKeepSeparate}
-        getCategoryLabel={(business) => getCategoryById(business.categoryId)?.name || business.categoryId}
-      />
+      {embedDuplicateReview ? (
+        <DuplicateReviewQueue
+          duplicateReviewCandidates={duplicateReviewCandidates}
+          duplicateMergeTargetByBusinessId={duplicateMergeTargetByBusinessId}
+          onSelectCanonical={onSelectCanonical}
+          onMergeDuplicate={onMergeDuplicate}
+          onKeepSeparate={onKeepSeparate}
+          getCategoryLabel={(business) => getCategoryById(business.categoryId)?.name || business.categoryId}
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={onNavigateToDuplicateReview}
+          className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-slate-50/70 p-4 text-left transition hover:border-[#3B82F6]/40 hover:bg-[#3B82F6]/5"
+        >
+          <div className="flex items-center gap-2">
+            <ShieldAlert className="h-4 w-4 text-amber-600" />
+            <div>
+              <div className="text-sm font-bold text-slate-950">Duplicate Review</div>
+              <div className="text-xs text-slate-500">High-confidence overlaps detected from name, phone, pincode, address, and locality similarity.</div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {Boolean(duplicateCandidateCount) && (
+              <span className="rounded-full bg-rose-100 px-2.5 py-1 text-[10px] font-mono font-bold text-rose-700">
+                {duplicateCandidateCount}
+              </span>
+            )}
+            <span className="rounded-lg bg-white px-3 py-1.5 text-xs font-bold text-[#1E3A8A] shadow-sm">Review duplicates</span>
+          </div>
+        </button>
+      )}
 
       <div className="overflow-x-auto rounded-2xl border border-slate-200">
         <table className="w-full text-left text-xs text-slate-500 border-collapse">
@@ -398,7 +459,7 @@ export default function ListingStatusWorkspace({
                 <tr
                   key={business.id}
                   onClick={() => onOpenBusiness(business)}
-                  className={`cursor-pointer hover:bg-slate-50/70 ${isSelected ? 'bg-indigo-50/40' : ''}`}
+                  className={`cursor-pointer hover:bg-[#3B82F6]/5 ${isSelected ? 'bg-[#3B82F6]/10' : ''}`}
                 >
                   <td className="px-3 py-3" onClick={(event) => event.stopPropagation()}>
                     <input

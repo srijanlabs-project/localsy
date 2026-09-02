@@ -319,6 +319,36 @@ export const DEFAULT_FALLBACK_LISTING_AD_TEMPLATES = [
     placementKey: 'homepage_sidebar_marketing',
     deviceTarget: 'all',
     mobileRowPosition: 3
+  },
+  {
+    id: 'fallback_ad_hero_junior_gym',
+    title: 'PowerFit Gym — 20% off annual membership',
+    description: 'Limited-time offer on all annual plans.',
+    badge: 'Sale',
+    ctaText: 'Learn more',
+    backgroundColor: '#0D1B2A',
+    imageUrl: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?auto=format&fit=crop&w=640&q=80',
+    actionType: 'landing_page',
+    categoryIds: ['health-medical'],
+    tags: ['gym', 'fitness', 'membership'],
+    placementKey: 'homepage_hero_junior',
+    deviceTarget: 'desktop',
+    mobileRowPosition: 0
+  },
+  {
+    id: 'fallback_ad_hero_junior_salon',
+    title: 'New Bright Salon — bridal packages available',
+    description: 'Book a free consultation this week.',
+    badge: 'New',
+    ctaText: 'Learn more',
+    backgroundColor: '#1E3A8A',
+    imageUrl: 'https://images.unsplash.com/photo-1580618672591-eb180b1a973f?auto=format&fit=crop&w=640&q=80',
+    actionType: 'landing_page',
+    categoryIds: ['beauty-wellness'],
+    tags: ['salon', 'beauty', 'bridal'],
+    placementKey: 'homepage_hero_junior',
+    deviceTarget: 'desktop',
+    mobileRowPosition: 0
   }
 ];
 

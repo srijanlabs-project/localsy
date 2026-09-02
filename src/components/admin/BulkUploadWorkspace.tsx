@@ -68,10 +68,10 @@ export default function BulkUploadWorkspace({
       <p className="text-xs text-slate-500">
         Upload CSV with columns such as Business Name, Address, Area, City, State, PIN, Mobile, Rating, Reviews, Services, Latitude, Longitude, Listing ID, Google Place ID, Photo 1 to Photo 5, and Category. The importer also still accepts Localisy Listing ID, Locality / Locality ID, Area ID, Image URL, Logo URL, Cover Image URL, Gallery URLs, and Subcategory when available. If Listing ID is blank, the system auto-generates one during preview. Photo 1 becomes the primary listing image, Photo 2 can seed the cover, and all photo columns are added to the gallery set. Missing Area will not block import as long as Locality or a mapped 6-digit PIN can resolve the listing. Duplicate Google Place IDs are blocked both within the upload sheet and against the existing catalogue. Invalid category/subcategory values are not auto-guessed; those listings go to the taxonomy mapping queue.
       </p>
-      <div className="rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2 text-[11px] text-indigo-900">
+      <div className="rounded-xl border border-[#3B82F6]/20 bg-[#3B82F6]/5 px-3 py-2 text-[11px] text-[#1E3A8A]">
         Bulk import is now optimized for rollout batches of up to <span className="font-bold">{importChunkLimit.toLocaleString()}</span> listings per CSV.
         {parsedRowCount > 0 && (
-          <span className="block pt-1 text-indigo-700">
+          <span className="block pt-1 text-[#1E3A8A]/80">
             Current file rows detected: <span className="font-bold">{parsedRowCount.toLocaleString()}</span>
             {suggestedChunkCount > 1 ? ` | Recommended chunks: ${suggestedChunkCount}` : ''}
           </span>
@@ -133,7 +133,7 @@ export default function BulkUploadWorkspace({
                 type="button"
                 onClick={onApplyImportPreview}
                 disabled={!importPreview.some((row) => row.previewStatus !== 'fail')}
-                className="text-[10px] bg-indigo-600 disabled:bg-slate-300 text-white px-3 py-1.5 rounded-lg font-bold hover:bg-indigo-700"
+                className="text-[10px] bg-[#1E3A8A] disabled:bg-slate-300 text-white px-3 py-1.5 rounded-lg font-bold hover:bg-[#1E3A8A]/90"
               >
                 Upload Ready Items
               </button>
