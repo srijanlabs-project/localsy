@@ -1011,14 +1011,11 @@ export default function WebPortal({
     }
     openBusinessDetails(business);
   };
+  // The city aggregate page has been retired, so the header logo and the
+  // "city" affordances return to this locality's own home page rather than
+  // pushing a /city/<name> route.
   const openModernHomeCityPage = () => {
-    const currentMasterLocality = MASTER_LOCALITIES.find((locality) => locality.id === currentLocality.id);
-    const currentMasterCity = currentMasterLocality
-      ? MASTER_CITIES.find((city) => city.id === currentMasterLocality.cityId)
-      : null;
-    if (!currentMasterCity) return;
-    window.history.pushState({}, '', `/city/${slugifyForUrl(currentMasterCity.name)}`);
-    window.dispatchEvent(new PopStateEvent('popstate'));
+    openHomePage();
   };
   const handleShareBusinessListing = async (biz: Business) => {
     const listingUrl = buildAbsoluteListingUrl(biz);
