@@ -7151,7 +7151,22 @@ async function getPgClient() {
   if (pgInitAttempted) return pgPool;
   pgInitAttempted = true;
   const dbUrl = process.env.DATABASE_URL;
-  if (!dbUrl) return null;
+  if (!dbUrl) {
+    // This used to return null in silence. A production deploy with the
+    // variable missing then served an empty directory off an ephemeral file
+    // store, HTTP 200 on every request, with nothing in the logs to say why —
+    // indistinguishable from having lost the data. Say it loudly, once.
+    if (process.env.NODE_ENV === 'production') {
+      console.error(
+        '[db] DATABASE_URL is NOT SET. Running on the local file store inside this '
+        + 'container: no listings, no geography, and every write is lost on restart. '
+        + 'Set DATABASE_URL and redeploy.',
+      );
+    } else {
+      console.warn('[db] DATABASE_URL is not set — using the local file store.');
+    }
+    return null;
+  }
 
   try {
     const { Pool } = await import('pg');
@@ -7544,6 +7559,76 @@ async function getPgClient() {
         payload         JSONB NOT NULL DEFAULT '{}'::jsonb
       )
     `);
+    // CREATE TABLE IF NOT EXISTS is a no-op against a table that already
+    // exists, whatever shape it is in — it does not reconcile columns. A
+    // `businesses` table left over from an earlier schema therefore kept its
+    // own columns, the very next statement failed with
+    //   ERROR: column "google_place_id" does not exist
+    // and (before the catch was fixed) that one error discarded the whole
+    // database connection and took production down while every listing sat
+    // safely in the blob.
+    //
+    // So every column is also added individually. ADD COLUMN IF NOT EXISTS is
+    // idempotent and free on a table that already has them, and it is the only
+    // thing that makes an existing table converge on this schema.
+    const BUSINESS_COLUMNS = [
+      ['google_place_id', 'TEXT'],
+      ['slug', 'TEXT'],
+      ['name', "TEXT NOT NULL DEFAULT ''"],
+      ['status', "TEXT NOT NULL DEFAULT 'pending'"],
+      ['locality_id', "TEXT NOT NULL DEFAULT ''"],
+      ['area_id', 'TEXT'],
+      ['city_id', 'TEXT'],
+      ['state_id', 'TEXT'],
+      ['pincode', 'TEXT'],
+      ['category_id', 'TEXT'],
+      ['subcategory_id', 'TEXT'],
+      ['phone', 'TEXT'],
+      ['address', 'TEXT'],
+      ['latitude', 'DOUBLE PRECISION'],
+      ['longitude', 'DOUBLE PRECISION'],
+      ['rating', 'NUMERIC(3,1) NOT NULL DEFAULT 0'],
+      ['review_count', 'INTEGER NOT NULL DEFAULT 0'],
+      ['featured', 'BOOLEAN NOT NULL DEFAULT FALSE'],
+      ['verified_badge', 'BOOLEAN NOT NULL DEFAULT FALSE'],
+      ['created_at', 'TIMESTAMPTZ NOT NULL DEFAULT NOW()'],
+      ['updated_at', 'TIMESTAMPTZ NOT NULL DEFAULT NOW()'],
+      ['payload', "JSONB NOT NULL DEFAULT '{}'::jsonb"],
+    ];
+    for (const [column, type] of BUSINESS_COLUMNS) {
+      // Per column, so one unaddable column cannot cost the rest.
+      try {
+        await pgPool.query(`ALTER TABLE businesses ADD COLUMN IF NOT EXISTS ${column} ${type}`);
+      } catch (error) {
+        console.error(
+          `[db] businesses.${column} could not be added (${error?.message || error}). `
+          + 'The existing table has an incompatible definition for it; listings will '
+          + 'not read or write correctly until that is reconciled by hand.',
+        );
+      }
+    }
+
+    // A legacy table can also carry NOT NULL columns this schema never writes,
+    // which would reject every insert. Names them rather than failing silently
+    // at the first import.
+    try {
+      const blocking = await pgPool.query(
+        `SELECT column_name FROM information_schema.columns
+         WHERE table_name = 'businesses'
+           AND is_nullable = 'NO'
+           AND column_default IS NULL
+           AND column_name <> ALL($1::text[])`,
+        [BUSINESS_COLUMNS.map(([column]) => column).concat(['id'])],
+      );
+      if (blocking.rows.length > 0) {
+        console.error(
+          '[db] businesses has NOT NULL columns this schema does not write: '
+          + `${blocking.rows.map((row) => row.column_name).join(', ')}. `
+          + 'Every listing insert will fail until they are dropped or given defaults.',
+        );
+      }
+    } catch { /* information_schema unavailable; not worth failing over */ }
+
     // google_place_id must be unique but is often blank on imported rows, so a
     // partial unique index rather than a column constraint.
     await pgPool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_businesses_place_id ON businesses(google_place_id) WHERE google_place_id IS NOT NULL AND google_place_id <> ''`);
@@ -7650,7 +7735,39 @@ async function getPgClient() {
     await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_homepage_locality_category_links_lookup ON homepage_locality_category_links(locality_id, category_id, subcategory_id)`);
     return pgPool;
   } catch (err) {
-    console.error('Postgres audit logging unavailable, using file fallback:', err?.message || err);
+    // This single catch covers every CREATE TABLE and CREATE INDEX above — 500+
+    // lines of schema bootstrap. It used to set `pgPool = null` and return, and
+    // because `pgInitAttempted` is latched the process then ran entirely
+    // file-backed for its whole life: no listings, no geography, every write
+    // landing in an ephemeral container, behind HTTP 200 on every request. One
+    // index that a managed Postgres would not accept was enough to take the
+    // whole site down while the database sat there intact.
+    //
+    // A schema statement failing and the database being unreachable are not the
+    // same failure and must not have the same consequence. Probe the connection
+    // and keep it if it answers; the app then runs against whatever schema
+    // exists, which is far better than pretending there is no database.
+    console.error('[db] schema bootstrap failed:', err?.message || err);
+    if (pgPool) {
+      try {
+        await pgPool.query('SELECT 1');
+        console.error(
+          '[db] the connection itself is healthy, so it is being kept. Continuing '
+          + 'with the schema as it stands — a table or index above is missing and '
+          + 'the statement that failed is named in the error on the previous line. '
+          + 'Features depending on it will degrade, but the data is being read and '
+          + 'written normally.',
+        );
+        return pgPool;
+      } catch (probeError) {
+        console.error('[db] the connection is unusable:', probeError?.message || probeError);
+      }
+      try { await pgPool.end(); } catch { /* already broken */ }
+    }
+    console.error(
+      '[db] falling back to the local file store. Listings and geography will be '
+      + 'EMPTY and every write is lost on restart. This is not a working state.',
+    );
     pgPool = null;
     return null;
   }
@@ -7848,7 +7965,13 @@ app.put('/api/businesses', async (req, res) => {
 // edits just mark it stale and one low-frequency worker rebuilds it.
 let businessBlobDirty = false;
 let blobRefreshInFlight = false;
-const BLOB_SNAPSHOT_INTERVAL_MS = 120_000;
+// Overridable so the snapshot path can actually be exercised in a test run
+// rather than waiting two minutes for it. Clamped so a bad value cannot turn
+// the worker into a busy loop against the whole table.
+const BLOB_SNAPSHOT_INTERVAL_MS = Math.max(
+  1_000,
+  parseInt(process.env.BLOB_SNAPSHOT_INTERVAL_MS || '120000', 10) || 120_000,
+);
 
 async function rebuildBusinessBlobFromRows() {
   if (blobRefreshInFlight) return { ok: false, skipped: 'already running' };
@@ -7858,6 +7981,36 @@ async function rebuildBusinessBlobFromRows() {
     if (!client) return { ok: false, skipped: 'no database' };
     const result = await client.query(`SELECT payload FROM businesses ORDER BY id`);
     const listings = result.rows.map((row) => row.payload).filter(Boolean);
+
+    // The blob is the rollback artifact — the only copy of the directory if the
+    // rows are lost — so this worker must never be the thing that empties it.
+    // The failure it is guarding against actually happened: on a first boot
+    // where the stage 1 backfill did not complete, the table stays empty, a
+    // write marks the blob dirty, and this rebuild replaces every listing with
+    // an empty array. Nothing logged, HTTP 200 throughout.
+    //
+    // A shrink is legitimate (a purge, a bulk delete), so it is allowed through
+    // when it is small. A collapse to nothing, or to under half of what the
+    // blob holds, means the rows are not a trustworthy source right now.
+    // Asks Postgres for the blob's length rather than reading the blob: a
+    // 38MB document must not cross the wire every 120 seconds just to be
+    // counted.
+    const existingCountRow = await client.query(
+      `SELECT CASE WHEN jsonb_typeof(value) = 'array' THEN jsonb_array_length(value) ELSE 0 END AS n
+       FROM app_state WHERE key = 'businesses' LIMIT 1`,
+    );
+    const existingCount = Number(existingCountRow.rows[0]?.n || 0);
+    if (existingCount > 0 && listings.length < Math.max(1, Math.floor(existingCount / 2))) {
+      console.error(
+        `[businesses] blob snapshot REFUSED: ${listings.length} rows would replace `
+        + `${existingCount} listings. The rows table looks incomplete — the blob is `
+        + `left intact. Check that the relational backfill completed.`,
+      );
+      // Deliberately leaves businessBlobDirty set, so a later run retries once
+      // the rows are trustworthy again instead of the mismatch being forgotten.
+      return { ok: false, refused: true, rows: listings.length, existingCount };
+    }
+
     await persistBusinessBlobOnly(listings);
     businessBlobDirty = false;
     return { ok: true, rows: listings.length };
@@ -8116,8 +8269,27 @@ async function backfillBusinessRows({ force = false } = {}) {
   try {
     const existing = await client.query(`SELECT COUNT(*)::int AS count FROM businesses`);
     const rowCount = existing.rows[0]?.count ?? 0;
-    if (rowCount > 0 && !force) {
+
+    // "Populated" used to mean "has at least one row", which is how production
+    // sat with 3 rows in the table against 6,515 in the blob: the table looked
+    // populated, so every boot skipped the backfill, and the site served three
+    // listings. A table holding a small fraction of the blob is not populated,
+    // it is broken, and the backfill is exactly the repair for it.
+    const blobLength = await client.query(
+      `SELECT CASE WHEN jsonb_typeof(value) = 'array' THEN jsonb_array_length(value) ELSE 0 END AS n
+       FROM app_state WHERE key = 'businesses' LIMIT 1`,
+    );
+    const blobCount = Number(blobLength.rows[0]?.n || 0);
+    const looksIncomplete = blobCount > 0 && rowCount < Math.floor(blobCount * 0.9);
+
+    if (rowCount > 0 && !force && !looksIncomplete) {
       return { ok: true, skipped: 'table already populated', rows: rowCount };
+    }
+    if (looksIncomplete && !force && rowCount > 0) {
+      console.warn(
+        `[businesses] table holds ${rowCount} rows against ${blobCount} listings in the `
+        + 'blob — treating it as incomplete and rebuilding it from the blob.',
+      );
     }
     const listings = await readBusinessListings();
     // A backfill IS the full set by definition, so it prunes.

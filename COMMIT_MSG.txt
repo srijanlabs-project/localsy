@@ -69,3 +69,59 @@ Listing slugs
   link. Both now slugify the combined string, and all five copies of the
   slugifier normalise Unicode first, which also fixed 27 mangled slugs
   ("Cafe Coffee Day" was becoming "caf-coffee-day").
+
+Bugs the type-check missed
+- The static-map block read selectedBiz from above its declaration. A temporal
+  dead zone inside a function body, invisible to tsc, fatal in the browser:
+  React unmounted the tree and every page rendered blank on HTTP 200.
+- currentLocality falls back to localities[0], undefined until geography
+  arrives, and 34 sites read currentLocality.x unguarded; the first one to run
+  ("carouselImages") took the portal down. It now falls back to a placeholder.
+- An empty description rendered as a bare pair of quote marks, and an empty
+  areasOfOperation rendered a "Service Areas:" label with nothing after it
+  (the guard tested the array, and [] is truthy). Both on every imported
+  listing.
+
+fields=lite dropped what the detail page needs
+- The public list request trims description, tags, website and gpsCoordinates.
+  The detail page renders from the same record, so the static map could never
+  appear on the live site whatever the database held. GET /api/businesses/:id
+  now serves the full row (approved only without a session) and the detail
+  panel hydrates the one listing it shows. The list stays lite.
+- Recently viewed was only in the mobile layout; it is now under Browse by
+  category on desktop too.
+
+The businesses table never migrated onto its own schema
+- CREATE TABLE IF NOT EXISTS is a no-op against a table that already exists and
+  does not reconcile columns. Production already had a `businesses` table from
+  an older schema (id, name, category, locality + 3 rows), so it kept that
+  shape and the next statement failed:
+    ERROR: column "google_place_id" does not exist
+    STATEMENT: CREATE UNIQUE INDEX ... ON businesses(google_place_id) ...
+  There were ADD COLUMN IF NOT EXISTS migrations for app_users, cms_templates,
+  listing_import_jobs and search_tsv, but none for the 22 columns of the table
+  this work introduced. All 22 are now added individually, each in its own try
+  so one unaddable column cannot cost the rest, and information_schema is
+  checked afterwards for NOT NULL columns without defaults that this schema
+  never writes - those would reject every insert.
+
+One failing index must not cost us the database
+- getPgClient() wrapped 500+ lines of schema bootstrap - 26 CREATE TABLEs and
+  every index - in one try block whose catch ran `pgPool = null; return null`.
+  pgInitAttempted is latched, so a single rejected DDL statement made the
+  process run entirely file-backed for its whole life: no listings, no
+  geography, every write into an ephemeral container, HTTP 200 throughout. The
+  log line said "Postgres audit logging unavailable", which by then had nothing
+  to do with audit logging. It now probes with SELECT 1 and keeps a healthy
+  connection, running against whatever schema exists.
+- A missing DATABASE_URL returned null in silence. It now says so, loudly.
+- The backfill treated "at least one row" as populated, so a table holding 3
+  rows against 6,515 listings in the blob was skipped on every boot. It now
+  compares the two and rebuilds below 90%. Reproduced end to end: a table cut
+  to 3 rows against a 100-listing blob repairs itself on the next boot.
+- The blob snapshot worker read the rows and wrote whatever it found over the
+  rollback copy, with no floor. On a boot where the backfill had not completed
+  that would have replaced every listing with an empty array, unlogged. It now
+  refuses below half the blob's length, names both counts, and leaves the dirty
+  flag set to retry. scripts/blob-snapshot-guard-test.mjs reproduces the
+  original failure and asserts the blob survives it.
