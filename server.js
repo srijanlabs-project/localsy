@@ -8177,6 +8177,26 @@ app.get('/api/admin/businesses/row-health', async (req, res) => {
   }
 });
 
+// The public list request is `fields=lite`, which deliberately drops
+// description, tags, website and gpsCoordinates — they are ~30% of the payload
+// and no card uses them. The detail page does, so it hydrates the one listing
+// it is showing from here. Single indexed row, ~2ms.
+app.get('/api/businesses/:businessId', async (req, res) => {
+  try {
+    const business = await findBusinessByIdOrSlug(req.params.businessId);
+    if (!business) return res.status(404).json({ ok: false, error: 'listing not found' });
+    // Only approved listings are readable without a session; a pending or
+    // rejected one must not be visible just because its id is guessable.
+    if (String(business.status || '').toLowerCase() !== 'approved' && !authFromHeader(req)) {
+      return res.status(404).json({ ok: false, error: 'listing not found' });
+    }
+    res.json({ ok: true, business });
+  } catch (err) {
+    console.error('Failed to read business listing:', err);
+    res.status(500).json({ ok: false, error: err?.message || 'Failed to read business listing' });
+  }
+});
+
 app.patch('/api/businesses/:businessId', async (req, res) => {
   const access = requirePrivilegedWriteAccess(req, res);
   if (!access) return;

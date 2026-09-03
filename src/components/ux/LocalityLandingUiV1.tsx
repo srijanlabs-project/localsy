@@ -1304,6 +1304,34 @@ export default function LocalityLandingUiV1({
             </div>
           </section>
 
+          {/* Recently viewed, desktop. Same rail as the mobile layout and the
+              same source list, sitting directly under Browse by category.
+              Rendered only when there is history to show. */}
+          {recentlyViewedListings.length > 0 ? (
+            <section className="mt-6 px-8">
+              <div className="mx-auto max-w-[1280px]">
+                <div className="flex items-baseline justify-between gap-3">
+                  <h2 className="text-[18px] font-semibold tracking-[-0.01em] text-[#0D1B2A]">Recently viewed</h2>
+                  <span className="text-xs font-medium text-[#98A2B3]">
+                    {recentlyViewedListings.length} listing{recentlyViewedListings.length === 1 ? '' : 's'}
+                  </span>
+                </div>
+                <div className="mt-3 flex gap-3 overflow-x-auto pb-2 [scrollbar-width:thin]">
+                  {recentlyViewedListings.map((business) => (
+                    <div key={`recent-desktop-${business.id}`} className="w-[210px] shrink-0">
+                      <MobileListingCard
+                        business={business}
+                        onOpenListingPage={onOpenListingPage}
+                        onShowNumber={onShowNumber}
+                        isPhoneRevealed={revealedPhoneBusinessIds.includes(business.id)}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </section>
+          ) : null}
+
           {stripBannerAd ? (
             <div className="mt-6">
               <InFeedAdStrip

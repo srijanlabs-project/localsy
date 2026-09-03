@@ -757,10 +757,28 @@ export default function WebPortal({
     .map((id) => id.trim())
     .filter(Boolean);
   const browsingLocalityIds = selectedLocalityIds;
+  // `localities[0]` is undefined until the geography payload has arrived (and
+  // stays undefined if it fails), and 34 places below read `currentLocality.x`
+  // unguarded — `currentLocality.carouselImages` threw
+  // "Cannot read properties of undefined" and took the whole portal down with
+  // it. A placeholder keeps the first render harmless; the real locality
+  // replaces it as soon as the list loads.
+  const FALLBACK_LOCALITY: Locality = {
+    id: '',
+    name: 'your area',
+    slug: '',
+    subdomain: '',
+    description: '',
+    status: 'active',
+    coverImage: '',
+    stats: { numBusinesses: 0, numPending: 0 },
+    carouselImages: [],
+  };
   const currentLocality =
     localities.find((l) => l.id === selectedLocalityIds[0]) ||
     localities.find((l) => l.id === activeLocalityId) ||
-    localities[0];
+    localities[0] ||
+    FALLBACK_LOCALITY;
   const currentLocalityMaster =
     MASTER_LOCALITIES.find((locality) => locality.id === currentLocality?.id) ||
     MASTER_LOCALITIES.find((locality) => (
@@ -1239,6 +1257,35 @@ export default function WebPortal({
 
   useEffect(() => {
     setReviewsPage(1);
+  }, [selectedBiz?.id]);
+
+  // The public listings request is `fields=lite`, so the record behind a card
+  // has no description, tags, website or gpsCoordinates — the detail page needs
+  // all four. Fetch the one open listing in full and merge. Without this the
+  // static map never renders on the live site, however good the coordinates in
+  // the database are, because the client simply never received them.
+  const [hydratedListingIds, setHydratedListingIds] = useState<Record<string, true>>({});
+  useEffect(() => {
+    const id = selectedBiz?.id;
+    if (!id || hydratedListingIds[id]) return;
+    // 'gpsCoordinates' in obj rather than a truthiness check: a listing with no
+    // coordinates at all still counts as hydrated, so it is asked for once.
+    if (selectedBiz && 'gpsCoordinates' in selectedBiz && 'description' in selectedBiz) return;
+    let cancelled = false;
+    fetch(`/api/businesses/${encodeURIComponent(id)}`)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (cancelled || !data?.business) return;
+        setHydratedListingIds((current) => ({ ...current, [id]: true }));
+        setSelectedBiz((current) => (current && current.id === id
+          ? { ...current, ...data.business }
+          : current));
+      })
+      .catch(() => {
+        // The card data is enough to render the page; only the map, the
+        // description and the tags are missing.
+      });
+    return () => { cancelled = true; };
   }, [selectedBiz?.id]);
 
   useEffect(() => {
@@ -7159,9 +7206,13 @@ export default function WebPortal({
                 </div>
               </div>
 
-              <p className="text-xs text-slate-700 leading-relaxed italic">
-                &quot;{selectedBiz.description}&quot;
-              </p>
+              {/* Most imported listings have no description, and an empty one
+                  rendered as a bare pair of quote marks. */}
+              {!!String(selectedBiz.description || '').trim() && (
+                <p className="text-xs text-slate-700 leading-relaxed italic">
+                  &quot;{String(selectedBiz.description).trim()}&quot;
+                </p>
+              )}
 
               {/* Gallery hidden on the detail page by request. The imported photo
                   paths point at files that were never uploaded, so the grid was
@@ -7191,8 +7242,11 @@ export default function WebPortal({
                 </div>
               )}
 
-              {/* Master Areas of Operation list inside details */}
-              {selectedBiz.areasOfOperation && (
+              {/* Master Areas of Operation list inside details. Guarded on
+                  length, not truthiness: an empty array is truthy, so every
+                  imported listing was showing a "Service Areas:" label with
+                  nothing after it. */}
+              {(selectedBiz.areasOfOperation || []).length > 0 && (
                 <div className="bg-slate-50/50 border border-slate-100 rounded-xl p-3 flex flex-wrap gap-2 items-center text-xs">
                   <span className="font-bold text-slate-400 font-mono text-[9px] uppercase">Service Areas:</span>
                   {(selectedBiz.areasOfOperation || []).map(aid => {
@@ -7238,6 +7292,14 @@ export default function WebPortal({
                           alt={`Map showing ${selectedBiz.name}`}
                           loading="lazy"
                           className="block h-[150px] w-full bg-slate-100 object-cover"
+                          onError={(event) => {
+                            // A rejected key, an unenabled Static Maps API or a
+                            // referrer restriction all come back as a failed
+                            // image. Hide the whole block rather than leave a
+                            // broken tile on the page.
+                            const anchor = event.currentTarget.closest('a');
+                            if (anchor) anchor.style.display = 'none';
+                          }}
                         />
                         <span className="block bg-white px-2.5 py-1.5 font-sans text-[10px] font-semibold text-indigo-600">
                           Open in Google Maps
