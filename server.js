@@ -1088,6 +1088,32 @@ function buildBusinessContactCard(business, origin, seoContext) {
 // prefix to keep the substring behaviour the old `.includes()` had.
 const DIRECTORY_SEARCH_CANDIDATE_LIMIT = 400;
 
+// Every read of a listing row goes through this expression instead of a plain
+// `SELECT payload`. The indexed columns are built into an object first and the
+// payload is laid over the top, so the payload still wins wherever it holds a
+// value, but a row can never be served without at least an id and a name.
+//
+// It exists because it can happen: rows inherited from an older `businesses`
+// table got `payload = '{}'` when the column was added, `SELECT payload`
+// returned them as bare `{}`, and the client threw reading `.id` off a record
+// with no id — three such rows blanked the whole site. A row that exists in the
+// table is a row the API should be able to describe.
+const BUSINESS_ROW_JSON = `jsonb_strip_nulls(jsonb_build_object(
+  'id', id, 'googlePlaceId', google_place_id, 'slug', slug, 'name', name,
+  'status', status, 'localityId', locality_id, 'areaId', area_id,
+  'cityId', city_id, 'stateId', state_id, 'pincode', pincode,
+  'categoryId', category_id, 'subcategoryId', subcategory_id,
+  'phone', phone, 'address', address, 'rating', rating,
+  'reviewCount', review_count, 'featured', featured,
+  'verifiedBadge', verified_badge, 'createdAt', created_at
+)) || payload`;
+
+// A record still has to survive the trip. Anything without an id is dropped
+// rather than handed to a caller that will read through it.
+const toBusinessRecords = (rows) => rows
+  .map((row) => row.payload)
+  .filter((business) => business && business.id);
+
 async function findDirectorySearchCandidates({ normalizedQuery, localityId = '', categoryId = '' }) {
   if (!businessSearchColumnReady) return null;
   const client = await getPgClient();
@@ -1113,13 +1139,13 @@ async function findDirectorySearchCandidates({ normalizedQuery, localityId = '',
 
   try {
     const result = await client.query(
-      `SELECT payload FROM businesses
+      `SELECT ${BUSINESS_ROW_JSON} AS payload FROM businesses
         WHERE ${where.join(' AND ')}
         ORDER BY featured DESC, rating DESC NULLS LAST, review_count DESC, id ASC
         LIMIT ${DIRECTORY_SEARCH_CANDIDATE_LIMIT}`,
       params,
     );
-    return result.rows.map((row) => row.payload).filter(Boolean);
+    return toBusinessRecords(result.rows);
   } catch (error) {
     console.warn('[search] indexed candidate lookup failed, falling back:', error?.message || error);
     return null;
@@ -7979,8 +8005,8 @@ async function rebuildBusinessBlobFromRows() {
   try {
     const client = await getPgClient();
     if (!client) return { ok: false, skipped: 'no database' };
-    const result = await client.query(`SELECT payload FROM businesses ORDER BY id`);
-    const listings = result.rows.map((row) => row.payload).filter(Boolean);
+    const result = await client.query(`SELECT ${BUSINESS_ROW_JSON} AS payload FROM businesses ORDER BY id`);
+    const listings = toBusinessRecords(result.rows);
 
     // The blob is the rollback artifact — the only copy of the directory if the
     // rows are lost — so this worker must never be the thing that empties it.
@@ -8106,7 +8132,13 @@ async function queryBusinessRows(client, options = {}) {
   // The client pages through a whole pincode, so this has to be a total order.
   const orderSql = `${LISTING_SORTS[sort] || LISTING_SORTS.recommended}, id ASC`;
   const pageParams = [...params];
-  let pageSql = `SELECT payload FROM businesses ${whereSql} ORDER BY ${orderSql}`;
+  // The columns fill in behind the payload, and the payload wins wherever it
+  // has a value. A row can exist with an empty payload — every row inherited
+  // from an older `businesses` table got `payload = '{}'` when the column was
+  // added — and `SELECT payload` served those as bare `{}` objects. The client
+  // then read `.id.startsWith(...)` on a record with no id, threw, and unmounted
+  // the whole app: three legacy rows were enough to blank the site.
+  let pageSql = `SELECT ${BUSINESS_ROW_JSON} AS payload FROM businesses ${whereSql} ORDER BY ${orderSql}`;
   if (limit > 0) {
     pageParams.push(limit); pageSql += ` LIMIT $${pageParams.length}`;
     pageParams.push(Math.max(0, offset)); pageSql += ` OFFSET $${pageParams.length}`;
@@ -8126,7 +8158,7 @@ async function queryBusinessRows(client, options = {}) {
     facets = { categories: toMap(byCategory.rows), subcategories: toMap(bySubcategory.rows) };
   }
 
-  return { businesses: pageResult.rows.map((row) => row.payload).filter(Boolean), total, facets };
+  return { businesses: toBusinessRecords(pageResult.rows), total, facets };
 }
 
 // ---- Single-row reads ----------------------------------------------------
@@ -8142,8 +8174,9 @@ async function findBusinessById(businessId) {
   if (!id) return null;
   const client = await getPgClient();
   if (client && await hasBusinessRows(client)) {
-    const result = await client.query(`SELECT payload FROM businesses WHERE id = $1 LIMIT 1`, [id]);
-    return result.rows[0]?.payload || null;
+    const result = await client.query(
+      `SELECT ${BUSINESS_ROW_JSON} AS payload FROM businesses WHERE id = $1 LIMIT 1`, [id]);
+    return toBusinessRecords(result.rows)[0] || null;
   }
   const listings = await readBusinessListings();
   return listings.find((entry) => String(entry?.id || '') === id) || null;
@@ -8159,15 +8192,17 @@ async function findBusinessByIdOrSlug(value) {
   const client = await getPgClient();
   if (client && await hasBusinessRows(client)) {
     const direct = await client.query(
-      `SELECT payload FROM businesses WHERE id = $1 OR slug = $1 LIMIT 1`,
+      `SELECT ${BUSINESS_ROW_JSON} AS payload FROM businesses WHERE id = $1 OR slug = $1 LIMIT 1`,
       [needle],
     );
-    if (direct.rows[0]?.payload) return direct.rows[0].payload;
+    const directRecord = toBusinessRecords(direct.rows)[0];
+    if (directRecord) return directRecord;
     // buildListingSlug appends the id, so the trailing segment identifies the row.
     const tail = needle.split('-').pop();
     if (tail && tail !== needle) {
-      const byTail = await client.query(`SELECT payload FROM businesses WHERE id = $1 LIMIT 1`, [tail]);
-      const candidate = byTail.rows[0]?.payload;
+      const byTail = await client.query(
+        `SELECT ${BUSINESS_ROW_JSON} AS payload FROM businesses WHERE id = $1 LIMIT 1`, [tail]);
+      const candidate = toBusinessRecords(byTail.rows)[0];
       if (candidate && buildListingSlug(candidate.name, candidate.id) === needle) return candidate;
     }
     return null;
@@ -8198,7 +8233,7 @@ async function findRelatedBusinessRows(business, limit = 24) {
   const perTier = Math.max(1, Math.min(100, limit));
 
   const branch = (tier, extraWhere) => `
-    (SELECT ${tier} AS tier, id, payload FROM businesses
+    (SELECT ${tier} AS tier, id, ${BUSINESS_ROW_JSON} AS payload FROM businesses
       WHERE status = 'approved' AND id <> $1 ${extraWhere}
       ORDER BY featured DESC, rating DESC NULLS LAST, review_count DESC, id ASC
       LIMIT ${perTier})`;
@@ -8218,11 +8253,9 @@ async function findRelatedBusinessRows(business, limit = 24) {
       LIMIT ${perTier * branches.length}`,
     [id, localityId, categoryId, subcategoryId],
   );
-  return result.rows
-    .sort((left, right) => left.tier - right.tier)
-    .map((row) => row.payload)
-    .filter(Boolean)
-    .slice(0, perTier);
+  return toBusinessRecords(
+    result.rows.sort((left, right) => left.tier - right.tier),
+  ).slice(0, perTier);
 }
 
 // A seller with sellerBusinessId already set needs no lookup at all — the old

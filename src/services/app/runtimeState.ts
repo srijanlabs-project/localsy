@@ -307,9 +307,14 @@ export const normalizeStoredBusiness = (business: Business): Business => {
     seoLandingPagePath: sanitizedBusiness.seoLandingPagePath || undefined,
     seoPremiumEnabled: sanitizedBusiness.seoPremiumEnabled === true || normalized.subscriptionPlan === 'premium',
   };
+  // String(): `normalizedWithAssets.id` was read directly, so one record
+  // without an id threw "Cannot read properties of undefined (reading
+  // 'startsWith')" out of a state initializer and React unmounted the entire
+  // app — a blank page from a single malformed listing.
+  const listingId = String(normalizedWithAssets.id || '');
   const isUploadedListing =
-    normalizedWithAssets.id.startsWith('csv_') ||
-    normalizedWithAssets.id.startsWith('b_dynamic_') ||
+    listingId.startsWith('csv_') ||
+    listingId.startsWith('b_dynamic_') ||
     normalizedWithAssets.ownerName === 'Imported via CSV';
 
   return isUploadedListing && normalizedWithAssets.status === 'pending'
@@ -453,7 +458,16 @@ export const getBuyerStateScopeKey = (session: UserSession, config: ApiConfigura
 
 export const mergeBusinessCollections = (base: Business[], incoming: Business[]): Business[] => {
   const merged = new Map<string, Business>();
-  base.forEach((business) => merged.set(business.id, normalizeStoredBusiness(business)));
-  incoming.forEach((business) => merged.set(business.id, normalizeStoredBusiness(business)));
+  // Keyed on the id, so a record without one has nowhere to go anyway — and
+  // normalizing it used to throw and take the app down with it. A malformed
+  // listing from the API must cost that listing, not the page. Drop it here
+  // rather than letting `undefined` become a map key.
+  const add = (business: Business) => {
+    const id = String(business?.id || '').trim();
+    if (!id) return;
+    merged.set(id, normalizeStoredBusiness(business));
+  };
+  base.forEach(add);
+  incoming.forEach(add);
   return Array.from(merged.values());
 };
