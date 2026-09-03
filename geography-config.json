@@ -54,7 +54,7 @@
       "name": "Taloja"
     },
     {
-      "id": "cbd-belapur",
+      "id": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "CBD Belapur"
     },
@@ -67,11 +67,6 @@
       "id": "seawoods",
       "cityId": "navimumbai",
       "name": "Seawoods"
-    },
-    {
-      "id": "oldpanvel",
-      "cityId": "panvel",
-      "name": "Old Panvel"
     }
   ],
   "areas": [
@@ -161,399 +156,399 @@
     },
     {
       "id": "100001",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Sector 11",
       "pincode": "400614"
     },
     {
       "id": "100002",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Sector 14",
       "pincode": "400614"
     },
     {
       "id": "100003",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Sector 20",
       "pincode": "400614"
     },
     {
       "id": "100005",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Sector 15",
       "pincode": "400614"
     },
     {
       "id": "100006",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Sector 29",
       "pincode": "400614"
     },
     {
       "id": "100007",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Sector 26",
       "pincode": "400614"
     },
     {
       "id": "100009",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Sector 19",
       "pincode": "400614"
     },
     {
       "id": "100012",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Sector 8",
       "pincode": "400614"
     },
     {
       "id": "100017",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Sector 6",
       "pincode": "400614"
     },
     {
       "id": "100021",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Sector 12",
       "pincode": "400614"
     },
     {
       "id": "100025",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Sector 1",
       "pincode": "400614"
     },
     {
       "id": "100029",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Sector 5",
       "pincode": "400614"
     },
     {
       "id": "100038",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Sector 13",
       "pincode": "400614"
     },
     {
       "id": "100052",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Sector 4",
       "pincode": "400614"
     },
     {
       "id": "100054",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Sector 2",
       "pincode": "400614"
     },
     {
       "id": "100056",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Sector 1A",
       "pincode": "400614"
     },
     {
       "id": "100074",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Belpada",
       "pincode": "400614"
     },
     {
       "id": "100090",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Sector 10",
       "pincode": "400614"
     },
     {
       "id": "100102",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Sector 8B",
       "pincode": "400614"
     },
     {
       "id": "100103",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Sector 21",
       "pincode": "400614"
     },
     {
       "id": "100109",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Sector 3",
       "pincode": "400614"
     },
     {
       "id": "100112",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Sector 30",
       "pincode": "400614"
     },
     {
       "id": "100160",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Sector 8A",
       "pincode": "400614"
     },
     {
       "id": "100213",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Sector 3A",
       "pincode": "400614"
     },
     {
       "id": "100231",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Sector 23",
       "pincode": "400706"
     },
     {
       "id": "100291",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Sector 9N",
       "pincode": "400614"
     },
     {
       "id": "100354",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Sector 9",
       "pincode": "400614"
     },
     {
       "id": "100387",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Mermade 2",
       "pincode": "400614"
     },
     {
       "id": "100404",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Kot Naka",
       "pincode": "400614"
     },
     {
       "id": "100409",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Sector 24",
       "pincode": "410206"
     },
     {
       "id": "100584",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Node V",
       "pincode": "400614"
     },
     {
       "id": "100617",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Sector 7",
       "pincode": "400614"
     },
     {
       "id": "100644",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Sector 22",
       "pincode": "400614"
     },
     {
       "id": "100929",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Phanspada",
       "pincode": "400614"
     },
     {
       "id": "100949",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Sector 4CBD",
       "pincode": "400614"
     },
     {
       "id": "100983",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Shahabaz",
       "pincode": "400614"
     },
     {
       "id": "101019",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Sector 28",
       "pincode": "400614"
     },
     {
       "id": "101031",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Sector 50",
       "pincode": "400706"
     },
     {
       "id": "101045",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Junction",
       "pincode": "400706"
     },
     {
       "id": "101050",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Swami Vivekanand Nagar",
       "pincode": "400614"
     },
     {
       "id": "101112",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Talode",
       "pincode": "400614"
     },
     {
       "id": "101121",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Sector 3 Market",
       "pincode": "400614"
     },
     {
       "id": "101197",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Sector 27",
       "pincode": "400614"
     },
     {
       "id": "101294",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Corporation",
       "pincode": "400614"
     },
     {
       "id": "101324",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Koliwada",
       "pincode": "400614"
     },
     {
       "id": "101401",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "ITC Park",
       "pincode": "400614"
     },
     {
       "id": "101426",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Gaon",
       "pincode": "400614"
     },
     {
       "id": "101433",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Old Panvel",
       "pincode": "400614"
     },
     {
       "id": "101747",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Sector 25",
       "pincode": "400706"
     },
     {
       "id": "101932",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Forest Area",
       "pincode": "400614"
     },
     {
       "id": "101975",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Mukund Nagar",
       "pincode": "400614"
     },
     {
       "id": "102177",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Shahabaz Gaon",
       "pincode": "400614"
     },
     {
       "id": "102206",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "CGS Colony",
       "pincode": "400614"
     },
     {
       "id": "102321",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Sector 15A",
       "pincode": "400706"
     },
     {
       "id": "102462",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Sector 32",
       "pincode": "400614"
     },
     {
       "id": "102608",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "East",
       "pincode": "400614"
     },
     {
       "id": "102657",
-      "localityId": "cbd-belapur",
+      "localityId": "cbdbelapur",
       "cityId": "navimumbai",
       "name": "Compound",
       "pincode": "400614"
@@ -2457,119 +2452,119 @@
     },
     {
       "id": "113758",
-      "localityId": "oldpanvel",
+      "localityId": "panvel",
       "cityId": "panvel",
       "name": "Gavdevi Pada",
       "pincode": "410206"
     },
     {
       "id": "113759",
-      "localityId": "oldpanvel",
+      "localityId": "panvel",
       "cityId": "panvel",
       "name": "Tal. Panvel Dist",
       "pincode": "410206"
     },
     {
       "id": "113760",
-      "localityId": "oldpanvel",
+      "localityId": "panvel",
       "cityId": "panvel",
       "name": "Old Panvel",
       "pincode": "410206"
     },
     {
       "id": "113761",
-      "localityId": "oldpanvel",
+      "localityId": "panvel",
       "cityId": "panvel",
       "name": "Shivaji Road Behind Saraswati Mandir",
       "pincode": "410206"
     },
     {
       "id": "113762",
-      "localityId": "oldpanvel",
+      "localityId": "panvel",
       "cityId": "panvel",
       "name": "Panvel",
       "pincode": "410206"
     },
     {
       "id": "113763",
-      "localityId": "oldpanvel",
+      "localityId": "panvel",
       "cityId": "panvel",
       "name": "Near Sahstrabudhe Hospital",
       "pincode": "410206"
     },
     {
       "id": "113766",
-      "localityId": "oldpanvel",
+      "localityId": "panvel",
       "cityId": "panvel",
       "name": "Near Bhusar Mohalla Masjid",
       "pincode": "410206"
     },
     {
       "id": "113768",
-      "localityId": "oldpanvel",
+      "localityId": "panvel",
       "cityId": "panvel",
       "name": "Panvel Co-op Housing Society",
       "pincode": "410206"
     },
     {
       "id": "113770",
-      "localityId": "oldpanvel",
+      "localityId": "panvel",
       "cityId": "panvel",
       "name": "Market Yard Road",
       "pincode": "410206"
     },
     {
       "id": "113771",
-      "localityId": "oldpanvel",
+      "localityId": "panvel",
       "cityId": "panvel",
       "name": "Joshi Ali",
       "pincode": "410206"
     },
     {
       "id": "113775",
-      "localityId": "oldpanvel",
+      "localityId": "panvel",
       "cityId": "panvel",
       "name": "Nandanvan Society",
       "pincode": "410206"
     },
     {
       "id": "113776",
-      "localityId": "oldpanvel",
+      "localityId": "panvel",
       "cityId": "panvel",
       "name": "Karnala Sports Academy",
       "pincode": "410206"
     },
     {
       "id": "113777",
-      "localityId": "oldpanvel",
+      "localityId": "panvel",
       "cityId": "panvel",
       "name": "Uran Naka",
       "pincode": "410206"
     },
     {
       "id": "113778",
-      "localityId": "oldpanvel",
+      "localityId": "panvel",
       "cityId": "panvel",
       "name": "Muslim Naka M.G. Road",
       "pincode": "410206"
     },
     {
       "id": "113779",
-      "localityId": "oldpanvel",
+      "localityId": "panvel",
       "cityId": "panvel",
       "name": "Koliwada Panvel.Tal.Panvel.Dist.Raigad",
       "pincode": "410206"
     },
     {
       "id": "113780",
-      "localityId": "oldpanvel",
+      "localityId": "panvel",
       "cityId": "panvel",
       "name": "Mominpada",
       "pincode": "410206"
     },
     {
       "id": "113781",
-      "localityId": "oldpanvel",
+      "localityId": "panvel",
       "cityId": "panvel",
       "name": "Loknete D B Patil Nagar",
       "pincode": "410206"
@@ -9451,6 +9446,6 @@
   ],
   "metadata": {
     "seededFromCode": false,
-    "updatedAt": "2026-08-23T18:43:32.909Z"
+    "updatedAt": "2026-09-03T00:00:00.000Z"
   }
 }

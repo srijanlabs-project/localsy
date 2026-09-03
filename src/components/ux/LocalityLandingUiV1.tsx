@@ -70,6 +70,9 @@ type CategoryTile = {
   accent: string;
 };
 
+const CATEGORY_CLICKS_STORAGE_KEY = 'localisy:category-clicks';
+const RECENT_LISTINGS_STORAGE_KEY = 'localisy:recent-listings';
+
 type SubcategoryChip = {
   id: string;
   name: string;
@@ -79,6 +82,9 @@ type SubcategoryChip = {
 type SectionGroup = CategoryTile & {
   chips: SubcategoryChip[];
   listings: Business[];
+  // The category's listings beyond the four on show, so tapping a subcategory
+  // chip can swap the cards in place instead of navigating away.
+  pool: Business[];
 };
 
 type PromoCardContent = {
@@ -226,11 +232,41 @@ export default function LocalityLandingUiV1({
   onOpenCityPage,
   onOpenCategoryPage,
   onOpenSubcategoryPage,
-  onOpenListingPage,
+  onOpenListingPage: onOpenListingPageProp,
   onShowNumber,
   revealedPhoneBusinessIds = [],
   offers = [],
 }: LocalityLandingUiV1Props) {
+  // Every route into a listing goes through this wrapper, so "recently viewed"
+  // is recorded once here instead of at each of the three dozen call sites.
+  const [recentListingIds, setRecentListingIds] = useState<string[]>([]);
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(RECENT_LISTINGS_STORAGE_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      if (Array.isArray(parsed)) setRecentListingIds(parsed.map(String).filter(Boolean));
+    } catch {
+      // Blocked storage simply means no history row.
+    }
+  }, []);
+
+  const onOpenListingPage = (businessId: string, localityId?: string) => {
+    const id = String(businessId || '').trim();
+    if (id) {
+      setRecentListingIds((current) => {
+        // Most recent first, no duplicates, capped at 15.
+        const next = [id, ...current.filter((entry) => entry !== id)].slice(0, 15);
+        try {
+          window.localStorage.setItem(RECENT_LISTINGS_STORAGE_KEY, JSON.stringify(next));
+        } catch {
+          // Non-fatal.
+        }
+        return next;
+      });
+    }
+    onOpenListingPageProp(businessId, localityId);
+  };
+
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [openChipMenuId, setOpenChipMenuId] = useState<string | null>(null);
@@ -310,10 +346,68 @@ export default function LocalityLandingUiV1({
   // first 12 — the chip strip mirrors the section rows below it. Buckets that
   // resolve to no actual listing are dropped for the same reason the rows drop
   // them, so the chips and the rows always agree.
-  const visibleCategoryTiles = useMemo(
+  const presentCategoryTiles = useMemo(
     () => categoryTiles.filter((tile) => approvedBusinesses.some((business) => business.categoryId === tile.category.id)),
     [approvedBusinesses, categoryTiles],
   );
+
+  // How often THIS visitor has opened each category, kept in their own browser.
+  // "Most accessible first" only means anything per person: a plumber and
+  // someone looking for tuition want different rows at the top.
+  const [categoryClicks, setCategoryClicks] = useState<Record<string, number>>({});
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(CATEGORY_CLICKS_STORAGE_KEY);
+      if (raw) setCategoryClicks(JSON.parse(raw) || {});
+    } catch {
+      // A private window or blocked storage just means no personalisation.
+    }
+  }, []);
+
+  const recordCategoryClick = (categoryId: string) => {
+    const id = String(categoryId || '').trim();
+    if (!id || id === 'all') return;
+    setCategoryClicks((current) => {
+      const next = { ...current, [id]: (current[id] || 0) + 1 };
+      try {
+        window.localStorage.setItem(CATEGORY_CLICKS_STORAGE_KEY, JSON.stringify(next));
+      } catch {
+        // Non-fatal: the ordering is a convenience, not state anything depends on.
+      }
+      return next;
+    });
+  };
+
+  // Their own most-opened categories first, then the busiest, so a first-time
+  // visitor still gets a sensible order.
+  const visibleCategoryTiles = useMemo(() => {
+    const ranked = presentCategoryTiles.map((tile, index) => ({
+      tile,
+      clicks: categoryClicks[tile.category.id] || 0,
+      index,
+    }));
+    ranked.sort((left, right) => right.clicks - left.clicks || left.index - right.index);
+    return ranked.map((entry) => entry.tile);
+  }, [presentCategoryTiles, categoryClicks]);
+
+  // Three rows, no more: the grid below is 3 across on a phone and the chips
+  // wrap to roughly four a row on a desktop. Everything else is behind View all.
+  // Stored ids resolved against what is loaded for this locality. An id from a
+  // different locality simply does not resolve, which is the right behaviour on
+  // a locality page — the row never advertises a listing this page cannot open.
+  const recentlyViewedListings = useMemo(() => {
+    if (recentListingIds.length === 0) return [];
+    const byId = new Map(approvedBusinesses.map((business) => [business.id, business]));
+    return recentListingIds
+      .map((id) => byId.get(id))
+      .filter((business): business is Business => Boolean(business))
+      .slice(0, 15);
+  }, [recentListingIds, approvedBusinesses]);
+
+  const MOBILE_CATEGORY_ROWS = 9;
+  const DESKTOP_CATEGORY_ROWS = 12;
+  const mobileCategoryTiles = visibleCategoryTiles.slice(0, MOBILE_CATEGORY_ROWS);
+  const desktopCategoryTiles = visibleCategoryTiles.slice(0, DESKTOP_CATEGORY_ROWS);
   const featuredCategoryId = visibleCategoryTiles[0]?.category.id || categories[0]?.id || 'all';
   const primaryHeroBusiness = approvedBusinesses[0] || null;
   const secondaryHeroBusiness = approvedBusinesses.find((business) => business.id !== primaryHeroBusiness?.id && business.featured) || approvedBusinesses[1] || null;
@@ -445,6 +539,28 @@ export default function LocalityLandingUiV1({
 
   // Distinct subcategories actually present here — shown on the mobile
   // "View all" tile alongside the group count.
+  // Which subcategory chip is active in each category row. Tapping a chip used
+  // to leave the page for a filtered results view; it now swaps the four cards
+  // underneath, which is what the chip sitting directly above them implies.
+  const [activeSectionChip, setActiveSectionChip] = useState<Record<string, string>>({});
+
+  const toggleSectionChip = (categoryId: string, chipId: string) => {
+    setActiveSectionChip((current) => (
+      current[categoryId] === chipId
+        ? { ...current, [categoryId]: '' }
+        : { ...current, [categoryId]: chipId }
+    ));
+  };
+
+  // The cards a row should show: the chip's listings when one is picked,
+  // otherwise the row's default four.
+  const getSectionListings = (section: SectionGroup) => {
+    const activeChipId = activeSectionChip[section.category.id] || '';
+    if (!activeChipId) return section.listings;
+    const filtered = section.pool.filter((business) => String(business.subcategoryId || '') === activeChipId);
+    return filtered.length > 0 ? filtered.slice(0, 4) : section.listings;
+  };
+
   const presentSubcategoryCount = useMemo(() => {
     const seen = new Set<string>();
     approvedBusinesses.forEach((business) => {
@@ -484,6 +600,9 @@ export default function LocalityLandingUiV1({
           .sort((left, right) => right.count - left.count || left.name.localeCompare(right.name))
           .slice(0, 6);
       })(),
+      pool: approvedBusinesses
+        .filter((business) => business.categoryId === tile.category.id)
+        .slice(0, 60),
       listings: approvedBusinesses
         .filter((business) => business.categoryId === tile.category.id)
         .slice(0, 4),
@@ -598,7 +717,7 @@ export default function LocalityLandingUiV1({
     }
 
     return {
-      image: getMediaProxyUrl(primaryHeroBusiness?.coverImageUrl || primaryHeroBusiness?.imageUrl || 'https://images.unsplash.com/photo-1488459716781-31db52582fe9?auto=format&fit=crop&w=1600&q=80'),
+      image: getMediaProxyUrl(primaryHeroBusiness?.coverImageUrl || primaryHeroBusiness?.imageUrl || ''),
       badge: primaryHeroBusiness?.featured ? 'Featured listing' : 'Popular now',
       title: buildPromoTitle(primaryHeroBusiness, localityLabel, `Trusted businesses in ${localityLabel}`),
       subtitle: buildPromoSubtitle(primaryHeroBusiness, categories, localityLabel),
@@ -670,7 +789,7 @@ export default function LocalityLandingUiV1({
     }
 
     return {
-      image: getMediaProxyUrl(secondaryHeroBusiness?.coverImageUrl || secondaryHeroBusiness?.imageUrl || 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=900&q=80'),
+      image: getMediaProxyUrl(secondaryHeroBusiness?.coverImageUrl || secondaryHeroBusiness?.imageUrl || ''),
       badge: secondaryHeroBusiness?.featured ? 'Sponsored' : 'Top rated',
       title: buildPromoTitle(secondaryHeroBusiness, localityLabel, `Recommended picks in ${localityLabel}`),
       subtitle: buildPromoSubtitle(secondaryHeroBusiness, categories, localityLabel),
@@ -878,6 +997,7 @@ export default function LocalityLandingUiV1({
                           type="button"
                           onClick={() => {
                             setIsCategorySheetOpen(false);
+                            recordCategoryClick(category.id);
                             onOpenCategoryPage(category.id, activeLocality?.id || activeLocalityId);
                           }}
                           className="flex min-w-0 flex-1 items-center gap-2.5 py-3 pl-1 pr-2 text-left"
@@ -955,13 +1075,16 @@ export default function LocalityLandingUiV1({
             </div>
 
             <div className="mt-3 grid grid-cols-3 gap-2.5">
-              {visibleCategoryTiles.slice(0, 8).map(({ category, count }) => {
+              {mobileCategoryTiles.map(({ category, count }) => {
                 const { Icon, tone } = getCategoryPresentation(category);
                 return (
                   <button
                     key={category.id}
                     type="button"
-                    onClick={() => onOpenCategoryPage(category.id, activeLocality?.id || activeLocalityId)}
+                    onClick={() => {
+                      recordCategoryClick(category.id);
+                      onOpenCategoryPage(category.id, activeLocality?.id || activeLocalityId);
+                    }}
                     className="flex min-h-[92px] flex-col rounded-[14px] border border-[#E6EBF2] bg-white px-2.5 py-2.5 text-left transition active:bg-slate-50"
                   >
                     <span className={`inline-flex h-8 w-8 items-center justify-center rounded-[10px] ${tone}`}>
@@ -990,6 +1113,32 @@ export default function LocalityLandingUiV1({
               </button>
             </div>
           </section>
+
+          {/* Recently viewed. Horizontally scrollable, newest first, and only
+              rendered once there is something in it — an empty rail with a
+              heading is worse than no rail. */}
+          {recentlyViewedListings.length > 0 ? (
+            <section className="bg-white px-4 py-4">
+              <div className="flex items-baseline justify-between gap-3">
+                <h2 className="text-[15px] font-extrabold tracking-[-0.01em] text-[#0D1B2A]">Recently viewed</h2>
+                <span className="text-[11px] font-medium text-[#98A2B3]">
+                  {recentlyViewedListings.length} listing{recentlyViewedListings.length === 1 ? '' : 's'}
+                </span>
+              </div>
+              <div className="-mx-4 mt-3 flex snap-x snap-mandatory gap-2.5 overflow-x-auto px-4 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                {recentlyViewedListings.map((business) => (
+                  <div key={`recent-${business.id}`} className="w-[164px] shrink-0 snap-start">
+                    <MobileListingCard
+                      business={business}
+                      onOpenListingPage={onOpenListingPage}
+                      onShowNumber={onShowNumber}
+                      isPhoneRevealed={revealedPhoneBusinessIds.includes(business.id)}
+                    />
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
 
           <OfferStrip
             offerCards={offerCards}
@@ -1030,11 +1179,16 @@ export default function LocalityLandingUiV1({
                             <button
                               key={`${section.category.id}-${chip.id || chip.name}`}
                               type="button"
-                              onClick={() => openSubcategory(section.category.id, chip.id)}
+                              onClick={() => (chip.id
+                                ? toggleSectionChip(section.category.id, chip.id)
+                                : openSubcategory(section.category.id, chip.id))}
+                              aria-pressed={activeSectionChip[section.category.id] === chip.id}
                               className={`inline-flex max-w-full truncate rounded-full px-3.5 py-1.5 text-[12px] font-semibold transition ${
-                                chipIndex === 0
+                                activeSectionChip[section.category.id] === chip.id
                                   ? 'bg-[#F59E0B] text-[#111827]'
-                                  : 'border border-[#E6EBF2] bg-white text-[#475467]'
+                                  : chipIndex === 0 && !activeSectionChip[section.category.id]
+                                    ? 'bg-[#FEF3C7] text-[#111827]'
+                                    : 'border border-[#E6EBF2] bg-white text-[#475467]'
                               }`}
                             >
                               {chip.name}
@@ -1060,7 +1214,8 @@ export default function LocalityLandingUiV1({
                                 type="button"
                                 onClick={() => {
                                   setOpenChipMenuId(null);
-                                  openSubcategory(section.category.id, chip.id);
+                                  if (chip.id) toggleSectionChip(section.category.id, chip.id);
+                                  else openSubcategory(section.category.id, chip.id);
                                 }}
                                 className="flex w-full items-center justify-between gap-2 rounded-[10px] px-3 py-2 text-left text-[12px] font-medium text-[#475467] hover:bg-slate-50"
                               >
@@ -1074,7 +1229,7 @@ export default function LocalityLandingUiV1({
                     ) : null}
 
                     <div className="mt-3 grid grid-cols-2 gap-2.5">
-                      {section.listings.slice(0, 4).map((business) => (
+                      {getSectionListings(section).slice(0, 4).map((business) => (
                         <MobileListingCard
                           key={business.id}
                           business={business}
@@ -1134,12 +1289,15 @@ export default function LocalityLandingUiV1({
               </div>
 
               <div className="mt-4 flex flex-wrap gap-2.5">
-                {visibleCategoryTiles.map(({ category, count }) => (
+                {desktopCategoryTiles.map(({ category, count }) => (
                   <CategoryChip
                     key={category.id}
                     category={category}
                     count={count}
-                    onClick={(categoryId) => onOpenCategoryPage(categoryId, activeLocality?.id || activeLocalityId)}
+                    onClick={(categoryId) => {
+                      recordCategoryClick(categoryId);
+                      onOpenCategoryPage(categoryId, activeLocality?.id || activeLocalityId);
+                    }}
                   />
                 ))}
               </div>
@@ -1181,6 +1339,9 @@ export default function LocalityLandingUiV1({
                     onOpenListingPage={onOpenListingPage}
                     onShowNumber={onShowNumber}
                     revealedPhoneBusinessIds={revealedPhoneBusinessIds}
+                    activeChipId={activeSectionChip[section.category.id] || ''}
+                    onToggleChip={toggleSectionChip}
+                    visibleListings={getSectionListings(section)}
                   />
                   {isBannerSlot && bannerAd ? (
                     <InFeedAdStrip
@@ -1796,7 +1957,11 @@ function PromoCard({
       onClick={onClick}
       className="relative block h-full w-full min-h-[360px] text-left text-white"
     >
-      <img src={image} alt={title} className="absolute inset-0 h-full w-full object-cover" />
+      {/* No stock stand-in: a listing with no photo gets the gradient panel
+          only, rather than an unrelated Unsplash picture presented as its own. */}
+      {image ? (
+        <img src={image} alt={title} className="absolute inset-0 h-full w-full object-cover" />
+      ) : null}
       <div className="absolute inset-0 bg-[linear-gradient(100deg,rgba(13,27,42,0.78),rgba(13,27,42,0.34))]" />
       {compact ? (
         <div className="relative z-10 flex h-full flex-col justify-between px-6 py-6">
@@ -1827,9 +1992,15 @@ function DirectorySectionPanel({
   onOpenListingPage,
   onShowNumber,
   revealedPhoneBusinessIds = [],
+  activeChipId = '',
+  onToggleChip,
+  visibleListings,
 }: {
   categories: Category[];
   section: SectionGroup;
+  activeChipId?: string;
+  onToggleChip?: (categoryId: string, chipId: string) => void;
+  visibleListings?: Business[];
   onOpenCategoryPage: () => void;
   onOpenListingPage: (businessId: string, localityId?: string) => void;
   onShowNumber?: (businessId: string, event: React.MouseEvent) => void;
@@ -1844,11 +2015,25 @@ function DirectorySectionPanel({
         <div className="flex items-center gap-3">
           <span className="h-6 w-1.5 rounded-full" style={{ backgroundColor: section.accent }} />
           <h3 className="text-[0.95rem] font-black uppercase tracking-[0.14em] text-[#0D1B2A]">{section.category.name}</h3>
+          {/* These were plain spans, so they looked interactive and did
+              nothing. They now filter the row's cards in place, same as the
+              mobile chips. */}
           <div className="flex gap-2">
             {section.chips.map((chip) => (
-              <span key={`${section.category.id}-${chip.id || chip.name}`} className="rounded-full bg-[#F2F4F7] px-3 py-1 text-[11px] font-semibold text-[#667085]">
+              <button
+                key={`${section.category.id}-${chip.id || chip.name}`}
+                type="button"
+                disabled={!chip.id}
+                onClick={() => onToggleChip?.(section.category.id, chip.id)}
+                aria-pressed={activeChipId === chip.id}
+                className={`rounded-full px-3 py-1 text-[11px] font-semibold transition ${
+                  activeChipId === chip.id
+                    ? 'bg-[#F59E0B] text-[#111827]'
+                    : 'bg-[#F2F4F7] text-[#667085] hover:bg-[#E6EBF2] disabled:hover:bg-[#F2F4F7]'
+                }`}
+              >
                 {chip.name}
-              </span>
+              </button>
             ))}
           </div>
         </div>
@@ -1858,7 +2043,7 @@ function DirectorySectionPanel({
       </div>
 
       <div className="grid grid-cols-4 gap-4">
-        {section.listings.map((business) => (
+        {(visibleListings ?? section.listings).map((business) => (
           <DirectoryListingCard
             key={business.id}
             business={business}
@@ -1901,6 +2086,19 @@ const getShortAddressLabel = (business: Business) => {
   return head.toLowerCase().includes(area.toLowerCase()) ? head : `${head} · ${area}`;
 };
 
+// The orange line at the top of a card should say what the business IS. It used
+// to show getBusinessSectorLabel — the area name, or the locality when the area
+// was unknown — so a card in Kharghar read "Kharghar" and one in Amrante read
+// "Amrante", telling a reader nothing they had not already chosen. The area
+// still appears in the address line underneath.
+const getCardKindLabel = (business: Business) => (
+  getSubcategoryById(business.subcategoryId || '')?.name
+  || String(business.sourceSubcategoryLabel || '').trim()
+  || getCategoryById(business.categoryId || '')?.name
+  || String(business.sourceCategoryLabel || '').trim()
+  || ''
+);
+
 const getOpenTillLabel = (business: Business) => {
   const hours = String(business.hours || '').trim();
   if (!hours) return '';
@@ -1920,7 +2118,7 @@ function MobileListingCard({
   onShowNumber?: (businessId: string, event: React.MouseEvent) => void;
   isPhoneRevealed?: boolean;
 }) {
-  const areaLabel = getBusinessSectorLabel(business);
+  const kindLabel = getCardKindLabel(business);
   const shortAddress = getShortAddressLabel(business);
   const isVerified = Boolean(business.verifiedBadge);
   const photoUrl = business.coverImageUrl || business.imageUrl || '';
@@ -1979,7 +2177,7 @@ function MobileListingCard({
           className="block flex-1 text-left"
         >
           <div className="truncate text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#C46A00]">
-            {[areaLabel, isVerified ? 'Verified' : ''].filter(Boolean).join(' · ')}
+            {[kindLabel, isVerified ? 'Verified' : ''].filter(Boolean).join(' · ')}
           </div>
           <div className="mt-1 line-clamp-2 text-[13px] font-bold leading-[1.3] text-[#111827]">
             {business.name}
@@ -2274,11 +2472,19 @@ function SearchSuggestionsPanel({
               className="flex w-full items-center justify-between gap-3 rounded-xl px-1 py-2 text-left transition hover:bg-[#F8FAFC]"
             >
               <div className="flex min-w-0 items-center gap-3">
-                <img
-                  src={getMediaProxyUrl(business.imageUrl || business.coverImageUrl || 'https://images.unsplash.com/photo-1521590832167-7bcbfaa6381f?auto=format&fit=crop&w=120&q=80')}
-                  alt={business.name}
-                  className="h-12 w-12 rounded-xl object-cover"
-                />
+                {(business.imageUrl || business.coverImageUrl) ? (
+                  <img
+                    src={getMediaProxyUrl(business.imageUrl || business.coverImageUrl || '')}
+                    alt={business.name}
+                    className="h-12 w-12 rounded-xl object-cover"
+                  />
+                ) : (
+                  // An initial on a neutral tile, rather than a stock photo of
+                  // somebody else's shop.
+                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#F2F4F7] text-[15px] font-bold text-[#98A2B3]">
+                    {business.name.trim().charAt(0).toUpperCase() || '?'}
+                  </span>
+                )}
                 <div className="min-w-0">
                   <div className="truncate text-[1.02rem] font-bold text-[#B45309]">{business.name}</div>
                   <div className="truncate text-sm text-[#94A3B8]">{getBusinessSearchLabel(business, categories)} | {getBusinessLocationLabel(business)}</div>

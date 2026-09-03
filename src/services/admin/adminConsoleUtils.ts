@@ -23,6 +23,15 @@ export type HeroStatDraft = {
 };
 
 export const slugifyForPath = (value: string) => value
+  // NFKD first, so styled and accented characters survive as letters instead of
+  // being stripped: "Cafe Coffee Day" with an accented e used to slug to
+  // 'caf-coffee-day', and 65 listings whose names are in a decorative Unicode
+  // font or Devanagari slugged to the empty string. All five copies of this
+  // function must stay identical — the server builds sitemap URLs with its copy
+  // and the client builds links with these, so any drift is two canonical URLs
+  // for one listing.
+  .normalize('NFKD')
+  .replace(/[\u0300-\u036f]/g, '')
   .toLowerCase()
   .trim()
   .replace(/&/g, ' and ')
@@ -104,6 +113,19 @@ export const getHeroBannerDraftDefaults = (config?: HomepageDefaultsConfigState)
   durationDays: Math.max(1, Number(config?.heroBannerDraftDefaults?.durationDays || HOMEPAGE_DEFAULTS_BOOTSTRAP.heroBannerDraftDefaults?.durationDays || 30)),
 });
 
+// Google Places returns structural types alongside the useful ones, and the
+// importer wrote all of them into `tags`. Measured across the 25,965-listing
+// set: `point_of_interest` and `establishment` were on 25,946 of them — a term
+// on every record discriminates nothing, so it only pads the payload and dilutes
+// search. Tags were 3.90 MB in total (158 bytes/listing); dropping these plus
+// the phone and name duplication takes it to 1.92 MB (78 bytes).
+const NON_DISCRIMINATING_TAGS = new Set([
+  'point_of_interest', 'point of interest', 'establishment', 'premise', 'subpremise',
+  'political', 'geocode', 'plus_code', 'route', 'street_address',
+  'locality', 'sublocality', 'sublocality_level_1', 'postal_code',
+  'administrative_area_level_1', 'administrative_area_level_2', 'administrative_area_level_3',
+]);
+
 export const buildListingTags = (...sources: Array<string | string[] | undefined>) => {
   const seen = new Set<string>();
   const tags: string[] = [];
@@ -116,6 +138,7 @@ export const buildListingTags = (...sources: Array<string | string[] | undefined
       if (!trimmed) return;
       const key = trimmed.toLowerCase();
       if (seen.has(key)) return;
+      if (NON_DISCRIMINATING_TAGS.has(key)) return;
       seen.add(key);
       tags.push(trimmed);
     });
@@ -150,6 +173,15 @@ export const getPublicLocalityUrl = (locality?: Locality | null) => {
 };
 
 export const slugifyAdminValue = (value: string) => value
+  // NFKD first, so styled and accented characters survive as letters instead of
+  // being stripped: "Cafe Coffee Day" with an accented e used to slug to
+  // 'caf-coffee-day', and 65 listings whose names are in a decorative Unicode
+  // font or Devanagari slugged to the empty string. All five copies of this
+  // function must stay identical — the server builds sitemap URLs with its copy
+  // and the client builds links with these, so any drift is two canonical URLs
+  // for one listing.
+  .normalize('NFKD')
+  .replace(/[\u0300-\u036f]/g, '')
   .toLowerCase()
   .trim()
   .replace(/&/g, ' and ')

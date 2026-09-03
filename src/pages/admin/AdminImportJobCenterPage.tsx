@@ -1,6 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, CheckCircle2, Inbox } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Inbox, Loader2, RefreshCw } from 'lucide-react';
 import { useAdminBackgroundJobs, type AdminBackgroundJob, type AdminJobStatus } from '../../contexts/AdminBackgroundJobsContext';
 
 // Routed home for admin-backend-ux-spec.md Section 5.38 "Platform Config: Import & Job
@@ -61,13 +61,19 @@ export default function AdminImportJobCenterPage() {
         </button>
       </div>
 
+      <ServerImportQueue />
+
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <h3 className="text-sm font-bold text-slate-900">This browser session</h3>
+      </div>
+
       <div className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
         <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
         <p>
-          <span className="font-semibold">Currently shows Bulk Import jobs only.</span> Other upload surfaces —
-          hero banners, ad creatives, community posts, and taxonomy/geography Excel imports — don't yet report into
-          this shared job list; they track their own progress locally on their own screens. This isn't a bug in this
-          screen, it's a gap in how those surfaces report status.
+          <span className="font-semibold">The list below is parse/validation progress only, held in this tab.</span>{' '}
+          It covers Bulk Import; other upload surfaces — hero banners, ad creatives, community posts, and
+          taxonomy/geography Excel imports — track their own progress on their own screens. Once rows are applied,
+          the durable record is the server queue above, which survives a reload.
         </p>
       </div>
 
@@ -214,4 +220,193 @@ function formatTimestamp(iso: string): string {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+// ---- Server-side import queue -------------------------------------------
+// The list above is this tab's memory: it tracks parsing and validation, and it
+// is gone on reload. Applying a preview hands the rows to the server queue
+// (POST /api/admin/imports), which writes them to the listings table in
+// batches in the background. This section is that queue — the durable record,
+// readable from any browser, and the only place to see whether the rows
+// actually landed.
+type ServerImportJob = {
+  id: string;
+  label: string;
+  status: 'queued' | 'running' | 'completed' | 'failed';
+  totalRows: number;
+  processed: number;
+  succeeded: number;
+  failed: number;
+  skipped: number;
+  errors: Array<{ id: string; error: string }>;
+  createdBy: string;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+};
+
+const SERVER_STATUS_STYLES: Record<ServerImportJob['status'], string> = {
+  queued: 'border-slate-200 bg-slate-100 text-slate-700',
+  running: 'border-sky-200 bg-sky-50 text-sky-800',
+  completed: 'border-emerald-100 bg-emerald-50 text-emerald-800',
+  failed: 'border-rose-100 bg-rose-50 text-rose-700',
+};
+
+function ServerImportQueue() {
+  const [jobs, setJobs] = useState<ServerImportJob[]>([]);
+  const [databaseAvailable, setDatabaseAvailable] = useState(true);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [expandedJobId, setExpandedJobId] = useState('');
+
+  const load = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('yp_auth_token') || '';
+      const response = await fetch('/api/admin/imports?limit=20', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!response.ok) {
+        setError(response.status === 404 ? 'This server build has no import queue yet.' : `Could not read the queue (${response.status}).`);
+        return;
+      }
+      const data = await response.json();
+      setJobs(Array.isArray(data?.jobs) ? data.jobs : []);
+      setDatabaseAvailable(data?.database !== false);
+      setError('');
+    } catch {
+      setError('Could not reach the server.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  // Poll while anything is still in flight; idle queues do not need refreshing.
+  const hasActiveJob = jobs.some((job) => job.status === 'queued' || job.status === 'running');
+  useEffect(() => {
+    if (!hasActiveJob) return undefined;
+    const timer = setInterval(() => { void load(); }, 2500);
+    return () => clearInterval(timer);
+  }, [hasActiveJob, load]);
+
+  return (
+    <div className="space-y-2 rounded-2xl border border-slate-200 bg-white p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-bold text-slate-900">Server import queue</h3>
+          <p className="text-[11px] text-slate-500">
+            Rows written to the listings table in the background. Survives a reload and is shared across admins.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => { void load(); }}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
+        >
+          {hasActiveJob ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+          Refresh
+        </button>
+      </div>
+
+      {error && (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-900">{error}</p>
+      )}
+      {!databaseAvailable && !error && (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-900">
+          This deployment has no database configured, so imports are applied directly instead of queued.
+        </p>
+      )}
+
+      {loading ? (
+        <p className="py-4 text-center text-[11px] text-slate-400">Loading queue…</p>
+      ) : jobs.length === 0 ? (
+        <p className="py-4 text-center text-[11px] text-slate-400">No server imports yet.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead className="text-[10px] uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-2 py-1.5 font-semibold">Job</th>
+                <th className="px-2 py-1.5 font-semibold">Status</th>
+                <th className="px-2 py-1.5 font-semibold">Progress</th>
+                <th className="px-2 py-1.5 font-semibold">Written</th>
+                <th className="px-2 py-1.5 font-semibold">Failed</th>
+                <th className="px-2 py-1.5 font-semibold" title="Rows listed more than once in the file — the later row was used">Superseded</th>
+                <th className="px-2 py-1.5 font-semibold">Queued at</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {jobs.map((job) => {
+                const percent = job.totalRows > 0
+                  ? Math.min(100, Math.round((job.processed / job.totalRows) * 100))
+                  : 0;
+                return (
+                  <React.Fragment key={job.id}>
+                    <tr className="align-top">
+                      <td className="px-2 py-2">
+                        <div className="font-semibold text-slate-800">{job.label || 'Listing import'}</div>
+                        <div className="font-mono text-[10px] text-slate-400">{job.id}</div>
+                        {job.createdBy && <div className="text-[10px] text-slate-400">{job.createdBy}</div>}
+                      </td>
+                      <td className="px-2 py-2">
+                        <span className={`inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-[10px] font-semibold capitalize ${SERVER_STATUS_STYLES[job.status]}`}>
+                          {job.status === 'running' && <Loader2 className="h-3 w-3 animate-spin" />}
+                          {job.status === 'completed' && <CheckCircle2 className="h-3 w-3" />}
+                          {job.status === 'failed' && <AlertTriangle className="h-3 w-3" />}
+                          {job.status}
+                        </span>
+                      </td>
+                      <td className="px-2 py-2 text-slate-600">
+                        <div className="flex items-center gap-2">
+                          <div className="h-1.5 w-20 overflow-hidden rounded-full bg-slate-100">
+                            <div className="h-full rounded-full bg-[#1E3A8A]" style={{ width: `${percent}%` }} />
+                          </div>
+                          <span className="font-mono text-[10px]">{job.processed}/{job.totalRows}</span>
+                        </div>
+                      </td>
+                      <td className="px-2 py-2 font-mono text-[11px] text-emerald-700">{job.succeeded}</td>
+                      <td className="px-2 py-2">
+                        {job.failed > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => setExpandedJobId((prev) => (prev === job.id ? '' : job.id))}
+                            className="font-mono text-[11px] font-semibold text-rose-700 underline decoration-dotted"
+                          >
+                            {job.failed}
+                          </button>
+                        ) : (
+                          <span className="font-mono text-[11px] text-slate-400">0</span>
+                        )}
+                      </td>
+                      <td className="px-2 py-2 font-mono text-[11px] text-slate-500">{job.skipped || 0}</td>
+                      <td className="px-2 py-2 font-mono text-[10px] text-slate-500">{formatTimestamp(job.createdAt)}</td>
+                    </tr>
+                    {expandedJobId === job.id && job.errors.length > 0 && (
+                      <tr>
+                        <td colSpan={7} className="bg-rose-50/60 px-3 py-2">
+                          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-rose-700">
+                            First {job.errors.length} failure{job.errors.length === 1 ? '' : 's'}
+                          </div>
+                          <ul className="space-y-0.5">
+                            {job.errors.map((entry, index) => (
+                              <li key={`${entry.id}-${index}`} className="font-mono text-[10px] text-rose-800">
+                                {entry.id || '(no id)'} — {entry.error}
+                              </li>
+                            ))}
+                          </ul>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
 }

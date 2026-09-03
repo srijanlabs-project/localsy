@@ -16,9 +16,18 @@ import {
   resolveDefaultSubcategoryId,
   resolveMasterCategoryId,
 } from '../../categoryMaster';
-import { MASTER_AREAS } from '../../geographyMaster';
+import { getAreaPincode } from '../../geographyMaster';
 
 const slugifyBusinessValue = (value: string) => String(value || '')
+  // NFKD first, so styled and accented characters survive as letters instead of
+  // being stripped: "Cafe Coffee Day" with an accented e used to slug to
+  // 'caf-coffee-day', and 65 listings whose names are in a decorative Unicode
+  // font or Devanagari slugged to the empty string. All five copies of this
+  // function must stay identical — the server builds sitemap URLs with its copy
+  // and the client builds links with these, so any drift is two canonical URLs
+  // for one listing.
+  .normalize('NFKD')
+  .replace(/[\u0300-\u036f]/g, '')
   .toLowerCase()
   .trim()
   .replace(/&/g, ' and ')
@@ -88,7 +97,7 @@ export const buildLocalityGeoCentersFromBusinesses = (localities: Locality[], bu
 
 export const resolveBusinessPincode = (business: Business): string => {
   if (business.pincode && /^\d{6}$/.test(business.pincode)) return business.pincode;
-  return MASTER_AREAS.find((area) => area.id === business.areaId)?.pincode || '';
+  return getAreaPincode(business.areaId);
 };
 
 export const splitTagSource = (value: string) => (
@@ -98,6 +107,16 @@ export const splitTagSource = (value: string) => (
     .filter(Boolean)
 );
 
+// Mirrors the stop-list in services/admin/adminConsoleUtils.ts: the apply step
+// builds tags through this helper, so both paths have to agree or a listing's
+// tags would depend on which screen imported it.
+const NON_DISCRIMINATING_TAGS = new Set([
+  'point_of_interest', 'point of interest', 'establishment', 'premise', 'subpremise',
+  'political', 'geocode', 'plus_code', 'route', 'street_address',
+  'locality', 'sublocality', 'sublocality_level_1', 'postal_code',
+  'administrative_area_level_1', 'administrative_area_level_2', 'administrative_area_level_3',
+]);
+
 export const uniqueTags = (...groups: Array<Array<string | undefined>>) => {
   const seen = new Set<string>();
   const tags: string[] = [];
@@ -106,6 +125,7 @@ export const uniqueTags = (...groups: Array<Array<string | undefined>>) => {
     if (!trimmed) return;
     const key = trimmed.toLowerCase();
     if (seen.has(key)) return;
+    if (NON_DISCRIMINATING_TAGS.has(key)) return;
     seen.add(key);
     tags.push(trimmed);
   });

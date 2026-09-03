@@ -48,6 +48,9 @@ import {
   uniqueTags,
 } from './services/app/runtimeState';
 import { getSellerPageSlug } from './services/webportal/publicExperience';
+// Imported, not redeclared: a second copy of this limit here would let the
+// Bulk Import screen accept a file that this reducer then silently rejects.
+import { BULK_IMPORT_CHUNK_SIZE } from './services/admin/bulkImport';
 
 const PUBLIC_SITE_ORIGIN = 'https://www.localisy.in';
 
@@ -81,6 +84,15 @@ const DEFAULT_API_CONFIGURATION: ApiConfiguration = {
 };
 
 const slugifyForUrl = (value: string) => value
+  // NFKD first, so styled and accented characters survive as letters instead of
+  // being stripped: "Cafe Coffee Day" with an accented e used to slug to
+  // 'caf-coffee-day', and 65 listings whose names are in a decorative Unicode
+  // font or Devanagari slugged to the empty string. All five copies of this
+  // function must stay identical — the server builds sitemap URLs with its copy
+  // and the client builds links with these, so any drift is two canonical URLs
+  // for one listing.
+  .normalize('NFKD')
+  .replace(/[\u0300-\u036f]/g, '')
   .toLowerCase()
   .trim()
   .replace(/&/g, ' and ')
@@ -1431,7 +1443,6 @@ const CategoryResultsUiV1 = lazy(() => import('./components/ux/CategoryResultsUi
 const ListingDetailUiV1 = lazy(() => import('./components/ux/ListingDetailUiV1'));
 const NationalDirectoryPage = lazy(() => import('./components/webportal/NationalDirectoryPage'));
 const SellerShowcasePage = lazy(() => import('./components/webportal/SellerShowcasePage'));
-const BULK_IMPORT_CHUNK_SIZE = 3000;
 
 export default function App() {
   const PRODUCTION_MODE = true;
@@ -2596,6 +2607,76 @@ export default function App() {
       });
   };
 
+  // Bulk imports go through the server's job queue instead of a full-directory
+  // PUT. Only the touched listings travel, the request returns as soon as the
+  // job is queued, and the rows are upserted in batches in the background —
+  // so a 3,000-row file no longer means a multi-minute request that rewrites
+  // all 26,000 records. Falls back to the merging PUT if the queue is absent
+  // (older server build, or no database).
+  const queueListingImport = async (touched: Business[], label: string) => {
+    if (touched.length === 0) return { ok: true, jobId: '' };
+    if (apiConfiguration.syncMode !== 'api' || !apiConfiguration.autoSyncBusinesses) {
+      return { ok: false, jobId: '' };
+    }
+
+    const fallbackToMergePut = async () => {
+      try {
+        const response = await fetch(apiConfiguration.businessesEndpoint, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+          body: JSON.stringify({ businesses: touched }),
+        });
+        return { ok: response.ok, jobId: '' };
+      } catch {
+        return { ok: false, jobId: '' };
+      }
+    };
+
+    let jobId = '';
+    try {
+      const response = await fetch('/api/admin/imports', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ label, listings: touched }),
+      });
+      if (!response.ok) return fallbackToMergePut();
+      const data = await response.json().catch(() => null);
+      jobId = String(data?.jobId || '');
+      if (!jobId) return fallbackToMergePut();
+    } catch {
+      return fallbackToMergePut();
+    }
+
+    setApiConfiguration((prev) => ({ ...prev, lastBusinessesSyncAt: new Date().toISOString() }));
+
+    // Poll until the job settles so the audit trail records the real outcome
+    // rather than just the enqueue. Bounded so a stuck job cannot poll forever.
+    void (async () => {
+      for (let attempt = 0; attempt < 600; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        try {
+          const statusResponse = await fetch(`/api/admin/imports/${jobId}`, { headers: getAuthHeaders() });
+          if (!statusResponse.ok) return;
+          const statusData = await statusResponse.json().catch(() => null);
+          const job = statusData?.job;
+          if (!job) return;
+          if (job.status === 'completed' || job.status === 'failed') {
+            logAuditEvent(
+              'data_entry',
+              'CSV import job finished',
+              `Job: ${jobId} | Status: ${job.status} | Written: ${job.succeeded} | Failed: ${job.failed} of ${job.totalRows}`
+            );
+            return;
+          }
+        } catch {
+          return;
+        }
+      }
+    })();
+
+    return { ok: true, jobId };
+  };
+
   const replaceBusinessesOnServer = async (nextBusinesses: Business[]) => {
     if (apiConfiguration.syncMode !== 'api' || !apiConfiguration.autoSyncBusinesses) {
       return;
@@ -2688,38 +2769,96 @@ export default function App() {
     });
   };
 
+  // The public site only ever displays listings for the pincodes the active
+  // locality covers, so it asks for exactly those instead of the whole
+  // directory. Loading everything meant a ~38MB payload at full data volume,
+  // parsed and filtered in memory on every page load.
+  // The admin console still needs the complete set, so it keeps the unscoped
+  // request.
+  const businessFetchScope = (() => {
+    if (activeView === 'admin') return '';
+    const scopedPincodes = Array.from(new Set(
+      pincodeMappings
+        .filter((mapping) => activeLocalityId.split(',').map((id) => id.trim()).includes(mapping.localityId))
+        .map((mapping) => String(mapping.pincode || '').trim())
+        .filter(Boolean),
+    ));
+    if (scopedPincodes.length === 0) return '';
+    return `?status=approved&fields=lite&pincodes=${encodeURIComponent(scopedPincodes.join(','))}`;
+  })();
+
+  // The scoped request is paged. The busiest pincode holds ~7,900 approved
+  // listings, which is still a ~4MB response in one piece — nothing renders
+  // until all of it has arrived and parsed. Asking for it 500 at a time puts
+  // the first screenful up in a fraction of that and appends the rest behind
+  // the user, who is reading the first cards while it lands. Filtering stays
+  // client-side, so the page behaves identically once the pages are in.
+  const SCOPED_LISTING_PAGE_SIZE = 500;
+  const SCOPED_LISTING_PAGE_CEILING = 60;
+
   useEffect(() => {
     let cancelled = false;
-    fetch(apiConfiguration.businessesEndpoint)
-      .then((response) => (response.ok ? response.json() : null))
-      .then((data: { businesses?: Business[] } | null) => {
-        if (cancelled || !Array.isArray(data?.businesses)) return;
-        if (data.businesses.length === 0) {
-          setBusinesses((prev) => {
-            if (prev.length > 0 && apiConfiguration.syncMode === 'api' && apiConfiguration.autoSyncBusinesses) {
-              persistBusinessesToServer(prev);
-            }
-            return prev;
-          });
-          return;
+
+    // A scoped response is a slice of the directory with trimmed records.
+    // Writing it back would overwrite good rows with truncated ones, so
+    // every persist path below is disabled for it.
+    const scoped = Boolean(businessFetchScope);
+
+    const loadScopedListings = async () => {
+      let offset = 0;
+      for (let page = 0; page < SCOPED_LISTING_PAGE_CEILING; page += 1) {
+        const response = await fetch(
+          `${apiConfiguration.businessesEndpoint}${businessFetchScope}&limit=${SCOPED_LISTING_PAGE_SIZE}&offset=${offset}`
+        );
+        if (!response.ok) return;
+        const data = await response.json() as { businesses?: Business[]; total?: number } | null;
+        if (cancelled) return;
+        const batch = Array.isArray(data?.businesses) ? data.businesses : [];
+        if (batch.length > 0) {
+          setBusinesses((prev) => mergeBusinessCollections(prev, batch));
         }
+        offset += batch.length;
+        const total = Number(data?.total ?? 0);
+        if (batch.length < SCOPED_LISTING_PAGE_SIZE) return;
+        if (total > 0 && offset >= total) return;
+      }
+    };
+
+    const loadWholeDirectory = async () => {
+      const response = await fetch(apiConfiguration.businessesEndpoint);
+      if (!response.ok) return;
+      const data = await response.json() as { businesses?: Business[]; partial?: boolean } | null;
+      if (cancelled || !Array.isArray(data?.businesses)) return;
+      const canPersist = !data.partial
+        && apiConfiguration.syncMode === 'api'
+        && apiConfiguration.autoSyncBusinesses;
+      if (data.businesses.length === 0) {
         setBusinesses((prev) => {
-          const remoteBusinesses = data.businesses || [];
-          const next = mergeBusinessCollections(prev, remoteBusinesses);
-          if (next.length > remoteBusinesses.length && apiConfiguration.syncMode === 'api' && apiConfiguration.autoSyncBusinesses) {
-            persistBusinessesToServer(next);
+          if (prev.length > 0 && canPersist) {
+            persistBusinessesToServer(prev);
           }
-          return next;
+          return prev;
         });
-      })
-      .catch(() => {
-        // Static/local builds keep using localStorage and seed data.
+        return;
+      }
+      setBusinesses((prev) => {
+        const remoteBusinesses = data.businesses || [];
+        const next = mergeBusinessCollections(prev, remoteBusinesses);
+        if (next.length > remoteBusinesses.length && canPersist) {
+          persistBusinessesToServer(next);
+        }
+        return next;
       });
+    };
+
+    void (scoped ? loadScopedListings() : loadWholeDirectory()).catch(() => {
+      // Static/local builds keep using localStorage and seed data.
+    });
 
     return () => {
       cancelled = true;
     };
-  }, [apiConfiguration.autoSyncBusinesses, apiConfiguration.businessesEndpoint, apiConfiguration.syncMode]);
+  }, [apiConfiguration.autoSyncBusinesses, apiConfiguration.businessesEndpoint, apiConfiguration.syncMode, businessFetchScope]);
 
   useEffect(() => {
     if (apiConfiguration.syncMode !== 'api' || !apiConfiguration.reviewsEndpoint) return undefined;
@@ -6098,10 +6237,77 @@ export default function App() {
     let skipped = 0;
 
     setBusinesses(prev => {
-      const next = [...prev];
+      // `working` holds the existing directory followed by anything this file
+      // creates. Creates are APPENDED rather than unshifted, so an index stays
+      // valid for the whole run; the tail is reversed back onto the front at
+      // the end, which reproduces the old unshift order exactly.
+      const working = [...prev];
+      const existingCount = working.length;
+      // Only the listings this file actually touches are sent to the server.
+      const touched: Business[] = [];
       const normalizePhone = (phone: string) => phone.replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '');
-      const getBusinessPincode = (b: Business) => b.pincode || MASTER_AREAS.find(a => a.id === b.areaId)?.pincode || '';
       const normalizeImportGeoLookup = (value: string) => slugifyForUrl(String(value || ''));
+
+      // Every lookup this loop needs, built once.
+      //
+      // It previously ran `next.findIndex(...)` over the growing directory for
+      // every row, plus four `MASTER_AREAS.find(...)` calls against 1,327
+      // areas. Measured on 9,000 new listings — the real case, where nothing
+      // matches and findIndex scans all 26,000 before giving up — that was
+      // 8,110 ms of frozen browser against 9 ms with these maps.
+      const areaById = new Map(MASTER_AREAS.map((area) => [area.id, area]));
+      const areaByPincodeAndLocality = new Map<string, typeof MASTER_AREAS[number]>();
+      const areaByPincode = new Map<string, typeof MASTER_AREAS[number]>();
+      for (const area of MASTER_AREAS) {
+        const composite = `${area.pincode}|${area.localityId}`;
+        if (!areaByPincodeAndLocality.has(composite)) areaByPincodeAndLocality.set(composite, area);
+        if (!areaByPincode.has(area.pincode)) areaByPincode.set(area.pincode, area);
+      }
+      // The area-name match is fuzzy (substring either way), so it cannot be a
+      // map — but the normalised names can be computed once instead of 1,327
+      // times per row.
+      const areaNameIndex = MASTER_AREAS.map((area) => ({ area, name: normalizeImportGeoLookup(area.name) }));
+      const localityById = new Map(MASTER_LOCALITIES.map((locality) => [locality.id, locality]));
+      const localityByLookup = new Map(
+        MASTER_LOCALITIES.map((locality) => [normalizeImportGeoLookup(locality.name), locality]),
+      );
+      const cityById = new Map(MASTER_CITIES.map((city) => [city.id, city]));
+      const localityIdByPincode = new Map<string, string>();
+      for (const mapping of pincodeMappings) {
+        if (!localityIdByPincode.has(mapping.pincode)) localityIdByPincode.set(mapping.pincode, mapping.localityId);
+      }
+
+      const getBusinessPincode = (b: Business) => b.pincode || areaById.get(String(b.areaId))?.pincode || '';
+      // The create-or-update rule: same id, or the same name + phone + pincode
+      // + locality. Only rows with a phone can match on the composite, which is
+      // what the scan it replaces required too.
+      const duplicateKeyOf = (b: Business) => {
+        const phone = normalizePhone(b.phone);
+        if (!phone) return '';
+        return `${b.name.trim().toLowerCase()}|${phone}|${getBusinessPincode(b)}|${b.localityId}`;
+      };
+
+      const indexById = new Map<string, number>();
+      const indexByDuplicateKey = new Map<string, number>();
+      working.forEach((business, index) => {
+        const id = String(business.id || '');
+        if (id && !indexById.has(id)) indexById.set(id, index);
+        const key = duplicateKeyOf(business);
+        if (key && !indexByDuplicateKey.has(key)) indexByDuplicateKey.set(key, index);
+      });
+      const reindex = (index: number, before: Business | undefined, after: Business) => {
+        const beforeId = String(before?.id || '');
+        const afterId = String(after.id || '');
+        if (beforeId && beforeId !== afterId && indexById.get(beforeId) === index) indexById.delete(beforeId);
+        if (afterId && !indexById.has(afterId)) indexById.set(afterId, index);
+        const beforeKey = before ? duplicateKeyOf(before) : '';
+        const afterKey = duplicateKeyOf(after);
+        if (beforeKey && beforeKey !== afterKey && indexByDuplicateKey.get(beforeKey) === index) {
+          indexByDuplicateKey.delete(beforeKey);
+        }
+        if (afterKey && !indexByDuplicateKey.has(afterKey)) indexByDuplicateKey.set(afterKey, index);
+      };
+
       const parseGalleryUrls = (value: string | undefined) => String(value || '')
         .split(/[|,]+/)
         .map((entry) => entry.trim())
@@ -6124,38 +6330,33 @@ export default function App() {
         const requestedAreaLookup = normalizeImportGeoLookup(row.area || '');
         const requestedLocalityId = String(row.localityId || '').trim();
         const requestedLocalityLookup = normalizeImportGeoLookup(row.locality || '');
-        const explicitLocality = requestedLocalityId
-          ? MASTER_LOCALITIES.find((locality) => locality.id === requestedLocalityId)
-          : undefined;
-        const namedLocality = requestedLocalityLookup
-          ? MASTER_LOCALITIES.find((locality) => normalizeImportGeoLookup(locality.name) === requestedLocalityLookup)
-          : undefined;
+        const explicitLocality = requestedLocalityId ? localityById.get(requestedLocalityId) : undefined;
+        const namedLocality = requestedLocalityLookup ? localityByLookup.get(requestedLocalityLookup) : undefined;
         const localityHintId = explicitLocality?.id || namedLocality?.id || '';
-        const explicitArea = requestedAreaId
-          ? MASTER_AREAS.find((area) => area.id === requestedAreaId)
-          : undefined;
+        const explicitArea = requestedAreaId ? areaById.get(requestedAreaId) : undefined;
         const namedArea = requestedAreaLookup
-          ? MASTER_AREAS.find((area) => {
-              const areaName = normalizeImportGeoLookup(area.name);
+          ? areaNameIndex.find(({ area, name: areaName }) => {
               if (!areaName) return false;
               if (localityHintId && area.localityId !== localityHintId) return false;
               return areaName === requestedAreaLookup || areaName.includes(requestedAreaLookup) || requestedAreaLookup.includes(areaName);
-            })
+            })?.area
           : undefined;
         const pincodeArea = requestedPincode
-          ? MASTER_AREAS.find((area) => area.pincode === requestedPincode && (!localityHintId || area.localityId === localityHintId))
+          ? (localityHintId
+              ? areaByPincodeAndLocality.get(`${requestedPincode}|${localityHintId}`)
+              : areaByPincode.get(requestedPincode))
           : undefined;
         const resolvedArea = explicitArea || namedArea || pincodeArea;
         const areaId = resolvedArea?.id || '';
         const localityId = explicitLocality?.id
           || namedLocality?.id
           || resolvedArea?.localityId
-          || pincodeMappings.find((mapping) => mapping.pincode === requestedPincode)?.localityId
+          || localityIdByPincode.get(requestedPincode)
           || '';
-        const resolvedLocality = MASTER_LOCALITIES.find((locality) => locality.id === localityId)
-          || (resolvedArea?.localityId ? MASTER_LOCALITIES.find((locality) => locality.id === resolvedArea.localityId) : undefined);
+        const resolvedLocality = localityById.get(localityId)
+          || (resolvedArea?.localityId ? localityById.get(resolvedArea.localityId) : undefined);
         const resolvedCityId = resolvedArea?.cityId || resolvedLocality?.cityId || '';
-        const resolvedCity = MASTER_CITIES.find((city) => city.id === resolvedCityId);
+        const resolvedCity = cityById.get(resolvedCityId);
         const resolvedStateId = resolvedCity?.stateId || '';
         const fallbackAddressParts = [
           String(row.area || '').trim(),
@@ -6171,38 +6372,40 @@ export default function App() {
         const lng = row.longitude && row.longitude !== '—' ? parseFloat(row.longitude) : undefined;
 
         const normalizedPhone = normalizePhone(phone);
-        const resolvedPincode = MASTER_AREAS.find(a => a.id === areaId)?.pincode || requestedPincode;
+        const resolvedPincode = areaById.get(areaId)?.pincode || requestedPincode;
         if (!resolvedLocality || !resolvedCity || !resolvedStateId || resolvedPincode.length !== 6) {
           skipped++;
           continue;
         }
-        const existingIndex = next.findIndex((b) => (
-          (row.existingBusinessId && b.id === row.existingBusinessId) ||
-          b.id === normalizedListingId ||
-          (
-            b.name.trim().toLowerCase() === name.toLowerCase() &&
-            normalizedPhone.length > 0 &&
-            normalizePhone(b.phone) === normalizedPhone &&
-            getBusinessPincode(b) === resolvedPincode &&
-            b.localityId === resolvedLocality.id
-          )
-        ));
+        // The scan this replaces was a `findIndex` over the whole directory
+        // testing three conditions per element, so the winner was the EARLIEST
+        // record matching ANY of them. Taking the minimum of the three map hits
+        // reproduces that exactly, rather than preferring one condition.
+        const candidateIndexes = [
+          row.existingBusinessId ? indexById.get(String(row.existingBusinessId)) : undefined,
+          indexById.get(normalizedListingId),
+          normalizedPhone.length > 0
+            ? indexByDuplicateKey.get(`${name.toLowerCase()}|${normalizedPhone}|${resolvedPincode}|${resolvedLocality.id}`)
+            : undefined,
+        ].filter((value): value is number => typeof value === 'number');
+        const existingIndex = candidateIndexes.length > 0 ? Math.min(...candidateIndexes) : -1;
 
         if (row.importAction === 'update' && existingIndex >= 0) {
           const parsedGalleryUrls = parseGalleryUrls(row.galleryUrls);
-          next[existingIndex] = normalizeStoredBusiness({
-            ...next[existingIndex],
+          const previousBusiness = working[existingIndex];
+          working[existingIndex] = normalizeStoredBusiness({
+            ...working[existingIndex],
             id: normalizedListingId,
-            googlePlaceId: row.googlePlaceId || next[existingIndex].googlePlaceId,
-            imageUrl: row.imageUrl || next[existingIndex].imageUrl,
-            logoUrl: row.logoUrl || next[existingIndex].logoUrl,
-            coverImageUrl: row.coverImageUrl || next[existingIndex].coverImageUrl,
-            galleryUrls: parsedGalleryUrls.length > 0 ? parsedGalleryUrls : next[existingIndex].galleryUrls,
+            googlePlaceId: row.googlePlaceId || working[existingIndex].googlePlaceId,
+            imageUrl: row.imageUrl || working[existingIndex].imageUrl,
+            logoUrl: row.logoUrl || working[existingIndex].logoUrl,
+            coverImageUrl: row.coverImageUrl || working[existingIndex].coverImageUrl,
+            galleryUrls: parsedGalleryUrls.length > 0 ? parsedGalleryUrls : working[existingIndex].galleryUrls,
             name,
             categoryId: row.categoryId || '',
             subcategoryId: row.subcategoryId || '',
-            sourceCategoryLabel: row.sourceCategoryLabel || row.category || next[existingIndex].sourceCategoryLabel,
-            sourceSubcategoryLabel: row.sourceSubcategoryLabel || row.subcategory || next[existingIndex].sourceSubcategoryLabel,
+            sourceCategoryLabel: row.sourceCategoryLabel || row.category || working[existingIndex].sourceCategoryLabel,
+            sourceSubcategoryLabel: row.sourceSubcategoryLabel || row.subcategory || working[existingIndex].sourceSubcategoryLabel,
             taxonomyMapped: row.taxonomyMapped ?? isBusinessTaxonomyMapped({ categoryId: row.categoryId || '', subcategoryId: row.subcategoryId || '' }),
             localityId: resolvedLocality.id,
             stateId: resolvedStateId,
@@ -6212,19 +6415,24 @@ export default function App() {
             areasOfOperation: areaId ? [areaId] : [],
             address,
             phone,
-            description: row.services || next[existingIndex].description,
-            rating: Number.isFinite(rating) ? rating : next[existingIndex].rating,
-            reviewCount: Number.isFinite(reviewCount) ? reviewCount : next[existingIndex].reviewCount,
+            description: row.services || working[existingIndex].description,
+            rating: Number.isFinite(rating) ? rating : working[existingIndex].rating,
+            reviewCount: Number.isFinite(reviewCount) ? reviewCount : working[existingIndex].reviewCount,
             status: 'approved',
             tags: uniqueTags(
               row.tags || [],
-              next[existingIndex].tags || [],
+              working[existingIndex].tags || [],
               splitTagSource(row.services || ''),
               splitTagSource(row.category || ''),
               splitTagSource(row.subcategory || '')
             ),
-            gpsCoordinates: lat !== undefined && lng !== undefined ? { lat, lng } : next[existingIndex].gpsCoordinates,
+            gpsCoordinates: lat !== undefined && lng !== undefined ? { lat, lng } : working[existingIndex].gpsCoordinates,
           });
+          // The id can change here (a row matched by duplicate key carries a
+          // different Listing ID), so the maps have to be re-keyed or a later
+          // row in the same file would miss it.
+          reindex(existingIndex, previousBusiness, working[existingIndex]);
+          touched.push(working[existingIndex]);
           skipped++;
           continue;
         }
@@ -6235,7 +6443,7 @@ export default function App() {
         }
 
         const parsedGalleryUrls = parseGalleryUrls(row.galleryUrls);
-        next.unshift(normalizeStoredBusiness({
+        const createdBusiness = normalizeStoredBusiness({
           id: normalizedListingId,
           googlePlaceId: row.googlePlaceId || undefined,
           imageUrl: row.imageUrl || '',
@@ -6272,10 +6480,17 @@ export default function App() {
           ),
           ownerName: 'Imported via CSV',
           gpsCoordinates: lat !== undefined && lng !== undefined ? { lat, lng } : undefined,
-        }));
+        });
+        // Appended, not unshifted: an append leaves every existing index
+        // valid, so the maps above stay correct for the rest of the file.
+        working.push(createdBusiness);
+        reindex(working.length - 1, undefined, createdBusiness);
+        touched.push(createdBusiness);
         imported++;
       }
-      persistBusinessesToServer(next);
+      // Newest first, matching what repeated unshift produced.
+      const next = [...working.slice(existingCount).reverse(), ...working.slice(0, existingCount)];
+      void queueListingImport(touched, `CSV import (${rows.length} rows)`);
       return next;
     });
 

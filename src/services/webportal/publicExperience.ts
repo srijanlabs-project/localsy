@@ -8,6 +8,15 @@ export type ExperienceRouteContext =
   | { page: 'seller'; sellerBusinessId: string };
 
 export const slugifyPublicValue = (value: string) => String(value || '')
+  // NFKD first, so styled and accented characters survive as letters instead of
+  // being stripped: "Cafe Coffee Day" with an accented e used to slug to
+  // 'caf-coffee-day', and 65 listings whose names are in a decorative Unicode
+  // font or Devanagari slugged to the empty string. All five copies of this
+  // function must stay identical — the server builds sitemap URLs with its copy
+  // and the client builds links with these, so any drift is two canonical URLs
+  // for one listing.
+  .normalize('NFKD')
+  .replace(/[\u0300-\u036f]/g, '')
   .toLowerCase()
   .trim()
   .replace(/&/g, ' and ')

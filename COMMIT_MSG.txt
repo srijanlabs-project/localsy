@@ -1,0 +1,71 @@
+Move listings to a relational store, fix efficiency gaps, rework listing UI
+
+Data layer
+- `businesses` is a real table (22 columns + payload JSONB, 16 indexes) instead
+  of one JSONB document in app_state. Reads, filters, counts, facets and paging
+  all happen in Postgres; the blob is now only a rollback artifact, rebuilt from
+  the rows by a 120s snapshot worker.
+- Writes are per row (PATCH/DELETE /api/businesses/:id), so two admins saving at
+  once no longer clobber the whole directory.
+- The public fetch is pincode-scoped and paged 500 at a time, and any scoped or
+  field-trimmed response is marked `partial` so the client can never write it
+  back over the full directory.
+- Every ranking sort ends `, id ASC`. Without a tiebreaker, LIMIT/OFFSET over a
+  non-total order returned some rows twice and never returned others: the first
+  two pages of pincode 410206 gave 1,000 rows containing 998 distinct ids.
+- Reviews get the same treatment (table + (business_id, created_at) index,
+  mirrored on write, backfilled on boot); `?businessId=` serves one listing's
+  reviews off the index.
+
+Background import queue
+- POST /api/admin/imports enqueues and returns; a worker upserts in batches of
+  1,000 across 4 connections. A 3,000-row file is 77ms to enqueue and 180ms to
+  write, against a request that used to hold the connection for minutes.
+- Rows are de-duplicated by id before dispatch, which is what makes parallel
+  batches safe. A failed batch is halved rather than retried row by row.
+- Chunk limit raised 3,000 -> 9,000 now that imports are queued.
+
+Efficiency fixes, all measured at 25,965 listings
+- Five handlers read the whole directory to find one row (351ms vs 2ms). Worse,
+  parsing a 3.7MB JSONB document blocks the event loop: p95 on an unrelated
+  indexed endpoint went 16ms -> 352ms while one ran. Now single-row reads.
+- Public search (/api/mobile/search) scored all 25,965 records in Node per
+  query. Now a generated tsvector column + GIN index: 147ms -> 6ms, and phone
+  search works (it returned 0 results before).
+- contact_view_events had no index on created_at, and the Show Number rate check
+  counts by it: 43ms at 1M rows and climbing, now flat 2ms.
+- Geography saves made 1,327 round trips; batched via unnest, 217-367ms -> 41ms.
+- The CSV import apply step walked the growing array per row: 8,110ms for 9,000
+  new listings, now 9ms. Verified byte-identical to the old reducer across nine
+  scenarios.
+- One nested area lookup was duplicated 14 times across four files; all now go
+  through a single memoised map in geographyMaster.
+
+Data-loss fix
+- syncBusinessRows deleted rows absent from whatever array it was handed, and
+  the merging PUT built that array from a blob up to two minutes behind the
+  rows. Reproduced: importing 500 listings then PUTting one unrelated listing
+  deleted 499 of them, HTTP 200, nothing logged. Pruning is now opt-in and only
+  the backfill, /replace and /reset use it; the merging PUT upserts directly.
+
+Listing UI
+- Detail page: non-informative tags hidden, Visit Website / Directions / gallery
+  removed, Claimed Merchant is admin-only, Similar Nearby Listings collapsed
+  with its ratings removed, a static map after the address, and Show number
+  pinned to the foot of the panel.
+- OTP modal: no vendor or "security gate" chrome; copy is Send OTP / View Number.
+- Filters: subcategory first and multi-select, category as radio so it can never
+  be fully deselected.
+- Cards show the subcategory rather than the area, and no listing gets a stock
+  photo standing in for a missing image.
+- Home: subcategory chips filter in place, Browse by category capped at three
+  rows ordered by the visitor's own history, and a Recently viewed rail.
+- Ad banners inline in the mobile results, one after every fifth card.
+
+Listing slugs
+- buildListingSlug interpolated after slugifying, so 65 listings whose names
+  slugified to nothing got "-localisy010734" from the server and
+  "localisy010734" from the client: one URL in the sitemap, another in every
+  link. Both now slugify the combined string, and all five copies of the
+  slugifier normalise Unicode first, which also fixed 27 mangled slugs
+  ("Cafe Coffee Day" was becoming "caf-coffee-day").

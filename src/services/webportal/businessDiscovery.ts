@@ -1,6 +1,6 @@
 import type { Business, Locality } from '../../types';
 import { getCategoryById, getSubcategoryById } from '../../categoryMaster';
-import { MASTER_AREAS, MASTER_CITIES, MASTER_STATES } from '../../geographyMaster';
+import { MASTER_AREAS, MASTER_CITIES, MASTER_STATES, resolvePincodeForAreaId } from '../../geographyMaster';
 
 export type SearchSuggestion = {
   id: string;
@@ -278,7 +278,7 @@ export const getBusinessRecommendedScore = ({
 
 export const getBusinessCanonicalKey = (localities: Locality[], biz: Business) => {
   const normalizedPhone = String(biz.phone || '').replace(/\D/g, '').slice(-10);
-  const normalizedPincode = biz.pincode || MASTER_AREAS.find((area) => area.id === biz.areaId)?.pincode || '';
+  const normalizedPincode = resolvePincodeForAreaId(biz.pincode, biz.areaId);
   const normalizedAddress = normalizeSearchText(`${biz.address} ${getBusinessAreaName(localities, biz)}`).split(' ').slice(0, 6).join(' ');
   return [
     normalizeSearchText(biz.name),

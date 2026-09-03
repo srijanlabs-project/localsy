@@ -15,7 +15,7 @@ import {
   CommunityItem, CRMContact, MarketingCoupon, ListingAd, AdLead, HeroBanner, HomepageLayout, HomepageSection, ApiConfiguration, ResolvedHomepagePayload, HomepageDefaultsConfigState
 } from '../types';
 import homepageDefaultsBootstrap from '../../homepage-defaults-config.json';
-import { MASTER_STATES, MASTER_CITIES, MASTER_LOCALITIES, MASTER_AREAS } from '../geographyMaster';
+import { MASTER_AREAS, MASTER_CITIES, MASTER_LOCALITIES, MASTER_STATES, getAreaPincode, resolvePincodeForAreaId } from '../geographyMaster';
 import OtpVerificationModal from './OtpVerificationModal';
 import GoogleLocationPicker from './GoogleLocationPicker';
 import LocalityLandingUiV1 from './ux/LocalityLandingUiV1';
@@ -40,7 +40,7 @@ import {
   matchesBusinessSearch as matchesBusinessSearchService,
   type SearchSuggestion,
 } from '../services/webportal/businessDiscovery';
-import { getBusinessGallery } from '../services/webportal/publicExperience';
+import { getBusinessDirectionsUrl } from '../services/webportal/publicExperience';
 import {
   BUSINESS_CATEGORIES,
   BUSINESS_SUBCATEGORIES,
@@ -367,7 +367,57 @@ export default function WebPortal({
     services: 'ca',
     'professional-services': 'ca',
   };
+  // The Static Maps key is public by nature (it travels in the image URL) but it
+  // still must not sit in the repo or the bundle, so it is served at runtime and
+  // should be restricted by HTTP referrer on the Google Cloud project.
+  const [isSimilarListingsOpen, setIsSimilarListingsOpen] = useState(false);
+  const [mapsStaticKey, setMapsStaticKey] = useState('');
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/public-runtime-config')
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (!cancelled && data?.mapsStaticKey) setMapsStaticKey(String(data.mapsStaticKey));
+      })
+      .catch(() => {
+        // No key configured, or the endpoint is unavailable: the map is simply
+        // not rendered.
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Tags that carry no meaning for a reader. The importer stopped writing most
+  // of these, but every listing imported before that still has them, so the
+  // filter lives here at display time rather than only at import.
+  const HIDDEN_LISTING_TAGS = new Set([
+    'point_of_interest', 'point of interest', 'establishment', 'service', 'store',
+    'imported via csv', 'premise', 'subpremise', 'political', 'geocode',
+    'plus_code', 'route', 'street_address', 'postal_code',
+  ]);
+
+  const getVisibleListingTags = (business: Business) => {
+    const phoneDigits = String(business.phone || '').replace(/\D/g, '');
+    return (business.tags || []).filter((tag) => {
+      const value = String(tag || '').trim();
+      if (!value) return false;
+      if (HIDDEN_LISTING_TAGS.has(value.toLowerCase())) return false;
+      // A phone number is not a tag. Older imports wrote the digits in.
+      const digits = value.replace(/\D/g, '');
+      if (digits.length >= 10 && (digits === phoneDigits || phoneDigits.includes(digits))) return false;
+      return true;
+    });
+  };
+
   const slugifyForUrl = (value: string) => value
+    // NFKD first, so styled and accented characters survive as letters instead of
+    // being stripped: "Cafe Coffee Day" with an accented e used to slug to
+    // 'caf-coffee-day', and 65 listings whose names are in a decorative Unicode
+    // font or Devanagari slugged to the empty string. All five copies of this
+    // function must stay identical — the server builds sitemap URLs with its copy
+    // and the client builds links with these, so any drift is two canonical URLs
+    // for one listing.
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .trim()
     .replace(/&/g, ' and ')
@@ -404,9 +454,44 @@ export default function WebPortal({
   const [searchQuery, setSearchQuery] = useState('');
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [selectedCategory, setSelectedCategory] = useState('all');
-  const [selectedSubcategory, setSelectedSubcategory] = useState('all');
+  // Subcategory selection is a LIST, because the filter is multi-select. The
+  // single-value `selectedSubcategory` below is derived from it: URLs, SEO
+  // paths, chips and labels all still want one value, and every existing
+  // single-select call site keeps working through setSelectedSubcategory.
+  const [selectedSubcategoryIds, setSelectedSubcategoryIds] = useState<string[]>([]);
+  const selectedSubcategory = selectedSubcategoryIds[0] || 'all';
+  const setSelectedSubcategory = (next: string | ((current: string) => string)) => {
+    setSelectedSubcategoryIds((currentIds) => {
+      const current = currentIds[0] || 'all';
+      const value = typeof next === 'function' ? next(current) : next;
+      return value === 'all' ? [] : [value];
+    });
+  };
   const [showApplyModal, setShowApplyModal] = useState(false);
   const [selectedBiz, setSelectedBiz] = useState<Business | null>(null);
+
+  // Static map for the selected listing. Renders only when the listing has
+  // coordinates AND a key is configured, so a deployment without one simply
+  // shows no map rather than a broken image.
+  // Must stay BELOW the selectedBiz declaration: this IIFE runs during render,
+  // so reading selectedBiz from above it is a temporal dead zone crash that
+  // blanks the whole portal. tsc does not catch it (the read is inside a
+  // function body), only the browser does.
+  const mapPreviewUrl = (() => {
+    const lat = Number(selectedBiz?.gpsCoordinates?.lat);
+    const lng = Number(selectedBiz?.gpsCoordinates?.lng);
+    if (!mapsStaticKey || !Number.isFinite(lat) || !Number.isFinite(lng)) return '';
+    const center = `${lat},${lng}`;
+    const params = new URLSearchParams({
+      center,
+      zoom: '16',
+      size: '640x300',
+      scale: '2',
+      markers: `color:red|${center}`,
+      key: mapsStaticKey,
+    });
+    return `https://maps.googleapis.com/maps/api/staticmap?${params.toString()}`;
+  })();
   
   // Hero Image Carousel slide index
   const [carouselIndex, setCarouselIndex] = useState(0);
@@ -479,7 +564,7 @@ export default function WebPortal({
   // be shown as removable chips instead of the panel having to stay open.
   const [isMobileFilterOpen, setIsMobileFilterOpen] = useState(false);
   const [draftCategory, setDraftCategory] = useState('all');
-  const [draftSubcategory, setDraftSubcategory] = useState('all');
+  const [draftSubcategoryIds, setDraftSubcategoryIds] = useState<string[]>([]);
   const [draftSort, setDraftSort] = useState<'recommended' | 'popular' | 'rating' | 'nearest' | 'newest'>('recommended');
   const [resultsViewMode, setResultsViewMode] = useState<'grid' | 'map'>('grid');
   const [activeMapBusinessId, setActiveMapBusinessId] = useState<string | null>(null);
@@ -645,7 +730,7 @@ export default function WebPortal({
   }, [activeLocalityId, formAreaId, formCityId, formStateId, listingPincode, localities, savedPincode]);
 
   useEffect(() => {
-    const areaPincode = MASTER_AREAS.find((area) => area.id === formAreaId)?.pincode;
+    const areaPincode = getAreaPincode(formAreaId) || undefined;
     if (!areaPincode) return;
     if (!/^\d{6}$/.test(listingPincode)) {
       setListingPincode(areaPincode);
@@ -725,7 +810,7 @@ export default function WebPortal({
   const aiRecommendationPool = businesses
     .filter((business) => business.status === 'approved')
     .filter((business) => {
-      const businessPincode = business.pincode || MASTER_AREAS.find((area) => area.id === business.areaId)?.pincode || '';
+      const businessPincode = resolvePincodeForAreaId(business.pincode, business.areaId);
       if (selectedLocalityMappedPincodes.length > 0) {
         return selectedLocalityMappedPincodes.includes(businessPincode);
       }
@@ -1278,6 +1363,10 @@ export default function WebPortal({
       const matchedHints = hintGroups.find((group) => group.some((token) => normalizedQuery.includes(token))) || queryTokens;
       const buildSearchHaystack = (business: Business) => [
         business.name,
+        // Same reason as the server corpus: the phone is a field, and it stopped
+        // travelling inside `tags` when the importer stopped duplicating it.
+        business.phone,
+        String(business.phone || '').replace(/\D/g, ''),
         business.description,
         business.tags.join(' '),
         getCategoryById(business.categoryId)?.name || '',
@@ -1469,7 +1558,7 @@ export default function WebPortal({
   // a page with no mapped pincodes, so it isn't left showing nothing.
   const approvedInLocality = businesses.filter((b) => {
     if (b.status !== 'approved') return false;
-    const businessPincode = b.pincode || MASTER_AREAS.find((area) => area.id === b.areaId)?.pincode || '';
+    const businessPincode = resolvePincodeForAreaId(b.pincode, b.areaId);
     if (selectedLocalityMappedPincodes.length > 0) {
       return selectedLocalityMappedPincodes.includes(businessPincode);
     }
@@ -1529,7 +1618,8 @@ export default function WebPortal({
 
   const filteredBusinesses = businessesBeforeTaxonomyFilter.filter((b) => {
     const matchesCategory = selectedCategory === 'all' || b.categoryId === selectedCategory;
-    const matchesSubcategory = selectedSubcategory === 'all' || b.subcategoryId === selectedSubcategory;
+    const matchesSubcategory = selectedSubcategoryIds.length === 0
+      || selectedSubcategoryIds.includes(String(b.subcategoryId || ''));
     return matchesCategory && matchesSubcategory;
   });
   const dedupedFilteredBusinesses = dedupeBusinessesForExperience(filteredBusinesses, normalizedActiveSearch, 'results');
@@ -3651,7 +3741,7 @@ export default function WebPortal({
     const normalizedListingName = normalizeSearchText(trimmedName);
     const duplicateBusiness = businesses.find((business) => {
       const businessPhone = (business.phone || '').replace(/\D/g, '').slice(-10);
-      const businessPincode = business.pincode || MASTER_AREAS.find((area) => area.id === business.areaId)?.pincode || '';
+      const businessPincode = resolvePincodeForAreaId(business.pincode, business.areaId);
       const samePhone = Boolean(normalizedPhone && businessPhone && normalizedPhone === businessPhone);
       const sameName = normalizeSearchText(business.name) === normalizedListingName;
       const samePincode = Boolean(listingPincode && businessPincode === listingPincode);
@@ -3716,7 +3806,7 @@ export default function WebPortal({
     setHours('10:00 AM - 08:30 PM');
     setImageUrl('');
     setFormAreasOfOperation([formAreaId]);
-    setListingPincode(savedPincode || MASTER_AREAS.find((area) => area.id === formAreaId)?.pincode || '');
+    setListingPincode(savedPincode || getAreaPincode(formAreaId));
     setGpsCoords(undefined);
     setApplyFormError('');
     setApplyDuplicateBusinessId(null);
@@ -4198,6 +4288,44 @@ export default function WebPortal({
     );
   };
 
+  // Mobile results had no ad slot at all: the homepage filters its ads to
+  // placement keys starting with "homepage", and the results list rendered
+  // cards only. This puts a banner every MOBILE_RESULT_AD_INTERVAL cards, at
+  // card width, so it scrolls with the list instead of pinning to the viewport.
+  const MOBILE_RESULT_AD_INTERVAL = 5;
+
+  const renderMobileInlineAd = (ad: ListingAd, key: string) => {
+    const adImage = getMediaProxyUrl(ad.imageUrl);
+    return (
+      <button
+        key={key}
+        type="button"
+        onClick={() => handleListingAdAction(ad)}
+        className="relative block w-full overflow-hidden rounded-[16px] border border-[#E6EBF2] text-left"
+        style={{ backgroundColor: ad.backgroundColor || '#EDE9FE' }}
+      >
+        <span className="absolute right-2 top-2 z-10 rounded-md bg-black/45 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-white">
+          Ad
+        </span>
+        {adImage ? (
+          <img src={adImage} alt={ad.title} loading="lazy" className="block h-[120px] w-full object-cover" />
+        ) : (
+          <span className="block px-3.5 py-4">
+            <span className="block text-[13px] font-bold text-[#1F2937]">{ad.title}</span>
+            {ad.description ? (
+              <span className="mt-1 block text-[11.5px] leading-4 text-[#475467]">{ad.description}</span>
+            ) : null}
+            {ad.ctaText ? (
+              <span className="mt-2 inline-block rounded-lg bg-white px-2.5 py-1 text-[11px] font-bold text-[#4F46E5]">
+                {ad.ctaText}
+              </span>
+            ) : null}
+          </span>
+        )}
+      </button>
+    );
+  };
+
   const desktopResultsSidebarAds = useMemo(() => {
     const merged = [...desktopResultAds, ...desktopSidebarAds];
     const seen = new Set<string>();
@@ -4324,14 +4452,16 @@ export default function WebPortal({
 
   const openMobileFilterPanel = () => {
     setDraftCategory(selectedCategory);
-    setDraftSubcategory(selectedSubcategory);
+    setDraftSubcategoryIds(selectedSubcategoryIds);
     setDraftSort(sortBy);
     setIsMobileFilterOpen(true);
   };
 
   const applyMobileResultFilters = () => {
     setSelectedCategory(draftCategory);
-    setSelectedSubcategory(draftCategory === 'all' ? 'all' : draftSubcategory);
+    // Choosing "All categories" drops any subcategory selection with it: a
+    // subcategory only means anything inside its parent category.
+    setSelectedSubcategoryIds(draftCategory === 'all' ? [] : draftSubcategoryIds);
     setSortBy(draftSort);
     setIsMobileFilterOpen(false);
   };
@@ -4358,11 +4488,13 @@ export default function WebPortal({
         },
       });
     }
-    if (selectedSubcategory !== 'all') {
+    // One chip per selected subcategory now that the filter is multi-select,
+    // each removing only itself.
+    for (const subcategoryId of selectedSubcategoryIds) {
       chips.push({
-        key: 'subcategory',
-        label: getSubcategoryById(selectedSubcategory)?.name || selectedSubcategory,
-        onRemove: () => setSelectedSubcategory('all'),
+        key: `subcategory-${subcategoryId}`,
+        label: getSubcategoryById(subcategoryId)?.name || subcategoryId,
+        onRemove: () => setSelectedSubcategoryIds((current) => current.filter((id) => id !== subcategoryId)),
       });
     }
     if (filterVerifiedOnly) {
@@ -4379,7 +4511,7 @@ export default function WebPortal({
       });
     }
     return chips;
-  }, [filterOpenNow, filterVerifiedOnly, selectedCategory, selectedSubcategory, sortBy]);
+  }, [filterOpenNow, filterVerifiedOnly, selectedCategory, selectedSubcategoryIds, sortBy]);
 
   const clearDesktopResultsFilters = () => {
     setIsMobileFilterOpen(false);
@@ -5099,41 +5231,84 @@ export default function WebPortal({
             {isMobileFilterOpen ? (
               <div className="border-t border-[#F2F5F9] px-3 py-3">
                 <div className="grid grid-cols-1 gap-2.5">
-                  <label className="block">
-                    <span className="mb-1 block text-[11px] font-bold text-[#667085]">Category</span>
-                    <select
-                      value={draftCategory}
-                      onChange={(e) => {
-                        setDraftCategory(e.target.value);
-                        setDraftSubcategory('all');
-                      }}
-                      className="w-full rounded-[10px] border border-[#E6EBF2] bg-white px-3 py-2 text-[12.5px] font-semibold text-[#111827] focus:outline-none"
-                    >
-                      <option value="all">All categories</option>
-                      {desktopResultsCategories.map((category) => (
-                        <option key={`m-cat-${category.id}`} value={category.id}>
-                          {category.name} ({category.count})
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  {/* Subcategory comes FIRST: it is the choice a visitor
+                      actually has in mind ("salon", "cafe"), and the category
+                      above it is the coarser grouping. Checkboxes, because
+                      several subcategories at once is a normal request. */}
+                  <div className="block">
+                    <span className="mb-1.5 flex items-center justify-between text-[11px] font-bold text-[#667085]">
+                      <span>Subcategory{draftSubcategoryIds.length > 0 ? ` · ${draftSubcategoryIds.length} selected` : ''}</span>
+                      {draftSubcategoryIds.length > 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => setDraftSubcategoryIds([])}
+                          className="text-[11px] font-bold text-[#4F46E5] underline underline-offset-2"
+                        >
+                          Clear
+                        </button>
+                      ) : null}
+                    </span>
+                    {draftSubcategoryOptions.length === 0 ? (
+                      <p className="rounded-[10px] border border-[#E6EBF2] bg-[#F8FAFC] px-3 py-2 text-[12px] text-[#98A2B3]">
+                        No subcategories in these results.
+                      </p>
+                    ) : (
+                      <div className="max-h-[168px] space-y-0.5 overflow-y-auto rounded-[10px] border border-[#E6EBF2] p-1.5">
+                        {draftSubcategoryOptions.map((subcategory) => {
+                          const checked = draftSubcategoryIds.includes(subcategory.id);
+                          return (
+                            <label
+                              key={`m-sub-${subcategory.id}`}
+                              className="flex cursor-pointer items-center gap-2.5 rounded-[8px] px-2 py-1.5 text-[12.5px] font-semibold text-[#111827] hover:bg-[#F8FAFC]"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => setDraftSubcategoryIds((current) => (
+                                  current.includes(subcategory.id)
+                                    ? current.filter((id) => id !== subcategory.id)
+                                    : [...current, subcategory.id]
+                                ))}
+                                className="h-3.5 w-3.5 shrink-0 accent-[#4F46E5]"
+                              />
+                              <span className="flex-1 truncate">{subcategory.name}</span>
+                              <span className="shrink-0 text-[11px] font-medium text-[#98A2B3]">{subcategory.count}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
 
-                  <label className="block">
-                    <span className="mb-1 block text-[11px] font-bold text-[#667085]">Subcategory</span>
-                    <select
-                      value={draftSubcategory}
-                      onChange={(e) => setDraftSubcategory(e.target.value)}
-                      disabled={draftSubcategoryOptions.length === 0}
-                      className="w-full rounded-[10px] border border-[#E6EBF2] bg-white px-3 py-2 text-[12.5px] font-semibold text-[#111827] focus:outline-none disabled:opacity-50"
-                    >
-                      <option value="all">All subcategories</option>
-                      {draftSubcategoryOptions.map((subcategory) => (
-                        <option key={`m-sub-${subcategory.id}`} value={subcategory.id}>
-                          {subcategory.name} ({subcategory.count})
-                        </option>
+                  {/* Category is radio, so exactly one is always chosen. "All
+                      categories" is itself an option, which is what stops the
+                      group from being deselected into an empty state. */}
+                  <div className="block">
+                    <span className="mb-1.5 block text-[11px] font-bold text-[#667085]">Category</span>
+                    <div className="max-h-[168px] space-y-0.5 overflow-y-auto rounded-[10px] border border-[#E6EBF2] p-1.5">
+                      {[{ id: 'all', name: 'All categories', count: searchResultBusinesses.length }, ...desktopResultsCategories].map((category) => (
+                        <label
+                          key={`m-cat-${category.id}`}
+                          className="flex cursor-pointer items-center gap-2.5 rounded-[8px] px-2 py-1.5 text-[12.5px] font-semibold text-[#111827] hover:bg-[#F8FAFC]"
+                        >
+                          <input
+                            type="radio"
+                            name="mobile-filter-category"
+                            checked={draftCategory === category.id}
+                            onChange={() => {
+                              setDraftCategory(category.id);
+                              // Subcategories belong to a category, so changing
+                              // the category drops choices that no longer apply.
+                              setDraftSubcategoryIds([]);
+                            }}
+                            className="h-3.5 w-3.5 shrink-0 accent-[#4F46E5]"
+                          />
+                          <span className="flex-1 truncate">{category.name}</span>
+                          <span className="shrink-0 text-[11px] font-medium text-[#98A2B3]">{category.count}</span>
+                        </label>
                       ))}
-                    </select>
-                  </label>
+                    </div>
+                  </div>
 
                   <label className="block">
                     <span className="mb-1 block text-[11px] font-bold text-[#667085]">Sort by</span>
@@ -5187,7 +5362,23 @@ export default function WebPortal({
             />
           ) : (
             <div className="space-y-6">
-              {pagedSearchResultBusinesses.map((biz) => renderMobileSearchResultRow(biz))}
+              {pagedSearchResultBusinesses.map((biz, index) => {
+                // A banner after every fifth card, never as the last element,
+                // and only while there are ads to rotate through.
+                const slot = index + 1;
+                const isAdSlot = slot % MOBILE_RESULT_AD_INTERVAL === 0
+                  && slot !== pagedSearchResultBusinesses.length
+                  && desktopResultsInlineAds.length > 0;
+                const inlineAd = isAdSlot
+                  ? desktopResultsInlineAds[(Math.floor(slot / MOBILE_RESULT_AD_INTERVAL) - 1) % desktopResultsInlineAds.length]
+                  : null;
+                return (
+                  <React.Fragment key={`mobile-result-${biz.id}`}>
+                    {renderMobileSearchResultRow(biz)}
+                    {inlineAd ? renderMobileInlineAd(inlineAd, `mobile-result-ad-${biz.id}`) : null}
+                  </React.Fragment>
+                );
+              })}
             </div>
           )}
 
@@ -5791,7 +5982,7 @@ export default function WebPortal({
                               </div>
                               <div className="font-sans text-slate-600 font-medium truncate">📍 {biz.address}</div>
                               <div className="font-mono text-[10px] text-slate-500">
-                                PIN: {biz.pincode || MASTER_AREAS.find((area) => area.id === biz.areaId)?.pincode || 'Not set'}
+                                PIN: {resolvePincodeForAreaId(biz.pincode, biz.areaId) || 'Not set'}
                               </div>
                               
                               {biz.areasOfOperation && biz.areasOfOperation.length > 0 && (
@@ -5985,7 +6176,7 @@ export default function WebPortal({
 
                               <div className="font-sans text-slate-600 truncate leading-normal">📍 {biz.address}</div>
                               <div className="font-mono text-[10px] text-slate-500 truncate">
-                                PIN: {biz.pincode || MASTER_AREAS.find((area) => area.id === biz.areaId)?.pincode || 'Not set'}
+                                PIN: {resolvePincodeForAreaId(biz.pincode, biz.areaId) || 'Not set'}
                               </div>
                               <button
                                 type="button"
@@ -6933,7 +7124,7 @@ export default function WebPortal({
               </button>
             </div>
 
-            <div className="p-6 space-y-4 overflow-y-auto max-h-[75vh]">
+            <div className="relative p-6 pb-24 space-y-4 overflow-y-auto max-h-[75vh]">
               <img 
                 src={getBusinessImageUrl(selectedBiz)}
                 alt={selectedBiz.name}
@@ -6960,7 +7151,7 @@ export default function WebPortal({
                     {getBusinessCategoryLabel(selectedBiz)}
                     {(selectedBiz.subcategoryId || selectedBiz.sourceSubcategoryLabel) && ` / ${getBusinessSubcategoryLabel(selectedBiz)}`}
                   </span>
-                  {(selectedBiz.tags || []).map(t => (
+                  {getVisibleListingTags(selectedBiz).map(t => (
                     <span key={t} className="text-xs bg-slate-50 text-slate-500 px-2 py-0.5 rounded-full">
                       #{t}
                     </span>
@@ -6972,21 +7163,10 @@ export default function WebPortal({
                 &quot;{selectedBiz.description}&quot;
               </p>
 
-              {getBusinessGallery(selectedBiz).length > 0 && (
-                <div className="space-y-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">Gallery</span>
-                    <span className="text-[10px] font-mono text-slate-500">{getBusinessGallery(selectedBiz).length} assets</span>
-                  </div>
-                  <div className="grid grid-cols-4 gap-2">
-                    {getBusinessGallery(selectedBiz).slice(0, 4).map((image, index) => (
-                      <div key={`${image}-${index}`} className={`${index === 0 ? 'col-span-2 row-span-2' : ''} overflow-hidden rounded-xl bg-slate-100`}>
-                        <img src={getMediaProxyUrl(image)} alt={`${selectedBiz.name} ${index + 1}`} className="h-full min-h-[84px] w-full object-cover" />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+              {/* Gallery hidden on the detail page by request. The imported photo
+                  paths point at files that were never uploaded, so the grid was
+                  showing broken tiles. getBusinessGallery is still used by the
+                  seller showcase page. */}
 
               {((selectedBiz.businessTypes && selectedBiz.businessTypes.length > 0) || (selectedBiz.serviceTypes && selectedBiz.serviceTypes.length > 0) || (selectedBiz.verificationTags && selectedBiz.verificationTags.length > 0)) && (
                 <div className="space-y-2 rounded-2xl border border-slate-200 bg-slate-50/70 p-3">
@@ -7034,12 +7214,35 @@ export default function WebPortal({
                     <span className="block font-bold font-sans text-[10px] text-slate-400 uppercase">Address:</span>
                     <span className="font-sans text-slate-800 text-xs">{selectedBiz.address}</span>
                     <span className="block font-mono text-[10px] text-slate-500 mt-1">
-                      Pincode: {selectedBiz.pincode || MASTER_AREAS.find((area) => area.id === selectedBiz.areaId)?.pincode || 'Not set'}
+                      Pincode: {resolvePincodeForAreaId(selectedBiz.pincode, selectedBiz.areaId) || 'Not set'}
                     </span>
                     {selectedBiz.gpsCoordinates && (
                       <span className="block font-mono text-[9px] text-blue-600 mt-0.5">
                         GPS Locked: {selectedBiz.gpsCoordinates.lat}° N, {selectedBiz.gpsCoordinates.lng}° E
                       </span>
+                    )}
+                    {/* A static map beats an embedded one here: no iframe, no
+                        third-party script on the page, one image request, and it
+                        still opens Google Maps for directions on tap. The key is
+                        served at runtime from the environment (see
+                        /api/public-runtime-config) so it is never committed. */}
+                    {mapPreviewUrl && (
+                      <a
+                        href={getBusinessDirectionsUrl(selectedBiz)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-2.5 block overflow-hidden rounded-xl border border-slate-200"
+                      >
+                        <img
+                          src={mapPreviewUrl}
+                          alt={`Map showing ${selectedBiz.name}`}
+                          loading="lazy"
+                          className="block h-[150px] w-full bg-slate-100 object-cover"
+                        />
+                        <span className="block bg-white px-2.5 py-1.5 font-sans text-[10px] font-semibold text-indigo-600">
+                          Open in Google Maps
+                        </span>
+                      </a>
                     )}
                   </div>
                 </div>
@@ -7078,7 +7281,10 @@ export default function WebPortal({
                   </div>
                 )}
 
-                {selectedBiz.ownerName && (
+                {/* "Claimed Merchant: Imported via CSV" is an import artefact, not
+                    something a customer should read. Admins and developers still
+                    see it, because for them it says where the record came from. */}
+                {selectedBiz.ownerName && ['admin', 'developer'].includes(userSession.role) && (
                   <div className="flex items-start gap-2.5">
                     <span className="text-indigo-600 text-sm">👤</span>
                     <div>
@@ -7159,18 +7365,26 @@ export default function WebPortal({
 
               {relatedSelectedBusinesses.length > 0 && (
                 <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
-                  <div className="flex items-center justify-between gap-3">
+                  {/* Collapsed by default: this reader came for one listing, and
+                      a list of alternatives above the fold competes with it. */}
+                  <button
+                    type="button"
+                    onClick={() => setIsSimilarListingsOpen((open) => !open)}
+                    aria-expanded={isSimilarListingsOpen}
+                    className="flex w-full items-center justify-between gap-3 text-left"
+                  >
                     <div>
                       <h4 className="text-sm font-bold text-slate-900">Similar Nearby Listings</h4>
                       <p className="text-[11px] text-slate-500">
-                        Good alternatives in {getBusinessAreaName(selectedBiz)} and nearby matching categories.
+                        {relatedSelectedBusinesses.length} alternative{relatedSelectedBusinesses.length === 1 ? '' : 's'} in {getBusinessAreaName(selectedBiz)}
                       </p>
                     </div>
-                    <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">
-                      Continue exploring
+                    <span className="flex shrink-0 items-center gap-1 rounded-full bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-600">
+                      {isSimilarListingsOpen ? 'Hide' : 'View'}
+                      <ChevronDown className={`h-3 w-3 transition ${isSimilarListingsOpen ? 'rotate-180' : ''}`} />
                     </span>
-                  </div>
-                  <div className="space-y-2.5">
+                  </button>
+                  <div className={`space-y-2.5 ${isSimilarListingsOpen ? '' : 'hidden'}`}>
                     {relatedSelectedBusinesses.map((biz) => (
                       <button
                         key={`related-${biz.id}`}
@@ -7200,14 +7414,9 @@ export default function WebPortal({
                               {biz.distance ? <span>{biz.distance.toFixed(1)} km away</span> : null}
                             </div>
                           </div>
-                          <div className="text-right">
-                            <div className="rounded-full bg-amber-50 px-2 py-1 text-[10px] font-bold text-amber-700">
-                              {biz.rating.toFixed(1)} stars
-                            </div>
-                            <div className="mt-1 text-[10px] text-slate-400">
-                              {biz.reviewCount} reviews
-                            </div>
-                          </div>
+                          {/* No rating or review count here: the detail panel
+                              itself no longer shows them, so showing them on the
+                              alternatives was inconsistent. */}
                         </div>
                       </button>
                     ))}
@@ -7287,23 +7496,9 @@ export default function WebPortal({
               <div className="grid grid-cols-2 gap-3 pt-4 border-t border-slate-100">
                 {/* No "Open Listing" fallback — this panel IS the listing. The
                     link renders only when the business has a real website. */}
-                {selectedBiz.website ? (
-                  <a
-                    href={selectedBiz.website}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="bg-indigo-600 hover:bg-indigo-700 text-white font-mono font-bold text-xs py-2.5 rounded-xl text-center shadow flex items-center justify-center gap-1.5 transition"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" /> Visit Website
-                  </a>
-                ) : null}
-                <button
-                  type="button"
-                  onClick={() => openBusinessDirectionsDirect(selectedBiz)}
-                  className="bg-slate-100 hover:bg-slate-200 text-slate-800 font-mono font-bold text-xs py-2.5 rounded-xl flex items-center justify-center gap-1.5 transition"
-                >
-                  <Navigation className="w-3.5 h-3.5" /> Directions
-                </button>
+                {/* Visit Website and Directions removed by request. The website
+                    value on imported listings is a generated placeholder, and
+                    directions are reachable by tapping the map above. */}
                 <button 
                   type="button"
                   onClick={() => void handleShareBusinessListing(selectedBiz)}
@@ -7333,6 +7528,32 @@ export default function WebPortal({
                   Contact Sales For Premium Visibility
                 </button>
               </div>
+
+              {/* Sticky action bar. The number is the thing a visitor came for,
+                  and on a long imported listing it used to sit above several
+                  screens of content. `sticky bottom-0` inside the scroll
+                  container keeps it in reach without a fixed overlay that would
+                  cover the page behind the panel. */}
+              {selectedBiz.phone && (
+                <div className="sticky bottom-0 -mx-6 -mb-24 mt-2 border-t border-slate-200 bg-white/95 px-6 py-3 backdrop-blur">
+                  {viewedBusinessIds.includes(selectedBiz.id) ? (
+                    <a
+                      href={`tel:${selectedBiz.phone}`}
+                      className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#0F5F52] py-3 text-sm font-bold text-white transition hover:bg-[#0c4e43]"
+                    >
+                      <Phone className="h-4 w-4" /> {selectedBiz.phone}
+                    </a>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={(event) => handlePrimaryBusinessAction(selectedBiz, event)}
+                      className="show-number-action flex w-full items-center justify-center gap-2 rounded-xl bg-[#0F5F52] py-3 text-sm font-bold text-white transition hover:bg-[#0c4e43]"
+                    >
+                      <Phone className="h-4 w-4" /> Show number
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>

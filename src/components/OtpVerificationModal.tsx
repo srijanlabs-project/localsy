@@ -135,8 +135,7 @@ export default function OtpVerificationModal({
               <ShieldCheck className="h-5 w-5" />
             </div>
             <div>
-              <h3 className="text-sm font-semibold">Security Verification Gate</h3>
-              <p className="font-mono text-[10px] text-slate-400">MSG91 OTP enabled</p>
+              <h3 className="text-sm font-semibold">View Number</h3>
             </div>
           </div>
           <button
@@ -151,7 +150,7 @@ export default function OtpVerificationModal({
         <div className="space-y-5 p-6 text-xs text-slate-700">
           {businessName && (
             <div className="rounded-xl border border-indigo-100/50 bg-indigo-50 p-3 text-indigo-950">
-              Unlock directory info for <strong className="text-indigo-600">{businessName}</strong>.
+              View Number for <strong className="text-indigo-600">{businessName}</strong>.
             </div>
           )}
 
@@ -192,7 +191,7 @@ export default function OtpVerificationModal({
                     className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 font-mono text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
                   />
                 </div>
-                <span className="mt-1 block text-[10px] text-slate-400">We will send a real OTP by SMS.</span>
+                <span className="mt-1 block text-[10px] text-slate-400">We will send a OTP by SMS.</span>
               </div>
 
               <button
@@ -200,7 +199,7 @@ export default function OtpVerificationModal({
                 disabled={sendingOtp}
                 className="w-full rounded-xl bg-slate-900 py-3 font-mono font-bold text-white shadow-md transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
               >
-                {sendingOtp ? 'Sending OTP...' : 'Generate Secure OTP SMS'}
+                {sendingOtp ? 'Sending OTP...' : 'Send OTP'}
               </button>
             </form>
           )}
@@ -211,7 +210,7 @@ export default function OtpVerificationModal({
                 <span className="inline-block rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-800">
                   OTP sent to +91 {normalizePhone(phone)}
                 </span>
-                <p className="text-slate-500">Enter the SMS code to unlock the contact details.</p>
+                <p className="text-slate-500">Enter the SMS code to view the number.</p>
               </div>
 
               <div>
@@ -233,7 +232,7 @@ export default function OtpVerificationModal({
                   disabled={verifyingOtp}
                   className="flex-1 rounded-xl bg-emerald-600 py-3 font-mono font-bold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {verifyingOtp ? 'Verifying...' : 'Verify Contact'}
+                  {verifyingOtp ? 'Verifying...' : 'View Number'}
                 </button>
                 <button
                   type="button"
@@ -253,9 +252,9 @@ export default function OtpVerificationModal({
                 <Check className="h-6 w-6" />
               </div>
               <div className="space-y-1">
-                <h4 className="text-sm font-bold text-slate-900">Verification Complete!</h4>
+                <h4 className="text-sm font-bold text-slate-900">Verified</h4>
                 <p className="text-[11px] text-slate-500">
-                  Verified user session bound as <span className="font-semibold text-indigo-600">{name}</span>.
+                  Thanks, <span className="font-semibold text-indigo-600">{name}</span>. The number is visible now.
                 </p>
               </div>
             </div>

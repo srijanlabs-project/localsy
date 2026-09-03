@@ -288,6 +288,12 @@ function xmlEscape(value) {
 
 function slugifyForUrl(value) {
   return String(value)
+    // Must stay character-for-character identical to the four client copies
+    // (App.tsx, WebPortal.tsx, publicExperience.ts, runtimeState.ts): this one
+    // builds sitemap and canonical URLs, those build the links, and any drift
+    // means two different URLs for one listing.
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .trim()
     .replace(/&/g, ' and ')
@@ -442,7 +448,12 @@ function parseSeoRoute(pathname, context, forcedLocalityId = null) {
 }
 
 function buildListingSlug(name, syntheticId) {
-  return `${slugifyForUrl(name)}-${syntheticId}`;
+  // Slugify the WHOLE string rather than interpolating after slugifying. The old
+  // form produced a leading hyphen ("-localisy010734") whenever the name
+  // slugified to nothing, while the client slugified name-and-id together and
+  // produced "localisy010734" — so those listings had one URL in the sitemap and
+  // a different one in every link on the site.
+  return slugifyForUrl(`${name}-${syntheticId}`);
 }
 
 function getListingNamesForRoute(context, localityId, categoryId) {
@@ -931,8 +942,7 @@ async function buildResolvedAuthUserResponse(user) {
   if (!user || user.userType !== 'seller') {
     return buildAuthUserResponse(user);
   }
-  const businesses = await readBusinessListings();
-  const sellerBusinessId = resolveSellerBusinessIdForUser(user, businesses);
+  const sellerBusinessId = await resolveSellerBusinessId(user);
   return buildAuthUserResponse({
     ...user,
     sellerBusinessId: sellerBusinessId || undefined,
@@ -986,6 +996,12 @@ function extractQuerySignals(rawQuery, categoryId, localityId) {
 function buildBusinessSearchText(business) {
   return normalizeDirectoryQuery([
     business.name,
+    // Phone search used to work only because the importer stuffed the digits
+    // into `tags`. It is a field in its own right, so it belongs here — both
+    // the formatted value and the bare digits, so "9833821515" and
+    // "+91 98338 21515" both match.
+    business.phone,
+    String(business.phone || '').replace(/\D/g, ''),
     business.description,
     business.address,
     business.categoryId,
@@ -1063,6 +1079,53 @@ function buildBusinessContactCard(business, origin, seoContext) {
   };
 }
 
+// Returns a candidate pool for directory search, or null when the full-text
+// column is not available (then the caller uses the old in-memory path).
+//
+// The tsvector covers exactly the fields buildBusinessSearchText reads, so the
+// pool is a superset of what the in-memory filter would have matched — with one
+// deliberate difference: tsquery matches whole words, so each token gets a `:*`
+// prefix to keep the substring behaviour the old `.includes()` had.
+const DIRECTORY_SEARCH_CANDIDATE_LIMIT = 400;
+
+async function findDirectorySearchCandidates({ normalizedQuery, localityId = '', categoryId = '' }) {
+  if (!businessSearchColumnReady) return null;
+  const client = await getPgClient();
+  if (!client || !(await hasBusinessRows(client))) return null;
+
+  // Tokens are rebuilt from scratch rather than interpolated: anything that is
+  // not a letter or digit is dropped, so no tsquery operator can arrive from a
+  // query string.
+  const tokens = String(normalizedQuery || '')
+    .split(/\s+/)
+    .map((token) => token.replace(/[^a-z0-9]/gi, ''))
+    .filter(Boolean)
+    .slice(0, 8);
+
+  const where = [`status = 'approved'`];
+  const params = [];
+  if (localityId) { params.push(String(localityId)); where.push(`locality_id = $${params.length}`); }
+  if (categoryId) { params.push(String(categoryId)); where.push(`category_id = $${params.length}`); }
+  if (tokens.length > 0) {
+    params.push(tokens.map((token) => `${token}:*`).join(' & '));
+    where.push(`search_tsv @@ to_tsquery('simple', $${params.length})`);
+  }
+
+  try {
+    const result = await client.query(
+      `SELECT payload FROM businesses
+        WHERE ${where.join(' AND ')}
+        ORDER BY featured DESC, rating DESC NULLS LAST, review_count DESC, id ASC
+        LIMIT ${DIRECTORY_SEARCH_CANDIDATE_LIMIT}`,
+      params,
+    );
+    return result.rows.map((row) => row.payload).filter(Boolean);
+  } catch (error) {
+    console.warn('[search] indexed candidate lookup failed, falling back:', error?.message || error);
+    return null;
+  }
+}
+
 async function resolveDirectorySearch({
   query = '',
   localityId = '',
@@ -1070,12 +1133,16 @@ async function resolveDirectorySearch({
   limit = 10,
   origin,
 } = {}) {
-  const [businesses, seoConfig] = await Promise.all([
-    readBusinessListings(),
-    readSeoDiscoveryConfig(),
-  ]);
+  const seoConfig = await readSeoDiscoveryConfig();
   const seoContext = buildSeoDiscoveryContext(seoConfig);
   const normalizedQuery = normalizeDirectoryQuery(query);
+  // Candidates come from the index when it exists. This endpoint is public and
+  // unauthenticated, and it used to pull the whole directory out of Postgres and
+  // score all 25,965 records in Node on every search — the same shape as the
+  // five handlers in the audit, on a hotter path.
+  const businesses = await findDirectorySearchCandidates({
+    normalizedQuery, localityId, categoryId,
+  }) ?? await readBusinessListings();
   const approvedBusinesses = (Array.isArray(businesses) ? businesses : [])
     .filter((business) => business && typeof business === 'object')
     .filter((business) => String(business.status || '') === 'approved')
@@ -1290,8 +1357,7 @@ async function resolveSellerOrPrivilegedAccess(req, res, { write = false } = {})
     return null;
   }
 
-  const businesses = await readBusinessListings();
-  const sellerBusinessId = resolveSellerBusinessIdForUser(authenticated.user, businesses);
+  const sellerBusinessId = await resolveSellerBusinessId(authenticated.user);
   if (!sellerBusinessId) {
     res.status(403).json({ ok: false, error: 'Seller account is not linked to a business listing yet' });
     return null;
@@ -1763,7 +1829,27 @@ function sanitizeCrmContacts(value) {
     .filter(Boolean);
 }
 
+// Every listing lives in a single JSONB document in app_state, so a read means
+// pulling the whole directory out of Postgres, JSON-parsing it and sanitizing
+// every record — on every request. At 26k listings that dominated response
+// time. This caches the parsed array in process, invalidated on write, with a
+// short TTL so a second instance's write is picked up quickly.
+// Set once the generated search column and its index exist; when it stays
+// false, directory search uses the pre-migration in-memory path.
+let businessSearchColumnReady = false;
+let businessListingsCache = null;
+let businessListingsCacheAt = 0;
+const BUSINESS_LISTINGS_CACHE_TTL_MS = 30_000;
+
+function invalidateBusinessListingsCache() {
+  businessListingsCache = null;
+  businessListingsCacheAt = 0;
+}
+
 async function readBusinessListings() {
+  if (businessListingsCache && Date.now() - businessListingsCacheAt < BUSINESS_LISTINGS_CACHE_TTL_MS) {
+    return businessListingsCache;
+  }
   const client = await getPgClient();
   if (client) {
     const result = await client.query(
@@ -1775,7 +1861,11 @@ async function readBusinessListings() {
     );
     const data = result.rows[0]?.value;
     const listings = sanitizeBusinessListings(data);
-    if (listings) return listings;
+    if (listings) {
+      businessListingsCache = listings;
+      businessListingsCacheAt = Date.now();
+      return listings;
+    }
     try {
       const raw = await fs.readFile(businessesPath, 'utf8');
       const fileData = JSON.parse(raw);
@@ -1805,7 +1895,277 @@ async function readBusinessListings() {
   }
 }
 
-async function writeBusinessListings(businesses) {
+// ---- Listings relational store: row mapping and dual write ---------------
+// Columns mirror the fields that get queried; `payload` carries the whole
+// record so nothing is lost and stage 3 can read rows back without the blob.
+function toBusinessRow(business) {
+  const b = business || {};
+  const num = (value) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+  const status = ['approved', 'pending', 'rejected'].includes(String(b.status || '').toLowerCase())
+    ? String(b.status).toLowerCase()
+    : 'pending';
+  return [
+    String(b.id || '').trim(),
+    String(b.googlePlaceId || '').trim() || null,
+    String(b.slug || '').trim() || null,
+    String(b.name || '').trim(),
+    status,
+    String(b.localityId || '').trim(),
+    String(b.areaId || '').trim() || null,
+    String(b.cityId || '').trim() || null,
+    String(b.stateId || '').trim() || null,
+    String(b.pincode || '').replace(/\D/g, '').slice(0, 6) || null,
+    String(b.categoryId || '').trim() || null,
+    String(b.subcategoryId || '').trim() || null,
+    String(b.phone || '').trim() || null,
+    String(b.address || '').trim() || null,
+    num(b.gpsCoordinates?.lat),
+    num(b.gpsCoordinates?.lng),
+    num(b.rating) ?? 0,
+    Math.max(0, Math.trunc(num(b.reviewCount) ?? 0)),
+    Boolean(b.featured),
+    Boolean(b.verifiedBadge),
+    String(b.createdAt || '').trim() || new Date().toISOString(),
+    JSON.stringify(b),
+  ];
+}
+
+const BUSINESS_ROW_COLUMNS = 22;
+
+const BUSINESS_ROW_CONFLICT = `
+  ON CONFLICT (id) DO UPDATE SET
+    google_place_id = EXCLUDED.google_place_id,
+    slug = EXCLUDED.slug,
+    name = EXCLUDED.name,
+    status = EXCLUDED.status,
+    locality_id = EXCLUDED.locality_id,
+    area_id = EXCLUDED.area_id,
+    city_id = EXCLUDED.city_id,
+    state_id = EXCLUDED.state_id,
+    pincode = EXCLUDED.pincode,
+    category_id = EXCLUDED.category_id,
+    subcategory_id = EXCLUDED.subcategory_id,
+    phone = EXCLUDED.phone,
+    address = EXCLUDED.address,
+    latitude = EXCLUDED.latitude,
+    longitude = EXCLUDED.longitude,
+    rating = EXCLUDED.rating,
+    review_count = EXCLUDED.review_count,
+    featured = EXCLUDED.featured,
+    verified_badge = EXCLUDED.verified_badge,
+    updated_at = NOW(),
+    payload = EXCLUDED.payload
+`;
+
+// One statement per batch rather than one per listing. At 26k listings the
+// per-row version issued 26,000 queries on every save, which is slower than
+// the blob write it was meant to complement. 400 rows x 22 params stays well
+// inside Postgres' parameter ceiling.
+function buildBusinessRowUpsert(rowCount) {
+  const tuples = [];
+  for (let row = 0; row < rowCount; row += 1) {
+    const base = row * BUSINESS_ROW_COLUMNS;
+    const p = (offset) => `$${base + offset}`;
+    tuples.push(
+      `(${p(1)},${p(2)},${p(3)},${p(4)},${p(5)},${p(6)},${p(7)},${p(8)},${p(9)},${p(10)},`
+      + `${p(11)},${p(12)},${p(13)},${p(14)},${p(15)},${p(16)},${p(17)},${p(18)},${p(19)},${p(20)},`
+      + `COALESCE(NULLIF(${p(21)},'')::timestamptz, NOW()), NOW(), ${p(22)}::jsonb)`,
+    );
+  }
+  return `
+    INSERT INTO businesses (
+      id, google_place_id, slug, name, status, locality_id, area_id, city_id, state_id,
+      pincode, category_id, subcategory_id, phone, address, latitude, longitude,
+      rating, review_count, featured, verified_badge, created_at, updated_at, payload
+    ) VALUES ${tuples.join(',')}
+    ${BUSINESS_ROW_CONFLICT}
+  `;
+}
+
+// The VALUES form above builds SQL text per tuple and sends 22 parameters per
+// row — at 400 rows that is an 8,800-parameter statement whose text Postgres
+// must parse afresh every batch. Passing one array per COLUMN instead sends a
+// fixed statement and 22 parameters however many rows travel, which lets the
+// batch grow to 1,000+ rows without the statement growing at all.
+//
+// Measured on 25,000 rows against the full table: VALUES at 400 rows on one
+// connection took 1,433-1,717ms; this form at 1,000-2,000 rows across four
+// connections took 797-1,030ms. Roughly 1.8x, and the statement shape is the
+// larger half of that — parallel connections alone gave only ~15%.
+const LISTING_WRITE_BATCH_SIZE = (() => {
+  const requested = parseInt(process.env.LISTING_WRITE_BATCH_SIZE || '1000', 10);
+  return Math.max(100, Math.min(Number.isFinite(requested) ? requested : 1000, 5000));
+})();
+
+const BUSINESS_ROW_UNNEST_UPSERT = `
+  INSERT INTO businesses (
+    id, google_place_id, slug, name, status, locality_id, area_id, city_id, state_id,
+    pincode, category_id, subcategory_id, phone, address, latitude, longitude,
+    rating, review_count, featured, verified_badge, created_at, updated_at, payload
+  )
+  SELECT id, google_place_id, slug, name, status, locality_id, area_id, city_id, state_id,
+         pincode, category_id, subcategory_id, phone, address, latitude, longitude,
+         rating, review_count, featured, verified_badge,
+         COALESCE(NULLIF(created_at, '')::timestamptz, NOW()), NOW(), payload::jsonb
+  FROM unnest(
+    $1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[],
+    $8::text[], $9::text[], $10::text[], $11::text[], $12::text[], $13::text[], $14::text[],
+    $15::float8[], $16::float8[], $17::float8[], $18::int[], $19::bool[], $20::bool[],
+    $21::text[], $22::text[]
+  ) AS incoming(
+    id, google_place_id, slug, name, status, locality_id, area_id, city_id, state_id,
+    pincode, category_id, subcategory_id, phone, address, latitude, longitude,
+    rating, review_count, featured, verified_badge, created_at, payload
+  )
+  ${BUSINESS_ROW_CONFLICT}
+`;
+
+// Inserts many rows in one statement, for the config-sync paths. Same trick as
+// the listings importer: one array per COLUMN through unnest, so the statement
+// text is fixed however many rows travel and Postgres parses it once.
+//
+// Measured on the 1,327-area geography upload: 456 ms of sequential inserts
+// against 11 ms for this — over a unix socket, where a round trip is nearly
+// free. A networked database pays its round-trip 1,327 times instead of once.
+//
+// `columns` entries are { name, type, cast? } — `type` is the unnest array
+// element type, `cast` an optional cast applied in the projection so that
+// jsonb and timestamptz columns can still travel as text arrays.
+async function insertRowsBatched(client, table, columns, rows, trailing = '') {
+  if (!Array.isArray(rows) || rows.length === 0) return 0;
+  const names = columns.map((column) => column.name).join(', ');
+  const params = columns.map((column, index) => `$${index + 1}::${column.type}[]`).join(', ');
+  const projection = columns
+    .map((column) => (column.cast ? `${column.name}::${column.cast}` : column.name))
+    .join(', ');
+  const sql = `
+    INSERT INTO ${table} (${names})
+    SELECT ${projection}
+    FROM unnest(${params}) AS incoming(${names})
+    ${trailing}
+  `;
+  const CHUNK = 2000;
+  let written = 0;
+  for (let index = 0; index < rows.length; index += CHUNK) {
+    const slice = rows.slice(index, index + CHUNK);
+    await client.query(sql, columns.map((_, column) => slice.map((row) => row[column])));
+    written += slice.length;
+  }
+  return written;
+}
+
+// Transposes rows-of-columns into columns-of-rows for the statement above.
+function toBusinessRowColumns(rows) {
+  const columns = Array.from({ length: BUSINESS_ROW_COLUMNS }, () => new Array(rows.length));
+  for (let row = 0; row < rows.length; row += 1) {
+    for (let column = 0; column < BUSINESS_ROW_COLUMNS; column += 1) {
+      columns[column][row] = rows[row][column];
+    }
+  }
+  return columns;
+}
+
+// Writes a batch, and on failure halves it rather than dropping straight to one
+// statement per row. A single bad row in a batch of 1,000 costs about eleven
+// statements to isolate instead of a thousand, which is what makes the larger
+// batch safe to use.
+async function writeBusinessRowBatch(client, batch, onRowError) {
+  if (batch.length === 0) return 0;
+  try {
+    await client.query(BUSINESS_ROW_UNNEST_UPSERT, toBusinessRowColumns(batch));
+    return batch.length;
+  } catch (error) {
+    if (batch.length === 1) {
+      onRowError(batch[0][0], describeImportRowError(error));
+      return 0;
+    }
+    const middle = Math.floor(batch.length / 2);
+    const left = await writeBusinessRowBatch(client, batch.slice(0, middle), onRowError);
+    const right = await writeBusinessRowBatch(client, batch.slice(middle), onRowError);
+    return left + right;
+  }
+}
+
+// Stage 2: mirror the authoritative blob into the table. The blob remains the
+// source of truth, so if anything here is wrong the fix is to stop calling it.
+// Failures are logged, never thrown — a mirroring problem must not break a save.
+// `prune` deletes rows absent from `listings`, and it is OFF by default because
+// getting that wrong loses data silently.
+//
+// Rows are authoritative for reads now, and two write paths touch rows without
+// refreshing the blob straight away: the import queue and single-row PATCH, both
+// of which only mark the blob dirty for the 120-second snapshot worker. So
+// between an import and the next snapshot the blob is legitimately behind the
+// rows — and a blob write that pruned would delete everything the blob had not
+// caught up on. Reproduced before this guard: importing 500 listings through the
+// queue and then sending ONE unrelated listing to `PUT /api/businesses` deleted
+// 499 of them.
+//
+// Only a caller that genuinely means "these listings are the complete set"
+// prunes: the boot backfill, the admin replace endpoint, the directory reset.
+async function syncBusinessRows(client, listings, { prune = false } = {}) {
+  // Deduplicated by id: a single ON CONFLICT statement cannot touch one row
+  // twice ("cannot affect row a second time"), so a blob holding the same id
+  // more than once would fail the whole batch. Last occurrence wins.
+  const rowsById = new Map();
+  for (const listing of listings || []) {
+    const row = toBusinessRow(listing);
+    if (row[0]) rowsById.set(row[0], row);
+  }
+  const rows = Array.from(rowsById.values());
+  const keepIds = rows.map((row) => row[0]);
+  const startedAt = Date.now();
+  try {
+    const CHUNK = LISTING_WRITE_BATCH_SIZE;
+    for (let index = 0; index < rows.length; index += CHUNK) {
+      await client.query(
+        BUSINESS_ROW_UNNEST_UPSERT,
+        toBusinessRowColumns(rows.slice(index, index + CHUNK)),
+      );
+    }
+    if (prune) {
+      if (keepIds.length > 0) {
+        await client.query(`DELETE FROM businesses WHERE NOT (id = ANY($1::text[]))`, [keepIds]);
+      } else {
+        await client.query(`DELETE FROM businesses`);
+      }
+    }
+    return { ok: true, rows: rows.length, pruned: prune, ms: Date.now() - startedAt };
+  } catch (error) {
+    console.warn('[businesses] relational mirror failed (blob remains authoritative):', error?.message || error);
+    return { ok: false, rows: 0, error: error?.message || String(error) };
+  }
+}
+
+// Writes the blob and refreshes the cache WITHOUT re-mirroring every row —
+// used by the single-row paths, which have already written their own row.
+async function persistBusinessBlobOnly(businesses) {
+  const listings = sanitizeBusinessListings(businesses) || [];
+  const client = await getPgClient();
+  businessListingsCache = listings;
+  businessListingsCacheAt = Date.now();
+  if (client) {
+    await client.query(
+      `INSERT INTO app_state (key, value, updated_at)
+       VALUES ($1, $2::jsonb, NOW())
+       ON CONFLICT (key)
+       DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+      ['businesses', JSON.stringify(listings)],
+    );
+    return;
+  }
+  try {
+    await fs.writeFile(businessesPath, JSON.stringify(listings, null, 2), 'utf8');
+    memoryBusinesses = listings;
+  } catch {
+    memoryBusinesses = listings;
+  }
+}
+
+async function writeBusinessListings(businesses, { prune = false } = {}) {
   const listings = sanitizeBusinessListings(businesses) || [];
   const client = await getPgClient();
   if (client) {
@@ -1816,6 +2176,9 @@ async function writeBusinessListings(businesses) {
        DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
       ['businesses', JSON.stringify(listings)],
     );
+    businessListingsCache = listings;
+    businessListingsCacheAt = Date.now();
+    await syncBusinessRows(client, listings, { prune });
     return;
   }
 
@@ -1871,6 +2234,102 @@ async function readReviews() {
   }
 }
 
+const REVIEW_ROW_COLUMNS = [
+  { name: 'id', type: 'text' },
+  { name: 'business_id', type: 'text' },
+  { name: 'user_name', type: 'text' },
+  { name: 'user_phone', type: 'text' },
+  { name: 'rating', type: 'float8' },
+  { name: 'comment', type: 'text' },
+  { name: 'reported', type: 'bool' },
+  { name: 'created_at', type: 'text', cast: 'timestamptz' },
+  { name: 'updated_at', type: 'text', cast: 'timestamptz' },
+  { name: 'payload', type: 'text', cast: 'jsonb' },
+];
+
+const REVIEW_ROW_CONFLICT = `
+  ON CONFLICT (id) DO UPDATE SET
+    business_id = EXCLUDED.business_id, user_name = EXCLUDED.user_name,
+    user_phone = EXCLUDED.user_phone, rating = EXCLUDED.rating,
+    comment = EXCLUDED.comment, reported = EXCLUDED.reported,
+    updated_at = NOW(), payload = EXCLUDED.payload
+`;
+
+function toReviewRow(review) {
+  const rating = Number(review?.rating);
+  return [
+    String(review?.id || '').trim(),
+    String(review?.businessId || '').trim(),
+    String(review?.userName || '').trim(),
+    String(review?.userPhone || '').trim(),
+    Number.isFinite(rating) ? rating : 5,
+    String(review?.comment || ''),
+    review?.reported === true,
+    String(review?.createdAt || '') || new Date().toISOString(),
+    new Date().toISOString(),
+    JSON.stringify(review || {}),
+  ];
+}
+
+// Mirrors the authoritative blob into the table. Errors are logged, never
+// thrown — a mirroring problem must not fail someone's review submission.
+async function syncReviewRows(client, reviews, { prune = false } = {}) {
+  try {
+    const rowsById = new Map();
+    for (const review of reviews || []) {
+      const row = toReviewRow(review);
+      if (row[0] && row[1]) rowsById.set(row[0], row);
+    }
+    const rows = Array.from(rowsById.values());
+    await insertRowsBatched(client, 'reviews', REVIEW_ROW_COLUMNS, rows, REVIEW_ROW_CONFLICT);
+    if (prune) {
+      const keepIds = rows.map((row) => row[0]);
+      if (keepIds.length > 0) {
+        await client.query(`DELETE FROM reviews WHERE NOT (id = ANY($1::text[]))`, [keepIds]);
+      } else {
+        await client.query(`DELETE FROM reviews`);
+      }
+    }
+    return { ok: true, rows: rows.length, pruned: prune };
+  } catch (error) {
+    console.warn('[reviews] relational mirror failed (blob remains authoritative):', error?.message || error);
+    return { ok: false, error: error?.message || String(error) };
+  }
+}
+
+// Reads reviews for one business straight off the index, instead of every
+// visitor downloading every review on the platform and filtering in memory.
+async function readReviewsForBusiness(businessId, limit = 50, offset = 0) {
+  const id = String(businessId || '').trim();
+  if (!id) return null;
+  const safeLimit = Math.max(1, Math.min(200, limit));
+  const safeOffset = Math.max(0, offset);
+  const client = await getPgClient();
+  if (client) {
+    try {
+      const [page, counted] = await Promise.all([
+        client.query(
+          `SELECT payload FROM reviews WHERE business_id = $1
+            ORDER BY created_at DESC, id ASC LIMIT $2 OFFSET $3`,
+          [id, safeLimit, safeOffset],
+        ),
+        client.query(`SELECT COUNT(*)::int AS total FROM reviews WHERE business_id = $1`, [id]),
+      ]);
+      const total = counted.rows[0]?.total ?? 0;
+      if (total > 0) {
+        return { reviews: page.rows.map((row) => row.payload).filter(Boolean), total, source: 'rows' };
+      }
+    } catch (error) {
+      console.warn('[reviews] indexed read failed, falling back to the document:', error?.message || error);
+    }
+  }
+  // No rows for this business yet (or no database): the blob is still the
+  // source of truth, so an empty table must not read as "no reviews".
+  const all = await readReviews();
+  const scoped = all.filter((review) => String(review?.businessId || '') === id);
+  return { reviews: scoped.slice(safeOffset, safeOffset + safeLimit), total: scoped.length, source: 'blob' };
+}
+
 async function writeReviews(reviews) {
   const sanitizedReviews = sanitizeReviews(reviews);
   const client = await getPgClient();
@@ -1882,6 +2341,7 @@ async function writeReviews(reviews) {
        DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
       ['reviews', JSON.stringify(sanitizedReviews)],
     );
+    await syncReviewRows(client, sanitizedReviews);
     return sanitizedReviews;
   }
 
@@ -3912,41 +4372,40 @@ async function syncBusinessTaxonomyToTables(_client, taxonomy) {
     await client.query('DELETE FROM business_subcategories');
     await client.query('DELETE FROM business_categories');
 
-    for (const category of taxonomy.categories) {
-      await client.query(
-        `INSERT INTO business_categories (id, legacy_id, name, slug, icon, status, sort_order, metadata, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, NOW())`,
-        [
-          category.id,
-          category.legacyId,
-          category.name,
-          category.slug,
-          category.icon,
-          category.status,
-          category.sortOrder,
-          JSON.stringify({}),
-        ],
-      );
-    }
+    // Categories must land before subcategories: the child table has an FK on
+    // category_id, so the order of these two statements is load-bearing.
+    await insertRowsBatched(client, 'business_categories', [
+      { name: 'id', type: 'text' },
+      { name: 'legacy_id', type: 'int8' },
+      { name: 'name', type: 'text' },
+      { name: 'slug', type: 'text' },
+      { name: 'icon', type: 'text' },
+      { name: 'status', type: 'text' },
+      { name: 'sort_order', type: 'int' },
+      { name: 'metadata', type: 'text', cast: 'jsonb' },
+      { name: 'updated_at', type: 'text', cast: 'timestamptz' },
+    ], taxonomy.categories.map((category) => [
+      category.id, category.legacyId, category.name, category.slug, category.icon,
+      category.status, category.sortOrder, '{}', new Date().toISOString(),
+    ]));
 
-    for (const subcategory of taxonomy.subcategories) {
-      await client.query(
-        `INSERT INTO business_subcategories (id, legacy_id, parent_legacy_id, category_id, name, slug, icon, status, sort_order, metadata, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, NOW())`,
-        [
-          subcategory.id,
-          subcategory.legacyId,
-          subcategory.parentLegacyId,
-          subcategory.categoryId,
-          subcategory.name,
-          subcategory.slug,
-          subcategory.icon,
-          subcategory.status,
-          subcategory.sortOrder,
-          JSON.stringify({}),
-        ],
-      );
-    }
+    await insertRowsBatched(client, 'business_subcategories', [
+      { name: 'id', type: 'text' },
+      { name: 'legacy_id', type: 'int8' },
+      { name: 'parent_legacy_id', type: 'int8' },
+      { name: 'category_id', type: 'text' },
+      { name: 'name', type: 'text' },
+      { name: 'slug', type: 'text' },
+      { name: 'icon', type: 'text' },
+      { name: 'status', type: 'text' },
+      { name: 'sort_order', type: 'int' },
+      { name: 'metadata', type: 'text', cast: 'jsonb' },
+      { name: 'updated_at', type: 'text', cast: 'timestamptz' },
+    ], taxonomy.subcategories.map((subcategory) => [
+      subcategory.id, subcategory.legacyId, subcategory.parentLegacyId, subcategory.categoryId,
+      subcategory.name, subcategory.slug, subcategory.icon, subcategory.status,
+      subcategory.sortOrder, '{}', new Date().toISOString(),
+    ]));
 
   }, 'syncBusinessTaxonomyToTables');
 }
@@ -4099,27 +4558,27 @@ async function syncLocalityRoutingConfigToTables(_client, config) {
       );
     }
 
-    for (const subdomain of config.subdomains) {
-      await client.query(
-        `INSERT INTO platform_subdomains (domain, locality_id, ssl_enabled, dns_status, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, NOW())`,
-        [
-          subdomain.domain,
-          subdomain.localityId,
-          subdomain.sslEnabled,
-          subdomain.dnsStatus,
-          subdomain.createdAt,
-        ],
-      );
-    }
+    await insertRowsBatched(client, 'platform_subdomains', [
+      { name: 'domain', type: 'text' },
+      { name: 'locality_id', type: 'text' },
+      { name: 'ssl_enabled', type: 'bool' },
+      { name: 'dns_status', type: 'text' },
+      { name: 'created_at', type: 'text', cast: 'timestamptz' },
+      { name: 'updated_at', type: 'text', cast: 'timestamptz' },
+    ], config.subdomains.map((subdomain) => [
+      subdomain.domain, subdomain.localityId, Boolean(subdomain.sslEnabled),
+      subdomain.dnsStatus, subdomain.createdAt || new Date().toISOString(), new Date().toISOString(),
+    ]));
 
-    for (const mapping of config.pincodeMappings) {
-      await client.query(
-        `INSERT INTO platform_pincode_mappings (pincode, locality_id, updated_at)
-         VALUES ($1, $2, NOW())`,
-        [mapping.pincode, mapping.localityId],
-      );
-    }
+    // Pincode mappings scale with geography, and geography is the thing most
+    // likely to grow next — 1,327 areas already.
+    await insertRowsBatched(client, 'platform_pincode_mappings', [
+      { name: 'pincode', type: 'text' },
+      { name: 'locality_id', type: 'text' },
+      { name: 'updated_at', type: 'text', cast: 'timestamptz' },
+    ], config.pincodeMappings.map((mapping) => [
+      mapping.pincode, mapping.localityId, new Date().toISOString(),
+    ]));
 
     await client.query(
       `INSERT INTO app_state (key, value, updated_at)
@@ -4261,29 +4720,32 @@ async function syncGeographyConfigToTables(_client, config) {
     await client.query('DELETE FROM platform_cities');
     await client.query('DELETE FROM platform_states');
 
-    for (const state of config.states) {
-      await client.query(
-        `INSERT INTO platform_states (id, name, metadata, updated_at)
-         VALUES ($1, $2, $3::jsonb, NOW())`,
-        [state.id, state.name, JSON.stringify({})],
-      );
-    }
+    // One statement per table. `areas` is the one that matters — the production
+    // geography upload carries 1,327 of them, and every save used to walk them
+    // one round trip at a time.
+    await insertRowsBatched(client, 'platform_states', [
+      { name: 'id', type: 'text' },
+      { name: 'name', type: 'text' },
+      { name: 'metadata', type: 'text', cast: 'jsonb' },
+      { name: 'updated_at', type: 'text', cast: 'timestamptz' },
+    ], config.states.map((state) => [state.id, state.name, '{}', new Date().toISOString()]));
 
-    for (const city of config.cities) {
-      await client.query(
-        `INSERT INTO platform_cities (id, state_id, name, metadata, updated_at)
-         VALUES ($1, $2, $3, $4::jsonb, NOW())`,
-        [city.id, city.stateId, city.name, JSON.stringify({})],
-      );
-    }
+    await insertRowsBatched(client, 'platform_cities', [
+      { name: 'id', type: 'text' },
+      { name: 'state_id', type: 'text' },
+      { name: 'name', type: 'text' },
+      { name: 'metadata', type: 'text', cast: 'jsonb' },
+      { name: 'updated_at', type: 'text', cast: 'timestamptz' },
+    ], config.cities.map((city) => [city.id, city.stateId, city.name, '{}', new Date().toISOString()]));
 
-    for (const area of config.areas) {
-      await client.query(
-        `INSERT INTO platform_areas (id, city_id, name, pincode, metadata, updated_at)
-         VALUES ($1, $2, $3, $4, $5::jsonb, NOW())`,
-        [area.id, area.cityId, area.name, area.pincode, JSON.stringify({})],
-      );
-    }
+    await insertRowsBatched(client, 'platform_areas', [
+      { name: 'id', type: 'text' },
+      { name: 'city_id', type: 'text' },
+      { name: 'name', type: 'text' },
+      { name: 'pincode', type: 'text' },
+      { name: 'metadata', type: 'text', cast: 'jsonb' },
+      { name: 'updated_at', type: 'text', cast: 'timestamptz' },
+    ], config.areas.map((area) => [area.id, area.cityId, area.name, area.pincode, '{}', new Date().toISOString()]));
 
   }, 'syncGeographyConfigToTables');
 }
@@ -5266,6 +5728,9 @@ async function readScalableCmsState() {
 async function writeScalableCmsState(config) {
   const sanitized = sanitizeScalableCmsState(config);
   if (!sanitized) throw new Error('Invalid scalable CMS payload');
+  // Any CMS change can alter what the resolver returns, so drop the cached
+  // output rather than making an admin wait out the TTL to see their edit.
+  invalidateResolvedHomepageCache();
 
   const client = await getPgClient();
   if (client) {
@@ -7020,6 +7485,159 @@ async function getPgClient() {
     await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_platform_areas_pincode ON platform_areas(pincode)`);
     await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_platform_subdomains_locality ON platform_subdomains(locality_id)`);
     await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_platform_pincode_locality ON platform_pincode_mappings(locality_id)`);
+
+    // ---- Background import queue -----------------------------------------
+    // Bulk imports used to run inside the request, so a 3,000-row file meant a
+    // long-held HTTP connection and no way to see progress. Jobs are rows now:
+    // the request enqueues and returns, a worker drains them in batches.
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS listing_import_jobs (
+        id            TEXT PRIMARY KEY,
+        label         TEXT NOT NULL DEFAULT '',
+        status        TEXT NOT NULL DEFAULT 'queued',
+        total_rows    INTEGER NOT NULL DEFAULT 0,
+        processed     INTEGER NOT NULL DEFAULT 0,
+        succeeded     INTEGER NOT NULL DEFAULT 0,
+        failed        INTEGER NOT NULL DEFAULT 0,
+        skipped       INTEGER NOT NULL DEFAULT 0,
+        errors        JSONB NOT NULL DEFAULT '[]'::jsonb,
+        payload       JSONB NOT NULL DEFAULT '[]'::jsonb,
+        created_by    TEXT,
+        created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        started_at    TIMESTAMPTZ,
+        finished_at   TIMESTAMPTZ,
+        updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await pgPool.query(`ALTER TABLE listing_import_jobs ADD COLUMN IF NOT EXISTS skipped INTEGER NOT NULL DEFAULT 0`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_listing_import_jobs_status ON listing_import_jobs(status, created_at DESC)`);
+
+    // ---- Listings relational store (migration stage 1) --------------------
+    // Listings have lived as one JSONB document in app_state, so no query could
+    // be pushed into Postgres. This is the real table. Queried, filtered and
+    // sorted fields are columns; everything else stays in `payload` so no field
+    // is lost and imports do not change. Nothing READS this yet — stage 3 does.
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS businesses (
+        id              TEXT PRIMARY KEY,
+        google_place_id TEXT,
+        slug            TEXT,
+        name            TEXT NOT NULL,
+        status          TEXT NOT NULL DEFAULT 'pending',
+        locality_id     TEXT NOT NULL DEFAULT '',
+        area_id         TEXT,
+        city_id         TEXT,
+        state_id        TEXT,
+        pincode         TEXT,
+        category_id     TEXT,
+        subcategory_id  TEXT,
+        phone           TEXT,
+        address         TEXT,
+        latitude        DOUBLE PRECISION,
+        longitude       DOUBLE PRECISION,
+        rating          NUMERIC(3,1) NOT NULL DEFAULT 0,
+        review_count    INTEGER NOT NULL DEFAULT 0,
+        featured        BOOLEAN NOT NULL DEFAULT FALSE,
+        verified_badge  BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        payload         JSONB NOT NULL DEFAULT '{}'::jsonb
+      )
+    `);
+    // google_place_id must be unique but is often blank on imported rows, so a
+    // partial unique index rather than a column constraint.
+    await pgPool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_businesses_place_id ON businesses(google_place_id) WHERE google_place_id IS NOT NULL AND google_place_id <> ''`);
+    // Each index below serves one real query path.
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_businesses_public_scope ON businesses(status, pincode)`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_businesses_public_category ON businesses(status, pincode, category_id)`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_businesses_public_subcategory ON businesses(status, pincode, subcategory_id)`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_businesses_admin_locality ON businesses(status, locality_id)`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_businesses_slug ON businesses(slug)`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_businesses_ranking ON businesses(status, featured, rating DESC)`);
+    // Name search. pg_trgm may not be installable on every managed instance, so
+    // this degrades to a lower(name) btree rather than failing the boot.
+    try {
+      await pgPool.query(`CREATE EXTENSION IF NOT EXISTS pg_trgm`);
+      await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_businesses_name_trgm ON businesses USING gin (name gin_trgm_ops)`);
+    } catch (error) {
+      console.warn('[businesses] pg_trgm unavailable, falling back to a lower(name) index:', error?.message || error);
+      await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_businesses_name_lower ON businesses(lower(name))`);
+    }
+    // ---- Reviews relational store ---------------------------------------
+    // Reviews are the same single-JSONB-document shape listings had, and the
+    // listing detail page just gained an "Add review & rating" button — so this
+    // is the collection about to start growing. Hybrid columns + payload, the
+    // same pattern as `businesses`. The blob stays authoritative and is
+    // mirrored here on every write, so nothing depends on this table yet.
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS reviews (
+        id           TEXT PRIMARY KEY,
+        business_id  TEXT NOT NULL,
+        user_name    TEXT NOT NULL,
+        user_phone   TEXT NOT NULL,
+        rating       NUMERIC(2,1) NOT NULL DEFAULT 5,
+        comment      TEXT NOT NULL DEFAULT '',
+        reported     BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        payload      JSONB NOT NULL DEFAULT '{}'::jsonb
+      )
+    `);
+    // The only lookup a listing page ever needs: this business, newest first.
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_reviews_business ON reviews(business_id, created_at DESC)`);
+
+    // Full-text search column for the public search endpoint, which used to
+    // read the entire directory and score it in Node. It covers exactly the
+    // fields buildBusinessSearchText looks at, so recall is unchanged, and it
+    // takes an unscoped search from 229 ms of sequential scan to a bitmap index
+    // scan. Generated + STORED, so it can never drift from the row.
+    // Wrapped: a managed Postgres that refuses generated columns must still
+    // boot, and resolveDirectorySearch falls back to the old path.
+    try {
+      await pgPool.query(`
+        ALTER TABLE businesses ADD COLUMN IF NOT EXISTS search_tsv tsvector
+        GENERATED ALWAYS AS (to_tsvector('simple',
+          coalesce(name,'') || ' ' || coalesce(phone,'') || ' ' ||
+          regexp_replace(coalesce(phone,''), '[^0-9]', '', 'g') || ' ' ||
+          coalesce(address,'') || ' ' || coalesce(category_id,'') || ' ' ||
+          coalesce(subcategory_id,'') || ' ' || coalesce(pincode,'') || ' ' ||
+          coalesce(payload->>'description','') || ' ' || coalesce(payload->>'ownerName','') || ' ' ||
+          coalesce(payload->>'sourceCategoryLabel','') || ' ' ||
+          coalesce(payload->>'sourceSubcategoryLabel','') || ' ' ||
+          coalesce(payload->>'tags','')
+        )) STORED
+      `);
+      await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_businesses_search_tsv ON businesses USING GIN (search_tsv)`);
+      businessSearchColumnReady = true;
+    } catch (error) {
+      console.warn('[businesses] full-text column unavailable, search falls back to the document:', error?.message || error);
+    }
+
+    // Related-listings tiers on the listing detail route. A single OR across
+    // locality / category / subcategory cannot use any of these, so that query
+    // is split into indexed branches — see findRelatedBusinessRows.
+    // The ranking columns are part of each index on purpose: with them the
+    // LIMIT stops walking the index early, instead of Postgres reading every
+    // matching row and top-N sorting it.
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_businesses_locality_subcategory ON businesses(status, locality_id, subcategory_id, featured DESC, rating DESC)`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_businesses_locality_category ON businesses(status, locality_id, category_id, featured DESC, rating DESC)`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_businesses_subcategory ON businesses(status, subcategory_id, featured DESC, rating DESC)`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_businesses_category ON businesses(status, category_id, featured DESC, rating DESC)`);
+
+    // Both tables below are append-only and grow with traffic, and both are
+    // queried by created_at — the contact-view one on every Show Number click,
+    // to enforce the daily limits. Without these the count is a sequential scan
+    // whose cost tracks total history: measured 4ms at 50k rows, 18ms at 250k,
+    // 43ms at 1M, against a flat 2ms once indexed.
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_contact_view_events_created ON contact_view_events(created_at)`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_contact_view_events_business ON contact_view_events(business_id, created_at)`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_auth_otp_challenges_created ON auth_otp_challenges(created_at)`);
+    // Sellers are matched to their listing by phone or email, which are not
+    // plain columns: the phone carries formatting and the email lives in the
+    // payload. Expression indexes let that be a row read instead of a scan of
+    // the whole directory.
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_businesses_phone_digits ON businesses ((regexp_replace(COALESCE(phone,''), '[^0-9]', '', 'g')))`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_businesses_owner_email ON businesses ((lower(payload->>'email')))`);
     await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_cms_template_assignments_locality ON cms_template_assignments(locality_id)`);
     await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_cms_template_assignments_targeting ON cms_template_assignments(locality_id, category_id, subcategory_id, pincode)`);
     await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_cms_campaigns_type_status ON cms_campaigns(campaign_type, status, priority DESC)`);
@@ -7061,14 +7679,111 @@ async function runInPgTransaction(work, label = 'transaction') {
   }
 }
 
+// Runtime values the public page needs that must not be baked into the bundle.
+// The Static Maps key is public by nature — it travels in every map image URL —
+// but keeping it in the environment means it is not in git, and it can be
+// rotated without a rebuild. Restrict it by HTTP referrer on the Google Cloud
+// project so it cannot be used from anywhere else.
+app.get('/api/public-runtime-config', (_req, res) => {
+  res.json({
+    ok: true,
+    mapsStaticKey: String(process.env.GOOGLE_MAPS_STATIC_KEY || '').trim(),
+  });
+});
+
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true, service: 'localsy-web' });
 });
 
-app.get('/api/businesses', async (_req, res) => {
+// Optional filters. With no query params the full directory is returned, so the
+// admin console keeps working exactly as before. The public app passes the
+// pincodes it is actually showing plus fields=lite, which is the difference
+// between a ~38MB payload at full data volume and a couple of MB.
+const PUBLIC_LISTING_LITE_OMIT = new Set([
+  'galleryUrls', 'domainMappingTags', 'tags', 'description', 'businessTypes',
+  'serviceTypes', 'verificationTags', 'sourceCategoryLabel', 'sourceSubcategoryLabel',
+  'logoUrl', 'coverImageUrl', 'ownerName', 'website', 'gpsCoordinates',
+]);
+
+app.get('/api/businesses', async (req, res) => {
   try {
-    const businesses = await readBusinessListings();
-    res.json({ ok: true, businesses });
+    const pincodes = Array.from(new Set(
+      String(req.query.pincodes || '')
+        .split(',')
+        .map((value) => value.replace(/\D/g, '').slice(0, 6))
+        .filter((value) => value.length === 6),
+    ));
+    const status = String(req.query.status || '').trim().toLowerCase();
+    const categoryId = String(req.query.category || '').trim();
+    const subcategoryId = String(req.query.subcategory || '').trim();
+    const localityId = String(req.query.locality || '').trim();
+    const search = String(req.query.q || '').trim();
+    const sort = String(req.query.sort || '').trim().toLowerCase();
+    const wantsLite = String(req.query.fields || '').trim().toLowerCase() === 'lite';
+    const withFacets = String(req.query.facets || '') === '1';
+    const limit = Math.min(500, Math.max(0, parseInt(String(req.query.limit || '0'), 10) || 0));
+    const offset = Math.max(0, parseInt(String(req.query.offset || '0'), 10) || 0);
+
+    const trim = (list) => (wantsLite
+      ? list.map((business) => {
+          const slim = {};
+          for (const key of Object.keys(business || {})) {
+            if (!PUBLIC_LISTING_LITE_OMIT.has(key)) slim[key] = business[key];
+          }
+          return slim;
+        })
+      : list);
+
+    // Stage 3: read from the table when it is populated. The blob remains the
+    // fallback for a fresh install whose backfill has not run yet, mirroring
+    // how readHomepageConfig already behaves.
+    const client = await getPgClient();
+    if (client && await hasBusinessRows(client)) {
+      const result = await queryBusinessRows(client, {
+        pincodes, status, categoryId, subcategoryId, localityId, search, sort, limit, offset, withFacets,
+      });
+      const partial = Boolean(
+        pincodes.length || status || categoryId || subcategoryId || localityId || search || wantsLite || limit,
+      );
+      return res.json({
+        ok: true,
+        businesses: trim(result.businesses),
+        total: result.total,
+        totalCount: result.total,
+        facets: result.facets,
+        partial,
+        source: 'rows',
+      });
+    }
+
+    // Fallback: the pre-migration path, filtered in memory.
+    const all = await readBusinessListings();
+    let businesses = all;
+    if (pincodes.length > 0) {
+      const wanted = new Set(pincodes);
+      businesses = businesses.filter((business) => wanted.has(String(business?.pincode || '').trim()));
+    }
+    if (status) businesses = businesses.filter((business) => String(business?.status || '').toLowerCase() === status);
+    if (categoryId) businesses = businesses.filter((business) => String(business?.categoryId || '') === categoryId);
+    if (subcategoryId) businesses = businesses.filter((business) => String(business?.subcategoryId || '') === subcategoryId);
+    if (localityId) businesses = businesses.filter((business) => String(business?.localityId || '') === localityId);
+    if (search) {
+      const needle = search.toLowerCase();
+      businesses = businesses.filter((business) => String(business?.name || '').toLowerCase().includes(needle));
+    }
+    const total = businesses.length;
+    if (limit > 0) businesses = businesses.slice(offset, offset + limit);
+    const partial = Boolean(
+      pincodes.length || status || categoryId || subcategoryId || localityId || search || wantsLite || limit,
+    );
+    res.json({
+      ok: true,
+      businesses: trim(businesses),
+      total,
+      totalCount: all.length,
+      partial,
+      source: 'blob',
+    });
   } catch (err) {
     console.error('Failed to read business listings:', err);
     res.status(500).json({ ok: false, error: 'Failed to read business listings' });
@@ -7085,13 +7800,910 @@ app.put('/api/businesses', async (req, res) => {
   }
 
   try {
+    const client = await getPgClient();
+    // This endpoint is a MERGE, not a replace. Reading the whole directory to
+    // merge in memory was both wasteful and unsafe: the blob it read can be up
+    // to two minutes behind the rows, so the write built from it removed
+    // anything newer. Upserting the incoming rows is the same operation with
+    // none of that exposure, and it does not care how far behind the blob is.
+    if (client && await hasBusinessRows(client)) {
+      const rows = [];
+      for (const business of incoming) {
+        const row = toBusinessRow(business);
+        if (row[0] && row[3]) rows.push(row);
+      }
+      const CHUNK = LISTING_WRITE_BATCH_SIZE;
+      for (let index = 0; index < rows.length; index += CHUNK) {
+        await client.query(BUSINESS_ROW_UNNEST_UPSERT, toBusinessRowColumns(rows.slice(index, index + CHUNK)));
+      }
+      for (const business of incoming) applyBusinessToCache(business);
+      businessBlobDirty = true;
+      return res.json({ ok: true, upserted: rows.length, source: 'rows' });
+    }
+
+    // Pre-migration fallback: the blob is still the only store.
     const existing = await readBusinessListings();
     const businesses = mergeBusinessListings(existing, incoming);
     await writeBusinessListings(businesses);
-    res.json({ ok: true, businesses });
+    res.json({ ok: true, businesses, source: 'blob' });
   } catch (err) {
     console.error('Failed to sync business listings:', err);
     res.status(500).json({ ok: false, error: 'Failed to sync business listings' });
+  }
+});
+
+// ---- Stage 4: single-row writes -----------------------------------------
+// Approving one listing used to serialise all 26,000 records and replace the
+// whole document, which is also why two admins saving at once clobbered each
+// other. These touch exactly one row.
+// The row write is synchronous and cheap. Refreshing the JSON blob is a whole-
+// document rewrite, so it is debounced onto a background timer instead of
+// sitting in the request: several edits in a row collapse into one rebuild.
+// The blob is now only a rollback artifact — stage 3 reads from rows — so it
+// being a few seconds behind is acceptable, and it is rebuilt FROM the rows so
+// it cannot drift.
+// Rebuilding the blob means reading 26k rows and writing a ~17MB JSONB value.
+// Doing that after every edit made the NEXT request wait behind it. Since
+// stage 3 reads from rows, the blob is only a rollback artifact, so single-row
+// edits just mark it stale and one low-frequency worker rebuilds it.
+let businessBlobDirty = false;
+let blobRefreshInFlight = false;
+const BLOB_SNAPSHOT_INTERVAL_MS = 120_000;
+
+async function rebuildBusinessBlobFromRows() {
+  if (blobRefreshInFlight) return { ok: false, skipped: 'already running' };
+  blobRefreshInFlight = true;
+  try {
+    const client = await getPgClient();
+    if (!client) return { ok: false, skipped: 'no database' };
+    const result = await client.query(`SELECT payload FROM businesses ORDER BY id`);
+    const listings = result.rows.map((row) => row.payload).filter(Boolean);
+    await persistBusinessBlobOnly(listings);
+    businessBlobDirty = false;
+    return { ok: true, rows: listings.length };
+  } catch (error) {
+    console.warn('[businesses] blob snapshot failed:', error?.message || error);
+    return { ok: false, error: error?.message || String(error) };
+  } finally {
+    blobRefreshInFlight = false;
+  }
+}
+
+function startBusinessBlobSnapshotWorker() {
+  const timer = setInterval(() => {
+    if (!businessBlobDirty) return;
+    rebuildBusinessBlobFromRows().catch(() => {});
+  }, BLOB_SNAPSHOT_INTERVAL_MS);
+  if (typeof timer.unref === 'function') timer.unref();
+}
+
+// Keeps the in-process cache truthful straight away, so anything still reading
+// through readBusinessListings sees the edit without waiting for the snapshot.
+function applyBusinessToCache(business, { remove = false } = {}) {
+  if (!Array.isArray(businessListingsCache)) return;
+  const id = String(business?.id || business || '').trim();
+  if (!id) return;
+  businessListingsCache = remove
+    ? businessListingsCache.filter((entry) => entry.id !== id)
+    : (businessListingsCache.some((entry) => entry.id === id)
+        ? businessListingsCache.map((entry) => (entry.id === id ? business : entry))
+        : [...businessListingsCache, business]);
+  businessListingsCacheAt = Date.now();
+}
+
+async function upsertBusinessRow(business) {
+  const client = await getPgClient();
+  if (!client) return { ok: false, error: 'no database' };
+  const row = toBusinessRow(business);
+  if (!row[0]) return { ok: false, error: 'business id is required' };
+  await client.query(buildBusinessRowUpsert(1), row);
+  applyBusinessToCache(business);
+  businessBlobDirty = true;
+  return { ok: true, id: row[0] };
+}
+
+async function deleteBusinessRow(businessId) {
+  const client = await getPgClient();
+  if (!client) return { ok: false, error: 'no database' };
+  const id = String(businessId || '').trim();
+  if (!id) return { ok: false, error: 'business id is required' };
+  const result = await client.query(`DELETE FROM businesses WHERE id = $1`, [id]);
+  applyBusinessToCache(id, { remove: true });
+  businessBlobDirty = true;
+  return { ok: true, id, deleted: result.rowCount };
+}
+
+// ---- Stage 3: serve listing reads from the relational table --------------
+// `payload` holds the complete record, so a row read returns exactly the same
+// object shape the blob did. Filtering, counting, faceting and paging all
+// happen in Postgres against the stage 1 indexes instead of in Node against a
+// parsed 38MB document.
+const LISTING_SORTS = {
+  recommended: 'featured DESC, rating DESC NULLS LAST, review_count DESC',
+  popular: 'review_count DESC, rating DESC NULLS LAST',
+  rating: 'rating DESC NULLS LAST, review_count DESC',
+  newest: 'created_at DESC',
+  name: 'name ASC',
+};
+
+async function queryBusinessRows(client, options = {}) {
+  const {
+    pincodes = [], status = '', categoryId = '', subcategoryId = '',
+    localityId = '', search = '', sort = '', limit = 0, offset = 0, withFacets = false,
+  } = options;
+
+  const where = [];
+  const params = [];
+  const add = (sql, value) => { params.push(value); where.push(sql.replace('$?', `$${params.length}`)); };
+
+  if (pincodes.length > 0) add('pincode = ANY($?::text[])', pincodes);
+  if (status) add('status = $?', status);
+  if (categoryId) add('category_id = $?', categoryId);
+  if (subcategoryId) add('subcategory_id = $?', subcategoryId);
+  if (localityId) add('locality_id = $?', localityId);
+  if (search) add('name ILIKE $?', `%${search}%`);
+  const whereSql = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
+
+  const totalResult = await client.query(`SELECT COUNT(*)::int AS total FROM businesses ${whereSql}`, params);
+  const total = totalResult.rows[0]?.total ?? 0;
+
+  // `id ASC` is a tiebreaker, not decoration: every ranking sort has ties
+  // (thousands of listings share rating 0), and LIMIT/OFFSET over a
+  // non-deterministic order silently duplicates some rows and skips others.
+  // The client pages through a whole pincode, so this has to be a total order.
+  const orderSql = `${LISTING_SORTS[sort] || LISTING_SORTS.recommended}, id ASC`;
+  const pageParams = [...params];
+  let pageSql = `SELECT payload FROM businesses ${whereSql} ORDER BY ${orderSql}`;
+  if (limit > 0) {
+    pageParams.push(limit); pageSql += ` LIMIT $${pageParams.length}`;
+    pageParams.push(Math.max(0, offset)); pageSql += ` OFFSET $${pageParams.length}`;
+  }
+  const pageResult = await client.query(pageSql, pageParams);
+
+  let facets;
+  if (withFacets) {
+    const [byCategory, bySubcategory] = await Promise.all([
+      client.query(`SELECT category_id AS id, COUNT(*)::int AS count FROM businesses ${whereSql} GROUP BY category_id`, params),
+      client.query(`SELECT subcategory_id AS id, COUNT(*)::int AS count FROM businesses ${whereSql} GROUP BY subcategory_id`, params),
+    ]);
+    const toMap = (rows) => rows.reduce((acc, row) => {
+      if (row.id) acc[row.id] = row.count;
+      return acc;
+    }, {});
+    facets = { categories: toMap(byCategory.rows), subcategories: toMap(bySubcategory.rows) };
+  }
+
+  return { businesses: pageResult.rows.map((row) => row.payload).filter(Boolean), total, facets };
+}
+
+// ---- Single-row reads ----------------------------------------------------
+// Several handlers used to load the entire directory and `.find()` in Node to
+// get at one listing. That cost 351ms against 2ms for an indexed row read, and
+// the real damage was worse than the number: parsing a multi-megabyte JSONB
+// document happens on the event loop, so it stalled every other request in
+// flight (p95 on an unrelated indexed endpoint went from 16ms to 352ms while
+// one of these ran). Each helper falls back to the blob when the table is not
+// populated yet, matching how GET /api/businesses already behaves.
+async function findBusinessById(businessId) {
+  const id = String(businessId || '').trim();
+  if (!id) return null;
+  const client = await getPgClient();
+  if (client && await hasBusinessRows(client)) {
+    const result = await client.query(`SELECT payload FROM businesses WHERE id = $1 LIMIT 1`, [id]);
+    return result.rows[0]?.payload || null;
+  }
+  const listings = await readBusinessListings();
+  return listings.find((entry) => String(entry?.id || '') === id) || null;
+}
+
+// The mobile listing route accepts either an id or a name-based slug. The slug
+// is derived, so it cannot be a WHERE clause on its own; the id match is tried
+// first and the slug is resolved against the (indexed) slug column, with a
+// last resort that only reads the blob if both miss.
+async function findBusinessByIdOrSlug(value) {
+  const needle = String(value || '').trim();
+  if (!needle) return null;
+  const client = await getPgClient();
+  if (client && await hasBusinessRows(client)) {
+    const direct = await client.query(
+      `SELECT payload FROM businesses WHERE id = $1 OR slug = $1 LIMIT 1`,
+      [needle],
+    );
+    if (direct.rows[0]?.payload) return direct.rows[0].payload;
+    // buildListingSlug appends the id, so the trailing segment identifies the row.
+    const tail = needle.split('-').pop();
+    if (tail && tail !== needle) {
+      const byTail = await client.query(`SELECT payload FROM businesses WHERE id = $1 LIMIT 1`, [tail]);
+      const candidate = byTail.rows[0]?.payload;
+      if (candidate && buildListingSlug(candidate.name, candidate.id) === needle) return candidate;
+    }
+    return null;
+  }
+  const listings = await readBusinessListings();
+  return listings.find((entry) => (
+    String(entry?.id || '') === needle || buildListingSlug(entry?.name, entry?.id) === needle
+  )) || null;
+}
+
+// Listings related to one listing — previously computed by scoring every
+// record in the directory in Node.
+//
+// The obvious translation, one query with `locality_id = $2 OR category_id = $3
+// OR subcategory_id = $4`, is a trap: an OR across three columns cannot use any
+// of their indexes, so Postgres sequentially scans all 25,965 rows and sorts
+// them (measured 42 ms — a Node scan traded for a Postgres one). Splitting it
+// into narrowing branches, each with its own index and its own LIMIT, keeps
+// every branch an index scan. The tiers are ordered most-related first and the
+// existing scorer still picks the final few, so the ranking rule is unchanged.
+async function findRelatedBusinessRows(business, limit = 24) {
+  const client = await getPgClient();
+  if (!client || !(await hasBusinessRows(client))) return null;
+  const id = String(business.id || '');
+  const localityId = String(business.localityId || '');
+  const categoryId = String(business.categoryId || '');
+  const subcategoryId = String(business.subcategoryId || '');
+  const perTier = Math.max(1, Math.min(100, limit));
+
+  const branch = (tier, extraWhere) => `
+    (SELECT ${tier} AS tier, id, payload FROM businesses
+      WHERE status = 'approved' AND id <> $1 ${extraWhere}
+      ORDER BY featured DESC, rating DESC NULLS LAST, review_count DESC, id ASC
+      LIMIT ${perTier})`;
+
+  const branches = [];
+  if (localityId && subcategoryId) branches.push(branch(1, `AND locality_id = $2 AND subcategory_id = $4`));
+  if (localityId && categoryId) branches.push(branch(2, `AND locality_id = $2 AND category_id = $3`));
+  if (localityId) branches.push(branch(3, `AND locality_id = $2`));
+  if (subcategoryId) branches.push(branch(4, `AND subcategory_id = $4`));
+  if (categoryId) branches.push(branch(5, `AND category_id = $3`));
+  if (branches.length === 0) return [];
+
+  const result = await client.query(
+    `SELECT DISTINCT ON (id) tier, payload
+       FROM (${branches.join(' UNION ALL ')}) AS tiers
+      ORDER BY id, tier
+      LIMIT ${perTier * branches.length}`,
+    [id, localityId, categoryId, subcategoryId],
+  );
+  return result.rows
+    .sort((left, right) => left.tier - right.tier)
+    .map((row) => row.payload)
+    .filter(Boolean)
+    .slice(0, perTier);
+}
+
+// A seller with sellerBusinessId already set needs no lookup at all — the old
+// code read the whole directory before discovering that.
+async function resolveSellerBusinessId(user) {
+  if (!user || user.userType !== 'seller') return '';
+  const explicit = String(user.sellerBusinessId || '').trim();
+  if (explicit) return explicit;
+
+  const phone = normalizePhoneDigits(user.phone || '');
+  const email = String(user.email || '').trim().toLowerCase();
+  if (!phone && !email) return '';
+
+  const client = await getPgClient();
+  if (client && await hasBusinessRows(client)) {
+    const result = await client.query(
+      `SELECT id FROM businesses
+        WHERE ($1 <> '' AND regexp_replace(COALESCE(phone,''), '[^0-9]', '', 'g') = $1)
+           OR ($2 <> '' AND lower(payload->>'email') = $2)
+        LIMIT 1`,
+      [phone, email],
+    );
+    return String(result.rows[0]?.id || '').trim();
+  }
+  const listings = await readBusinessListings();
+  return resolveSellerBusinessIdForUser(user, listings);
+}
+
+async function hasBusinessRows(client) {
+  try {
+    const result = await client.query(`SELECT 1 FROM businesses LIMIT 1`);
+    return result.rowCount > 0;
+  } catch {
+    return false;
+  }
+}
+
+// Stage 1 backfill: populate the relational table from the authoritative blob.
+// Idempotent — it upserts by id, so running it twice is harmless. Runs once
+// automatically on boot when the table is empty, and can be re-run by hand.
+async function backfillBusinessRows({ force = false } = {}) {
+  const client = await getPgClient();
+  if (!client) return { ok: false, skipped: 'no database' };
+  try {
+    const existing = await client.query(`SELECT COUNT(*)::int AS count FROM businesses`);
+    const rowCount = existing.rows[0]?.count ?? 0;
+    if (rowCount > 0 && !force) {
+      return { ok: true, skipped: 'table already populated', rows: rowCount };
+    }
+    const listings = await readBusinessListings();
+    // A backfill IS the full set by definition, so it prunes.
+    const result = await syncBusinessRows(client, listings, { prune: true });
+    const after = await client.query(`SELECT COUNT(*)::int AS count FROM businesses`);
+    return {
+      ok: result.ok,
+      blobCount: listings.length,
+      rows: after.rows[0]?.count ?? 0,
+      error: result.error,
+    };
+  } catch (error) {
+    console.warn('[businesses] backfill failed:', error?.message || error);
+    return { ok: false, error: error?.message || String(error) };
+  }
+}
+
+app.post('/api/admin/businesses/backfill-rows', async (req, res) => {
+  const access = requirePrivilegedWriteAccess(req, res);
+  if (!access) return;
+  const summary = await backfillBusinessRows({ force: req.body?.force === true });
+  res.json({ ok: Boolean(summary.ok), summary });
+});
+
+// Read-only comparison so the mirror can be verified before stage 3 trusts it.
+app.get('/api/admin/businesses/row-health', async (req, res) => {
+  const access = requirePrivilegedReadAccess(req, res);
+  if (!access) return;
+  try {
+    const client = await getPgClient();
+    if (!client) return res.json({ ok: true, database: false });
+    const listings = await readBusinessListings();
+    const counts = await client.query(`
+      SELECT COUNT(*)::int AS total,
+             COUNT(*) FILTER (WHERE status = 'approved')::int AS approved,
+             COUNT(*) FILTER (WHERE pincode IS NULL OR pincode = '')::int AS missing_pincode,
+             COUNT(*) FILTER (WHERE category_id IS NULL OR category_id = '')::int AS missing_category
+      FROM businesses
+    `);
+    const byPincode = await client.query(`
+      SELECT pincode, COUNT(*)::int AS count
+      FROM businesses WHERE status = 'approved'
+      GROUP BY pincode ORDER BY count DESC
+    `);
+    res.json({
+      ok: true,
+      database: true,
+      blobCount: listings.length,
+      rowCount: counts.rows[0]?.total ?? 0,
+      inSync: (counts.rows[0]?.total ?? -1) === listings.length,
+      breakdown: counts.rows[0],
+      approvedByPincode: byPincode.rows,
+    });
+  } catch (err) {
+    console.error('Failed to read listing row health:', err);
+    res.status(500).json({ ok: false, error: err?.message || 'row health check failed' });
+  }
+});
+
+app.patch('/api/businesses/:businessId', async (req, res) => {
+  const access = requirePrivilegedWriteAccess(req, res);
+  if (!access) return;
+  try {
+    const incoming = sanitizeBusinessListings([{ ...(req.body?.business || {}), id: req.params.businessId }]);
+    if (!incoming || incoming.length === 0) {
+      return res.status(400).json({ ok: false, error: 'business object is required' });
+    }
+    const result = await upsertBusinessRow(incoming[0]);
+    if (!result.ok) return res.status(500).json({ ok: false, error: result.error });
+    res.json({ ok: true, business: incoming[0] });
+  } catch (err) {
+    console.error('Failed to update business listing:', err);
+    res.status(500).json({ ok: false, error: err?.message || 'Failed to update business listing' });
+  }
+});
+
+app.delete('/api/businesses/:businessId', async (req, res) => {
+  const access = requirePrivilegedWriteAccess(req, res);
+  if (!access) return;
+  try {
+    const result = await deleteBusinessRow(req.params.businessId);
+    if (!result.ok) return res.status(500).json({ ok: false, error: result.error });
+    res.json({ ok: true, id: result.id, deleted: result.deleted });
+  } catch (err) {
+    console.error('Failed to delete business listing:', err);
+    res.status(500).json({ ok: false, error: err?.message || 'Failed to delete business listing' });
+  }
+});
+
+// ---- Background listing import queue ------------------------------------
+// A 3,000-row import used to be one request that rewrote the entire listings
+// document: the browser held the connection open for minutes, progress was
+// invisible, and closing the tab lost the run. Now the request only enqueues.
+// Rows land in listing_import_jobs and a worker upserts them in batches of 400
+// through the same path as every other write, so the client gets a job id
+// immediately and polls for progress.
+const IMPORT_JOB_BATCH_SIZE = LISTING_WRITE_BATCH_SIZE;
+const IMPORT_JOB_IDLE_POLL_MS = 3_000;
+const IMPORT_JOB_ERROR_LIMIT = 50;
+const IMPORT_JOB_RETENTION_DAYS = 7;
+
+// Batches run in parallel, each on its own pooled connection.
+//
+// Measured on 25,000 rows with live reads running against the same database:
+//
+//   batch x lanes      import      read p95
+//   400   x 1 (VALUES) 1,433ms     36ms      <- the old path
+//   1000  x 1          1,305ms     33ms
+//   2000  x 1          1,212ms     40ms
+//   1000  x 4            941ms    133ms
+//   2000  x 4            931ms    137ms
+//
+// So four lanes are worth about 25%, and the write path is bound by WAL and
+// eight indexes rather than by connection count — which is why it is not 4x.
+// The cost is read latency while an import runs, and it is bounded: a
+// 3,000-row file finishes in about 250ms. Set IMPORT_JOB_CONCURRENCY=1 if a
+// very large import ever needs to be invisible to the live site.
+//
+// The cap is deliberate: the same pool serves page requests, and an import
+// that grabbed every connection would stall the site it is importing into.
+// Whatever is asked for, at least four connections are left for requests.
+const IMPORT_JOB_CONCURRENCY = (() => {
+  const requested = parseInt(process.env.IMPORT_JOB_CONCURRENCY || '4', 10);
+  const poolMax = Math.max(2, parseInt(process.env.PG_POOL_MAX || '10', 10) || 10);
+  const headroom = Math.max(1, poolMax - 4);
+  return Math.max(1, Math.min(Number.isFinite(requested) ? requested : 4, 8, headroom));
+})();
+
+let importWorkerActive = false;
+let importWorkerTimer = null;
+
+// Runs `worker` over `items` with at most `limit` in flight. Workers pull from
+// a shared cursor rather than being handed fixed slices, so one slow batch does
+// not leave the other lanes idle.
+async function runWithConcurrency(items, limit, worker) {
+  let cursor = 0;
+  const lanes = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    for (;;) {
+      const index = cursor;
+      cursor += 1;
+      if (index >= items.length) return;
+      await worker(items[index], index);
+    }
+  });
+  await Promise.all(lanes);
+}
+
+function newImportJobId() {
+  return `imp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function serializeImportJob(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    label: row.label || '',
+    status: row.status,
+    totalRows: row.total_rows ?? 0,
+    processed: row.processed ?? 0,
+    succeeded: row.succeeded ?? 0,
+    failed: row.failed ?? 0,
+    skipped: row.skipped ?? 0,
+    errors: Array.isArray(row.errors) ? row.errors : [],
+    createdBy: row.created_by || '',
+    createdAt: row.created_at,
+    startedAt: row.started_at,
+    finishedAt: row.finished_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+// SKIP LOCKED so two instances (or a restart racing the old one) can never
+// take the same job and double-write its rows.
+async function claimNextImportJob(client) {
+  const result = await client.query(`
+    UPDATE listing_import_jobs
+    SET status = 'running',
+        started_at = COALESCE(started_at, NOW()),
+        updated_at = NOW()
+    WHERE id = (
+      SELECT id FROM listing_import_jobs
+      WHERE status = 'queued'
+      ORDER BY created_at ASC
+      LIMIT 1
+      FOR UPDATE SKIP LOCKED
+    )
+    RETURNING id, label, total_rows, payload
+  `);
+  return result.rows[0] || null;
+}
+
+// Postgres constraint text is not something an operator can act on. These are
+// the violations an import realistically hits, in words that say what to fix.
+function describeImportRowError(error) {
+  const message = String(error?.message || error || 'unknown error');
+  if (message.includes('idx_businesses_place_id')) {
+    return 'another listing already uses this Google place id';
+  }
+  if (message.includes('businesses_pkey')) {
+    return 'a listing with this id already exists';
+  }
+  return message;
+}
+
+async function runImportJob(client, job) {
+  const listings = Array.isArray(job.payload) ? job.payload : [];
+  let processed = 0;
+  let succeeded = 0;
+  let failed = 0;
+  let skipped = 0;
+  const errors = [];
+
+  const recordError = (id, message) => {
+    failed += 1;
+    if (errors.length < IMPORT_JOB_ERROR_LIMIT) {
+      errors.push({ id: String(id || ''), error: String(message || 'unknown error') });
+    }
+  };
+
+  // ---- Pass one: validate and de-duplicate, without touching the database.
+  // This has to finish before any batch is dispatched, because it is what makes
+  // the batches safe to run in parallel:
+  //
+  //   * Two batches holding the same listing id would lock the same row from
+  //     two connections in different orders — a deadlock waiting to happen.
+  //     Postgres also refuses a single ON CONFLICT statement that hits one row
+  //     twice ("cannot affect row a second time"), so a file listing a business
+  //     twice used to fail its whole batch and limp through the per-row retry.
+  //   * Two rows sharing a Google place id would violate the unique index
+  //     mid-batch, forcing 400 rows down the slow path with 400 unreadable
+  //     errors.
+  //
+  // Keeping the LAST occurrence of an id is the behaviour an operator expects:
+  // a corrected row further down the file wins. Those replaced rows are counted
+  // as skipped, not failed — nothing went wrong, the row simply was not the one
+  // used.
+  const rowsById = new Map();
+  const placeIdOwner = new Map();
+
+  for (const listing of listings) {
+    const row = toBusinessRow(listing);
+    if (!row[0]) {
+      recordError(listing?.id, 'listing id is required');
+      continue;
+    }
+    if (!row[3]) {
+      recordError(listing?.id, 'listing name is required');
+      continue;
+    }
+    const placeId = row[1];
+    if (placeId) {
+      const owner = placeIdOwner.get(placeId);
+      if (owner && owner !== row[0]) {
+        recordError(row[0], `duplicate Google place id ${placeId}, already used by ${owner} in this file`);
+        continue;
+      }
+      placeIdOwner.set(placeId, row[0]);
+    }
+    if (rowsById.has(row[0])) skipped += 1;
+    rowsById.set(row[0], row);
+  }
+
+  const rows = Array.from(rowsById.values());
+  // Every input row that will never reach a batch — rejected in the pass above,
+  // or superseded by a later row with the same id — is already accounted for,
+  // so `processed` lands exactly on the row count the operator uploaded.
+  processed = listings.length - rows.length;
+  const batches = [];
+  for (let index = 0; index < rows.length; index += IMPORT_JOB_BATCH_SIZE) {
+    batches.push(rows.slice(index, index + IMPORT_JOB_BATCH_SIZE));
+  }
+
+  // ---- Pass two: write the batches in parallel.
+  // Every batch now holds a disjoint set of ids, so concurrent upserts cannot
+  // contend for the same row and the lanes never block each other.
+  // Progress is throttled, not written per batch. Every lane updates the SAME
+  // job row, so a write after each batch makes the lanes queue behind one row
+  // lock — measured at 25,000 rows, that alone turned 8 parallel lanes into
+  // 1,340ms against 909ms for 4. A refresh every 400ms keeps the UI live
+  // without the lanes contending.
+  const PROGRESS_WRITE_INTERVAL_MS = 400;
+  let lastProgressWriteAt = 0;
+  let progressWriteInFlight = false;
+
+  const writeProgress = async ({ force = false } = {}) => {
+    if (!force) {
+      if (progressWriteInFlight) return;
+      if (Date.now() - lastProgressWriteAt < PROGRESS_WRITE_INTERVAL_MS) return;
+    }
+    progressWriteInFlight = true;
+    lastProgressWriteAt = Date.now();
+    try {
+      await client.query(
+        `UPDATE listing_import_jobs
+         SET processed = $2, succeeded = $3, failed = $4, skipped = $5, errors = $6::jsonb, updated_at = NOW()
+         WHERE id = $1`,
+        [job.id, processed, succeeded, failed, skipped, JSON.stringify(errors)],
+      );
+    } finally {
+      progressWriteInFlight = false;
+    }
+  };
+
+  const startedAt = Date.now();
+  await runWithConcurrency(batches, IMPORT_JOB_CONCURRENCY, async (batch) => {
+    // A failed batch is halved rather than retried row by row, so one bad row
+    // costs about eleven statements to isolate instead of a thousand.
+    const written = await writeBusinessRowBatch(client, batch, recordError);
+    // Deliberately NOT `succeeded += await …`: that form reads the counter
+    // before awaiting and writes the stale value back afterwards, so parallel
+    // lanes silently overwrite each other's totals. Await first, then add.
+    succeeded += written;
+    // Counters are plain variables mutated between awaits, and Node runs one
+    // task at a time, so no lane can observe a half-applied update.
+    processed += batch.length;
+    await writeProgress();
+  });
+
+  if (succeeded > 0) {
+    // Rows are authoritative for reads (stage 3); the blob is the rollback
+    // artifact and the snapshot worker rebuilds it from these rows.
+    invalidateBusinessListingsCache();
+    businessBlobDirty = true;
+  }
+
+  await client.query(
+    `UPDATE listing_import_jobs
+     SET status = $2, processed = $3, succeeded = $4, failed = $5, skipped = $6,
+         errors = $7::jsonb, finished_at = NOW(), updated_at = NOW()
+     WHERE id = $1`,
+    [
+      job.id,
+      failed > 0 && succeeded === 0 ? 'failed' : 'completed',
+      processed,
+      succeeded,
+      failed,
+      skipped,
+      JSON.stringify(errors),
+    ],
+  );
+
+  const elapsed = Date.now() - startedAt;
+  console.log(
+    `[imports] job ${job.id} finished in ${elapsed}ms: ${succeeded} written, ${failed} failed, `
+    + `${skipped} superseded of ${listings.length} rows `
+    + `(${batches.length} batches x ${IMPORT_JOB_BATCH_SIZE}, ${IMPORT_JOB_CONCURRENCY} in parallel)`,
+  );
+  return { processed, succeeded, failed, skipped, ms: elapsed };
+}
+
+async function drainImportJobs() {
+  if (importWorkerActive) return;
+  importWorkerActive = true;
+  try {
+    const client = await getPgClient();
+    if (!client) return;
+    for (;;) {
+      const job = await claimNextImportJob(client);
+      if (!job) return;
+      try {
+        await runImportJob(client, job);
+      } catch (error) {
+        console.warn(`[imports] job ${job.id} crashed:`, error?.message || error);
+        await client.query(
+          `UPDATE listing_import_jobs
+           SET status = 'failed', errors = $2::jsonb, finished_at = NOW(), updated_at = NOW()
+           WHERE id = $1`,
+          [job.id, JSON.stringify([{ id: '', error: String(error?.message || error) }])],
+        ).catch(() => {});
+      }
+    }
+  } catch (error) {
+    console.warn('[imports] worker error:', error?.message || error);
+  } finally {
+    importWorkerActive = false;
+  }
+}
+
+// A restart mid-job leaves a row stuck in 'running'. Re-queueing is safe: the
+// upserts are idempotent, so the job simply replays from the beginning.
+async function requeueOrphanedImportJobs() {
+  try {
+    const client = await getPgClient();
+    if (!client) return;
+    const result = await client.query(
+      `UPDATE listing_import_jobs
+       SET status = 'queued', processed = 0, succeeded = 0, failed = 0, skipped = 0,
+           errors = '[]'::jsonb, started_at = NULL, updated_at = NOW()
+       WHERE status = 'running'
+       RETURNING id`,
+    );
+    if (result.rowCount > 0) {
+      console.log(`[imports] re-queued ${result.rowCount} job(s) interrupted by a restart`);
+    }
+    await client.query(
+      `DELETE FROM listing_import_jobs
+       WHERE status IN ('completed', 'failed')
+         AND finished_at < NOW() - ($1 || ' days')::interval`,
+      [String(IMPORT_JOB_RETENTION_DAYS)],
+    );
+  } catch (error) {
+    console.warn('[imports] startup recovery failed:', error?.message || error);
+  }
+}
+
+function startImportJobWorker() {
+  requeueOrphanedImportJobs()
+    .then(() => drainImportJobs())
+    .catch(() => {});
+  importWorkerTimer = setInterval(() => {
+    drainImportJobs().catch(() => {});
+  }, IMPORT_JOB_IDLE_POLL_MS);
+  if (typeof importWorkerTimer.unref === 'function') importWorkerTimer.unref();
+}
+
+app.post('/api/admin/imports', async (req, res) => {
+  const access = requirePrivilegedWriteAccess(req, res);
+  if (!access) return;
+
+  const listings = sanitizeBusinessListings(req.body?.listings || req.body?.businesses);
+  if (!listings) {
+    return res.status(400).json({ ok: false, error: 'listings array is required' });
+  }
+  if (listings.length === 0) {
+    return res.status(400).json({ ok: false, error: 'listings array is empty' });
+  }
+
+  try {
+    const client = await getPgClient();
+    if (!client) {
+      return res.status(503).json({ ok: false, error: 'Import queue requires a database' });
+    }
+    const id = newImportJobId();
+    const label = String(req.body?.label || '').trim().slice(0, 200);
+    await client.query(
+      `INSERT INTO listing_import_jobs (id, label, status, total_rows, payload, created_by)
+       VALUES ($1, $2, 'queued', $3, $4::jsonb, $5)`,
+      [id, label, listings.length, JSON.stringify(listings), String(access.email || access.sub || '')],
+    );
+    // Fire and forget: the response must not wait on the import.
+    drainImportJobs().catch(() => {});
+    res.status(202).json({ ok: true, jobId: id, queued: listings.length, status: 'queued' });
+  } catch (err) {
+    console.error('Failed to queue listing import:', err);
+    res.status(500).json({ ok: false, error: err?.message || 'Failed to queue listing import' });
+  }
+});
+
+app.get('/api/admin/imports', async (req, res) => {
+  const access = requirePrivilegedReadAccess(req, res);
+  if (!access) return;
+  try {
+    const client = await getPgClient();
+    if (!client) return res.json({ ok: true, database: false, jobs: [] });
+    const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 20));
+    const result = await client.query(
+      `SELECT id, label, status, total_rows, processed, succeeded, failed, skipped, errors,
+              created_by, created_at, started_at, finished_at, updated_at
+       FROM listing_import_jobs
+       ORDER BY created_at DESC
+       LIMIT $1`,
+      [limit],
+    );
+    res.json({ ok: true, database: true, jobs: result.rows.map(serializeImportJob) });
+  } catch (err) {
+    console.error('Failed to list listing imports:', err);
+    res.status(500).json({ ok: false, error: err?.message || 'Failed to list listing imports' });
+  }
+});
+
+app.get('/api/admin/imports/:jobId', async (req, res) => {
+  const access = requirePrivilegedReadAccess(req, res);
+  if (!access) return;
+  try {
+    const client = await getPgClient();
+    if (!client) return res.status(503).json({ ok: false, error: 'Import queue requires a database' });
+    const result = await client.query(
+      `SELECT id, label, status, total_rows, processed, succeeded, failed, skipped, errors,
+              created_by, created_at, started_at, finished_at, updated_at
+       FROM listing_import_jobs
+       WHERE id = $1
+       LIMIT 1`,
+      [String(req.params.jobId || '')],
+    );
+    if (result.rowCount === 0) {
+      return res.status(404).json({ ok: false, error: 'Import job not found' });
+    }
+    res.json({ ok: true, job: serializeImportJob(result.rows[0]) });
+  } catch (err) {
+    console.error('Failed to read listing import job:', err);
+    res.status(500).json({ ok: false, error: err?.message || 'Failed to read listing import job' });
+  }
+});
+
+// ---- Targeted purge -----------------------------------------------------
+// Until now the only way to remove a set of listings was
+// POST /api/admin/directory/reset, which clears the entire directory — so
+// "delete the rejected ones" had no safe tool at all. This deletes exactly one
+// status, needs a matching confirmation token, and previews the count first.
+const PURGEABLE_LISTING_STATUSES = new Set(['rejected', 'pending']);
+
+app.get('/api/admin/businesses/purge-preview', async (req, res) => {
+  const access = requirePrivilegedReadAccess(req, res);
+  if (!access) return;
+  const status = String(req.query.status || '').trim().toLowerCase();
+  if (!PURGEABLE_LISTING_STATUSES.has(status)) {
+    return res.status(400).json({
+      ok: false,
+      error: `status must be one of: ${[...PURGEABLE_LISTING_STATUSES].join(', ')}`,
+    });
+  }
+  try {
+    const client = await getPgClient();
+    if (!client) return res.status(503).json({ ok: false, error: 'Purge requires a database' });
+    const counts = await client.query(
+      `SELECT COUNT(*)::int AS matching,
+              (SELECT COUNT(*)::int FROM businesses) AS total
+         FROM businesses WHERE status = $1`,
+      [status],
+    );
+    const byLocality = await client.query(
+      `SELECT locality_id, COUNT(*)::int AS count FROM businesses
+        WHERE status = $1 GROUP BY locality_id ORDER BY count DESC`,
+      [status],
+    );
+    res.json({
+      ok: true,
+      status,
+      matching: counts.rows[0]?.matching ?? 0,
+      total: counts.rows[0]?.total ?? 0,
+      byLocality: byLocality.rows,
+      confirmation: `PURGE_${status.toUpperCase()}`,
+    });
+  } catch (err) {
+    console.error('Failed to preview listing purge:', err);
+    res.status(500).json({ ok: false, error: err?.message || 'Failed to preview listing purge' });
+  }
+});
+
+app.post('/api/admin/businesses/purge', async (req, res) => {
+  const access = requirePrivilegedWriteAccess(req, res);
+  if (!access) return;
+
+  const status = String(req.body?.status || '').trim().toLowerCase();
+  if (!PURGEABLE_LISTING_STATUSES.has(status)) {
+    return res.status(400).json({
+      ok: false,
+      error: `status must be one of: ${[...PURGEABLE_LISTING_STATUSES].join(', ')}`,
+    });
+  }
+  // Deliberately status-specific, so a token cannot be reused for another status.
+  const expected = `PURGE_${status.toUpperCase()}`;
+  if (String(req.body?.confirmation || '').trim() !== expected) {
+    return res.status(400).json({ ok: false, error: 'Confirmation token is required.', expectedConfirmation: expected });
+  }
+
+  try {
+    const client = await getPgClient();
+    if (!client) return res.status(503).json({ ok: false, error: 'Purge requires a database' });
+    const before = await client.query(`SELECT COUNT(*)::int AS count FROM businesses`);
+    const deleted = await client.query(`DELETE FROM businesses WHERE status = $1`, [status]);
+    // Rows are authoritative; the snapshot worker rebuilds the blob from them,
+    // so marking it dirty is what stops the purged listings coming back.
+    invalidateBusinessListingsCache();
+    businessBlobDirty = true;
+    const after = await client.query(`SELECT COUNT(*)::int AS count FROM businesses`);
+
+    await persistAuditEvent({
+      timestamp: new Date().toISOString(),
+      actionType: 'data_entry',
+      description: 'Purged listings by status',
+      details: `Status: "${status}" | Deleted: ${deleted.rowCount} | Remaining: ${after.rows[0]?.count ?? 0}`,
+      userName: access.email || access.sub || 'platform',
+    }, req, { authenticatedPayload: access, skipThrottle: true });
+
+    console.log(`[businesses] purged ${deleted.rowCount} listing(s) with status '${status}'`);
+    res.json({
+      ok: true,
+      status,
+      deleted: deleted.rowCount,
+      before: before.rows[0]?.count ?? 0,
+      remaining: after.rows[0]?.count ?? 0,
+    });
+  } catch (err) {
+    console.error('Failed to purge listings:', err);
+    res.status(500).json({ ok: false, error: err?.message || 'Failed to purge listings' });
   }
 });
 
@@ -7105,7 +8717,8 @@ app.put('/api/admin/businesses/replace', async (req, res) => {
   }
 
   try {
-    await writeBusinessListings(incoming);
+    // "Replace" means exactly that: rows not in the payload are removed.
+    await writeBusinessListings(incoming, { prune: true });
     res.json({ ok: true, businesses: incoming, replacedCount: incoming.length });
   } catch (err) {
     console.error('Failed to replace business listings:', err);
@@ -7138,7 +8751,8 @@ app.post('/api/admin/directory/reset', async (req, res) => {
     const beforeRouting = await readLocalityRoutingConfig();
 
     if (clearBusinesses) {
-      await writeBusinessListings([]);
+      await writeBusinessListings([], { prune: true });
+      invalidateBusinessListingsCache();
     }
     if (clearReviews) {
       await writeReviews([]);
@@ -7190,10 +8804,38 @@ app.post('/api/admin/directory/reset', async (req, res) => {
   }
 });
 
-app.get('/api/reviews', async (_req, res) => {
+// `?businessId=` serves one listing's reviews off the index — what a listing
+// page actually needs. Without it the response is still every review, because
+// the current client loads them all and filters in memory; the cap and the
+// `partial` flag are there so that stops being unbounded as reviews accumulate.
+const REVIEWS_UNSCOPED_LIMIT = 500;
+
+app.get('/api/reviews', async (req, res) => {
   try {
+    const businessId = String(req.query.businessId || '').trim();
+    const limit = Math.min(200, Math.max(1, parseInt(String(req.query.limit || '50'), 10) || 50));
+    const offset = Math.max(0, parseInt(String(req.query.offset || '0'), 10) || 0);
+
+    if (businessId) {
+      const scoped = await readReviewsForBusiness(businessId, limit, offset);
+      return res.json({
+        ok: true,
+        reviews: scoped.reviews,
+        total: scoped.total,
+        partial: scoped.total > scoped.reviews.length,
+        source: scoped.source,
+      });
+    }
+
     const reviews = await readReviews();
-    res.json({ ok: true, reviews });
+    const capped = reviews.length > REVIEWS_UNSCOPED_LIMIT;
+    res.json({
+      ok: true,
+      reviews: capped ? reviews.slice(0, REVIEWS_UNSCOPED_LIMIT) : reviews,
+      total: reviews.length,
+      partial: capped,
+      source: 'blob',
+    });
   } catch (err) {
     console.error('Failed to read reviews:', err);
     res.status(500).json({ ok: false, error: 'Failed to read reviews' });
@@ -8521,6 +10163,43 @@ app.post('/api/scalable-homepage-config/reseed-legacy', async (req, res) => {
   }
 });
 
+// ---- Resolved-homepage output cache -------------------------------------
+// Resolution is pure for a given context, but it was recomputed per request:
+// ~15ms of CPU each, and because Node runs one request at a time, 20 concurrent
+// requests for the same locality took 294ms of wall clock and 174ms each. That
+// caps one instance at roughly 60-70 homepage requests a second.
+//
+// A short TTL is the right shape here rather than a long one plus careful
+// invalidation: the payload is public, identical for everyone in the same
+// context, and ten seconds of staleness on a merchandising change is
+// imperceptible. Writes clear it anyway, so an admin sees their edit at once.
+const RESOLVED_HOMEPAGE_CACHE_TTL_MS = 10_000;
+const RESOLVED_HOMEPAGE_CACHE_MAX = 500;
+const resolvedHomepageCache = new Map();
+
+function invalidateResolvedHomepageCache() {
+  resolvedHomepageCache.clear();
+}
+
+function readResolvedHomepageCache(key) {
+  const hit = resolvedHomepageCache.get(key);
+  if (!hit) return null;
+  if (hit.expiresAt <= Date.now()) {
+    resolvedHomepageCache.delete(key);
+    return null;
+  }
+  return hit.body;
+}
+
+function writeResolvedHomepageCache(key, body) {
+  // Bounded, and oldest-first eviction: Map preserves insertion order.
+  if (resolvedHomepageCache.size >= RESOLVED_HOMEPAGE_CACHE_MAX) {
+    const oldest = resolvedHomepageCache.keys().next().value;
+    if (oldest !== undefined) resolvedHomepageCache.delete(oldest);
+  }
+  resolvedHomepageCache.set(key, { body, expiresAt: Date.now() + RESOLVED_HOMEPAGE_CACHE_TTL_MS });
+}
+
 app.get('/api/resolved-homepage', async (req, res) => {
   try {
     const context = {
@@ -8538,8 +10217,18 @@ app.get('/api/resolved-homepage', async (req, res) => {
       return res.status(400).json({ ok: false, error: 'localityId is required' });
     }
 
-    const cmsState = await readScalableCmsState();
     const usePublished = String(req.query.usePublished || 'true') !== 'false';
+    const cacheKey = `${usePublished ? 'p' : 'l'}|${context.localityId}|${context.categoryId}|`
+      + `${context.subcategoryId}|${context.pincode}|${context.device}|${context.pageType}|`
+      + `${context.placementKey}|${context.date}`;
+    const cached = readResolvedHomepageCache(cacheKey);
+    if (cached) {
+      res.setHeader('X-Resolved-Homepage-Source', cached.source);
+      res.setHeader('X-Resolved-Homepage-Cache', 'hit');
+      return res.json(cached);
+    }
+
+    const cmsState = await readScalableCmsState();
     const publishedSnapshotMatch = usePublished ? findPublishedSnapshotMatch(cmsState, context) : null;
     const payload = publishedSnapshotMatch?.snapshot?.payload || await resolveHomepageForContext(context, { state: cmsState });
     const resolution = {
@@ -8575,12 +10264,15 @@ app.get('/api/resolved-homepage', async (req, res) => {
       res.setHeader('X-Resolved-Homepage-Template-Id', String(resolution.template.id));
     }
 
-    res.json({
+    const body = {
       ok: true,
       source: resolution.source,
       resolution,
       payload,
-    });
+    };
+    writeResolvedHomepageCache(cacheKey, body);
+    res.setHeader('X-Resolved-Homepage-Cache', 'miss');
+    res.json(body);
   } catch (err) {
     console.error('Failed to resolve homepage:', err);
     res.status(500).json({ ok: false, error: 'Failed to resolve homepage' });
@@ -8593,6 +10285,8 @@ app.post('/api/resolved-homepage/publish', async (req, res) => {
 
   try {
     const result = await publishResolvedHomepageSnapshotsFromRequest(req.body || {});
+    // Publishing changes which snapshot a context resolves to.
+    invalidateResolvedHomepageCache();
     res.json({
       ok: true,
       publishedCount: result.snapshots.length,
@@ -9021,8 +10715,7 @@ app.post('/api/contact-unlock/record-view', async (req, res) => {
     return res.status(400).json({ ok: false, error: 'Unable to resolve contact unlock identity' });
   }
 
-  const businesses = await readBusinessListings();
-  const business = businesses.find((entry) => entry.id === normalizedBusinessId);
+  const business = await findBusinessById(normalizedBusinessId);
   if (!business) {
     return res.status(404).json({ ok: false, error: 'Business not found' });
   }
@@ -9979,30 +11672,36 @@ app.get('/api/mobile/search', async (req, res) => {
 
 app.get('/api/mobile/listing/:listingId', async (req, res) => {
   try {
-    const businesses = await readBusinessListings();
     const seoConfig = await readSeoDiscoveryConfig();
     const seoContext = buildSeoDiscoveryContext(seoConfig);
     const listingId = String(req.params.listingId || '').trim();
-    const business = (Array.isArray(businesses) ? businesses : []).find((entry) => {
-      if (String(entry.id || '') === listingId) return true;
-      return buildListingSlug(entry.name, entry.id) === listingId;
-    });
+    // Was: load the whole directory, build a slug for all 26,000 entries to
+    // match one, then score every candidate in the locality or category.
+    const business = await findBusinessByIdOrSlug(listingId);
 
     if (!business) {
       return res.status(404).json({ ok: false, error: 'Listing not found' });
     }
 
     const origin = getOrigin(req);
-    const related = (Array.isArray(businesses) ? businesses : [])
-      .filter((entry) => entry && String(entry.status || '') === 'approved' && String(entry.id || '') !== String(business.id || ''))
-      .filter((entry) => (
-        String(entry.localityId || '') === String(business.localityId || '') ||
-        String(entry.categoryId || '') === String(business.categoryId || '') ||
-        (business.subcategoryId && String(entry.subcategoryId || '') === String(business.subcategoryId || ''))
-      ))
+    // The index narrows to a couple of dozen plausible neighbours; the existing
+    // scorer then ranks those, so the ordering rule is unchanged but it runs
+    // over 24 records instead of 26,000.
+    const relatedCandidates = await findRelatedBusinessRows(business, 24)
+      ?? (await readBusinessListings()).filter((entry) => (
+        entry && String(entry.status || '') === 'approved'
+        && String(entry.id || '') !== String(business.id || '')
+        && (
+          String(entry.localityId || '') === String(business.localityId || '') ||
+          String(entry.categoryId || '') === String(business.categoryId || '') ||
+          (business.subcategoryId && String(entry.subcategoryId || '') === String(business.subcategoryId || ''))
+        )
+      ));
+    const relatedQuery = normalizeDirectoryQuery(`${business.name} ${business.categoryId} ${business.subcategoryId || ''}`);
+    const related = relatedCandidates
       .map((entry) => ({
         business: entry,
-        score: scoreBusinessForDirectorySearch(entry, normalizeDirectoryQuery(`${business.name} ${business.categoryId} ${business.subcategoryId || ''}`), {
+        score: scoreBusinessForDirectorySearch(entry, relatedQuery, {
           localityId: business.localityId,
           categoryId: business.categoryId,
         }),
@@ -10549,9 +12248,17 @@ app.post('/api/admin/directory-quality/keep-separate', async (req, res) => {
       return res.status(400).json({ ok: false, error: 'canonicalId and duplicateId are required and must be different' });
     }
 
-    const businesses = await readBusinessListings();
-    const nextBusinesses = markDuplicatePairSeparate({ businesses, canonicalId, duplicateId, timestamp: new Date().toISOString() });
-    await writeBusinessListings(nextBusinesses);
+    const duplicate = await findBusinessById(duplicateId);
+    if (!duplicate) {
+      return res.status(404).json({ ok: false, error: 'Duplicate listing was not found' });
+    }
+    const [updatedDuplicate] = markDuplicatePairSeparate({
+      businesses: [duplicate], canonicalId, duplicateId, timestamp: new Date().toISOString(),
+    });
+    const written = await upsertBusinessRow(updatedDuplicate);
+    if (!written.ok) {
+      return res.status(500).json({ ok: false, error: written.error || 'Failed to update the duplicate listing' });
+    }
     await persistAuditEvent({
       timestamp: new Date().toISOString(),
       actionType: 'data_entry',
@@ -10562,7 +12269,7 @@ app.post('/api/admin/directory-quality/keep-separate', async (req, res) => {
       authenticatedPayload: access,
       skipThrottle: true,
     });
-    res.json({ ok: true, businesses: nextBusinesses });
+    res.json({ ok: true, business: updatedDuplicate });
   } catch (err) {
     console.error('Failed to keep duplicate businesses separate:', err);
     res.status(500).json({ ok: false, error: err?.message || 'Failed to keep duplicate businesses separate' });
@@ -10911,15 +12618,64 @@ function resolvePort() {
 }
 
 const port = resolvePort();
+// Runs AFTER the server is listening, never before: mirroring tens of
+// thousands of listings takes long enough that blocking startup on it would
+// fail a platform health check and roll the deploy back.
+// Mirrors the review document into the table on first boot, so an empty table
+// does not read as "no reviews" for the rest of the process's life. Idempotent
+// and tiny — there are three reviews today.
+function startReviewRowBackfill() {
+  setTimeout(async () => {
+    try {
+      const client = await getPgClient();
+      if (!client) return;
+      const existing = await client.query(`SELECT COUNT(*)::int AS count FROM reviews`);
+      if ((existing.rows[0]?.count ?? 0) > 0) return;
+      const reviews = await readReviews();
+      if (!Array.isArray(reviews) || reviews.length === 0) return;
+      const summary = await syncReviewRows(client, reviews);
+      if (summary.ok) console.log(`[reviews] relational backfill complete: ${summary.rows} rows`);
+    } catch (error) {
+      console.warn('[reviews] relational backfill threw:', error?.message || error);
+    }
+  }, 1_500);
+}
+
+function startBusinessRowBackfill() {
+  setTimeout(() => {
+    backfillBusinessRows()
+      .then((summary) => {
+        if (summary?.skipped) {
+          console.log(`[businesses] relational backfill skipped: ${summary.skipped}${summary.rows ? ` (${summary.rows} rows)` : ''}`);
+        } else if (summary?.ok) {
+          console.log(`[businesses] relational backfill complete: ${summary.rows} rows from ${summary.blobCount} listings`);
+        } else {
+          console.warn('[businesses] relational backfill did not complete:', summary?.error || 'unknown reason');
+        }
+      })
+      .catch((error) => {
+        console.warn('[businesses] relational backfill threw:', error?.message || error);
+      });
+  }, 1_000);
+}
+
 ensureBootstrapUsers()
   .then(() => {
     app.listen(port, '0.0.0.0', () => {
       console.log(`Server listening on port ${port}`);
+      startBusinessRowBackfill();
+      startReviewRowBackfill();
+      startBusinessBlobSnapshotWorker();
+      startImportJobWorker();
     });
   })
   .catch((err) => {
     console.error('User bootstrap failed, starting without seeded users:', err);
     app.listen(port, '0.0.0.0', () => {
       console.log(`Server listening on port ${port} (bootstrap fallback mode)`);
+      startBusinessRowBackfill();
+      startReviewRowBackfill();
+      startBusinessBlobSnapshotWorker();
+      startImportJobWorker();
     });
   });

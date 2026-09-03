@@ -4,7 +4,7 @@ import {
   Trash2, PlusCircle, Check, Database, Eye, Server, RefreshCw, MapPin, Copy, ChevronUp, ChevronDown, ChevronRight
 } from 'lucide-react';
 import { Locality, Business, SubdomainMapping, UserSession, AuditEvent, ListingAd, HeroBanner, HeroBannerStat, AdLead, MarketingCoupon, HomepageLayout, HomepageSection, HomepageSectionType, ApiConfiguration, CommunityItem, ScalableHomepageConfigState, ScalableHomepageTemplate, ScalableHomepageAssignment, ScalableCampaign, ScalableCampaignType, ResolvedHomepagePayload, BusinessTaxonomyState, SeoDiscoveryConfigState, GeographyConfigState, HomepageDefaultsConfigState, ResolvedHomepagePublishRequest, ResolvedHomepagePublishContext, ResolvedHomepageSnapshotDeleteRequest, ScalableLegacyOwnershipSummary } from '../types';
-import { MASTER_AREAS, MASTER_CITIES, MASTER_LOCALITIES, MASTER_STATES } from '../geographyMaster';
+import { MASTER_AREAS, MASTER_CITIES, MASTER_LOCALITIES, MASTER_STATES, resolvePincodeForAreaId } from '../geographyMaster';
 import { getMediaProxyUrl } from '../utils/mediaUrl';
 import BusinessTaxonomyManager from './BusinessTaxonomyManager';
 import GeographyConfigManager from './GeographyConfigManager';
@@ -1192,7 +1192,7 @@ export default function AdminConsole({
     if (adminSubcategoryFilter !== 'all' && business.subcategoryId !== adminSubcategoryFilter) return false;
     if (adminStatusFilter !== 'all' && business.status !== adminStatusFilter) return false;
     if (adminPincodeFilter.trim()) {
-      const businessPincode = business.pincode || MASTER_AREAS.find((area) => area.id === business.areaId)?.pincode || '';
+      const businessPincode = resolvePincodeForAreaId(business.pincode, business.areaId);
       if (!businessPincode.includes(adminPincodeFilter.trim())) return false;
     }
     if (adminSearchQuery.trim()) {
@@ -1601,7 +1601,7 @@ export default function AdminConsole({
     setSelectedBackendBiz(biz);
     setBackendDraft({
       ...biz,
-      pincode: biz.pincode || MASTER_AREAS.find((area) => area.id === biz.areaId)?.pincode || '',
+      pincode: resolvePincodeForAreaId(biz.pincode, biz.areaId),
       areasOfOperation: [...(biz.areasOfOperation || [])]
     });
     setBackendEditMode(false);
@@ -1615,7 +1615,7 @@ export default function AdminConsole({
 
   const saveBackendListing = () => {
     if (!backendDraft || !onUpdateBusiness) return;
-    const normalizedPincode = (backendDraft.pincode || MASTER_AREAS.find((area) => area.id === backendDraft.areaId)?.pincode || '').replace(/\D/g, '').slice(0, 6);
+    const normalizedPincode = resolvePincodeForAreaId(backendDraft.pincode, backendDraft.areaId).replace(/\D/g, '').slice(0, 6);
     const { city, stateId } = resolveLocalityGeography(backendDraft.localityId);
     if (!backendDraft.name.trim()) {
       triggerNotification('Listing name is required.');
@@ -4221,7 +4221,7 @@ export default function AdminConsole({
                     <div className="min-w-0">
                       <span className="block font-bold text-slate-800 truncate">{listing.name}</span>
                       <span className="block text-[10px] text-slate-500 font-mono">
-                        PIN {listing.pincode || MASTER_AREAS.find((area) => area.id === listing.areaId)?.pincode || 'NA'}
+                        PIN {resolvePincodeForAreaId(listing.pincode, listing.areaId) || 'NA'}
                       </span>
                     </div>
                     {onUpdateBusiness && (
@@ -6988,7 +6988,7 @@ export default function AdminConsole({
                     onClick={() => {
                       setBackendDraft({
                         ...selectedBackendBiz,
-                        pincode: selectedBackendBiz.pincode || MASTER_AREAS.find((area) => area.id === selectedBackendBiz.areaId)?.pincode || '',
+                        pincode: resolvePincodeForAreaId(selectedBackendBiz.pincode, selectedBackendBiz.areaId),
                         areasOfOperation: [...(selectedBackendBiz.areasOfOperation || [])]
                       });
                       setBackendEditMode(false);
