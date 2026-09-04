@@ -134,7 +134,12 @@ export const buildMergedBusinessPair = (
 
   const mergedCanonical: Business = {
     ...canonical,
-    description: canonical.description.length >= duplicate.description.length ? canonical.description : duplicate.description,
+    // Both sides are read through String(): `description` is one of the fields
+    // the lite API projection drops, and a listing imported without one has no
+    // such key at all, so `.length` on it throws mid-merge.
+    description: String(canonical.description || '').length >= String(duplicate.description || '').length
+      ? canonical.description
+      : duplicate.description,
     phone: canonical.phone || duplicate.phone,
     email: canonical.email || duplicate.email,
     website: canonical.website || duplicate.website,
