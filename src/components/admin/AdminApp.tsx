@@ -1,4 +1,4 @@
-import React, { lazy, Suspense } from 'react';
+import React, { lazy, Suspense, useMemo } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-dom';
 import type { AdminConsoleProps, AdminWorkspaceTab } from '../AdminConsole';
 import AdminShell from './AdminShell';
@@ -114,7 +114,13 @@ export default function AdminApp(props: AdminConsoleProps) {
   } = props;
 
   const pendingModerationCount = businesses.filter((b) => b.status === 'pending').length;
-  const duplicateCandidateCount = computeDuplicateReviewCandidates(businesses).length;
+  // In the render body this ran on every render of the admin shell — on every
+  // keystroke, every route change, every listing page that arrived. Memoised
+  // on the listing set, which is the only thing it depends on.
+  const duplicateCandidateCount = useMemo(
+    () => computeDuplicateReviewCandidates(businesses).length,
+    [businesses],
+  );
   const role = userSession?.role;
   const canEdit = canEditListings(role);
   const canManageImports = canManageBulkImport(role);

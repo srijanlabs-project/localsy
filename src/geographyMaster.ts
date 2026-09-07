@@ -66,20 +66,29 @@ export const resetGeographyCatalog = () => {
 // areas that scan was the single most repeated piece of work on the render
 // path. The map is built once per catalog and rebuilt only when
 // setGeographyCatalog replaces it, which the identity check below detects.
-let areaPincodeIndex: { source: AreaMaster[]; byId: Map<string, string> } | null = null;
+// One index over MASTER_AREAS, rebuilt only when the array itself is replaced
+// (a geography save). Production carries 1,327 areas, so a linear scan per
+// lookup is 1,327 comparisons — and these lookups happen per listing, inside
+// render, for every card that lists its service areas.
+let areaIndex: { source: AreaMaster[]; byId: Map<string, AreaMaster> } | null = null;
 
-const getAreaPincodeIndex = () => {
-  if (!areaPincodeIndex || areaPincodeIndex.source !== MASTER_AREAS) {
-    areaPincodeIndex = {
+const getAreaIndex = () => {
+  if (!areaIndex || areaIndex.source !== MASTER_AREAS) {
+    areaIndex = {
       source: MASTER_AREAS,
-      byId: new Map(MASTER_AREAS.map((area) => [area.id, area.pincode])),
+      byId: new Map(MASTER_AREAS.map((area) => [area.id, area])),
     };
   }
-  return areaPincodeIndex.byId;
+  return areaIndex.byId;
 };
 
 export const getAreaPincode = (areaId: string | undefined) => (
-  getAreaPincodeIndex().get(String(areaId || '')) || ''
+  getAreaIndex().get(String(areaId || ''))?.pincode || ''
+);
+
+/** An area's display name, or '' when the id is unknown. */
+export const getAreaName = (areaId: string | undefined) => (
+  getAreaIndex().get(String(areaId || ''))?.name || ''
 );
 
 /** A listing's own pincode, falling back to the pincode of its area. */
@@ -87,7 +96,7 @@ export const resolvePincodeForAreaId = (pincode: string | undefined, areaId: str
   String(pincode || '') || getAreaPincode(areaId)
 );
 
-export const getAreaById = (areaId: string) => MASTER_AREAS.find((area) => area.id === areaId);
+export const getAreaById = (areaId: string) => getAreaIndex().get(String(areaId || ''));
 export const getCityById = (cityId: string) => MASTER_CITIES.find((city) => city.id === cityId);
 export const getLocalityById = (localityId: string) => MASTER_LOCALITIES.find((locality) => locality.id === localityId);
 export const getCitiesForState = (stateId: string) => MASTER_CITIES.filter((city) => city.stateId === stateId);

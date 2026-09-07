@@ -75,40 +75,88 @@ export const chooseCanonicalBusiness = (left: Business, right: Business) => {
 
 export const computeDuplicateReviewCandidates = (businesses: Business[]): DuplicateReviewCandidate[] => {
   const eligibleBusinesses = businesses.filter((business) => business.status !== 'rejected' && business.duplicateReviewStatus !== 'merged');
+
+  // This used to compare every listing against every other one: n(n-1)/2 pairs,
+  // each running four string normalisations and two token-overlap sets. At
+  // 6,515 listings that is 21 million pairs; at the 25,965 the directory is
+  // heading for, 337 million. It ran on the admin landing page — and in
+  // AdminApp's render body, unmemoised — which is what made the platform page
+  // lock up with its links unclickable.
+  //
+  // The pairs are now blocked by key, and the blocking is EXACT rather than a
+  // heuristic. getDuplicateConfidenceScore can only reach the threshold of 68
+  // if a pair shares a phone (+48) or an identical normalised name (+20):
+  // everything else combined caps at
+  //   pincode 10 + name overlap 20 + address overlap 14 + area 8
+  //   + category 6 + subcategory 6 = 64
+  // which is below 68. A pair sharing neither can therefore never qualify, so
+  // skipping it cannot lose a candidate. Score 0 is also returned outright for
+  // different localities, so locality is part of each key.
+  const addTo = (index: Map<string, Business[]>, key: string, business: Business) => {
+    const bucket = index.get(key);
+    if (bucket) bucket.push(business);
+    else index.set(key, [business]);
+  };
+  const byPhone = new Map<string, Business[]>();
+  const byName = new Map<string, Business[]>();
+  for (const business of eligibleBusinesses) {
+    const phone = String(business.phone || '').replace(/\D/g, '').slice(-10);
+    if (phone) addTo(byPhone, `${business.localityId}|${phone}`, business);
+    const name = normalizeDuplicateText(business.name);
+    if (name) addTo(byName, `${business.localityId}|${name}`, business);
+  }
+
   const candidates: DuplicateReviewCandidate[] = [];
+  const seenPairs = new Set<string>();
+  const buckets = [...byPhone.values(), ...byName.values()];
 
-  for (let leftIndex = 0; leftIndex < eligibleBusinesses.length; leftIndex += 1) {
-    for (let rightIndex = leftIndex + 1; rightIndex < eligibleBusinesses.length; rightIndex += 1) {
-      const left = eligibleBusinesses[leftIndex];
-      const right = eligibleBusinesses[rightIndex];
-      const score = getDuplicateConfidenceScore(left, right);
-      if (score < DUPLICATE_SCORE_THRESHOLD) continue;
+  for (const bucket of buckets) {
+    if (bucket.length < 2) continue;
+    for (let leftIndex = 0; leftIndex < bucket.length; leftIndex += 1) {
+      for (let rightIndex = leftIndex + 1; rightIndex < bucket.length; rightIndex += 1) {
+        const left = bucket[leftIndex];
+        const right = bucket[rightIndex];
+        // A pair can sit in both the phone and the name bucket.
+        const pairKey = left.id < right.id ? `${left.id}__${right.id}` : `${right.id}__${left.id}`;
+        if (seenPairs.has(pairKey)) continue;
+        seenPairs.add(pairKey);
 
-      const { canonical, duplicate } = chooseCanonicalBusiness(left, right);
-      if (duplicate.duplicateReviewStatus === 'separate' && duplicate.mergedIntoBusinessId === canonical.id) continue;
+        const score = getDuplicateConfidenceScore(left, right);
+        if (score < DUPLICATE_SCORE_THRESHOLD) continue;
 
-      const reasons: string[] = [];
-      const canonicalPhone = String(canonical.phone || '').replace(/\D/g, '').slice(-10);
-      const duplicatePhone = String(duplicate.phone || '').replace(/\D/g, '').slice(-10);
-      if (canonicalPhone && canonicalPhone === duplicatePhone) reasons.push('same phone');
-      if (canonical.pincode && canonical.pincode === duplicate.pincode) reasons.push('same pincode');
-      if (normalizeDuplicateText(canonical.name) === normalizeDuplicateText(duplicate.name)) reasons.push('same business name');
-      if (canonical.areaId === duplicate.areaId) reasons.push('same area');
-      if (canonical.categoryId === duplicate.categoryId) reasons.push('same category');
-      if (reasons.length === 0) reasons.push('high text similarity');
+        const { canonical, duplicate } = chooseCanonicalBusiness(left, right);
+        if (duplicate.duplicateReviewStatus === 'separate' && duplicate.mergedIntoBusinessId === canonical.id) continue;
 
-      candidates.push({
-        id: `${canonical.id}__${duplicate.id}`,
-        canonical,
-        duplicate,
-        score,
-        reasons,
-      });
+        const reasons: string[] = [];
+        const canonicalPhone = String(canonical.phone || '').replace(/\D/g, '').slice(-10);
+        const duplicatePhone = String(duplicate.phone || '').replace(/\D/g, '').slice(-10);
+        if (canonicalPhone && canonicalPhone === duplicatePhone) reasons.push('same phone');
+        if (canonical.pincode && canonical.pincode === duplicate.pincode) reasons.push('same pincode');
+        if (normalizeDuplicateText(canonical.name) === normalizeDuplicateText(duplicate.name)) reasons.push('same business name');
+        if (canonical.areaId === duplicate.areaId) reasons.push('same area');
+        if (canonical.categoryId === duplicate.categoryId) reasons.push('same category');
+        if (reasons.length === 0) reasons.push('high text similarity');
+
+        candidates.push({
+          id: `${canonical.id}__${duplicate.id}`,
+          canonical,
+          duplicate,
+          score,
+          reasons,
+        });
+      }
     }
   }
 
   return candidates
-    .sort((left, right) => right.score - left.score || right.canonical.reviewCount - left.canonical.reviewCount)
+    // `id` as the final tiebreaker: without one, two candidates on the same
+    // score and review count ordered by whichever the pair enumeration reached
+    // first, so the queue could reshuffle between renders.
+    .sort((left, right) => (
+      right.score - left.score
+      || right.canonical.reviewCount - left.canonical.reviewCount
+      || left.id.localeCompare(right.id)
+    ))
     .slice(0, MAX_DUPLICATE_CANDIDATES);
 };
 

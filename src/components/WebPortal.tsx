@@ -15,7 +15,7 @@ import {
   CommunityItem, CRMContact, MarketingCoupon, ListingAd, AdLead, HeroBanner, HomepageLayout, HomepageSection, ApiConfiguration, ResolvedHomepagePayload, HomepageDefaultsConfigState
 } from '../types';
 import homepageDefaultsBootstrap from '../../homepage-defaults-config.json';
-import { MASTER_AREAS, MASTER_CITIES, MASTER_LOCALITIES, MASTER_STATES, getAreaPincode, resolvePincodeForAreaId } from '../geographyMaster';
+import { MASTER_AREAS, MASTER_CITIES, MASTER_LOCALITIES, MASTER_STATES, getAreaPincode, getAreaName, getAreaById, resolvePincodeForAreaId } from '../geographyMaster';
 import OtpVerificationModal from './OtpVerificationModal';
 import GoogleLocationPicker from './GoogleLocationPicker';
 import LocalityLandingUiV1 from './ux/LocalityLandingUiV1';
@@ -1450,7 +1450,7 @@ export default function WebPortal({
       const recommendedBusiness = directMatches[0] || hintMatches[0];
 
       if (recommendedBusiness) {
-        const areaLabel = MASTER_AREAS.find((area) => area.id === recommendedBusiness.areaId)?.name
+        const areaLabel = getAreaName(recommendedBusiness.areaId)
           || localities.find((locality) => locality.id === recommendedBusiness.localityId)?.name.split(',')[0]
           || currentLocalityLabel;
         const categoryLabel = getSubcategoryById(recommendedBusiness.subcategoryId)?.name
@@ -3873,7 +3873,7 @@ export default function WebPortal({
         subcategoryId,
         'Local',
         'Indian-SME',
-        MASTER_AREAS.find((area) => area.id === formAreaId)?.name || '',
+        getAreaName(formAreaId),
       ].filter(Boolean))),
       hours,
       ownerName: ownerName || 'National Proprietor',
@@ -6077,7 +6077,7 @@ export default function WebPortal({
                               
                               {biz.areasOfOperation && biz.areasOfOperation.length > 0 && (
                                 <div className="font-sans text-[10px] text-slate-400 mt-1 truncate">
-                                  🗺️ Service Areas: {(biz.areasOfOperation || []).map(aid => MASTER_AREAS.find(a => a.id === aid)?.name).filter(Boolean).join(', ')}
+                                  🗺️ Service Areas: {(biz.areasOfOperation || []).map(aid => getAreaName(aid)).filter(Boolean).join(', ')}
                                 </div>
                               )}
                             </div>
@@ -7293,7 +7293,7 @@ export default function WebPortal({
                 <div className="bg-slate-50/50 border border-slate-100 rounded-xl p-3 flex flex-wrap gap-2 items-center text-xs">
                   <span className="font-bold text-slate-400 font-mono text-[9px] uppercase">Service Areas:</span>
                   {(selectedBiz.areasOfOperation || []).map(aid => {
-                    const area = MASTER_AREAS.find(a => a.id === aid);
+                    const area = getAreaById(aid);
                     return (
                       <span key={aid} className="bg-indigo-50 border border-indigo-150 text-indigo-805 px-2 py-0.5 rounded-md text-[10px] font-medium">
                         📍 {area ? `${area.name} (${area.pincode})` : aid}

@@ -1,7 +1,7 @@
 import React from 'react';
 import { Check, CheckCircle, XCircle } from 'lucide-react';
 import { Business, Locality } from '../../types';
-import { MASTER_AREAS } from '../../geographyMaster';
+import { MASTER_AREAS, getAreaById } from '../../geographyMaster';
 import {
   BUSINESS_CATEGORIES,
   getCategoryById,
@@ -132,7 +132,7 @@ export default function ModerationQueue({
 
                   <div className="flex flex-wrap gap-1.5 pt-1">
                     {business.areasOfOperation?.map((areaId) => {
-                      const area = MASTER_AREAS.find((entry) => entry.id === areaId);
+                      const area = getAreaById(areaId);
                       return (
                         <span key={areaId} className="rounded border border-slate-200 bg-slate-100 px-2 py-0.5 text-[10px] text-slate-700">
                           Area: {area ? area.name : areaId}
