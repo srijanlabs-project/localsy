@@ -42,3 +42,10 @@ upload-*.xlsx
 .tmp/
 .tmp-*
 .codex-*
+
+# --- Listing upload working files (generated, not source) ---
+listing-chunks-5k/
+listing-chunks-9k/
+
+# --- Commit message scratch ---
+COMMIT_MSG.txt

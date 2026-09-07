@@ -1483,7 +1483,15 @@ export default function App() {
   const initialPersistedApiConfiguration = readPersistedApiConfiguration();
   const shouldBootstrapManagedStateFromLocal = initialPersistedApiConfiguration.syncMode === 'local';
   // Database version management to clear stale browser caches when definitions evolve
-  const CURRENT_DB_VERSION = 'yp_v16_hero_defaults_guardrails';
+  // Bumped for the relational listings migration. Every browser that visited
+  // before it is holding `yp_businesses` records in the OLD shape — written
+  // before the API moved to a trimmed `fields=lite` projection and before
+  // listings were sanitised for a missing id — and the app bootstraps its state
+  // from that cache. Stale records of the wrong shape are exactly what crashed
+  // the page for anyone with a warm cache, which is why the site behaved
+  // differently in a fresh incognito window. Bumping this discards the cache
+  // once, for every visitor, on their next load.
+  const CURRENT_DB_VERSION = 'yp_v17_relational_listings';
   
   // Clean sweep of ancient local storage shards if database version is old
   useState(() => {
