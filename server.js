@@ -2171,8 +2171,93 @@ const duplicateTokenOverlap = (left, right) => {
 // than either of the other two. That divergence predates this change. The
 // client's version is mirrored here on purpose, because it is the one whose
 // output operators have actually been reviewing.
+// ---------------------------------------------------------------------------
+// The name gate.
+//
+// The score above cannot separate duplicates from co-located businesses, and
+// this is measured, not assumed. Everything in it that is not identity —
+// phone 48 + pincode 10 + area 8 + category 6 + subcategory 6 + address
+// overlap 14 — totals 92 against a threshold of 68, so any two listings in one
+// building, in one category, sharing a number clear the bar with NO name
+// similarity. Two different doctors at Apollo Hospitals scored 99 with 7 of
+// those points coming from the name. Meanwhile a genuine duplicate
+// ("Titan Eye+ at Belapur (Buy 1 Get 1 Free)" vs "Titan Eye+ at Belapur")
+// scored a raw 103 with only 11 name points. True and false positives are
+// interleaved, so no threshold can divide them.
+//
+// Two fixes were tried and rejected on evidence:
+//   * Treating a shared phone or address as a switchboard/building when it
+//     appears on many listings. Dead: no phone or address in the directory is
+//     on more than three listings, so the guard could never fire.
+//   * Weighting name tokens by rarity (IDF). Insufficient: it pushed the
+//     doctors down to 8-15%, but the weakest true duplicate (47%) still sat
+//     below the strongest false one (68%).
+//
+// What does separate them is not how much the names AGREE but what they
+// DISAGREE on. A real duplicate is the same name plus extra words — a promo
+// suffix, a locality suffix, "The". Two different businesses each carry a word
+// the other lacks:
+//
+//   {sanjay,khare}   vs {harshad,nikte}     two doctors
+//   {ophthalmology}  vs {pediatrics}        two departments
+//   {44}             vs {6,nerul}           two branches
+//   B ⊆ A (+buy,1,get,free)                 one business, promo suffix
+//
+// So one name's significant tokens must be contained in the other's. This is a
+// pure veto: it can only remove pairs the score would have flagged, never add
+// one, which is what makes it safe to switch on.
+//
+// The cost is recall. "Sharma Sweet Shop" vs "Sharma Sweet House" is rejected,
+// because both sides carry a distinguishing word. That trade is deliberate: a
+// missed duplicate leaves the directory untidy, while a false merge rejects a
+// real business — which is exactly what happened to a Torrent Diagnostics
+// branch before this gate existed.
+//
+// Tuning happens HERE, in the stopword list, not in the threshold. A word
+// belongs here only if it appears in so many names that its presence says
+// nothing about which business a listing is.
+const DUPLICATE_NAME_STOPWORDS = new Set([
+  // grammar
+  'the', 'at', 'in', 'on', 'and', 'of', 'a', 'an', 'for', 'to', 'by', 'with',
+  // geography carried in almost every name in this directory
+  'navi', 'mumbai', 'maharashtra', 'india',
+  // corporate suffixes: "X Pvt Ltd" and "X" are the same business
+  'pvt', 'ltd', 'llp', 'inc', 'co', 'limited', 'private',
+]);
+
+/** The tokens of a name that actually identify a business. */
+const duplicateNameSignature = (name) => new Set(
+  normalizeDuplicateNameSql(name)
+    .split(' ')
+    .filter((token) => token && !DUPLICATE_NAME_STOPWORDS.has(token)),
+);
+
+/**
+ * True when one name's significant tokens are a subset of the other's.
+ * Returns the reason either way so the preview endpoint can explain itself.
+ */
+const describeDuplicateNameContainment = (left, right) => {
+  const leftTokens = duplicateNameSignature(left);
+  const rightTokens = duplicateNameSignature(right);
+  if (leftTokens.size === 0 || rightTokens.size === 0) {
+    return { contained: false, reason: 'one name has no identifying words' };
+  }
+  const leftOnly = [...leftTokens].filter((token) => !rightTokens.has(token));
+  const rightOnly = [...rightTokens].filter((token) => !leftTokens.has(token));
+  if (leftOnly.length === 0) {
+    return { contained: true, reason: rightOnly.length === 0 ? 'identical names' : `same name plus {${rightOnly.join(', ')}}` };
+  }
+  if (rightOnly.length === 0) {
+    return { contained: true, reason: `same name plus {${leftOnly.join(', ')}}` };
+  }
+  return { contained: false, reason: `each name has words the other lacks: {${leftOnly.join(', ')}} vs {${rightOnly.join(', ')}}` };
+};
+
 const scoreDuplicatePair = (left, right) => {
   if (left.id === right.id) return 0;
+  // The gate runs first: a pair whose names disagree in both directions is two
+  // businesses however well everything else matches.
+  if (!describeDuplicateNameContainment(left.name, right.name).contained) return 0;
   const leftPhone = String(left.phone || '').replace(/\D/g, '').slice(-10);
   const rightPhone = String(right.phone || '').replace(/\D/g, '').slice(-10);
   const leftName = normalizeDuplicateNameSql(left.name);
@@ -13014,6 +13099,116 @@ app.get('/api/admin/directory-quality/duplicates', async (req, res) => {
   } catch (err) {
     console.error('Failed to build duplicate business queue:', err);
     res.status(500).json({ ok: false, error: 'Failed to build duplicate business queue' });
+  }
+});
+
+// Re-evaluates the pairs currently in the queue against the name gate and
+// reports what would change. WRITES NOTHING.
+//
+// The gate can only remove pairs, never add one, so the new flag set is a
+// subset of the current one and re-scoring the existing queue is a complete
+// preview — there is no need to re-scan the whole directory to find additions.
+app.post('/api/admin/directory-quality/duplicate-preview', async (req, res) => {
+  const access = requirePrivilegedReadAccess(req, res);
+  if (!access) return;
+
+  try {
+    const sampleSize = Math.max(1, Math.min(200, Number(req.body?.sample) || 40));
+    const client = await getPgClient();
+    if (!client) return res.status(503).json({ ok: false, error: 'Duplicate preview requires a database' });
+
+    const flagged = await client.query(
+      `SELECT ${BUSINESS_ROW_JSON} AS payload, duplicate_of_id, duplicate_score
+         FROM businesses
+        WHERE duplicate_status = 'pending'
+          AND duplicate_of_id IS NOT NULL
+          AND status <> 'rejected'`,
+    );
+    const partnerIds = Array.from(new Set(flagged.rows.map((row) => String(row.duplicate_of_id || '')).filter(Boolean)));
+    const partnerById = new Map();
+    for (let index = 0; index < partnerIds.length; index += 1000) {
+      const partners = await client.query(
+        `SELECT ${BUSINESS_ROW_JSON} AS payload FROM businesses
+          WHERE id = ANY($1::text[]) AND status <> 'rejected'`,
+        [partnerIds.slice(index, index + 1000)],
+      );
+      for (const partner of toBusinessRecords(partners.rows)) partnerById.set(String(partner.id), partner);
+    }
+
+    const kept = [];
+    const dropped = [];
+    const seenPairs = new Set();
+    for (const row of flagged.rows) {
+      const left = row.payload;
+      const right = partnerById.get(String(row.duplicate_of_id || ''));
+      if (!left || !left.id || !right) continue;
+      if (String(right.duplicateReviewStatus || '') === 'merged') continue;
+      const pairKey = left.id < right.id ? `${left.id}__${right.id}` : `${right.id}__${left.id}`;
+      if (seenPairs.has(pairKey)) continue;
+      seenPairs.add(pairKey);
+
+      const containment = describeDuplicateNameContainment(left.name, right.name);
+      const entry = {
+        score: Number(row.duplicate_score || 0),
+        nameA: left.name,
+        nameB: right.name,
+        pincode: left.pincode || '',
+        reason: containment.reason,
+      };
+      if (containment.contained) kept.push(entry);
+      else dropped.push(entry);
+    }
+
+    const byScore = (left, right) => right.score - left.score;
+    res.json({
+      ok: true,
+      pairsNow: kept.length + dropped.length,
+      pairsAfter: kept.length,
+      wouldDrop: dropped.length,
+      // Highest-scoring first in both lists, because those are the ones an
+      // operator would have worked through first.
+      keptSample: kept.sort(byScore).slice(0, sampleSize),
+      droppedSample: dropped.sort(byScore).slice(0, sampleSize),
+    });
+  } catch (err) {
+    console.error('Failed to preview duplicate detection:', err);
+    res.status(500).json({ ok: false, error: err?.message || 'Failed to preview duplicate detection' });
+  }
+});
+
+// Clears verdicts so they can be recomputed, and ONLY the undecided ones:
+// 'merged' and 'separate' are operator decisions and are left untouched.
+//
+// Needed because the scan only looks at rows where duplicate_checked_at IS
+// NULL. After a scoring change every row already carries a verdict from the
+// old scorer, so without a reset the re-scan finds nothing to do and the stale
+// flags simply persist.
+app.post('/api/admin/directory-quality/duplicate-reset', async (req, res) => {
+  const access = requirePrivilegedWriteAccess(req, res);
+  if (!access) return;
+
+  try {
+    const client = await getPgClient();
+    if (!client) return res.status(503).json({ ok: false, error: 'Duplicate reset requires a database' });
+    const result = await client.query(
+      `UPDATE businesses
+          SET duplicate_of_id = NULL,
+              duplicate_score = NULL,
+              duplicate_status = NULL,
+              duplicate_checked_at = NULL
+        WHERE duplicate_status IS NULL OR duplicate_status = 'pending'`,
+    );
+    const settled = await client.query(
+      `SELECT COUNT(*)::int AS n FROM businesses WHERE duplicate_status IN ('merged', 'separate')`,
+    );
+    res.json({
+      ok: true,
+      cleared: result.rowCount || 0,
+      decisionsPreserved: settled.rows[0]?.n || 0,
+    });
+  } catch (err) {
+    console.error('Failed to reset duplicate verdicts:', err);
+    res.status(500).json({ ok: false, error: err?.message || 'Failed to reset duplicate verdicts' });
   }
 });
 
