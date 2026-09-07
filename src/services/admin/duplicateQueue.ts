@@ -84,6 +84,30 @@ export const loadDuplicateQueue = (options: { force?: boolean } = {}): Promise<D
   return inFlight;
 };
 
+// Decisions go to the server, which owns the arithmetic.
+//
+// They used to be computed in the browser and persisted by PUTting the whole
+// client listing collection. Three things were wrong with that: the client
+// collection is a partial slice, so listings it did not hold were silently
+// skipped; the merge re-ran its own arithmetic on every click, inflating the
+// canonical's review count (39 + 38 -> 77 -> 115 was reproduced); and reviews
+// belonging to the merged listing were never reassigned, which only the server
+// path does.
+const postDecision = async (path: string, canonicalId: string, duplicateId: string) => {
+  const response = await fetch(`/api/admin/directory-quality/${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ canonicalId, duplicateId }),
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok || !body?.ok) throw new Error(body?.error || `Request failed (${response.status})`);
+  return body as { ok: true; alreadyMerged?: boolean; canonical?: unknown; duplicate?: unknown; business?: unknown };
+};
+
+export const mergeDuplicatePair = (canonicalId: string, duplicateId: string) => postDecision('merge', canonicalId, duplicateId);
+
+export const keepDuplicatePairSeparate = (canonicalId: string, duplicateId: string) => postDecision('keep-separate', canonicalId, duplicateId);
+
 export type DuplicateScanResult = {
   scanned: number;
   flagged: number;

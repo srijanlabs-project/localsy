@@ -71,6 +71,12 @@ export interface AdminConsoleProps {
   onCreateLocality: (name: string, subdomain: string, description: string, image: string) => void;
   onDeleteLocality: (id: string) => void;
   onUpdateBusiness?: (b: Business) => void;
+  /**
+   * Applies listing records the SERVER has already written to local state,
+   * without persisting them back. Used by the duplicate review decisions,
+   * which are now server-side actions rather than client-computed edits.
+   */
+  onApplyServerBusinessRecords?: (records: Business[]) => void;
   userSession?: UserSession;
   auditLogs?: AuditEvent[];
   

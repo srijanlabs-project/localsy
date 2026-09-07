@@ -2314,6 +2314,40 @@ async function settleDuplicateReviewStatuses(client, listings) {
           AND COALESCE(b.duplicate_status, '') <> v.status`,
       [ids, statuses],
     );
+
+    // A decision closes BOTH sides of the pair. A mutual flag is the normal
+    // case — two listings in one pincode sharing a phone each name the other —
+    // and the decision only ever lands in the losing side's payload, so
+    // settling that alone left the winner 'pending' and still pointing at the
+    // listing that had just been merged away. The pair reappeared in the queue.
+    //
+    // The partner is only closed when it actually points back at this listing,
+    // so a partner whose own verdict names some third listing is left pending
+    // on that verdict rather than being closed by association.
+    const partnerOf = [];
+    const partnerIds = [];
+    const partnerStatuses = [];
+    for (const listing of listings || []) {
+      if (!listing || !listing.id) continue;
+      const decided = String(listing.duplicateReviewStatus || '').trim();
+      if (decided !== 'merged' && decided !== 'separate') continue;
+      const partner = String(listing.mergedIntoBusinessId || '').trim();
+      if (!partner) continue;
+      partnerOf.push(String(listing.id));
+      partnerIds.push(partner);
+      partnerStatuses.push(decided);
+    }
+    if (partnerIds.length > 0) {
+      await client.query(
+        `UPDATE businesses AS b
+            SET duplicate_status = v.status, duplicate_checked_at = NOW()
+           FROM unnest($1::text[], $2::text[], $3::text[]) AS v(listing_id, partner_id, status)
+          WHERE b.id = v.partner_id
+            AND b.duplicate_of_id = v.listing_id
+            AND (b.duplicate_status IS NULL OR b.duplicate_status = 'pending')`,
+        [partnerOf, partnerIds, partnerStatuses],
+      );
+    }
     return result.rowCount || 0;
   } catch (error) {
     console.warn('[duplicates] failed to settle review statuses:', error?.message || error);
@@ -12901,11 +12935,21 @@ app.get('/api/admin/directory-quality/duplicates', async (req, res) => {
     const partnerIds = Array.from(new Set(flagged.rows.map((row) => String(row.duplicate_of_id || '')).filter(Boolean)));
     const partnerById = new Map();
     if (partnerIds.length > 0) {
+      // A rejected partner is not a live decision. Without this filter a merged
+      // pair came straight back into the queue: merging settles the duplicate's
+      // own row, but the canonical's row is still 'pending' and still points at
+      // the duplicate, so canonical + rejected-duplicate re-formed a candidate
+      // and the operator could merge it again — inflating the canonical's
+      // review count on every click.
       const partners = await client.query(
-        `SELECT ${BUSINESS_ROW_JSON} AS payload FROM businesses WHERE id = ANY($1::text[])`,
+        `SELECT ${BUSINESS_ROW_JSON} AS payload FROM businesses
+          WHERE id = ANY($1::text[]) AND status <> 'rejected'`,
         [partnerIds],
       );
-      for (const partner of toBusinessRecords(partners.rows)) partnerById.set(String(partner.id), partner);
+      for (const partner of toBusinessRecords(partners.rows)) {
+        if (String(partner.duplicateReviewStatus || '') === 'merged') continue;
+        partnerById.set(String(partner.id), partner);
+      }
     }
 
     const [counts, seoConfig] = await Promise.all([
@@ -12916,11 +12960,16 @@ app.get('/api/admin/directory-quality/duplicates', async (req, res) => {
       client.query(
         `SELECT (
             SELECT COUNT(*)::int FROM (
-              SELECT DISTINCT LEAST(id, duplicate_of_id) AS low, GREATEST(id, duplicate_of_id) AS high
-                FROM businesses
-               WHERE duplicate_status = 'pending'
-                 AND duplicate_of_id IS NOT NULL
-                 AND status <> 'rejected'
+              SELECT DISTINCT LEAST(b.id, b.duplicate_of_id) AS low, GREATEST(b.id, b.duplicate_of_id) AS high
+                FROM businesses AS b
+                -- The partner has to still be live, for the same reason the
+                -- candidate list filters it: a settled pair must not be counted.
+                JOIN businesses AS partner
+                  ON partner.id = b.duplicate_of_id
+                 AND partner.status <> 'rejected'
+               WHERE b.duplicate_status = 'pending'
+                 AND b.duplicate_of_id IS NOT NULL
+                 AND b.status <> 'rejected'
             ) AS pairs
           ) AS flagged,
           (
@@ -13041,15 +13090,63 @@ app.post('/api/admin/directory-quality/merge', async (req, res) => {
       return res.status(400).json({ ok: false, error: 'canonicalId and duplicateId are required and must be different' });
     }
 
-    const [businesses, reviews] = await Promise.all([
-      readBusinessListings(),
-      readReviews(),
+    // A merge is NOT idempotent: it adds the duplicate's review count to the
+    // canonical's and re-weights the rating, so running it twice on one pair
+    // silently inflates both. Reproduced at 39 + 38 -> 77 -> 115 review counts
+    // across two clicks. Replaying it is now a no-op instead of corruption.
+    const alreadyMerged = await findBusinessById(duplicateId);
+    if (alreadyMerged
+      && String(alreadyMerged.duplicateReviewStatus || '') === 'merged'
+      && String(alreadyMerged.mergedIntoBusinessId || '') === canonicalId) {
+      await settleDuplicateDecision(canonicalId, duplicateId, 'merged');
+      return res.json({ ok: true, alreadyMerged: true, duplicate: alreadyMerged });
+    }
+
+    // Both sides are read from ROWS, not from the blob.
+    //
+    // This used to read the whole listings blob, mutate it and write it back.
+    // Two things were wrong with that. The blob lags the rows — the import
+    // queue and the single-row writes only mark it dirty for the 120-second
+    // snapshot worker — so a listing imported in the last two minutes was not
+    // in the blob yet and the merge failed with "Canonical or duplicate
+    // business was not found", a 500 with nothing actionable in it. And every
+    // merge rewrote all 26,000 records to change two of them.
+    //
+    // Rows are authoritative for reads (stage 3), so the pair is read from
+    // there and only the two changed rows are written back.
+    const [canonicalRecord, duplicateRecord] = await Promise.all([
+      findBusinessById(canonicalId),
+      findBusinessById(duplicateId),
     ]);
-    const result = mergeDuplicateBusinessPair({ businesses, reviews, canonicalId, duplicateId, timestamp: new Date().toISOString() });
-    await Promise.all([
-      writeBusinessListings(result.businesses),
+    if (!canonicalRecord || !duplicateRecord) {
+      return res.status(404).json({
+        ok: false,
+        error: !canonicalRecord && !duplicateRecord
+          ? 'Neither listing was found'
+          : `The ${canonicalRecord ? 'duplicate' : 'canonical'} listing was not found`,
+      });
+    }
+
+    // Reviews are still a single JSONB blob, so they are read and written
+    // whole; `mergeDuplicateBusinessPair` reassigns the duplicate's reviews to
+    // the canonical, which is the part the browser-side merge never did.
+    const reviews = await readReviews();
+    const result = mergeDuplicateBusinessPair({
+      businesses: [canonicalRecord, duplicateRecord],
+      reviews,
+      canonicalId,
+      duplicateId,
+      timestamp: new Date().toISOString(),
+    });
+    const writes = await Promise.all([
+      upsertBusinessRow(result.canonical),
+      upsertBusinessRow(result.duplicate),
       writeReviews(result.reviews),
     ]);
+    const failedWrite = writes.slice(0, 2).find((write) => write && write.ok === false);
+    if (failedWrite) {
+      return res.status(500).json({ ok: false, error: failedWrite.error || 'Failed to write the merged listings' });
+    }
     // The pair is decided; the verdict must never be reopened by a later write.
     await settleDuplicateDecision(canonicalId, duplicateId, 'merged');
     await persistAuditEvent({
@@ -13120,21 +13217,47 @@ app.post('/api/admin/directory-quality/create-canonical', async (req, res) => {
       return res.status(400).json({ ok: false, error: 'leftId and rightId are required and must be different' });
     }
     const canonicalId = String(req.body?.canonicalId || `biz_${Date.now()}_${crypto.randomUUID().slice(0, 6)}`).trim();
-    const [businesses, reviews] = await Promise.all([
-      readBusinessListings(),
-      readReviews(),
+    // Read from rows, write only the three rows that change — same reasoning
+    // as the merge endpoint above: the blob lags the rows after an import, so
+    // reading the pair from the blob failed for anything imported in the last
+    // two minutes, and writing it back rewrote all 26,000 records.
+    const [leftRecord, rightRecord] = await Promise.all([
+      findBusinessById(leftId),
+      findBusinessById(rightId),
     ]);
+    if (!leftRecord || !rightRecord) {
+      return res.status(404).json({
+        ok: false,
+        error: `The ${leftRecord ? 'second' : 'first'} listing was not found`,
+      });
+    }
+    if (await findBusinessById(canonicalId)) {
+      return res.status(409).json({ ok: false, error: `A listing with id "${canonicalId}" already exists` });
+    }
+
+    const reviews = await readReviews();
     const result = createCanonicalListingFromPair({
-      businesses,
+      businesses: [leftRecord, rightRecord],
       reviews,
       leftId,
       rightId,
       canonicalId,
       timestamp: new Date().toISOString(),
     });
-    await Promise.all([
-      writeBusinessListings(result.businesses),
+    const writes = await Promise.all([
+      ...result.businesses.map((business) => upsertBusinessRow(business)),
       writeReviews(result.reviews),
+    ]);
+    const failedWrite = writes.find((write) => write && write.ok === false);
+    if (failedWrite) {
+      return res.status(500).json({ ok: false, error: failedWrite.error || 'Failed to write the canonical listing' });
+    }
+    // Both sources are decided against the new canonical, so neither returns
+    // to the queue.
+    await Promise.all([
+      settleDuplicateDecision(canonicalId, leftId, 'merged'),
+      settleDuplicateDecision(canonicalId, rightId, 'merged'),
+      settleDuplicateDecision(leftId, rightId, 'merged'),
     ]);
     await persistAuditEvent({
       timestamp: new Date().toISOString(),

@@ -3,12 +3,13 @@ import { ShieldAlert } from 'lucide-react';
 import type { Business } from '../../types';
 import DuplicateReviewQueue from '../../components/admin/DuplicateReviewQueue';
 import { getCategoryById } from '../../categoryMaster';
-import { buildKeptSeparateBusiness, buildMergedBusinessPair } from '../../services/admin/duplicateReview';
-import { runDuplicateScan, useDuplicateQueue } from '../../services/admin/duplicateQueue';
+import { keepDuplicatePairSeparate, mergeDuplicatePair, runDuplicateScan, useDuplicateQueue } from '../../services/admin/duplicateQueue';
 
 type AdminDuplicateReviewPageProps = {
   businesses: Business[];
   onUpdateBusiness?: (business: Business) => void;
+  /** Applies records the SERVER has already written to local state, without persisting them back. */
+  onApplyServerBusinessRecords?: (records: Business[]) => void;
   /** Section 7 default seed data: Operator gets Full here too; Moderator does not. See services/admin/adminRoles.ts. */
   canReview: boolean;
 };
@@ -21,13 +22,16 @@ type AdminDuplicateReviewPageProps = {
 export default function AdminDuplicateReviewPage({
   businesses,
   onUpdateBusiness,
+  onApplyServerBusinessRecords,
   canReview,
 }: AdminDuplicateReviewPageProps) {
   const [duplicateMergeTargetByBusinessId, setDuplicateMergeTargetByBusinessId] = useState<Record<string, string>>({});
   const [notification, setNotification] = useState<string | null>(null);
   const [scanState, setScanState] = useState<{ running: boolean; message: string }>({ running: false, message: '' });
-
-  const effectiveOnUpdateBusiness = canReview ? onUpdateBusiness : undefined;
+  // Which pair is mid-decision, so its buttons can be disabled. Without this a
+  // second click lands before the first request returns, and a merge applied
+  // twice inflates the canonical's review count.
+  const [decidingId, setDecidingId] = useState<string | null>(null);
 
   const notify = (message: string) => {
     setNotification(message);
@@ -65,7 +69,49 @@ export default function AdminDuplicateReviewPage({
     }
   };
 
-  const mergeDateLabel = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  // The operator can flip which side is canonical, so the request has to carry
+  // the chosen sides rather than the auto-picked ones.
+  const decide = async (candidate: { id: string; canonical: Business; duplicate: Business }, action: 'merge' | 'keep-separate') => {
+    if (!canReview || decidingId) return;
+    const selectedCanonicalId = duplicateMergeTargetByBusinessId[candidate.duplicate.id] || candidate.canonical.id;
+    const canonical = selectedCanonicalId === candidate.duplicate.id ? candidate.duplicate : candidate.canonical;
+    const duplicate = selectedCanonicalId === candidate.duplicate.id ? candidate.canonical : candidate.duplicate;
+
+    setDecidingId(candidate.id);
+    try {
+      const result = action === 'merge'
+        ? await mergeDuplicatePair(canonical.id, duplicate.id)
+        : await keepDuplicatePairSeparate(canonical.id, duplicate.id);
+
+      setDuplicateMergeTargetByBusinessId((prev) => {
+        const next = { ...prev };
+        delete next[candidate.duplicate.id];
+        delete next[candidate.canonical.id];
+        return next;
+      });
+
+      // The server wrote the rows; local state is refreshed from what it
+      // returned rather than recomputed here, and deliberately NOT persisted
+      // back — a write-back would send the whole partial client collection
+      // over the rows the server just settled.
+      const changed = [result.canonical, result.duplicate, result.business]
+        .filter(Boolean) as Business[];
+      if (changed.length > 0) onApplyServerBusinessRecords?.(changed);
+
+      if (action === 'merge') {
+        notify(result.alreadyMerged
+          ? `"${duplicate.name}" was already merged into "${canonical.name}".`
+          : `Merged "${duplicate.name}" into "${canonical.name}".`);
+      } else {
+        notify(`Kept "${duplicate.name}" separate from "${canonical.name}".`);
+      }
+      refreshQueue();
+    } catch (error) {
+      notify((error as Error)?.message || 'The decision could not be saved.');
+    } finally {
+      setDecidingId(null);
+    }
+  };
 
   return (
     <div className="space-y-3">
@@ -113,29 +159,8 @@ export default function AdminDuplicateReviewPage({
             [duplicateBusinessId]: canonicalBusinessId,
           }));
         }}
-        onMergeDuplicate={(candidate) => {
-          if (!effectiveOnUpdateBusiness) return;
-          const { mergedCanonical, mergedDuplicate } = buildMergedBusinessPair(candidate, duplicateMergeTargetByBusinessId, mergeDateLabel);
-          effectiveOnUpdateBusiness(mergedCanonical);
-          effectiveOnUpdateBusiness(mergedDuplicate);
-          setDuplicateMergeTargetByBusinessId((prev) => {
-            const next = { ...prev };
-            delete next[candidate.duplicate.id];
-            delete next[candidate.canonical.id];
-            return next;
-          });
-          notify(`Merged duplicate listing "${mergedDuplicate.name}" into "${mergedCanonical.name}".`);
-          // The pair leaves the queue only once the server has the decision.
-          setTimeout(refreshQueue, 1200);
-        }}
-        onKeepSeparate={(candidate) => {
-          if (!effectiveOnUpdateBusiness) return;
-          const keptSeparate = buildKeptSeparateBusiness(candidate, duplicateMergeTargetByBusinessId);
-          const canonicalLabel = keptSeparate.mergedIntoBusinessId === candidate.canonical.id ? candidate.canonical.name : candidate.duplicate.name;
-          effectiveOnUpdateBusiness(keptSeparate);
-          notify(`Marked "${keptSeparate.name}" as reviewed and kept separate from "${canonicalLabel}".`);
-          setTimeout(refreshQueue, 1200);
-        }}
+        onMergeDuplicate={(candidate) => { void decide(candidate, 'merge'); }}
+        onKeepSeparate={(candidate) => { void decide(candidate, 'keep-separate'); }}
         getCategoryLabel={(business) => getCategoryById(business.categoryId)?.name || business.categoryId}
       />
 

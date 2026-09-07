@@ -5689,6 +5689,25 @@ export default function App() {
   };
 
   // Allow Admins, Moderators, Sellers, and Data Operators to directly modify listings
+  // Applies listing records the SERVER has already written.
+  //
+  // Deliberately does NOT persist. handleUpdateBusiness below ends in
+  // persistBusinessesToServer, which PUTs the WHOLE client collection — and
+  // that collection is a partial slice (the unscoped admin fetch returns
+  // `partial: true`), so writing it back over rows the server has just settled
+  // is how a server-side decision gets undone. Server-side actions call this
+  // instead: local state catches up, nothing is sent.
+  const handleApplyServerBusinessRecords = (records: Business[]) => {
+    if (!Array.isArray(records) || records.length === 0) return;
+    const byId = new Map(
+      records
+        .filter((record) => record && record.id)
+        .map((record) => [String(record.id), normalizeStoredBusiness(record)] as const),
+    );
+    if (byId.size === 0) return;
+    setBusinesses((prev) => prev.map((business) => byId.get(String(business.id)) || business));
+  };
+
   const handleUpdateBusiness = (updatedBiz: Business) => {
     const normalizedInput = normalizeBusinessGeographyInput(updatedBiz);
     logAuditEvent('data_entry', `Business listing updated: "${updatedBiz.name}"`, `Updated listing ID: ${updatedBiz.id} | Locality: ${normalizedInput.localityId}`);
@@ -7609,6 +7628,7 @@ export default function App() {
         {activeView === 'admin' && canAccessAdmin && (
           <Suspense fallback={<div className="text-xs text-slate-500">Loading admin console...</div>}>
             <AdminApp
+              onApplyServerBusinessRecords={handleApplyServerBusinessRecords}
               localities={localities}
               businesses={businesses}
               subdomains={subdomains}

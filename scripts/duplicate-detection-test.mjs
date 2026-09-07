@@ -105,6 +105,10 @@ const main = async () => {
       // Identical business, DIFFERENT pincode. Must not be flagged: the user
       // asked for the check to stay inside the pincode.
       listing('other_pin', { id: 'other_pin', slug: 'other_pin', pincode: '560001' }),
+      // A second true pair, reserved for the merge path (dup_a/dup_b are used
+      // by the keep-separate assertions below).
+      listing('merge_a', { id: 'merge_a', slug: 'merge_a', name: 'Verma Motors', phone: '+91 98200 22222', reviewCount: 20 }),
+      listing('merge_b', { id: 'merge_b', slug: 'merge_b', name: 'Verma Motors', phone: '+91 98200 22222', reviewCount: 7 }),
       // Same pincode, nothing else in common → cannot reach 68.
       listing('unrelated', {
         id: 'unrelated',
@@ -133,20 +137,20 @@ const main = async () => {
       await sleep(400);
     }
     check('import completed', job?.status === 'completed', JSON.stringify(job).slice(0, 300));
-    check('all four listings written', job?.succeeded === 4, `succeeded=${job?.succeeded}`);
+    check('all six listings written', job?.succeeded === 6, `succeeded=${job?.succeeded}`);
 
     // ---- 1 & 2: the verdict is already there, and it is pincode-scoped.
     const queue = await (await fetch(`${BASE}/api/admin/directory-quality/duplicates`, { headers: auth })).json();
     const pairIds = (queue.candidates || []).map((candidate) => [candidate.canonical.id, candidate.duplicate.id].sort().join('+'));
     check('duplicate found at import time, with no scan', pairIds.includes('dup_a+dup_b'), JSON.stringify(pairIds));
-    check('one pair, not two rows of the same pair', pairIds.length === 1, JSON.stringify(pairIds));
+    check('each pair appears once, not once per row', pairIds.length === 2, JSON.stringify(pairIds));
     check(
       'identical listing in another pincode is not flagged',
       !pairIds.some((pair) => pair.includes('other_pin')),
       JSON.stringify(pairIds),
     );
     check('nothing left unchecked after an import', queue.uncheckedListings === 0, `unchecked=${queue.uncheckedListings}`);
-    const candidate = (queue.candidates || [])[0];
+    const candidate = (queue.candidates || []).find((entry) => [entry.canonical.id, entry.duplicate.id].includes('dup_a'));
     check('score is above the flag threshold', Number(candidate?.score) >= 68, `score=${candidate?.score}`);
     check(
       'canonical is the better-established side',
@@ -161,6 +165,42 @@ const main = async () => {
     check('flagged listing still in the public list', publicIds.has('dup_b'), `ids=${[...publicIds].join(',')}`);
     const detail = await fetch(`${BASE}/api/businesses/dup_b`);
     check('flagged listing still has a detail page', detail.ok, `status=${detail.status}`);
+
+    // ---- Merge: the pair must leave the queue, and merging twice must not
+    // apply the arithmetic twice. Both were broken: the decision was computed
+    // in the browser and persisted by PUTting the whole client collection, so
+    // the canonical stayed 'pending' and pointing at the listing it had just
+    // absorbed — the card never left, and each click re-added the duplicate's
+    // review count (39 -> 77 -> 115 was reproduced).
+    const readListing = async (id) => (await (await fetch(`${BASE}/api/businesses/${id}`, { headers: auth })).json())?.business || null;
+    const pairsBefore = (await (await fetch(`${BASE}/api/admin/directory-quality/duplicates?limit=1`, { headers: auth })).json()).flaggedListings;
+
+    const merged = await (await fetch(`${BASE}/api/admin/directory-quality/merge`, {
+      method: 'POST', headers: auth, body: JSON.stringify({ canonicalId: 'merge_a', duplicateId: 'merge_b' }),
+    })).json();
+    check('merge accepted', merged.ok === true, JSON.stringify(merged).slice(0, 200));
+
+    const afterMerge = await (await fetch(`${BASE}/api/admin/directory-quality/duplicates?limit=50`, { headers: auth })).json();
+    check(
+      'merged pair leaves the queue',
+      !(afterMerge.candidates || []).some((entry) => [entry.canonical.id, entry.duplicate.id].includes('merge_b')),
+      JSON.stringify((afterMerge.candidates || []).map((entry) => entry.id)),
+    );
+    check('pair count drops by one', afterMerge.flaggedListings === pairsBefore - 1, `${pairsBefore} -> ${afterMerge.flaggedListings}`);
+
+    const mergedCanonical = await readListing('merge_a');
+    const mergedDuplicate = await readListing('merge_b');
+    check('canonical absorbed the review counts', mergedCanonical?.reviewCount === 27, `reviewCount=${mergedCanonical?.reviewCount}`);
+    check('duplicate is rejected and marked merged',
+      mergedDuplicate?.status === 'rejected' && mergedDuplicate?.duplicateReviewStatus === 'merged',
+      `status=${mergedDuplicate?.status} review=${mergedDuplicate?.duplicateReviewStatus}`);
+
+    const remerge = await (await fetch(`${BASE}/api/admin/directory-quality/merge`, {
+      method: 'POST', headers: auth, body: JSON.stringify({ canonicalId: 'merge_a', duplicateId: 'merge_b' }),
+    })).json();
+    check('merging again is reported as already merged', remerge.ok === true && remerge.alreadyMerged === true, JSON.stringify(remerge).slice(0, 200));
+    const afterRemerge = await readListing('merge_a');
+    check('merging again does not inflate the review count', afterRemerge?.reviewCount === 27, `reviewCount=${afterRemerge?.reviewCount}`);
 
     // ---- 4: a decision is final.
     const decision = await fetch(`${BASE}/api/admin/directory-quality/keep-separate`, {

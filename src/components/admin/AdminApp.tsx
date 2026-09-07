@@ -89,7 +89,7 @@ function RequireAccess({ allowed, children }: { allowed: boolean; children: Reac
 // Moderation tab — Moderation moved to its own explicit route.
 export default function AdminApp(props: AdminConsoleProps) {
   const {
-    businesses, localities, auditLogs, adLeads, listingAds, userSession, onUpdateBusiness, onApprove, onReject,
+    businesses, localities, auditLogs, adLeads, listingAds, userSession, onUpdateBusiness, onApplyServerBusinessRecords, onApprove, onReject,
     pincodeMappings, onBulkImportBusinesses, businessTaxonomy, onSaveBusinessTaxonomy, scalableHomepageConfig,
     onCreateLocality, onDeleteLocality, onAddPincodeMapping, onDeletePincodeMapping,
     defaultLocalityId, onChangeDefaultLocalityId,
@@ -216,6 +216,7 @@ export default function AdminApp(props: AdminConsoleProps) {
                   <AdminDuplicateReviewPage
                     businesses={businesses}
                     onUpdateBusiness={onUpdateBusiness}
+                    onApplyServerBusinessRecords={onApplyServerBusinessRecords}
                     canReview={canReview}
                   />
                 </RequireAccess>
