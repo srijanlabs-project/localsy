@@ -2253,11 +2253,55 @@ const describeDuplicateNameContainment = (left, right) => {
   return { contained: false, reason: `each name has words the other lacks: {${leftOnly.join(', ')}} vs {${rightOnly.join(', ')}}` };
 };
 
+// ---------------------------------------------------------------------------
+// The address gate — the mirror image of the name gate.
+//
+// The name gate catches different businesses at one address (two doctors in a
+// hospital). It cannot catch the opposite case, because the names match
+// exactly: franchises and facilities with genuinely identical names at
+// different addresses. Measured on production, these were 8 of the 30
+// highest-scoring survivors — "Mirae Asset Sharekhan - Authorised Partner"
+// appeared as five separate pairs across three pincodes, "Motilal Oswal
+// Financial Services Limited" as three, plus four petrol and EV charging
+// stations.
+//
+// A premise number is the discriminator. Indian addresses carry them
+// explicitly — sector, plot, shop, gala, unit, floor, wing — and two addresses
+// that both name the same key with DIFFERENT values are not the same place.
+const DUPLICATE_PREMISE_KEYS = ['sector', 'plot', 'shop', 'gala', 'unit', 'floor', 'wing', 'building'];
+
+/** The premise numbers an address states, e.g. {sector: '15', shop: '3'}. */
+const duplicatePremiseNumbers = (address) => {
+  const words = normalizeDuplicateNameSql(address).split(' ');
+  const found = new Map();
+  for (let index = 0; index < words.length - 1; index += 1) {
+    if (!DUPLICATE_PREMISE_KEYS.includes(words[index])) continue;
+    // The number may not be the very next word: "plot no 13", "sector no 23".
+    const value = words.slice(index + 1, index + 3).find((word) => /^\d+$/.test(word));
+    if (value && !found.has(words[index])) found.set(words[index], value);
+  }
+  return found;
+};
+
+const describeDuplicatePremiseConflict = (left, right) => {
+  const leftPremises = duplicatePremiseNumbers(left);
+  const rightPremises = duplicatePremiseNumbers(right);
+  for (const [key, value] of leftPremises) {
+    if (rightPremises.has(key) && rightPremises.get(key) !== value) {
+      return `${key} ${value} vs ${key} ${rightPremises.get(key)}`;
+    }
+  }
+  return '';
+};
+
 const scoreDuplicatePair = (left, right) => {
   if (left.id === right.id) return 0;
-  // The gate runs first: a pair whose names disagree in both directions is two
-  // businesses however well everything else matches.
+  // The gates run first: a pair whose names disagree in both directions is two
+  // businesses however well everything else matches, and a pair whose
+  // addresses state different premise numbers is two places however well the
+  // names match.
   if (!describeDuplicateNameContainment(left.name, right.name).contained) return 0;
+  if (describeDuplicatePremiseConflict(left.address, right.address)) return 0;
   const leftPhone = String(left.phone || '').replace(/\D/g, '').slice(-10);
   const rightPhone = String(right.phone || '').replace(/\D/g, '').slice(-10);
   const leftName = normalizeDuplicateNameSql(left.name);
@@ -13148,14 +13192,21 @@ app.post('/api/admin/directory-quality/duplicate-preview', async (req, res) => {
       seenPairs.add(pairKey);
 
       const containment = describeDuplicateNameContainment(left.name, right.name);
+      const premiseConflict = describeDuplicatePremiseConflict(left.address, right.address);
       const entry = {
         score: Number(row.duplicate_score || 0),
         nameA: left.name,
         nameB: right.name,
         pincode: left.pincode || '',
-        reason: containment.reason,
+        // Addresses are what the premise gate reads, so a reviewer has to be
+        // able to see them to judge whether it decided correctly.
+        addrA: String(left.address || '').slice(0, 110),
+        addrB: String(right.address || '').slice(0, 110),
+        reason: !containment.contained
+          ? `name: ${containment.reason}`
+          : (premiseConflict ? `address: ${premiseConflict}` : containment.reason),
       };
-      if (containment.contained) kept.push(entry);
+      if (containment.contained && !premiseConflict) kept.push(entry);
       else dropped.push(entry);
     }
 

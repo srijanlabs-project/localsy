@@ -35,6 +35,18 @@ const PAIRS=[
  ['FLAG','titan promo',     L('j1',{name:'Titan Eye+ at Belapur, Mumbai (Buy 1 Get 1 Free)',reviewCount:8}), L('j2',{name:'Titan Eye+ at Belapur, Mumbai',reviewCount:0})],
  ['FLAG','new brand',       L('k1',{name:'New Brand factory - Belapur',reviewCount:10}), L('k2',{name:'The New Brand Factory',reviewCount:2})],
  ['FLAG','pvt ltd suffix',  L('m1',{name:'Sharma Sweets Pvt Ltd',reviewCount:5}), L('m2',{name:'Sharma Sweets'})],
+ // Same name, DIFFERENT address: franchises and facilities. The name gate
+ // cannot see these, so the premise-number gate has to.
+ ['REJECT','franchise partners', L('n1',{name:'Mirae Asset Sharekhan - Authorised Partner',address:'Shop 4, Plot 21, Sector 15, CBD Belapur, Navi Mumbai, Maharashtra 400614, India',reviewCount:11}),
+                                 L('n2',{name:'Mirae Asset Sharekhan - Authorised Partner',address:'Office 2, Plot 8, Sector 30, CBD Belapur, Navi Mumbai, Maharashtra 400614, India'})],
+ ['REJECT','two petrol pumps',   L('p1',{name:'Bharat Petroleum Corporation Ltd',address:'Plot 12, Sector 11, CBD Belapur, Navi Mumbai, Maharashtra 400614, India',reviewCount:11}),
+                                 L('p2',{name:'Bharat Petroleum Corporation ltd',address:'Plot 40, Sector 26, CBD Belapur, Navi Mumbai, Maharashtra 400614, India'})],
+ // Same name, SAME premises: a real duplicate must survive the premise gate.
+ ['FLAG','true dup same premises', L('q1',{name:'Jhama Sweets',address:'Shop 3, Sector 15, CBD Belapur, Navi Mumbai, Maharashtra 400614, India',reviewCount:11}),
+                                   L('q2',{name:'Jhama Sweets',address:'Shop 3, Sector 15, CBD Belapur, Navi Mumbai, Maharashtra 400614, India'})],
+ // One address states a sector, the other does not: absence is not a conflict.
+ ['FLAG','one address vaguer',   L('r1',{name:'Mukadam Printing Press',address:'Sector 15, CBD Belapur, Navi Mumbai, Maharashtra 400614, India',reviewCount:11}),
+                                 L('r2',{name:'Mukadam Printing Press',address:'CBD Belapur, Navi Mumbai, Maharashtra 400614, India'})],
 ];
 
 const server=spawn(process.execPath,['server.js'],{env:{...process.env,DATABASE_URL:DB,PORT:String(PORT),AUTH_SECRET:'g',BLOB_SNAPSHOT_INTERVAL_MS:'600000',NODE_ENV:'test'},stdio:['ignore','pipe','pipe']});
