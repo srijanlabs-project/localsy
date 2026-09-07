@@ -8830,12 +8830,29 @@ async function findBusinessByIdOrSlug(value) {
   if (!needle) return null;
   const client = await getPgClient();
   if (client && await hasBusinessRows(client)) {
-    const direct = await client.query(
-      `SELECT ${BUSINESS_ROW_JSON} AS payload FROM businesses WHERE id = $1 OR slug = $1 LIMIT 1`,
+    // Resolution order is deliberate: id, then the id in the URL's trailing
+    // segment, and only then the STORED slug.
+    //
+    // It used to be one query, `WHERE id = $1 OR slug = $1 LIMIT 1`, with no
+    // ORDER BY. Stored slugs are not unique — the importer passes an incoming
+    // slug straight through (`business.slug || buildListingSlug(...)`, so a
+    // supplied value is never checked), the column has no unique index, and
+    // production ended up with ~70 slugs held by two to four rows apiece,
+    // including one whose slug names a DIFFERENT listing's id. With a
+    // duplicated slug that query served an arbitrary one of the colliding
+    // rows, and which one could change between requests: a listing's own URL
+    // could show another business's page. Same failure as an unordered
+    // LIMIT/OFFSET page, in a different place.
+    //
+    // Deriving from the id first makes every canonical URL resolve to the row
+    // it names, whatever the stored slug says.
+    const byId = await client.query(
+      `SELECT ${BUSINESS_ROW_JSON} AS payload FROM businesses WHERE id = $1 LIMIT 1`,
       [needle],
     );
-    const directRecord = toBusinessRecords(direct.rows)[0];
-    if (directRecord) return directRecord;
+    const byIdRecord = toBusinessRecords(byId.rows)[0];
+    if (byIdRecord) return byIdRecord;
+
     // buildListingSlug appends the id, so the trailing segment identifies the row.
     const tail = needle.split('-').pop();
     if (tail && tail !== needle) {
@@ -8844,7 +8861,14 @@ async function findBusinessByIdOrSlug(value) {
       const candidate = toBusinessRecords(byTail.rows)[0];
       if (candidate && buildListingSlug(candidate.name, candidate.id) === needle) return candidate;
     }
-    return null;
+
+    // Last resort, and ordered by id so a duplicated slug at least resolves to
+    // the same row every time rather than a different one per request.
+    const bySlug = await client.query(
+      `SELECT ${BUSINESS_ROW_JSON} AS payload FROM businesses WHERE slug = $1 ORDER BY id ASC LIMIT 1`,
+      [needle],
+    );
+    return toBusinessRecords(bySlug.rows)[0] || null;
   }
   const listings = await readBusinessListings();
   return listings.find((entry) => (
@@ -13154,6 +13178,93 @@ app.get('/api/admin/directory-quality/duplicates', async (req, res) => {
   } catch (err) {
     console.error('Failed to build duplicate business queue:', err);
     res.status(500).json({ ok: false, error: 'Failed to build duplicate business queue' });
+  }
+});
+
+// Repairs listings whose stored slug is shared with another row.
+//
+// `normalizeStoredBusiness` builds a slug only when the incoming record has
+// none (`business.slug || buildListingSlug(...)`), so a slug supplied in an
+// import file is passed through unchecked — and the column has no unique
+// index to catch it. Production ended up with roughly 70 slugs held by two to
+// four rows, including `swastik-mobile-repairing-localisy004183` stored on
+// `localisy007791`: a slug naming a different listing's id.
+//
+// The row whose slug already matches its own id keeps it; every other row in
+// the group is regenerated from its own name and id. `dryRun` is the default,
+// because rewriting a slug changes a URL and that should be a deliberate act.
+app.post('/api/admin/businesses/repair-slugs', async (req, res) => {
+  const access = requirePrivilegedWriteAccess(req, res);
+  if (!access) return;
+
+  try {
+    const dryRun = req.body?.apply !== true;
+    const client = await getPgClient();
+    if (!client) return res.status(503).json({ ok: false, error: 'Slug repair requires a database' });
+
+    const groups = await client.query(
+      `SELECT slug, array_agg(id ORDER BY id) AS ids
+         FROM businesses
+        WHERE COALESCE(slug, '') <> ''
+        GROUP BY slug HAVING COUNT(*) > 1`,
+    );
+
+    const changes = [];
+    for (const group of groups.rows) {
+      const ids = group.ids || [];
+      const rows = await client.query(
+        `SELECT id, name, slug, status FROM businesses WHERE id = ANY($1::text[])`,
+        [ids],
+      );
+      // No "owner" is chosen, because choosing one is the wrong shape for this
+      // problem. Two attempts at it both failed on real data:
+      //
+      //   * "the row whose slug matches its own id keeps it" — production's
+      //     collisions are an old REJECTED `csv_<timestamp>_<seq>` row against
+      //     the new APPROVED listing for the same business, and it is the DEAD
+      //     row whose slug matches its own id. That would have rewritten the
+      //     live listing and left the clean slug unreachable.
+      //   * "the live listing keeps its slug" — the live listing is holding a
+      //     slug that is not its own. Keeping it leaves the collision in place,
+      //     because the rejected row's slug is already correct for itself.
+      //
+      // The rule that works needs no comparison between rows at all: a
+      // listing's slug is derived from its OWN name and id, so any row not
+      // holding that slug is rewritten to it. Ids are unique, so the result is
+      // provably collision-free, and it matches the convention the rest of the
+      // code already follows — buildCanonicalListingPathForBusiness builds
+      // paths from name and id, which is why URLs kept working throughout.
+      for (const row of rows.rows) {
+        const nextSlug = buildListingSlug(row.name, row.id);
+        if (!nextSlug || nextSlug === row.slug) continue;
+        changes.push({ id: row.id, name: row.name, status: row.status, from: row.slug, to: nextSlug });
+      }
+    }
+
+    if (!dryRun && changes.length > 0) {
+      await client.query(
+        `UPDATE businesses AS b
+            SET slug = v.slug,
+                payload = jsonb_set(COALESCE(b.payload, '{}'::jsonb), '{slug}', to_jsonb(v.slug))
+           FROM unnest($1::text[], $2::text[]) AS v(id, slug)
+          WHERE b.id = v.id`,
+        [changes.map((change) => change.id), changes.map((change) => change.to)],
+      );
+      invalidateBusinessListingsCache();
+      businessBlobDirty = true;
+    }
+
+    res.json({
+      ok: true,
+      dryRun,
+      duplicatedSlugs: groups.rowCount,
+      rowsAffected: changes.length,
+      applied: dryRun ? 0 : changes.length,
+      sample: changes.slice(0, 40),
+    });
+  } catch (err) {
+    console.error('Failed to repair listing slugs:', err);
+    res.status(500).json({ ok: false, error: err?.message || 'Failed to repair listing slugs' });
   }
 });
 
