@@ -1,8 +1,8 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { Link } from 'react-router-dom';
 import { AlertTriangle, Building2, CheckCircle2, ClipboardList, Megaphone, ShieldAlert } from 'lucide-react';
 import type { AuditEvent, Business, Locality, ScalableHomepageConfigState } from '../../types';
-import { computeDuplicateReviewCandidates } from '../../services/admin/duplicateReview';
+import { useDuplicateQueue } from '../../services/admin/duplicateQueue';
 import { useAdminBackgroundJobs } from '../../contexts/AdminBackgroundJobsContext';
 
 type AdminDashboardPageProps = {
@@ -30,11 +30,11 @@ export default function AdminDashboardPage({ businesses, localities, auditLogs =
   const liveCampaignCount = (scalableHomepageConfig?.campaigns || []).filter((c) => c.status === 'active').length;
   const runningJobCount = jobs.filter((j) => j.status === 'queued' || j.status === 'processing').length;
   const failedJobCount = jobs.filter((j) => j.status === 'failed').length;
-  const duplicateReviewCandidates = useMemo(() => computeDuplicateReviewCandidates(businesses), [businesses]);
+  const { candidates: duplicateReviewCandidates, flaggedListings: duplicateFlaggedCount } = useDuplicateQueue();
 
   const tiles: StatTile[] = [
     { label: 'Pending moderation', value: pendingCount, to: '/moderation', icon: <ClipboardList className="h-4 w-4" />, tone: 'border-amber-100 bg-amber-50 text-amber-900' },
-    { label: 'Duplicate candidates', value: duplicateReviewCandidates.length, to: '/duplicate-review', icon: <ShieldAlert className="h-4 w-4" />, tone: 'border-rose-100 bg-rose-50 text-rose-900' },
+    { label: 'Duplicate candidates', value: duplicateFlaggedCount, to: '/duplicate-review', icon: <ShieldAlert className="h-4 w-4" />, tone: 'border-rose-100 bg-rose-50 text-rose-900' },
     { label: 'Active localities', value: activeLocalityCount, to: '/legacy', icon: <Building2 className="h-4 w-4" />, tone: 'border-sky-100 bg-sky-50 text-sky-900' },
     { label: 'Live campaigns', value: liveCampaignCount, to: '/legacy', icon: <Megaphone className="h-4 w-4" />, tone: 'border-indigo-100 bg-indigo-50 text-indigo-900' },
     { label: 'Running import jobs', value: runningJobCount, to: '/bulk-upload', icon: <CheckCircle2 className="h-4 w-4" />, tone: 'border-emerald-100 bg-emerald-50 text-emerald-900' },

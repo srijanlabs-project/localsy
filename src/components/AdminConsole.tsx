@@ -16,6 +16,7 @@ import AdvertiserCreativeFormPanel from './admin/AdvertiserCreativeFormPanel';
 import BulkUploadWorkspace from './admin/BulkUploadWorkspace';
 import DataAuditWorkspace from './admin/DataAuditWorkspace';
 import { type DuplicateReviewCandidate } from './admin/DuplicateReviewQueue';
+import { useDuplicateQueue } from '../services/admin/duplicateQueue';
 import EditableHomepageSectionCard from './admin/EditableHomepageSectionCard';
 import HeroBannerManagerPanel from './admin/HeroBannerManagerPanel';
 import ListingStatusWorkspace, { type ListingStatusFilter } from './admin/ListingStatusWorkspace';
@@ -56,7 +57,6 @@ import {
 import {
   buildKeptSeparateBusiness,
   buildMergedBusinessPair,
-  computeDuplicateReviewCandidates,
 } from '../services/admin/duplicateReview';
 import { createInlineSubcategory as sharedCreateInlineSubcategory } from '../services/admin/taxonomyMapping';
 import { BULK_IMPORT_CHUNK_SIZE } from '../services/admin/bulkImport';
@@ -1410,10 +1410,10 @@ export default function AdminConsole({
   const pendingBusinesses = businesses.filter(b => b.status === 'pending');
   // Pure duplicate-scoring/merge logic now lives in services/admin/duplicateReview.ts
   // so the new, separately-routed Listing Directory page can share it.
-  const duplicateReviewCandidates = useMemo<DuplicateReviewCandidate[]>(
-    () => computeDuplicateReviewCandidates(businesses),
-    [businesses]
-  );
+  // Read from the server's stored verdicts rather than scored here. The
+  // all-pairs scan this replaced compared every listing against every other one
+  // on every load of the legacy console.
+  const { candidates: duplicateReviewCandidates } = useDuplicateQueue() as { candidates: DuplicateReviewCandidate[] };
 
   const listingStatusItems = [...businesses]
     .filter((business) => {

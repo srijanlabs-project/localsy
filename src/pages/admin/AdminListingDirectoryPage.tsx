@@ -5,7 +5,7 @@ import ListingStatusWorkspace, { type ListingStatusFilter } from '../../componen
 import BusinessDetailDrawer from '../../components/admin/BusinessDetailDrawer';
 import { InlineSubcategoryCreator } from '../../components/admin/AdminConsoleSharedControls';
 import { getPublicLocalityUrl } from '../../services/admin/adminConsoleUtils';
-import { computeDuplicateReviewCandidates } from '../../services/admin/duplicateReview';
+import { useDuplicateQueue } from '../../services/admin/duplicateQueue';
 import { createInlineSubcategory } from '../../services/admin/taxonomyMapping';
 
 const LISTING_STATUS_PAGE_SIZE = 20;
@@ -53,8 +53,9 @@ export default function AdminListingDirectoryPage({
   };
 
   // Only the count is needed here now (for the summary card badge) — the full candidate
-  // objects and merge/keep-separate flow live in AdminDuplicateReviewPage.
-  const duplicateCandidateCount = useMemo(() => computeDuplicateReviewCandidates(businesses).length, [businesses]);
+  // objects and merge/keep-separate flow live in AdminDuplicateReviewPage. The count
+  // comes from the server's stored verdicts rather than an all-pairs scan in the browser.
+  const { flaggedListings: duplicateCandidateCount } = useDuplicateQueue();
 
   const listingStatusItems = useMemo(() => (
     [...businesses]

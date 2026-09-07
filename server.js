@@ -18,8 +18,8 @@ import {
 import { buildSeoCategoryCopyIndex, buildSeoGrowthSnapshot } from './shared/seoGrowth.js';
 import {
   buildBusinessSearchAliases,
-  buildDuplicateBusinessCandidates,
   buildGeographyBoundaries,
+  chooseCanonicalBusiness,
   buildMapProviderConfig,
   buildPasswordPolicy,
   buildReviewModerationQueue,
@@ -2104,10 +2104,21 @@ function toBusinessRowColumns(rows) {
 // statement per row. A single bad row in a batch of 1,000 costs about eleven
 // statements to isolate instead of a thousand, which is what makes the larger
 // batch safe to use.
-async function writeBusinessRowBatch(client, batch, onRowError) {
+async function writeBusinessRowBatch(client, batch, onRowError, listingsById) {
   if (batch.length === 0) return 0;
   try {
     await client.query(BUSINESS_ROW_UNNEST_UPSERT, toBusinessRowColumns(batch));
+    // Each imported listing gets its duplicate check here, once, rather than
+    // the admin console recomputing every pair on every page load. One indexed
+    // candidate query for the whole batch, scoped to the batch's pincodes.
+    if (listingsById) {
+      const written = [];
+      for (const row of batch) {
+        const listing = listingsById.get(row[0]);
+        if (listing) written.push(listing);
+      }
+      await recordDuplicateVerdicts(client, written);
+    }
     return batch.length;
   } catch (error) {
     if (batch.length === 1) {
@@ -2115,11 +2126,291 @@ async function writeBusinessRowBatch(client, batch, onRowError) {
       return 0;
     }
     const middle = Math.floor(batch.length / 2);
-    const left = await writeBusinessRowBatch(client, batch.slice(0, middle), onRowError);
-    const right = await writeBusinessRowBatch(client, batch.slice(middle), onRowError);
+    const left = await writeBusinessRowBatch(client, batch.slice(0, middle), onRowError, listingsById);
+    const right = await writeBusinessRowBatch(client, batch.slice(middle), onRowError, listingsById);
     return left + right;
   }
 }
+
+// ---------------------------------------------------------------------------
+// Duplicate detection: decided once per listing, at write time, and stored.
+//
+// It used to run in the browser, over the WHOLE directory, on every admin page
+// load: an all-pairs comparison, n(n-1)/2, which is 21 million pairs at 6,515
+// listings and 337 million at 25,965. That is what made the platform landing
+// page unresponsive.
+//
+// Two things changed. It runs on the server when a listing is written, so a
+// login costs nothing; and it looks only WITHIN THE LISTING'S OWN PINCODE
+// instead of across every listing in the directory.
+//
+// Nothing is hidden from the public site as a result. A flagged listing stays
+// visible and searchable; the verdict only feeds the admin review queue. A
+// heuristic should not be able to make a real merchant disappear.
+const DUPLICATE_FLAG_THRESHOLD = 68;
+
+const normalizeDuplicateNameSql = (value) => String(value || '')
+  .toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+
+const duplicateTokenOverlap = (left, right) => {
+  const l = new Set(normalizeDuplicateNameSql(left).split(' ').filter(Boolean));
+  const r = new Set(normalizeDuplicateNameSql(right).split(' ').filter(Boolean));
+  if (l.size === 0 || r.size === 0) return 0;
+  let hits = 0;
+  for (const token of l) if (r.has(token)) hits += 1;
+  return hits / Math.max(l.size, r.size);
+};
+
+// Mirrors getDuplicateConfidenceScore in src/services/admin/duplicateReview.ts.
+// Kept deliberately identical so a listing flagged by the server is the same
+// listing the admin UI would have flagged.
+//
+// NOTE: shared/directoryQuality.js has a THIRD copy of this scorer whose
+// normaliser also strips stopwords ("shop", "store", "services", "road",
+// "sector", "navi", "mumbai", ...), so it scores higher and flags more pairs
+// than either of the other two. That divergence predates this change. The
+// client's version is mirrored here on purpose, because it is the one whose
+// output operators have actually been reviewing.
+const scoreDuplicatePair = (left, right) => {
+  if (left.id === right.id) return 0;
+  const leftPhone = String(left.phone || '').replace(/\D/g, '').slice(-10);
+  const rightPhone = String(right.phone || '').replace(/\D/g, '').slice(-10);
+  const leftName = normalizeDuplicateNameSql(left.name);
+  const rightName = normalizeDuplicateNameSql(right.name);
+  let score = 0;
+  if (leftPhone && rightPhone && leftPhone === rightPhone) score += 48;
+  if (left.pincode && right.pincode && left.pincode === right.pincode) score += 10;
+  if (leftName && rightName && leftName === rightName) score += 20;
+  score += Math.round(duplicateTokenOverlap(left.name, right.name) * 20);
+  score += Math.round(duplicateTokenOverlap(left.address, right.address) * 14);
+  if (left.areaId && right.areaId && left.areaId === right.areaId) score += 8;
+  if (left.categoryId && right.categoryId && left.categoryId === right.categoryId) score += 6;
+  if (left.subcategoryId && right.subcategoryId && left.subcategoryId === right.subcategoryId) score += 6;
+  return Math.min(100, score);
+};
+
+// The blocking key for a listing: its pincode plus its phone digits, and its
+// pincode plus its lowercased name. A pair cannot reach 68 without sharing a
+// phone (+48) or an identical name (+20) — everything else combined caps at 64
+// — so a candidate that shares neither key can be skipped without losing it.
+const duplicateBlockingKeys = (business) => {
+  const pincode = String(business?.pincode || '').trim();
+  if (!pincode) return null;
+  const phone = String(business?.phone || '').replace(/\D/g, '').slice(-10);
+  const name = String(business?.name || '').toLowerCase().trim();
+  if (!phone && !name) return null;
+  return {
+    pincode,
+    phoneKey: phone ? `${pincode}|${phone}` : '',
+    nameKey: name ? `${pincode}|${name}` : '',
+    phone,
+    name,
+  };
+};
+
+// Checks a whole batch of listings with ONE candidate query rather than two per
+// listing. An import of 19,450 rows would otherwise cost ~39,000 round trips on
+// a single connection; this costs one query per batch.
+//
+// The query pulls only rows that share an exact phone or name key with some
+// listing in the batch, inside the batch's own pincodes, so the result set is
+// bounded by the batch rather than by the size of the directory.
+async function findDuplicatesForListings(client, listings) {
+  const verdicts = new Map();
+  const keyed = [];
+  for (const listing of listings || []) {
+    const keys = duplicateBlockingKeys(listing);
+    if (keys) keyed.push({ listing, keys });
+  }
+  if (keyed.length === 0) return verdicts;
+
+  const pincodes = new Set();
+  const phones = new Set();
+  const names = new Set();
+  for (const { keys } of keyed) {
+    pincodes.add(keys.pincode);
+    if (keys.phone) phones.add(keys.phone);
+    if (keys.name) names.add(keys.name);
+  }
+
+  const result = await client.query(
+    `SELECT ${BUSINESS_ROW_JSON} AS payload
+       FROM businesses
+      WHERE pincode = ANY($1::text[])
+        AND status <> 'rejected'
+        AND (
+          right(regexp_replace(COALESCE(phone, ''), '\\D', '', 'g'), 10) = ANY($2::text[])
+          OR lower(name) = ANY($3::text[])
+        )`,
+    [Array.from(pincodes), Array.from(phones), Array.from(names)],
+  );
+
+  // Candidates indexed by the same two keys, so each listing reads its own
+  // buckets instead of scanning the result set.
+  const byPhoneKey = new Map();
+  const byNameKey = new Map();
+  const addTo = (index, key, record) => {
+    if (!key) return;
+    const bucket = index.get(key);
+    if (bucket) bucket.push(record);
+    else index.set(key, [record]);
+  };
+  for (const candidate of toBusinessRecords(result.rows)) {
+    const keys = duplicateBlockingKeys(candidate);
+    if (!keys) continue;
+    addTo(byPhoneKey, keys.phoneKey, candidate);
+    addTo(byNameKey, keys.nameKey, candidate);
+  }
+
+  for (const { listing, keys } of keyed) {
+    const listingId = String(listing.id || '');
+    let best = null;
+    const seen = new Set([listingId]);
+    for (const candidate of [...(byPhoneKey.get(keys.phoneKey) || []), ...(byNameKey.get(keys.nameKey) || [])]) {
+      const candidateId = String(candidate.id || '');
+      if (seen.has(candidateId)) continue;
+      seen.add(candidateId);
+      const score = scoreDuplicatePair(listing, candidate);
+      // `id` breaks a score tie so the verdict is the same on every re-check
+      // rather than depending on the order the rows came back.
+      if (score >= DUPLICATE_FLAG_THRESHOLD
+        && (!best || score > best.score || (score === best.score && candidateId < best.id))) {
+        best = { id: candidateId, score };
+      }
+    }
+    verdicts.set(listingId, best);
+  }
+  return verdicts;
+}
+
+// Writes the verdicts onto the listings in one statement.
+//
+// A listing an operator has already judged ('merged' or 'separate') is left
+// alone: a re-import must not reopen a decision a human has made. That guard is
+// also what makes the check run ONCE per listing — a later write re-checks a
+// still-unjudged listing, and never touches a settled one.
+// An operator's decision arrives in the listing payload as
+// `duplicateReviewStatus`, because the admin UI persists a merge or a
+// keep-separate through the ordinary listing write rather than a dedicated
+// endpoint. Mirroring it onto the column is what stops a later write from
+// reopening the decision — the verdict guard reads the column, not the payload.
+async function settleDuplicateReviewStatuses(client, listings) {
+  const ids = [];
+  const statuses = [];
+  for (const listing of listings || []) {
+    if (!listing || !listing.id) continue;
+    const decided = String(listing.duplicateReviewStatus || '').trim();
+    if (decided !== 'merged' && decided !== 'separate') continue;
+    ids.push(String(listing.id));
+    statuses.push(decided);
+  }
+  if (ids.length === 0) return 0;
+  try {
+    const result = await client.query(
+      `UPDATE businesses AS b
+          SET duplicate_status = v.status, duplicate_checked_at = NOW()
+         FROM unnest($1::text[], $2::text[]) AS v(id, status)
+        WHERE b.id = v.id
+          AND COALESCE(b.duplicate_status, '') <> v.status`,
+      [ids, statuses],
+    );
+    return result.rowCount || 0;
+  } catch (error) {
+    console.warn('[duplicates] failed to settle review statuses:', error?.message || error);
+    return 0;
+  }
+}
+
+async function recordDuplicateVerdicts(client, listings, { onlyUnchecked = false } = {}) {
+  let candidates = (listings || []).filter((listing) => listing && listing.id);
+  if (candidates.length === 0) return new Map();
+  try {
+    // The bulk write paths hand over the whole directory on every save. Only
+    // listings that have never been checked are worth a look: after the first
+    // scan that set is empty, so an ordinary admin save costs one indexed
+    // query returning no rows instead of re-scoring 26,000 listings.
+    if (onlyUnchecked) {
+      const unchecked = await client.query(
+        `SELECT id FROM businesses
+          WHERE id = ANY($1::text[]) AND duplicate_checked_at IS NULL AND status <> 'rejected'`,
+        [candidates.map((listing) => String(listing.id))],
+      );
+      if (unchecked.rowCount === 0) return new Map();
+      const uncheckedIds = new Set(unchecked.rows.map((row) => String(row.id)));
+      candidates = candidates.filter((listing) => uncheckedIds.has(String(listing.id)));
+      if (candidates.length === 0) return new Map();
+    }
+    const verdicts = await findDuplicatesForListings(client, candidates);
+    const ids = [];
+    const duplicateOfIds = [];
+    const scores = [];
+    for (const listing of candidates) {
+      const listingId = String(listing.id || '');
+      if (!verdicts.has(listingId)) continue;
+      const match = verdicts.get(listingId);
+      ids.push(listingId);
+      duplicateOfIds.push(match?.id || null);
+      scores.push(match ? match.score : null);
+    }
+    if (ids.length === 0) return verdicts;
+    await client.query(
+      `UPDATE businesses AS b
+          SET duplicate_of_id = v.duplicate_of_id,
+              duplicate_score = v.score,
+              duplicate_status = CASE WHEN v.duplicate_of_id IS NULL THEN NULL ELSE 'pending' END,
+              duplicate_checked_at = NOW()
+         FROM unnest($1::text[], $2::text[], $3::int[]) AS v(id, duplicate_of_id, score)
+        WHERE b.id = v.id
+          AND (b.duplicate_status IS NULL OR b.duplicate_status = 'pending')`,
+      [ids, duplicateOfIds, scores],
+    );
+    return verdicts;
+  } catch (error) {
+    // A detection failure must never fail the write that triggered it.
+    console.warn('[duplicates] check failed for', candidates.length, 'listings:', error?.message || error);
+    return new Map();
+  }
+}
+
+/** Single-listing convenience wrapper for the PATCH/PUT write paths. */
+async function recordDuplicateVerdict(client, business) {
+  if (!business || !business.id) return null;
+  const verdicts = await recordDuplicateVerdicts(client, [business]);
+  return verdicts.get(String(business.id)) || null;
+}
+
+// An operator's decision closes the verdict for good. Both directions are
+// settled because a mutual flag is normal: two listings in the same pincode
+// sharing a phone each name the other, so a decision on the pair has to close
+// both rows or the loser comes straight back into the queue.
+async function settleDuplicateDecision(canonicalId, duplicateId, status) {
+  const client = await getPgClient();
+  if (!client) return;
+  try {
+    await client.query(
+      `UPDATE businesses
+          SET duplicate_status = $3, duplicate_checked_at = NOW()
+        WHERE (id = $1 AND duplicate_of_id = $2)
+           OR (id = $2 AND duplicate_of_id = $1)`,
+      [String(canonicalId || ''), String(duplicateId || ''), status],
+    );
+  } catch (error) {
+    console.warn('[duplicates] failed to settle', canonicalId, duplicateId, error?.message || error);
+  }
+}
+
+const describeDuplicateReasons = (canonical, duplicate) => {
+  const reasons = [];
+  const canonicalPhone = String(canonical.phone || '').replace(/\D/g, '').slice(-10);
+  const duplicatePhone = String(duplicate.phone || '').replace(/\D/g, '').slice(-10);
+  if (canonicalPhone && canonicalPhone === duplicatePhone) reasons.push('same phone');
+  if (canonical.pincode && canonical.pincode === duplicate.pincode) reasons.push('same pincode');
+  if (normalizeDuplicateNameSql(canonical.name) === normalizeDuplicateNameSql(duplicate.name)) reasons.push('same business name');
+  if (canonical.areaId && canonical.areaId === duplicate.areaId) reasons.push('same area');
+  if (canonical.categoryId && canonical.categoryId === duplicate.categoryId) reasons.push('same category');
+  if (reasons.length === 0) reasons.push('high text similarity');
+  return reasons;
+};
 
 // Stage 2: mirror the authoritative blob into the table. The blob remains the
 // source of truth, so if anything here is wrong the fix is to stop calling it.
@@ -2165,6 +2456,18 @@ async function syncBusinessRows(client, listings, { prune = false } = {}) {
         await client.query(`DELETE FROM businesses`);
       }
     }
+    // An operator's merge or keep-separate decision travels through here (the
+    // admin UI persists it as an ordinary listing write), so it is settled
+    // before anything is re-checked.
+    const listingsById = new Map();
+    for (const listing of listings || []) {
+      if (listing && listing.id) listingsById.set(String(listing.id), listing);
+    }
+    const settleTargets = Array.from(listingsById.values());
+    await settleDuplicateReviewStatuses(client, settleTargets);
+    // `onlyUnchecked` is what keeps this off the hot path: a save that carries
+    // the whole directory only checks listings that have never been checked.
+    await recordDuplicateVerdicts(client, settleTargets, { onlyUnchecked: true });
     return { ok: true, rows: rows.length, pruned: prune, ms: Date.now() - startedAt };
   } catch (error) {
     console.warn('[businesses] relational mirror failed (blob remains authoritative):', error?.message || error);
@@ -2597,7 +2900,11 @@ async function buildDirectoryQualitySnapshot() {
     businesses,
     reviews,
     geographyConfig,
-    duplicateCandidates: buildDuplicateBusinessCandidates(businesses),
+    // `duplicateCandidates` used to be built here, which meant the all-pairs
+    // scan ran on FOUR endpoints — the duplicate queue, the review moderation
+    // queue, trending reputation and geography boundaries — none of which but
+    // the first wanted it. Duplicates are now decided once at write time and
+    // read back from the table by GET /api/admin/directory-quality/duplicates.
     moderationQueue: buildReviewModerationQueue({ reviews, businesses }),
     trendingBusinesses: buildTrendingBusinesses({ businesses, reviews }),
     boundaries: buildGeographyBoundaries({ businesses, geographyConfig }),
@@ -7588,7 +7895,11 @@ async function getPgClient() {
         verified_badge  BOOLEAN NOT NULL DEFAULT FALSE,
         created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        payload         JSONB NOT NULL DEFAULT '{}'::jsonb
+        payload         JSONB NOT NULL DEFAULT '{}'::jsonb,
+        duplicate_of_id      TEXT,
+        duplicate_score      INTEGER,
+        duplicate_status     TEXT,
+        duplicate_checked_at TIMESTAMPTZ
       )
     `);
     // CREATE TABLE IF NOT EXISTS is a no-op against a table that already
@@ -7626,6 +7937,13 @@ async function getPgClient() {
       ['created_at', 'TIMESTAMPTZ NOT NULL DEFAULT NOW()'],
       ['updated_at', 'TIMESTAMPTZ NOT NULL DEFAULT NOW()'],
       ['payload', "JSONB NOT NULL DEFAULT '{}'::jsonb"],
+      // Duplicate detection is decided once, when a listing is written, and
+      // stored. It used to be recomputed in the browser on every admin page
+      // load over the entire directory.
+      ['duplicate_of_id', 'TEXT'],
+      ['duplicate_score', 'INTEGER'],
+      ['duplicate_status', 'TEXT'],
+      ['duplicate_checked_at', 'TIMESTAMPTZ'],
     ];
     for (const [column, type] of BUSINESS_COLUMNS) {
       // Per column, so one unaddable column cannot cost the rest.
@@ -7733,6 +8051,11 @@ async function getPgClient() {
     await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_businesses_public_subcategory ON businesses(status, pincode, subcategory_id)`);
     await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_businesses_admin_locality ON businesses(status, locality_id)`);
     await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_businesses_slug ON businesses(slug)`);
+    // The review queue reads only flagged rows, so the index carries only those.
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_businesses_duplicate_pending ON businesses(duplicate_score DESC, id) WHERE duplicate_status = 'pending'`);
+    // Duplicate detection looks within one pincode, by phone digits and by name.
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_businesses_pin_phone ON businesses(pincode, regexp_replace(phone, '\\D', '', 'g'))`);
+    await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_businesses_pin_name ON businesses(pincode, lower(name))`);
     await pgPool.query(`CREATE INDEX IF NOT EXISTS idx_businesses_ranking ON businesses(status, featured, rating DESC)`);
     // Name search. pg_trgm may not be installable on every managed instance, so
     // this degrades to a lower(name) btree rather than failing the boot.
@@ -8210,6 +8533,14 @@ async function upsertBusinessRow(business) {
   const row = toBusinessRow(business);
   if (!row[0]) return { ok: false, error: 'business id is required' };
   await client.query(buildBusinessRowUpsert(1), row);
+  // Checked when the listing is live, which is the moment the user asked for:
+  // "once after activating the listing". A listing an operator has already
+  // judged is skipped by the guard inside, so this cannot reopen a decision,
+  // and nothing here runs on a login.
+  const decided = await settleDuplicateReviewStatuses(client, [business]);
+  if (decided === 0 && business?.status === 'approved') {
+    await recordDuplicateVerdict(client, business);
+  }
   applyBusinessToCache(business);
   businessBlobDirty = true;
   return { ok: true, id: row[0] };
@@ -8714,6 +9045,9 @@ async function runImportJob(client, job) {
   // as skipped, not failed — nothing went wrong, the row simply was not the one
   // used.
   const rowsById = new Map();
+  // The normalised listing objects behind those rows, kept so the duplicate
+  // check can score them without reading them back out of the database.
+  const listingsById = new Map();
   const placeIdOwner = new Map();
 
   for (const listing of listings) {
@@ -8737,6 +9071,7 @@ async function runImportJob(client, job) {
     }
     if (rowsById.has(row[0])) skipped += 1;
     rowsById.set(row[0], row);
+    listingsById.set(row[0], listing);
   }
 
   const rows = Array.from(rowsById.values());
@@ -8784,7 +9119,7 @@ async function runImportJob(client, job) {
   await runWithConcurrency(batches, IMPORT_JOB_CONCURRENCY, async (batch) => {
     // A failed batch is halved rather than retried row by row, so one bad row
     // costs about eleven statements to isolate instead of a thousand.
-    const written = await writeBusinessRowBatch(client, batch, recordError);
+    const written = await writeBusinessRowBatch(client, batch, recordError, listingsById);
     // Deliberately NOT `succeeded += await …`: that form reads the counter
     // before awaiting and writes the stale value back afterwards, so parallel
     // lanes silently overwrite each other's totals. Await first, then add.
@@ -12541,21 +12876,157 @@ app.get('/api/admin/directory-quality/duplicates', async (req, res) => {
   const access = requirePrivilegedReadAccess(req, res);
   if (!access) return;
 
+  // Reads the verdicts the write path already recorded instead of recomputing
+  // them. Before this, opening the admin console compared every listing
+  // against every other one — 21 million pairs at 6,515 listings, 337 million
+  // at 25,965 — which is what made the platform landing page unresponsive.
   try {
-    const [snapshot, seoConfig] = await Promise.all([
-      buildDirectoryQualitySnapshot(),
+    const limit = Math.max(1, Math.min(200, Number(req.query.limit) || 50));
+    const client = await getPgClient();
+    if (!client) return res.json({ ok: true, candidates: [], flaggedListings: 0, uncheckedListings: 0, database: false });
+
+    const flagged = await client.query(
+      `SELECT ${BUSINESS_ROW_JSON} AS payload, duplicate_of_id, duplicate_score
+         FROM businesses
+        WHERE duplicate_status = 'pending'
+          AND duplicate_of_id IS NOT NULL
+          AND status <> 'rejected'
+        ORDER BY duplicate_score DESC NULLS LAST, id ASC
+        LIMIT $1`,
+      // Two listings that flag each other are ONE pair, so the row budget is
+      // double the pair budget before deduplication.
+      [limit * 2],
+    );
+
+    const partnerIds = Array.from(new Set(flagged.rows.map((row) => String(row.duplicate_of_id || '')).filter(Boolean)));
+    const partnerById = new Map();
+    if (partnerIds.length > 0) {
+      const partners = await client.query(
+        `SELECT ${BUSINESS_ROW_JSON} AS payload FROM businesses WHERE id = ANY($1::text[])`,
+        [partnerIds],
+      );
+      for (const partner of toBusinessRecords(partners.rows)) partnerById.set(String(partner.id), partner);
+    }
+
+    const [counts, seoConfig] = await Promise.all([
+      // Counted as PAIRS, not rows. Two listings that flag each other are two
+      // rows and one thing for an operator to decide, so a row count would
+      // show "1,000 duplicates" for 500 pairs. Only flagged rows are scanned —
+      // that is what idx_businesses_duplicate_pending covers.
+      client.query(
+        `SELECT (
+            SELECT COUNT(*)::int FROM (
+              SELECT DISTINCT LEAST(id, duplicate_of_id) AS low, GREATEST(id, duplicate_of_id) AS high
+                FROM businesses
+               WHERE duplicate_status = 'pending'
+                 AND duplicate_of_id IS NOT NULL
+                 AND status <> 'rejected'
+            ) AS pairs
+          ) AS flagged,
+          (
+            SELECT COUNT(*)::int FROM businesses
+             WHERE duplicate_checked_at IS NULL AND status <> 'rejected'
+          ) AS unchecked`,
+      ),
       readSeoDiscoveryConfig(),
     ]);
     const seoContext = buildSeoDiscoveryContext(seoConfig);
-    const candidates = snapshot.duplicateCandidates.map((candidate) => ({
-      ...candidate,
-      canonicalListingPath: buildCanonicalListingPathForBusiness(candidate.canonical, seoContext),
-      duplicateListingPath: buildCanonicalListingPathForBusiness(candidate.duplicate, seoContext),
-    }));
-    res.json({ ok: true, candidates });
+
+    const candidates = [];
+    const seenPairs = new Set();
+    for (const row of flagged.rows) {
+      const left = row.payload;
+      const right = partnerById.get(String(row.duplicate_of_id || ''));
+      if (!left || !left.id || !right) continue;
+      const pairKey = left.id < right.id ? `${left.id}__${right.id}` : `${right.id}__${left.id}`;
+      if (seenPairs.has(pairKey)) continue;
+      seenPairs.add(pairKey);
+      const { canonical, duplicate } = chooseCanonicalBusiness(left, right);
+      candidates.push({
+        id: `${canonical.id}__${duplicate.id}`,
+        canonical,
+        duplicate,
+        score: Number(row.duplicate_score || 0),
+        reasons: describeDuplicateReasons(canonical, duplicate),
+        canonicalListingPath: buildCanonicalListingPathForBusiness(canonical, seoContext),
+        duplicateListingPath: buildCanonicalListingPathForBusiness(duplicate, seoContext),
+      });
+      if (candidates.length >= limit) break;
+    }
+
+    res.json({
+      ok: true,
+      candidates,
+      flaggedListings: counts.rows[0]?.flagged || 0,
+      // Rows written before detection existed have no verdict yet. Non-zero
+      // here means the queue is incomplete until a scan is run.
+      uncheckedListings: counts.rows[0]?.unchecked || 0,
+    });
   } catch (err) {
     console.error('Failed to build duplicate business queue:', err);
     res.status(500).json({ ok: false, error: 'Failed to build duplicate business queue' });
+  }
+});
+
+// Backfill for listings that predate detection. Bounded per call and
+// resumable: it takes the oldest unchecked rows, checks them, and reports what
+// is left, so the console can drive it to completion in pages instead of one
+// request that runs for minutes.
+app.post('/api/admin/directory-quality/duplicate-scan', async (req, res) => {
+  const access = requirePrivilegedWriteAccess(req, res);
+  if (!access) return;
+
+  try {
+    const limit = Math.max(1, Math.min(20000, Number(req.body?.limit) || 2000));
+    const client = await getPgClient();
+    if (!client) return res.status(503).json({ ok: false, error: 'Duplicate scanning requires a database' });
+
+    const startedAt = Date.now();
+    const pending = await client.query(
+      `SELECT ${BUSINESS_ROW_JSON} AS payload
+         FROM businesses
+        WHERE duplicate_checked_at IS NULL
+          AND status <> 'rejected'
+        ORDER BY id ASC
+        LIMIT $1`,
+      [limit],
+    );
+    const listings = toBusinessRecords(pending.rows);
+
+    let flagged = 0;
+    const CHUNK = 500;
+    for (let index = 0; index < listings.length; index += CHUNK) {
+      const chunk = listings.slice(index, index + CHUNK);
+      const verdicts = await recordDuplicateVerdicts(client, chunk);
+      for (const verdict of verdicts.values()) if (verdict) flagged += 1;
+    }
+
+    // Stamps anything the verdict write skipped — a listing with no pincode, or
+    // one whose row the guard left alone. Without this the same rows come back
+    // on the next page and the scan never finishes.
+    if (listings.length > 0) {
+      await client.query(
+        `UPDATE businesses SET duplicate_checked_at = NOW()
+          WHERE id = ANY($1::text[]) AND duplicate_checked_at IS NULL`,
+        [listings.map((listing) => String(listing.id))],
+      );
+    }
+
+    const remaining = await client.query(
+      `SELECT COUNT(*)::int AS n FROM businesses
+        WHERE duplicate_checked_at IS NULL AND status <> 'rejected'`,
+    );
+
+    res.json({
+      ok: true,
+      scanned: listings.length,
+      flagged,
+      remaining: remaining.rows[0]?.n || 0,
+      durationMs: Date.now() - startedAt,
+    });
+  } catch (err) {
+    console.error('Failed to scan for duplicate listings:', err);
+    res.status(500).json({ ok: false, error: err?.message || 'Failed to scan for duplicate listings' });
   }
 });
 
@@ -12579,6 +13050,8 @@ app.post('/api/admin/directory-quality/merge', async (req, res) => {
       writeBusinessListings(result.businesses),
       writeReviews(result.reviews),
     ]);
+    // The pair is decided; the verdict must never be reopened by a later write.
+    await settleDuplicateDecision(canonicalId, duplicateId, 'merged');
     await persistAuditEvent({
       timestamp: new Date().toISOString(),
       actionType: 'data_entry',
@@ -12618,6 +13091,7 @@ app.post('/api/admin/directory-quality/keep-separate', async (req, res) => {
     if (!written.ok) {
       return res.status(500).json({ ok: false, error: written.error || 'Failed to update the duplicate listing' });
     }
+    await settleDuplicateDecision(canonicalId, duplicateId, 'separate');
     await persistAuditEvent({
       timestamp: new Date().toISOString(),
       actionType: 'data_entry',
