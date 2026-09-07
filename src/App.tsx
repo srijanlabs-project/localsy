@@ -1432,17 +1432,51 @@ type ScalableLegacyCampaignSourceTag =
   | 'legacy_community_item'
   | 'legacy_business_sponsorship';
 
-const WebPortal = lazy(() => import('./components/WebPortal'));
-const ProposalPanel = lazy(() => import('./components/ProposalPanel'));
-const AndroidSimulator = lazy(() => import('./components/AndroidSimulator'));
-const AdminApp = lazy(() => import('./components/admin/AdminApp'));
-const LocalityLandingMockV1 = lazy(() => import('./components/ux/LocalityLandingMockV1'));
-const LocalityLandingUiV1 = lazy(() => import('./components/ux/LocalityLandingUiV1'));
-const CityDirectoryUiV1 = lazy(() => import('./components/ux/CityDirectoryUiV1'));
-const CategoryResultsUiV1 = lazy(() => import('./components/ux/CategoryResultsUiV1'));
-const ListingDetailUiV1 = lazy(() => import('./components/ux/ListingDetailUiV1'));
-const NationalDirectoryPage = lazy(() => import('./components/webportal/NationalDirectoryPage'));
-const SellerShowcasePage = lazy(() => import('./components/webportal/SellerShowcasePage'));
+// A dynamic import fails when the chunk it names is no longer on the server,
+// which is exactly what a tab loaded before a deploy asks for: the filenames
+// are content-hashed, so the old ones are gone. Express then answers
+// /assets/<old-hash>.js with index.html, the browser cannot parse HTML as a
+// module, React.lazy rejects — and with no error boundary the Suspense
+// fallback stays on screen for ever. That is the "Loading admin console..."
+// that never finishes.
+//
+// Reload once so the tab picks up the current index.html. The sessionStorage
+// flag stops that becoming a reload loop if the chunk is genuinely missing
+// rather than merely stale, and it is cleared on a successful load so a later
+// deploy can recover the same way.
+const lazyWithChunkRecovery = <T extends React.ComponentType<any>>(
+  factory: () => Promise<{ default: T }>,
+  key: string,
+) => lazy(async () => {
+  const flag = `localisy:chunk-reload:${key}`;
+  try {
+    const loaded = await factory();
+    try { sessionStorage.removeItem(flag); } catch { /* private mode */ }
+    return loaded;
+  } catch (error) {
+    let alreadyTried = true;
+    try { alreadyTried = Boolean(sessionStorage.getItem(flag)); } catch { /* private mode */ }
+    if (!alreadyTried && typeof window !== 'undefined') {
+      try { sessionStorage.setItem(flag, '1'); } catch { /* private mode */ }
+      window.location.reload();
+      // Never resolves: the reload replaces this document.
+      return new Promise<{ default: T }>(() => {});
+    }
+    throw error;
+  }
+});
+
+const WebPortal = lazyWithChunkRecovery(() => import('./components/WebPortal'), 'WebPortal');
+const ProposalPanel = lazyWithChunkRecovery(() => import('./components/ProposalPanel'), 'ProposalPanel');
+const AndroidSimulator = lazyWithChunkRecovery(() => import('./components/AndroidSimulator'), 'AndroidSimulator');
+const AdminApp = lazyWithChunkRecovery(() => import('./components/admin/AdminApp'), 'AdminApp');
+const LocalityLandingMockV1 = lazyWithChunkRecovery(() => import('./components/ux/LocalityLandingMockV1'), 'LocalityLandingMockV1');
+const LocalityLandingUiV1 = lazyWithChunkRecovery(() => import('./components/ux/LocalityLandingUiV1'), 'LocalityLandingUiV1');
+const CityDirectoryUiV1 = lazyWithChunkRecovery(() => import('./components/ux/CityDirectoryUiV1'), 'CityDirectoryUiV1');
+const CategoryResultsUiV1 = lazyWithChunkRecovery(() => import('./components/ux/CategoryResultsUiV1'), 'CategoryResultsUiV1');
+const ListingDetailUiV1 = lazyWithChunkRecovery(() => import('./components/ux/ListingDetailUiV1'), 'ListingDetailUiV1');
+const NationalDirectoryPage = lazyWithChunkRecovery(() => import('./components/webportal/NationalDirectoryPage'), 'NationalDirectoryPage');
+const SellerShowcasePage = lazyWithChunkRecovery(() => import('./components/webportal/SellerShowcasePage'), 'SellerShowcasePage');
 
 export default function App() {
   const PRODUCTION_MODE = true;

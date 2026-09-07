@@ -12961,6 +12961,21 @@ app.use(express.static(distPath, {
   },
 }));
 
+// A request for a build asset that does not exist must 404, not fall through to
+// the SPA handler below.
+//
+// Asset filenames are content-hashed, so a tab that was loaded before a deploy
+// asks for chunks that are gone. Returning index.html for those meant the
+// browser received HTML with a text/html content type where it expected a
+// JavaScript module: the dynamic import rejected, and because React.lazy sits
+// behind a Suspense boundary with no error handler, the fallback stayed on
+// screen for ever — "Loading admin console..." that never finishes, with no
+// error anywhere and a 200 on the wire. An honest 404 lets the client detect
+// the stale chunk and reload itself.
+app.get(['/assets/*', '*.js', '*.css', '*.map'], (req, res) => {
+  res.status(404).type('text/plain').send('Not found');
+});
+
 app.get('*', (_req, res) => {
   res.sendFile(path.join(distPath, 'index.html'));
 });
