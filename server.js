@@ -151,6 +151,12 @@ app.use((req, res, next) => {
 
 let pgPool = null;
 let pgInitAttempted = false;
+// Why the database is unavailable, kept so /api/db-status can report it. Every
+// degradation path in this app answers HTTP 200, so without this the only
+// record of a failed schema bootstrap is a line in a deploy log — which is a
+// poor place to keep the one fact that explains an empty site.
+let lastDbBootstrapError = null;
+let lastDbProbeError = null;
 let memoryUsers = null;
 let memoryBusinesses = null;
 let memoryReviews = null;
@@ -7634,23 +7640,86 @@ async function getPgClient() {
       }
     }
 
-    // A legacy table can also carry NOT NULL columns this schema never writes,
-    // which would reject every insert. Names them rather than failing silently
-    // at the first import.
+    // An existing `businesses` table can carry constraints this schema never
+    // had, and then every insert fails while the table itself looks fine. That
+    // is not hypothetical: production's table came from a different schema
+    // altogether — 45 columns, `category_id NOT NULL`, and a foreign key to a
+    // `categories` table this app does not own — so the backfill died on
+    //   null value in column "category_id" violates not-null constraint
+    //   Key (category_id)=(beauty-wellness) is not present in table "categories"
+    // and the site served an empty directory for a day.
+    //
+    // The first version of this check only looked at columns OUTSIDE the schema
+    // list, which is precisely why it stayed quiet: `category_id` is one of
+    // mine. Both kinds matter, and so do foreign keys.
     try {
-      const blocking = await pgPool.query(
-        `SELECT column_name FROM information_schema.columns
-         WHERE table_name = 'businesses'
-           AND is_nullable = 'NO'
-           AND column_default IS NULL
-           AND column_name <> ALL($1::text[])`,
-        [BUSINESS_COLUMNS.map(([column]) => column).concat(['id'])],
-      );
-      if (blocking.rows.length > 0) {
+      const known = BUSINESS_COLUMNS.map(([column]) => column).concat(['id']);
+      const [nullable, foreignKeys] = await Promise.all([
+        pgPool.query(
+          `SELECT column_name, (column_name = ANY($1::text[])) AS in_schema
+             FROM information_schema.columns
+            WHERE table_name = 'businesses'
+              AND is_nullable = 'NO'
+              AND column_default IS NULL
+              AND column_name <> 'id'`,
+          [known],
+        ),
+        pgPool.query(
+          `SELECT con.conname, att.attname AS column_name,
+                  cl.relname AS references_table
+             FROM pg_constraint con
+             JOIN pg_class src ON src.oid = con.conrelid
+             LEFT JOIN pg_class cl ON cl.oid = con.confrelid
+             LEFT JOIN unnest(con.conkey) AS k(attnum) ON TRUE
+             LEFT JOIN pg_attribute att
+                    ON att.attrelid = con.conrelid AND att.attnum = k.attnum
+            WHERE src.relname = 'businesses' AND con.contype = 'f'`,
+        ),
+      ]);
+
+      // These are NOT NULL in this schema's own CREATE TABLE because the writer
+      // guarantees them, so seeing them NOT NULL is correct, not a warning. Any
+      // OTHER column being NOT NULL is the dangerous case: the writer can leave
+      // it null (an imported listing with no category, no area, no coordinates)
+      // and every such insert is rejected. Listing them separately matters —
+      // a warning that fires on every clean install is a warning nobody reads,
+      // which is how the real one stayed invisible.
+      const ALWAYS_WRITTEN = new Set([
+        'id', 'name', 'status', 'locality_id', 'rating', 'review_count',
+        'featured', 'verified_badge', 'created_at', 'updated_at', 'payload',
+      ]);
+      const mine = nullable.rows
+        .filter((row) => row.in_schema && !ALWAYS_WRITTEN.has(row.column_name));
+      const theirs = nullable.rows.filter((row) => !row.in_schema);
+      if (mine.length > 0) {
         console.error(
-          '[db] businesses has NOT NULL columns this schema does not write: '
-          + `${blocking.rows.map((row) => row.column_name).join(', ')}. `
+          `[db] businesses.${mine.map((row) => row.column_name).join(', businesses.')} `
+          + 'is NOT NULL with no default in the existing table, but this schema '
+          + 'treats it as optional and writes null for listings that lack it. '
+          + 'Those inserts will fail. Run: '
+          + mine
+            .map((row) => `ALTER TABLE businesses ALTER COLUMN ${row.column_name} DROP NOT NULL;`)
+            .join(' '),
+        );
+      }
+      if (theirs.length > 0) {
+        console.error(
+          '[db] businesses has NOT NULL columns this schema does not write at all: '
+          + `${theirs.map((row) => row.column_name).join(', ')}. `
           + 'Every listing insert will fail until they are dropped or given defaults.',
+        );
+      }
+      if (foreignKeys.rows.length > 0) {
+        console.error(
+          '[db] businesses carries foreign keys this schema does not create: '
+          + foreignKeys.rows
+            .map((row) => `${row.conname} (${row.column_name} -> ${row.references_table})`)
+            .join(', ')
+          + '. Imported listings reference taxonomy this app keeps in '
+          + 'business_categories, so these will reject valid rows. The table was '
+          + 'almost certainly created by a different schema — move it aside '
+          + '(ALTER TABLE businesses RENAME TO businesses_legacy) and let this '
+          + 'app create its own, or drop the constraints.',
         );
       }
     } catch { /* information_schema unavailable; not worth failing over */ }
@@ -7773,6 +7842,7 @@ async function getPgClient() {
     // same failure and must not have the same consequence. Probe the connection
     // and keep it if it answers; the app then runs against whatever schema
     // exists, which is far better than pretending there is no database.
+    lastDbBootstrapError = String(err?.message || err).slice(0, 400);
     console.error('[db] schema bootstrap failed:', err?.message || err);
     if (pgPool) {
       try {
@@ -7786,6 +7856,7 @@ async function getPgClient() {
         );
         return pgPool;
       } catch (probeError) {
+        lastDbProbeError = String(probeError?.message || probeError).slice(0, 400);
         console.error('[db] the connection is unusable:', probeError?.message || probeError);
       }
       try { await pgPool.end(); } catch { /* already broken */ }
@@ -7828,14 +7899,77 @@ async function runInPgTransaction(work, label = 'transaction') {
 // rotated without a rebuild. Restrict it by HTTP referrer on the Google Cloud
 // project so it cannot be used from anywhere else.
 app.get('/api/public-runtime-config', (_req, res) => {
+  // The listing map is the Maps Embed API now, not Static, so GOOGLE_MAPS_KEY
+  // is the honest name. GOOGLE_MAPS_STATIC_KEY still works so an existing
+  // deployment does not lose its map on upgrade.
+  const mapsKey = String(
+    process.env.GOOGLE_MAPS_KEY || process.env.GOOGLE_MAPS_STATIC_KEY || '',
+  ).trim();
   res.json({
     ok: true,
-    mapsStaticKey: String(process.env.GOOGLE_MAPS_STATIC_KEY || '').trim(),
+    mapsKey,
+    // Kept for any client build still reading the old field name.
+    mapsStaticKey: mapsKey,
   });
 });
 
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true, service: 'localsy-web' });
+});
+
+// Why is the directory empty? Every failure in this app answers HTTP 200, so
+// the answer has only ever been visible in a deploy log. This puts it behind a
+// URL instead.
+//
+// It deliberately reveals nothing while the database is healthy — no schema
+// detail, no error text, just `healthy: true`. The diagnostic surface exists
+// only during an outage, when the alternative is guessing.
+app.get('/api/db-status', async (_req, res) => {
+  try {
+    const client = await getPgClient();
+    if (client) {
+      let businessRows = null;
+      let blobListings = null;
+      try {
+        const rows = await client.query(`SELECT COUNT(*)::int AS n FROM businesses`);
+        businessRows = rows.rows[0]?.n ?? null;
+      } catch (error) {
+        businessRows = `error: ${String(error?.message || error).slice(0, 200)}`;
+      }
+      try {
+        const blob = await client.query(
+          `SELECT CASE WHEN jsonb_typeof(value) = 'array' THEN jsonb_array_length(value) ELSE -1 END AS n
+           FROM app_state WHERE key = 'businesses' LIMIT 1`,
+        );
+        blobListings = blob.rows[0]?.n ?? null;
+      } catch (error) {
+        blobListings = `error: ${String(error?.message || error).slice(0, 200)}`;
+      }
+      const schemaComplete = !lastDbBootstrapError;
+      return res.json({
+        ok: true,
+        healthy: schemaComplete && typeof businessRows === 'number' && businessRows > 0,
+        connected: true,
+        businessRows,
+        blobListings,
+        // Named only when something actually went wrong.
+        ...(schemaComplete ? {} : { schemaBootstrapError: lastDbBootstrapError }),
+      });
+    }
+    res.json({
+      ok: true,
+      healthy: false,
+      connected: false,
+      databaseUrlSet: Boolean(process.env.DATABASE_URL),
+      schemaBootstrapError: lastDbBootstrapError,
+      connectionError: lastDbProbeError,
+      hint: lastDbBootstrapError
+        ? 'The schema bootstrap threw and the connection could not be kept. The statement named above is the one to fix.'
+        : 'No connection was established. Check DATABASE_URL and that the database accepts connections from this service.',
+    });
+  } catch (error) {
+    res.status(500).json({ ok: false, error: String(error?.message || error).slice(0, 300) });
+  }
 });
 
 // Optional filters. With no query params the full directory is returned, so the

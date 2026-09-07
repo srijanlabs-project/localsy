@@ -458,16 +458,26 @@ export const getBuyerStateScopeKey = (session: UserSession, config: ApiConfigura
 
 export const mergeBusinessCollections = (base: Business[], incoming: Business[]): Business[] => {
   const merged = new Map<string, Business>();
+  // `base` is already-normalised state; only `incoming` is new.
+  //
+  // Both used to be normalised on every call, and the public site appends its
+  // listings 500 at a time — so page 16 re-normalised the 7,500 records pages
+  // 1-15 had already done. Quadratic: on the busiest locality (7,900 listings
+  // in pincode 410206) that was ~68,000 normalisations instead of 7,900, each
+  // one rebuilding tags, slugs and taxonomy lookups. The main thread ran
+  // 800-1,200ms tasks back to back with 0-10ms gaps between them, growing with
+  // every page, and the page never became interactive: header and footer drawn,
+  // nothing in between, INP measured at 137 seconds.
+  //
   // Keyed on the id, so a record without one has nowhere to go anyway — and
   // normalizing it used to throw and take the app down with it. A malformed
-  // listing from the API must cost that listing, not the page. Drop it here
-  // rather than letting `undefined` become a map key.
-  const add = (business: Business) => {
+  // listing from the API must cost that listing, not the page.
+  const add = (business: Business, normalize: boolean) => {
     const id = String(business?.id || '').trim();
     if (!id) return;
-    merged.set(id, normalizeStoredBusiness(business));
+    merged.set(id, normalize ? normalizeStoredBusiness(business) : business);
   };
-  base.forEach(add);
-  incoming.forEach(add);
+  base.forEach((business) => add(business, false));
+  incoming.forEach((business) => add(business, true));
   return Array.from(merged.values());
 };

@@ -28,44 +28,73 @@ export const getBusinessSubcategoryLabel = (biz: Business) => (
   getSubcategoryById(biz.subcategoryId)?.name || biz.sourceSubcategoryLabel || getBusinessCategoryLabel(biz)
 );
 
-export const normalizeSearchText = (value: string) => {
-  const replacements: Array<[RegExp, string]> = [
-    [/\bdr\b/g, 'doctor'],
-    [/\bdocter\b|\bdocotor\b|\bdaktar\b|\bdaaktar\b/g, 'doctor'],
-    [/\bdavakhana\b|\bdawakhaana\b/g, 'clinic'],
-    [/\brugnalaya\b|\baspatal\b|\bhospitol\b/g, 'hospital'],
-    [/\bbloodbank\b/g, 'blood bank'],
-    [/\bpolice stn\b|\bpolice chowki\b/g, 'police station'],
-    [/\bgharghuti\b|\bgharguti\b|\bghar ka khana\b|\bhome made\b/g, 'home food'],
-    [/\bghar ka tiffin\b|\bdabba\b/g, 'tiffin'],
-    [/\bmahila udyog\b|\bwomen owned\b|\bwoman owned\b/g, 'women-led'],
-    [/\bmedikal\b/g, 'medical'],
-    [/à¤¡à¥‰à¤•à¥à¤Ÿà¤°|à¤¡à¤¾à¤•à¥à¤Ÿà¤°|à¤¡à¥‰/g, 'doctor'],
-    [/à¤…à¤¸à¥à¤ªà¤¤à¤¾à¤²|à¤¹à¥‰à¤¸à¥à¤ªà¤¿à¤Ÿà¤²|à¤°à¥à¤—à¥à¤£à¤¾à¤²à¤¯/g, 'hospital'],
-    [/à¤•à¥à¤²à¤¿à¤¨à¤¿à¤•|à¤¦à¤µà¤¾à¤–à¤¾à¤¨à¤¾/g, 'clinic'],
-    [/à¤¬à¥à¤²à¤¡ à¤¬à¥ˆà¤‚à¤•/g, 'blood bank'],
-    [/à¤ªà¥à¤²à¤¿à¤¸|à¤ªà¥‹à¤²à¥€à¤¸/g, 'police'],
-    [/à¤¬à¥ˆà¤‚à¤•|à¤à¤Ÿà¥€à¤à¤®/g, 'bank atm'],
-    [/à¤˜à¤°à¤—à¥à¤¤à¥€|à¤˜à¤° à¤•à¤¾ à¤–à¤¾à¤¨à¤¾|à¤˜à¤°à¥€à¤²à¥‚ à¤–à¤¾à¤¨à¤¾/g, 'home food'],
-    [/à¤Ÿà¤¿à¤«à¤¿à¤¨|à¤¡à¤¬à¥à¤¬à¤¾/g, 'tiffin'],
-    [/à¤ªà¥à¤²à¤‚à¤¬à¤°|à¤¨à¤²/g, 'plumber'],
-    [/à¤‡à¤²à¥‡à¤•à¥à¤Ÿà¥à¤°à¥€à¤¶à¤¿à¤¯à¤¨|à¤¬à¤¿à¤œà¤²à¥€/g, 'electrician'],
-  ];
+// Hoisted to module scope. These 20 patterns were being constructed inside
+// normalizeSearchText, so every call allocated 20 RegExp objects — and the
+// function is called twice per listing by getBusinessCanonicalKey. On the
+// busiest locality (7,900 listings in pincode 410206) that was 6.8 seconds of
+// a 9.3 second CPU profile, repeated on every render, which left the main
+// thread saturated and the page frozen with only the header and footer drawn.
+// A regex literal is immutable and every pattern is /g-flagged but used only
+// through String.replace, which resets lastIndex, so sharing them is safe.
+const SEARCH_TEXT_REPLACEMENTS: Array<[RegExp, string]> = [
+  [/\bdr\b/g, 'doctor'],
+  [/\bdocter\b|\bdocotor\b|\bdaktar\b|\bdaaktar\b/g, 'doctor'],
+  [/\bdavakhana\b|\bdawakhaana\b/g, 'clinic'],
+  [/\brugnalaya\b|\baspatal\b|\bhospitol\b/g, 'hospital'],
+  [/\bbloodbank\b/g, 'blood bank'],
+  [/\bpolice stn\b|\bpolice chowki\b/g, 'police station'],
+  [/\bgharghuti\b|\bgharguti\b|\bghar ka khana\b|\bhome made\b/g, 'home food'],
+  [/\bghar ka tiffin\b|\bdabba\b/g, 'tiffin'],
+  [/\bmahila udyog\b|\bwomen owned\b|\bwoman owned\b/g, 'women-led'],
+  [/\bmedikal\b/g, 'medical'],
+  [/à¤¡à¥‰à¤•à¥à¤Ÿà¤°|à¤¡à¤¾à¤•à¥à¤Ÿà¤°|à¤¡à¥‰/g, 'doctor'],
+  [/à¤…à¤¸à¥à¤ªà¤¤à¤¾à¤²|à¤¹à¥‰à¤¸à¥à¤ªà¤¿à¤Ÿà¤²|à¤°à¥à¤—à¥à¤£à¤¾à¤²à¤¯/g, 'hospital'],
+  [/à¤•à¥à¤²à¤¿à¤¨à¤¿à¤•|à¤¦à¤µà¤¾à¤–à¤¾à¤¨à¤¾/g, 'clinic'],
+  [/à¤¬à¥à¤²à¤¡ à¤¬à¥ˆà¤‚à¤•/g, 'blood bank'],
+  [/à¤ªà¥à¤²à¤¿à¤¸|à¤ªà¥‹à¤²à¥€à¤¸/g, 'police'],
+  [/à¤¬à¥ˆà¤‚à¤•|à¤à¤Ÿà¥€à¤à¤®/g, 'bank atm'],
+  [/à¤˜à¤°à¤—à¥à¤¤à¥€|à¤˜à¤° à¤•à¤¾ à¤–à¤¾à¤¨à¤¾|à¤˜à¤°à¥€à¤²à¥‚ à¤–à¤¾à¤¨à¤¾/g, 'home food'],
+  [/à¤Ÿà¤¿à¤«à¤¿à¤¨|à¤¡à¤¬à¥à¤¬à¤¾/g, 'tiffin'],
+  [/à¤ªà¥à¤²à¤‚à¤¬à¤°|à¤¨à¤²/g, 'plumber'],
+  [/à¤‡à¤²à¥‡à¤•à¥à¤Ÿà¥à¤°à¥€à¤¶à¤¿à¤¯à¤¨|à¤¬à¤¿à¤œà¤²à¥€/g, 'electrician'],
+];
 
-  let normalized = String(value || '')
+// Memoised because the inputs repeat relentlessly. getBusinessCanonicalKey
+// calls this twice per listing \u2014 a name and an address \u2014 and runs across the
+// whole directory on every render, so on the busiest locality it was ~15,800
+// calls per render of 20 regex passes plus an NFKD normalise each: 7.1 of 9.3
+// seconds in a CPU profile, on a page that re-renders every few seconds. The
+// strings are the same every time, so the second render onward is a map lookup.
+//
+// The function is pure, so caching cannot change a result. The cap keeps a
+// large directory from growing this without bound; clearing wholesale is fine
+// because a cold cache only costs what every call used to cost.
+const NORMALIZED_TEXT_CACHE = new Map<string, string>();
+const NORMALIZED_TEXT_CACHE_LIMIT = 60_000;
+
+export const normalizeSearchText = (value: string) => {
+  const raw = String(value || '');
+  const cached = NORMALIZED_TEXT_CACHE.get(raw);
+  if (cached !== undefined) return cached;
+
+  let normalized = raw
     .toLowerCase()
     .normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, ' ');
 
-  replacements.forEach(([pattern, replacement]) => {
+  for (const [pattern, replacement] of SEARCH_TEXT_REPLACEMENTS) {
     normalized = normalized.replace(pattern, ` ${replacement} `);
-  });
+  }
 
-  return normalized
+  const result = normalized
     .replace(/&/g, ' and ')
     .replace(/[^a-z0-9\s-]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+
+  if (NORMALIZED_TEXT_CACHE.size >= NORMALIZED_TEXT_CACHE_LIMIT) NORMALIZED_TEXT_CACHE.clear();
+  NORMALIZED_TEXT_CACHE.set(raw, result);
+  return result;
 };
 
 export const tokenizeSearchText = (value: string) => normalizeSearchText(value).split(/[\s,/-]+/).filter(Boolean);

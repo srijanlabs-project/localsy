@@ -377,7 +377,8 @@ export default function WebPortal({
     fetch('/api/public-runtime-config')
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
-        if (!cancelled && data?.mapsStaticKey) setMapsStaticKey(String(data.mapsStaticKey));
+        const key = data?.mapsKey || data?.mapsStaticKey;
+        if (!cancelled && key) setMapsStaticKey(String(key));
       })
       .catch(() => {
         // No key configured, or the endpoint is unavailable: the map is simply
@@ -477,20 +478,32 @@ export default function WebPortal({
   // so reading selectedBiz from above it is a temporal dead zone crash that
   // blanks the whole portal. tsc does not catch it (the read is inside a
   // function body), only the browser does.
-  const mapPreviewUrl = (() => {
+  // Maps Embed API in `place` mode. `place` is what puts a pin on the point —
+  // `view` mode centres the map but draws no marker, which is not what a
+  // listing needs. The query is the raw "lat,lng", so the pin sits on the
+  // listing's own coordinates rather than on whatever Google matches the
+  // address text to.
+  //
+  // Embed rather than Static because it is free with no usage cap and it pans,
+  // zooms and opens Street View. The cost is an iframe running Google's code on
+  // the page.
+  //
+  // Returns '' — and the whole block is then not rendered — when the listing
+  // has no coordinates or no key is configured. An imported listing without a
+  // lat/lng shows no map at all rather than a map of the wrong place.
+  const mapEmbedUrl = (() => {
     const lat = Number(selectedBiz?.gpsCoordinates?.lat);
     const lng = Number(selectedBiz?.gpsCoordinates?.lng);
     if (!mapsStaticKey || !Number.isFinite(lat) || !Number.isFinite(lng)) return '';
-    const center = `${lat},${lng}`;
+    // 0,0 is in the Gulf of Guinea: it is what a missing coordinate looks like
+    // after a bad import, not a business in Navi Mumbai.
+    if (lat === 0 && lng === 0) return '';
     const params = new URLSearchParams({
-      center,
-      zoom: '16',
-      size: '640x300',
-      scale: '2',
-      markers: `color:red|${center}`,
       key: mapsStaticKey,
+      q: `${lat},${lng}`,
+      zoom: '16',
     });
-    return `https://maps.googleapis.com/maps/api/staticmap?${params.toString()}`;
+    return `https://www.google.com/maps/embed/v1/place?${params.toString()}`;
   })();
   
   // Hero Image Carousel slide index
@@ -1679,12 +1692,34 @@ export default function WebPortal({
     Boolean(String(business.phone || '').replace(/\D/g, '').slice(-10))
   );
 
-  // Apply sorting rules
-  const sortedBusinesses = [...dedupedFilteredBusinesses].sort((a, b) => {
-    const phoneRank = Number(hasContactablePhone(b)) - Number(hasContactablePhone(a));
+  // Apply sorting rules.
+  //
+  // The score and the phone rank are computed ONCE PER LISTING here, not inside
+  // the comparator. A comparator runs O(n log n) times, so calling the scorer
+  // from inside it meant ~205,000 score computations for the 7,900 listings in
+  // pincode 410206 instead of 7,900 — and each one builds a search document and
+  // normalises text. It was 906ms of a 2,882ms render, repeated every three
+  // seconds by the carousel tick.
+  //
+  // A listing's score cannot change during a single sort, so this is the same
+  // ordering by construction, only without recomputing a constant.
+  const listingsToSort = [...dedupedFilteredBusinesses];
+  const resultsScoreById = new Map<string, number>();
+  if (sortBy === 'recommended') {
+    for (const business of listingsToSort) {
+      resultsScoreById.set(business.id, getBusinessRecommendedScore(business, normalizedActiveSearch, 'results'));
+    }
+  }
+  const contactableRankById = new Map<string, number>();
+  for (const business of listingsToSort) {
+    contactableRankById.set(business.id, Number(hasContactablePhone(business)));
+  }
+
+  const sortedBusinesses = listingsToSort.sort((a, b) => {
+    const phoneRank = (contactableRankById.get(b.id) ?? 0) - (contactableRankById.get(a.id) ?? 0);
     if (phoneRank !== 0) return phoneRank;
     if (sortBy === 'recommended') {
-      const scoreDiff = getBusinessRecommendedScore(b, normalizedActiveSearch, 'results') - getBusinessRecommendedScore(a, normalizedActiveSearch, 'results');
+      const scoreDiff = (resultsScoreById.get(b.id) ?? 0) - (resultsScoreById.get(a.id) ?? 0);
       if (scoreDiff !== 0) return scoreDiff;
       return (b.reviewCount - a.reviewCount) || b.name.localeCompare(a.name);
     }
@@ -1702,10 +1737,18 @@ export default function WebPortal({
     }
     return 0;
   });
-  const homepageSortedBusinesses = dedupeBusinessesForExperience(approvedInLocality, '', 'homepage').sort((a, b) => {
-    const phoneRank = Number(hasContactablePhone(b)) - Number(hasContactablePhone(a));
+  // Same treatment for the homepage ordering: one score per listing, then sort.
+  const homepageListings = dedupeBusinessesForExperience(approvedInLocality, '', 'homepage');
+  const homepageScoreById = new Map<string, number>();
+  const homepageContactableById = new Map<string, number>();
+  for (const business of homepageListings) {
+    homepageScoreById.set(business.id, getBusinessRecommendedScore(business, '', 'homepage'));
+    homepageContactableById.set(business.id, Number(hasContactablePhone(business)));
+  }
+  const homepageSortedBusinesses = homepageListings.sort((a, b) => {
+    const phoneRank = (homepageContactableById.get(b.id) ?? 0) - (homepageContactableById.get(a.id) ?? 0);
     if (phoneRank !== 0) return phoneRank;
-    const scoreDiff = getBusinessRecommendedScore(b, '', 'homepage') - getBusinessRecommendedScore(a, '', 'homepage');
+    const scoreDiff = (homepageScoreById.get(b.id) ?? 0) - (homepageScoreById.get(a.id) ?? 0);
     if (scoreDiff !== 0) return scoreDiff;
     return (b.reviewCount - a.reviewCount) || b.name.localeCompare(a.name);
   });
@@ -7280,31 +7323,21 @@ export default function WebPortal({
                         still opens Google Maps for directions on tap. The key is
                         served at runtime from the environment (see
                         /api/public-runtime-config) so it is never committed. */}
-                    {mapPreviewUrl && (
-                      <a
-                        href={getBusinessDirectionsUrl(selectedBiz)}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="mt-2.5 block overflow-hidden rounded-xl border border-slate-200"
-                      >
-                        <img
-                          src={mapPreviewUrl}
-                          alt={`Map showing ${selectedBiz.name}`}
+                    {mapEmbedUrl && (
+                      <div className="mt-2.5 overflow-hidden rounded-xl border border-slate-200">
+                        <iframe
+                          src={mapEmbedUrl}
+                          title={`Map showing ${selectedBiz.name}`}
+                          // loading="lazy" matters here: the iframe pulls
+                          // Google's map bundle, and the map sits below the
+                          // fold on a phone.
                           loading="lazy"
-                          className="block h-[150px] w-full bg-slate-100 object-cover"
-                          onError={(event) => {
-                            // A rejected key, an unenabled Static Maps API or a
-                            // referrer restriction all come back as a failed
-                            // image. Hide the whole block rather than leave a
-                            // broken tile on the page.
-                            const anchor = event.currentTarget.closest('a');
-                            if (anchor) anchor.style.display = 'none';
-                          }}
+                          // Google's documented setting for the Embed API.
+                          referrerPolicy="no-referrer-when-downgrade"
+                          allowFullScreen
+                          className="block h-[200px] w-full border-0 bg-slate-100"
                         />
-                        <span className="block bg-white px-2.5 py-1.5 font-sans text-[10px] font-semibold text-indigo-600">
-                          Open in Google Maps
-                        </span>
-                      </a>
+                      </div>
                     )}
                   </div>
                 </div>

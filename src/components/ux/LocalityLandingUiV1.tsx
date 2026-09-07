@@ -15,7 +15,7 @@ import {
 import { Business, Category, HeroBanner, ListingAd, Locality, MarketingCoupon, UserSession } from '../../types';
 import { getAreaById } from '../../geographyMaster';
 import { getCategoryById, getSubcategoryById } from '../../categoryMaster';
-import { getMediaProxyUrl } from '../../utils/mediaUrl';
+import { getMediaProxyUrl, getDisplayableImageUrl } from '../../utils/mediaUrl';
 import happyBusinessLogo from '../../assets/happy-business-logo.png';
 import { CategoryChip, formatRating, getCategoryPresentation } from './localisyPublicPrimitives';
 
@@ -717,7 +717,8 @@ export default function LocalityLandingUiV1({
     }
 
     return {
-      image: getMediaProxyUrl(primaryHeroBusiness?.coverImageUrl || primaryHeroBusiness?.imageUrl || ''),
+      image: getMediaProxyUrl(getDisplayableImageUrl(primaryHeroBusiness?.coverImageUrl)
+        || getDisplayableImageUrl(primaryHeroBusiness?.imageUrl)),
       badge: primaryHeroBusiness?.featured ? 'Featured listing' : 'Popular now',
       title: buildPromoTitle(primaryHeroBusiness, localityLabel, `Trusted businesses in ${localityLabel}`),
       subtitle: buildPromoSubtitle(primaryHeroBusiness, categories, localityLabel),
@@ -789,7 +790,8 @@ export default function LocalityLandingUiV1({
     }
 
     return {
-      image: getMediaProxyUrl(secondaryHeroBusiness?.coverImageUrl || secondaryHeroBusiness?.imageUrl || ''),
+      image: getMediaProxyUrl(getDisplayableImageUrl(secondaryHeroBusiness?.coverImageUrl)
+        || getDisplayableImageUrl(secondaryHeroBusiness?.imageUrl)),
       badge: secondaryHeroBusiness?.featured ? 'Sponsored' : 'Top rated',
       title: buildPromoTitle(secondaryHeroBusiness, localityLabel, `Recommended picks in ${localityLabel}`),
       subtitle: buildPromoSubtitle(secondaryHeroBusiness, categories, localityLabel),
@@ -2149,7 +2151,13 @@ function MobileListingCard({
   const kindLabel = getCardKindLabel(business);
   const shortAddress = getShortAddressLabel(business);
   const isVerified = Boolean(business.verifiedBadge);
-  const photoUrl = business.coverImageUrl || business.imageUrl || '';
+  // getDisplayableImageUrl, not a truthiness check: every imported listing
+  // carries a `photos\\name.jpg` path for a file that was never uploaded, so
+  // the old check saw a photo, rendered the block, and showed a broken tile on
+  // every card. Now the image section is simply absent unless there is a real
+  // URL, and the Verified/Sponsored badges move inline.
+  const photoUrl = getDisplayableImageUrl(business.coverImageUrl)
+    || getDisplayableImageUrl(business.imageUrl);
 
   return (
     <article className="flex h-full flex-col overflow-hidden rounded-[14px] border border-[#E6EBF2] bg-white">
