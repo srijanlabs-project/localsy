@@ -44,6 +44,20 @@ const PAIRS=[
  // Same name, SAME premises: a real duplicate must survive the premise gate.
  ['FLAG','true dup same premises', L('q1',{name:'Jhama Sweets',address:'Shop 3, Sector 15, CBD Belapur, Navi Mumbai, Maharashtra 400614, India',reviewCount:11}),
                                    L('q2',{name:'Jhama Sweets',address:'Shop 3, Sector 15, CBD Belapur, Navi Mumbai, Maharashtra 400614, India'})],
+ // Lettered sectors. Navi Mumbai uses them everywhere and a digits-only
+ // pattern read none of them, so these pairs survived with the conflict
+ // sitting in plain text. All five are from the production preview.
+ ['REJECT','lettered sector 35G/4', L('s1',{name:'Mirae Asset Sharekhan - Authorised Partner',pincode:'410210',address:'No A, 501, near Central Park Road, Sector 35G, Kharghar, Navi Mumbai, Panvel, Maharashtra 410210, India',reviewCount:11}),
+                                     L('s2',{name:'Mirae Asset Sharekhan - Authorised Partner',pincode:'410210',address:'No E/204, Plot No 1, Sector 4, Kharghar, Navi Mumbai, Panvel, Maharashtra 410210, India'})],
+ ['REJECT','lettered sector 3A/19', L('t1',{name:'NMMC Library',address:'227J+XM7, Belapur Village, Sector 19, CBD Belapur, Navi Mumbai, Maharashtra 400614, India',reviewCount:11}),
+                                    L('t2',{name:'NMMC Library',address:'D-8, Vasantdada Patil Marg, Sector 3A, CBD Belapur, Navi Mumbai, Maharashtra 400614, India'})],
+ ['REJECT','lettered sector 8B/8',  L('u1',{name:'Saint Joseph Church',address:'Sambhaji Nagar, Sector 8B, CBD Belapur, Navi Mumbai, Maharashtra 400614, India',reviewCount:11}),
+                                    L('u2',{name:'Saint Joseph Church',address:'Artist Village, Sector 8, CBD Belapur, Navi Mumbai, Maharashtra 400614, India'})],
+ ['REJECT','lettered sector 1A/11', L('v1',{name:'Thyrocare Aarogyam Center',address:'Shop No. 13/14, Plot No 43, NBC Complex, Belapur East, Sector 11, CBD Belapur, Navi Mumbai, Maharashtra 400614, India',reviewCount:11}),
+                                    L('v2',{name:'Thyrocare Aarogyam Center',address:'Office Number, 512, Ash Shaafi Clinic, Prabhat Center, Sector 1A, CBD Belapur, Navi Mumbai, Maharashtra 400614, India'})],
+ // Leading zeros must NOT read as a conflict: Sector 06 is Sector 6.
+ ['FLAG','sector 06 equals 6',      L('w1',{name:'Konkan Bhavan',address:'Konkan Bhavan Market, Tatanagar, Sector 06, CBD Belapur, Navi Mumbai, Maharashtra 400614, India',reviewCount:11}),
+                                    L('w2',{name:'Konkan Bhavan',address:'Sector 6, CBD Belapur, Navi Mumbai, Maharashtra 400614, India'})],
  // One address states a sector, the other does not: absence is not a conflict.
  ['FLAG','one address vaguer',   L('r1',{name:'Mukadam Printing Press',address:'Sector 15, CBD Belapur, Navi Mumbai, Maharashtra 400614, India',reviewCount:11}),
                                  L('r2',{name:'Mukadam Printing Press',address:'CBD Belapur, Navi Mumbai, Maharashtra 400614, India'})],

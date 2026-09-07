@@ -2270,15 +2270,26 @@ const describeDuplicateNameContainment = (left, right) => {
 // that both name the same key with DIFFERENT values are not the same place.
 const DUPLICATE_PREMISE_KEYS = ['sector', 'plot', 'shop', 'gala', 'unit', 'floor', 'wing', 'building'];
 
-/** The premise numbers an address states, e.g. {sector: '15', shop: '3'}. */
+/**
+ * The premise numbers an address states, e.g. {sector: '15', shop: '3'}.
+ *
+ * The pattern accepts a TRAILING LETTER, because Navi Mumbai sectors are
+ * routinely lettered — 35G, 3A, 8B, 44A, 1A, 35F. A digits-only pattern read
+ * none of them, so five of the highest-scoring survivors in the first
+ * production preview kept a conflict that was sitting in plain text:
+ * "Sector 35G" against "Sector 4" parsed as no sector at all on one side and
+ * therefore as no disagreement.
+ *
+ * Leading zeros are stripped so "Sector 06" and "Sector 6" agree.
+ */
 const duplicatePremiseNumbers = (address) => {
   const words = normalizeDuplicateNameSql(address).split(' ');
   const found = new Map();
   for (let index = 0; index < words.length - 1; index += 1) {
     if (!DUPLICATE_PREMISE_KEYS.includes(words[index])) continue;
     // The number may not be the very next word: "plot no 13", "sector no 23".
-    const value = words.slice(index + 1, index + 3).find((word) => /^\d+$/.test(word));
-    if (value && !found.has(words[index])) found.set(words[index], value);
+    const value = words.slice(index + 1, index + 3).find((word) => /^\d+[a-z]?$/.test(word));
+    if (value && !found.has(words[index])) found.set(words[index], value.replace(/^0+(?=\d)/, ''));
   }
   return found;
 };
