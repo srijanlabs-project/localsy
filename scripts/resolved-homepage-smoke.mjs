@@ -133,6 +133,16 @@ mustContain(
   'daily banner counter table',
   'server.js',
 );
+// homepage-config.json's six seeded hero banners become campaigns with
+// isFallback:true and priority 100 — the same priority a console-created banner
+// defaults to. Without an explicit tie-break the seeded Unsplash placeholder can
+// take the slot an operator just booked.
+mustContain(
+  serverText,
+  /const leftFallback = left\.campaign\.isFallback \? 1 : 0;/,
+  'real bookings sorted ahead of seeded fallback campaigns',
+  'server.js',
+);
 // The increment must stay an atomic UPSERT. A read-modify-write here loses
 // counts whenever two visitors overlap, which is what the old client-side
 // counter did.

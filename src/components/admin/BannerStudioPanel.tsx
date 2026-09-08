@@ -26,6 +26,7 @@ import {
   emptyBannerDraft,
   evaluateBannerDelivery,
   findBannerSlot,
+  isSeededFallbackBanner,
   loadBannerMetrics,
   withBannerStatus,
 } from '../../services/admin/bannerStudio';
@@ -246,7 +247,11 @@ export default function BannerStudioPanel({
             <label className={LABEL}>3. Pincodes</label>
             <input className={FIELD} value={draft.pincodes.join(', ')} disabled={!canManage}
               onChange={(event) => set('pincodes', parseList(event.target.value))}
-              placeholder="410218, 410206 — blank = all" />
+              placeholder="Blank = the whole locality" />
+            <p className="mt-1 text-[10px] leading-tight text-slate-500">
+              Leave blank unless you must narrow inside the locality. A pincode here hides the banner
+              from every visitor who has not chosen that pincode.
+            </p>
           </div>
 
           <div>
@@ -256,6 +261,10 @@ export default function BannerStudioPanel({
               <option value="">All categories</option>
               {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
             </select>
+            <p className="mt-1 text-[10px] leading-tight text-slate-500">
+              Search-results banners only. The homepage sends no category, so a category here stops a
+              homepage banner rendering at all.
+            </p>
           </div>
 
           <div className="md:col-span-2">
@@ -408,6 +417,9 @@ export default function BannerStudioPanel({
                         {campaign.status !== 'active' && (
                           <span className="ml-1 font-bold uppercase tracking-wide text-amber-700">{campaign.status}</span>
                         )}
+                        {isSeededFallbackBanner(campaign) && (
+                          <span className="ml-1 rounded bg-slate-100 px-1 py-0.5 font-bold uppercase tracking-wide text-slate-500">seeded</span>
+                        )}
                       </div>
                     </td>
                     <td className="px-2 py-2 text-slate-600">
@@ -445,7 +457,11 @@ export default function BannerStudioPanel({
                     </td>
                     <td className="px-2 py-2">
                       <div className="flex flex-wrap gap-1">
-                        {campaign.status === 'active' ? (
+                        {isSeededFallbackBanner(campaign) ? (
+                          <span className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-slate-500">
+                            From homepage-config.json
+                          </span>
+                        ) : campaign.status === 'active' ? (
                           <button type="button" onClick={() => void setStatus(campaign, 'inactive')}
                             disabled={!canManage || busy === 'status'}
                             className="inline-flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-2 py-1 font-bold text-amber-800 disabled:opacity-50">
@@ -470,6 +486,14 @@ export default function BannerStudioPanel({
                 ))}
               </tbody>
             </table>
+            {banners.some(({ campaign }) => isSeededFallbackBanner(campaign)) && (
+              <p className="mt-2 text-[11px] text-slate-500">
+                Rows marked <span className="font-bold uppercase">seeded</span> come from
+                {' '}<code className="rounded bg-slate-100 px-1">homepage-config.json</code> and are re-synced from that
+                file, so pausing one here would not hold. They are fallbacks only — any banner you create for the same
+                locality now takes the slot ahead of them.
+              </p>
+            )}
           </div>
         )}
       </div>

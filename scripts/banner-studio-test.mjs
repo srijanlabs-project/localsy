@@ -105,18 +105,106 @@ check(
     .some((warning) => warning.includes('layout section')),
 );
 
+// --- targeting that silently switches a banner off ------------------------
+//
+// calculateTargetScore VETOES on a target the context cannot satisfy, and a
+// homepage request carries neither a category (never) nor a pincode (unless the
+// visitor saved one). Both fields read like helpful filters and are how a banner
+// ends up activated and invisible.
+//
+// Real evidence: the seeded hero_roadpali and hero_kalamboli banners in
+// homepage-config.json both carry pincodes ['410218'], and neither has been
+// reaching its locality's homepage.
+
+check(
+  'a category target blocks a HOMEPAGE banner outright',
+  (() => {
+    const result = verdict(ready({ categoryIds: ['beauty-wellness'], pageType: 'homepage' }));
+    return !result.live && result.reasons.some((reason) => reason.includes('category'));
+  })(),
+  'the homepage request never carries a categoryId, so the veto can never be satisfied',
+);
+check(
+  'the same category target is fine on search results',
+  verdict(ready({
+    categoryIds: ['beauty-wellness'],
+    pageType: 'listing_results',
+    placementKey: 'listing_results',
+  })).live,
+);
+check(
+  'a pincode target warns loudly but still delivers',
+  (() => {
+    const result = verdict(ready({ pincodes: ['410218'] }));
+    return result.live && result.warnings.some((warning) => warning.includes('410218'));
+  })(),
+  'it reaches only visitors who set that pincode — a warning, not a blocker',
+);
+check(
+  'no pincode and no category produces neither',
+  (() => {
+    const result = verdict(ready());
+    return result.warnings.every((warning) => !warning.includes('Pincode target'));
+  })(),
+);
+
 // --- what gets written ----------------------------------------------------
 
+// A homepage banner, targeted the way one should be: locality only. No category
+// (the homepage sends none) and no pincode (that would hide it from anyone who
+// has not set one) — the two checks above cover those cases deliberately.
 const campaign = buildBannerCampaign(ready({
   placementKey: 'homepage_hero_primary',
-  pincodes: ['410218'],
-  categoryIds: ['salon'],
+  pincodes: [],
+  categoryIds: [],
   startDate: '2026-09-07',
   endDate: '2026-10-07',
   targetUrl: 'https://localisy.in/rrwa',
 }));
 
+// Category and pincode targeting still has to survive a save; it is legitimate
+// on a search-results banner.
+const searchCampaign = buildBannerCampaign(ready({
+  pageType: 'listing_results',
+  placementKey: 'listing_results',
+  categoryIds: ['beauty-wellness'],
+  pincodes: ['410218'],
+}));
+check('a search-results banner keeps its category targeting', searchCampaign.targets.categoryIds.join() === 'beauty-wellness');
+check('a search-results banner keeps its pincode targeting', searchCampaign.targets.pincodes.join() === '410218');
+check(
+  'and reads back with both intact',
+  (() => {
+    const back = bannerDraftFromCampaign(searchCampaign);
+    return back.categoryIds.join() === 'beauty-wellness' && back.pincodes.join() === '410218';
+  })(),
+);
+
 check('the form writes a campaign, not a listing ad', campaign.campaignType === 'listing_ad' && !!campaign.targets);
+
+// --- every new banner needs its own id ------------------------------------
+//
+// An empty id does not mean "the server will assign one". sanitizeCampaign's
+// `index` defaults to 0, so a blank id becomes the literal `campaign_1`, and the
+// upsert matches that id and REPLACES the row already stored there. Creating
+// three banners left one.
+
+check('a new banner gets an id of its own', campaign.id.length > 0);
+check('and it is not the manufactured fallback', campaign.id !== 'campaign_1');
+check(
+  'two new banners get different ids',
+  buildBannerCampaign(ready({ name: 'A' })).id !== buildBannerCampaign(ready({ name: 'B' })).id,
+  'sharing one id is how each save overwrote the last',
+);
+check(
+  'editing an existing banner keeps its id',
+  buildBannerCampaign({ ...ready(), id: 'banner_existing_1' }).id === 'banner_existing_1',
+);
+check(
+  'a console-created banner is detached from the legacy sync',
+  campaign.metadata?.detachedFromLegacySync === true,
+  'otherwise it shares a namespace with the seeded banners and can be re-derived',
+);
 check('status active is what the resolver filters on', campaign.status === 'active');
 check(
   'targets.placementKeys stays empty so the resolver cannot score it to -1',
@@ -124,8 +212,9 @@ check(
   'the resolver scores it against ctx.placementKey, which the page never sends',
 );
 check('the placement key travels in the payload instead', campaign.payload.placementKey === 'homepage_hero_primary');
-check('targeting carries the pincode', campaign.targets.pincodes.join() === '410218');
-check('targeting carries the category', campaign.targets.categoryIds.join() === 'salon');
+check('a locality-only banner targets no pincode', campaign.targets.pincodes.length === 0);
+check('a locality-only banner targets no category', campaign.targets.categoryIds.length === 0);
+check('targeting carries the locality', campaign.targets.localityIds.join() === 'roadpali');
 check('the page type is targeted', campaign.targets.pageTypes.join() === 'homepage');
 check('device "all" targets no device rather than a literal "all"', campaign.targets.devices.length === 0);
 check('the payload is marked active for the client-side filter', campaign.payload.isActive === true);
@@ -162,7 +251,7 @@ check('a shaped payload is active', delivered.isActive === true);
 check('a shaped payload carries an id for keying and click tracking', delivered.id === 'camp_rrwa_1');
 check('a shaped payload keeps its placement key', delivered.placementKey === 'homepage_hero_primary');
 check('a shaped payload keeps its image', delivered.imageUrl === 'https://cdn.example/rrwa.png');
-check('a shaped payload keeps its targeting', delivered.pincodes.join() === '410218');
+check('a shaped payload keeps its locality targeting', delivered.localityIds.join() === 'roadpali');
 
 check(
   'an explicit workflowStatus from an operator is not overwritten',

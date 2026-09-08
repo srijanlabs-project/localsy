@@ -20,6 +20,7 @@
 // server's own conditions so the console can say "this will not render" before
 // an operator goes looking for it on the site.
 import type { ScalableCampaign, ScalableCampaignType, TargetingRule } from '../../types';
+import { createAdminId } from './adminConsoleUtils';
 
 export type BannerPageType = 'homepage' | 'listing_results';
 
@@ -248,7 +249,16 @@ export const buildBannerCampaign = (draft: BannerDraft): ScalableCampaign => {
   if (draft.campaignType === 'hero_banner') payload.localityId = draft.localityIds[0] || undefined;
 
   return {
-    id: draft.id,
+    // A NEW banner must arrive with an id of its own.
+    //
+    // Sending an empty one does not create anything sensible: the server runs
+    // `sanitizeCampaign(input)` with `index` defaulting to 0, which turns a blank
+    // id into the literal `campaign_1`. saveScalableCampaignEntity then matches
+    // that id and REPLACES the existing row — so every banner created here
+    // overwrote the previous one, and only ever one could exist. The Campaign
+    // Builder always minted an id (`createAdminId('campaign')`); this form did
+    // not, and nothing failed loudly enough to say so.
+    id: draft.id || createAdminId('banner'),
     name: draft.name,
     campaignType: draft.campaignType,
     status: draft.status,
@@ -260,6 +270,13 @@ export const buildBannerCampaign = (draft: BannerDraft): ScalableCampaign => {
     placementKeys: draft.campaignType === 'listing_ad' && draft.placementKey ? [draft.placementKey] : [],
     targets,
     payload,
+    metadata: {
+      updatedFrom: 'banner_studio',
+      // Keeps the legacy sync from ever re-deriving or removing this banner, the
+      // same guard the Campaign Builder sets. Without it a console-created
+      // banner sits in the same namespace as the seeded ones.
+      detachedFromLegacySync: true,
+    },
     updatedAt: new Date().toISOString(),
   };
 };
@@ -287,6 +304,32 @@ export const evaluateBannerDelivery = (
   if (draft.startDate && draft.startDate > today) reasons.push(`Starts on ${draft.startDate}, which is in the future.`);
   if (draft.endDate && draft.endDate < today) reasons.push(`Ended on ${draft.endDate}, which is in the past.`);
   if (draft.localityIds.length === 0) warnings.push('No locality selected — this shows in every locality.');
+
+  // Targeting on the server is a VETO, not a narrowing:
+  //
+  //   if (target.categoryIds.length > 0) {
+  //     if (!categoryId || !target.categoryIds.includes(categoryId)) return -1;
+  //   }
+  //   if (target.pincodes.length > 0) {
+  //     if (!pincode || !target.pincodes.includes(pincode)) return -1;
+  //   }
+  //
+  // A homepage request carries `categoryId: ""` always — WebPortal only sends one
+  // when `selectedCategory !== 'all'`, which never holds on the homepage — and
+  // carries `pincode: ""` for any visitor who has not saved one. So a category
+  // target makes a homepage banner unreachable outright, and a pincode target
+  // hides it from most visitors.
+  //
+  // This is not theoretical: the seeded `hero_roadpali` banner carries
+  // pincodes ['410218'] and has been invisible on the Roadpali homepage for
+  // exactly this reason, alongside `hero_kalamboli`. Two of six seeded banners
+  // silently switched off by a field that reads like a helpful filter.
+  if (draft.categoryIds.length > 0 && draft.pageType === 'homepage') {
+    reasons.push('A category target can never match the homepage — a homepage request carries no category. Clear the category, or set Page to "Search results".');
+  }
+  if (draft.pincodes.length > 0) {
+    warnings.push(`Pincode target ${draft.pincodes.join(', ')}: only visitors who have SET that pincode will see this. Anyone who has not chosen one sends no pincode and is skipped. Leave it blank to reach the whole locality.`);
+  }
 
   const slot = findBannerSlot(draft.placementKey, draft.campaignType);
   if (draft.campaignType === 'listing_ad' && !draft.placementKey) {
@@ -406,3 +449,22 @@ export const withBannerStatus = (campaign: ScalableCampaign, status: ScalableCam
   },
   updatedAt: new Date().toISOString(),
 });
+
+/**
+ * True for a banner that is mirrored from `homepage-config.json` rather than
+ * created in the console.
+ *
+ * The six hero banners in that file (one per locality, stock Unsplash imagery)
+ * are re-synced into campaigns on every legacy sync, with their status taken
+ * from the file: `isActive === false ? 'inactive' : 'active'`. So pausing one
+ * here looks like it works and is then silently undone. The server only stops
+ * re-syncing an entity once its metadata carries `detachedFromLegacySync`.
+ *
+ * The screen shows these as seeded and does not offer a Pause that will not
+ * hold — a control that quietly reverts is worse than no control.
+ */
+export const isSeededFallbackBanner = (campaign: ScalableCampaign) => {
+  const metadata = (campaign.metadata || {}) as Record<string, unknown>;
+  if (metadata.detachedFromLegacySync) return false;
+  return String(metadata.source || '').startsWith('legacy_');
+};

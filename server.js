@@ -6791,10 +6791,20 @@ async function deleteScalableAssignmentEntity(assignmentId) {
 }
 
 async function saveScalableCampaignEntity(campaignInput) {
-  const campaign = sanitizeCampaign(campaignInput);
-  if (!campaign?.id) {
+  // Validate the id BEFORE sanitizing, because sanitizeCampaign manufactures one.
+  //
+  // `sanitizeCampaign(value, index = 0)` falls back to `campaign_${index + 1}`,
+  // so a caller that omitted the id got the literal `campaign_1` — and the upsert
+  // below then matched that id and replaced whatever was already stored under it.
+  // A caller creating three banners in a row ended up with one, silently. The
+  // manufactured fallback is right for seeding loops, which pass a real index; it
+  // is wrong for a create request, so this rejects it instead.
+  const rawId = String(campaignInput?.id || '').trim();
+  if (!rawId) {
     throw new Error('Campaign id is required');
   }
+
+  const campaign = sanitizeCampaign({ ...campaignInput, id: rawId });
 
   const state = await readScalableCmsState();
   const nextCampaigns = state.campaigns.some((entry) => entry.id === campaign.id)
@@ -7121,7 +7131,23 @@ function resolveCampaignPayloads(state, context, campaignType) {
       score: calculateTargetScore(campaign.targets, context),
     }))
     .filter((entry) => entry.score >= 0)
-    .sort((left, right) => (right.score + right.campaign.priority) - (left.score + left.campaign.priority))
+    .sort((left, right) => {
+      // A seeded fallback must never outrank a real booking.
+      //
+      // The six hero banners in homepage-config.json are mirrored into campaigns
+      // with `isFallback: true` and `priority: 100` — and a banner created in the
+      // console also defaults to priority 100. The sort was score+priority alone,
+      // so the two tied and the winner came down to array order: an operator's
+      // banner could lose its slot to the seeded Unsplash placeholder for that
+      // locality, with nothing anywhere explaining why.
+      //
+      // `isFallback` already meant this for templates (calculateTemplateScore
+      // applies -25 to a fallback); campaign resolution simply never read it.
+      const leftFallback = left.campaign.isFallback ? 1 : 0;
+      const rightFallback = right.campaign.isFallback ? 1 : 0;
+      if (leftFallback !== rightFallback) return leftFallback - rightFallback;
+      return (right.score + right.campaign.priority) - (left.score + left.campaign.priority);
+    })
     .map((entry) => entry.campaign);
 }
 
