@@ -83,11 +83,64 @@ mustContain(
   'authoritative resolved payload flag',
   'src/components/WebPortal.tsx',
 );
+// Stronger than it used to be. This asserted the legacy `heroBanners` prop was
+// the fallback whenever no resolved payload was in hand — which meant the hero
+// painted a stale banner from the retired homepage_hero_banners store, then the
+// configured one, then the campaign: three banners per page load. When the
+// resolver is configured it is now the only hero source.
 mustContain(
   webPortalText,
-  /const cmsHeroBanners = hasResolvedHomepagePayload\s*\? \(resolvedHomepagePayload\?\.heroBanners \|\| \[\]\)\s*: heroBanners;/s,
-  'hero banners trust resolved payload even when empty',
+  /const cmsHeroBanners = hasResolvedHomepagePayload\s*\? \(resolvedHomepagePayload\?\.heroBanners \|\| \[\]\)\s*: \(resolvedHomepageConfigured \? \[\] : heroBanners\);/s,
+  'hero banners come only from the resolver once it is configured',
   'src/components/WebPortal.tsx',
+);
+// The hero is held for the beat before hydration rather than painting the
+// bottom of its three-level fallback and swapping up.
+mustContain(
+  webPortalText,
+  /isHeroPending=\{shouldDeferResolvedListingAds\}/,
+  'hero held while the resolved payload is in flight',
+  'src/components/WebPortal.tsx',
+);
+// A campaign payload carries no workflowStatus, and the client drops a listing
+// ad whose workflowStatus is not approved/live. Shaping is what makes a
+// campaign-created placed banner deliverable at all.
+mustContain(
+  serverText,
+  /listingAds: resolveCampaignPayloads\(state, effectiveContext, 'listing_ad'\)\.map\(toDeliverableListingAd\),/,
+  'listing-ad campaigns shaped into ListingAd records before delivery',
+  'server.js',
+);
+mustContain(
+  webPortalText,
+  /\['approved', 'live'\]\.includes\(ad\.workflowStatus \|\| 'draft'\)/,
+  'the client filter that shaping exists to satisfy',
+  'src/components/WebPortal.tsx',
+);
+// Banner performance depends on a write path a public visitor is allowed to use.
+// Before this endpoint the only way to move a counter was the privileged
+// listing-ads PUT, so every visitor's tracking call was rejected and the admin
+// console reported frozen numbers as performance.
+mustContain(
+  serverText,
+  /app\.post\('\/api\/ad-metrics\/track', async \(req, res\) => \{/,
+  'public banner tracking endpoint',
+  'server.js',
+);
+mustContain(
+  serverText,
+  /CREATE TABLE IF NOT EXISTS ad_metric_daily/,
+  'daily banner counter table',
+  'server.js',
+);
+// The increment must stay an atomic UPSERT. A read-modify-write here loses
+// counts whenever two visitors overlap, which is what the old client-side
+// counter did.
+mustContain(
+  serverText,
+  /ON CONFLICT \(ad_id, metric_date, placement_key\)\s*DO UPDATE SET\s*impressions = ad_metric_daily\.impressions \+ EXCLUDED\.impressions/s,
+  'atomic counter increment',
+  'server.js',
 );
 mustContain(
   webPortalText,

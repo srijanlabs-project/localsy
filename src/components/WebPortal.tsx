@@ -849,11 +849,22 @@ export default function WebPortal({
     });
   const todayIso = new Date().toISOString().slice(0, 10);
   const hasResolvedHomepagePayload = resolvedHomepagePayload !== null;
+  const resolvedHomepageConfigured = Boolean(apiConfiguration?.resolvedHomepageEndpoint);
+  // When the resolver is in play it is the ONLY source of hero banners.
+  //
+  // This used to fall back to the legacy `heroBanners` prop whenever no resolved
+  // payload was in hand, which meant the hero painted a stale banner from the
+  // retired `homepage_hero_banners` store first, then swapped to the configured
+  // one, then swapped again when the campaign arrived — three different banners
+  // one after another on every page load, which read as a backfill. The Hero
+  // Banners screen that wrote that store is gone, so anything left in it is
+  // stale by definition. The legacy list is honoured only when the resolver is
+  // not configured at all (local dev without the endpoint).
   const cmsHeroBanners = hasResolvedHomepagePayload
     ? (resolvedHomepagePayload?.heroBanners || [])
-    : heroBanners;
+    : (resolvedHomepageConfigured ? [] : heroBanners);
   const shouldDeferResolvedListingAds = Boolean(
-    apiConfiguration?.resolvedHomepageEndpoint &&
+    resolvedHomepageConfigured &&
     currentLocality?.id &&
     !resolvedHomepageHydrated
   );
@@ -4203,6 +4214,13 @@ export default function WebPortal({
     ];
     visibleAds.forEach((ad) => {
       if (trackedAdImpressionIdsRef.current.has(ad.id)) return;
+      // `homepageAdInventory` is the whole deliverable set for this page type,
+      // which includes mobile-only banners while a desktop visitor is looking at
+      // it. Counting those as impressions would inflate exactly the number an
+      // advertiser is being shown, so an ad whose device target cannot match
+      // this viewport is skipped.
+      const deviceTarget = ad.deviceTarget || 'all';
+      if (deviceTarget !== 'all' && deviceTarget !== currentDeviceTarget) return;
       trackedAdImpressionIdsRef.current.add(ad.id);
       onTrackListingAdInteraction({
         adId: ad.id,
@@ -4211,6 +4229,7 @@ export default function WebPortal({
       });
     });
   }, [
+    currentDeviceTarget,
     desktopResultAds,
     desktopSidebarAds,
     homepageAdInventory,
@@ -4966,6 +4985,11 @@ export default function WebPortal({
             categories={categories.filter((category) => category.id !== 'all')}
             heroBanners={activeHeroBanners}
             listingAds={activeListingAds}
+            /* Holds the hero for the one beat before the resolved payload lands,
+               instead of painting the business-level fallback and then replacing
+               it. Same signal that already holds back legacy listing-ad
+               inventory (deliverableCmsListingAds). */
+            isHeroPending={shouldDeferResolvedListingAds}
             localities={localities}
             recentSearches={recentSearches}
             onClearRecentSearches={clearRecentSearches}

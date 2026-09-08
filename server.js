@@ -17,6 +17,11 @@ import {
 } from './shared/adminOperations.js';
 import { buildSeoCategoryCopyIndex, buildSeoGrowthSnapshot } from './shared/seoGrowth.js';
 import {
+  AD_METRIC_MAX_EVENTS_PER_REQUEST,
+  foldAdMetricEvents,
+  toDeliverableListingAd,
+} from './shared/homepageDelivery.js';
+import {
   buildBusinessSearchAliases,
   buildGeographyBoundaries,
   chooseCanonicalBusiness,
@@ -1599,6 +1604,91 @@ async function recordContactViewEvent({ businessId, loginKey, viewerName, viewer
   }
 
   return event;
+}
+
+// File-mode fallback, same shape as memoryContactViewEvents: keyed
+// `adId|date|placementKey`.
+let memoryAdMetrics = new Map();
+
+/**
+ * Adds one batch of delivery events to the daily counters.
+ *
+ * The folding and validation live in shared/homepageDelivery.js so the tests can
+ * exercise them without standing up a database.
+ */
+async function recordAdMetricEvents(events) {
+  const metricDate = new Date().toISOString().slice(0, 10);
+  const { rows, accepted } = foldAdMetricEvents(events, metricDate);
+  if (rows.length === 0) return 0;
+
+  const client = await getPgClient();
+  if (!client) {
+    for (const row of rows) {
+      const existing = memoryAdMetrics.get(row.key) || { ...row, impressions: 0, clicks: 0, leads: 0 };
+      memoryAdMetrics.set(row.key, {
+        ...existing,
+        impressions: existing.impressions + row.impressions,
+        clicks: existing.clicks + row.clicks,
+        leads: existing.leads + row.leads,
+      });
+    }
+    return accepted;
+  }
+
+  for (const row of rows) {
+    await client.query(
+      `INSERT INTO ad_metric_daily (ad_id, metric_date, placement_key, impressions, clicks, leads)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       ON CONFLICT (ad_id, metric_date, placement_key)
+       DO UPDATE SET
+         impressions = ad_metric_daily.impressions + EXCLUDED.impressions,
+         clicks = ad_metric_daily.clicks + EXCLUDED.clicks,
+         leads = ad_metric_daily.leads + EXCLUDED.leads,
+         updated_at = NOW()`,
+      [row.adId, metricDate, row.placementKey, row.impressions, row.clicks, row.leads],
+    );
+  }
+  return accepted;
+}
+
+/** Totals per ad over the last `days` days, newest activity first. */
+async function readAdMetricTotals({ days = 30 } = {}) {
+  const windowDays = Math.min(365, Math.max(1, Number(days) || 30));
+  const client = await getPgClient();
+  if (!client) {
+    const cutoffMs = Date.now() - windowDays * 24 * 60 * 60 * 1000;
+    const totals = new Map();
+    for (const row of memoryAdMetrics.values()) {
+      if (new Date(row.metricDate).getTime() < cutoffMs) continue;
+      const existing = totals.get(row.adId) || { adId: row.adId, impressions: 0, clicks: 0, leads: 0, lastActivityAt: '' };
+      existing.impressions += row.impressions;
+      existing.clicks += row.clicks;
+      existing.leads += row.leads;
+      existing.lastActivityAt = row.metricDate > existing.lastActivityAt ? row.metricDate : existing.lastActivityAt;
+      totals.set(row.adId, existing);
+    }
+    return [...totals.values()];
+  }
+
+  const result = await client.query(
+    `SELECT ad_id,
+            SUM(impressions)::BIGINT AS impressions,
+            SUM(clicks)::BIGINT AS clicks,
+            SUM(leads)::BIGINT AS leads,
+            MAX(metric_date) AS last_activity_at
+       FROM ad_metric_daily
+      WHERE metric_date >= (CURRENT_DATE - ($1::INT - 1))
+      GROUP BY ad_id
+      ORDER BY SUM(impressions) DESC`,
+    [windowDays],
+  );
+  return result.rows.map((row) => ({
+    adId: String(row.ad_id),
+    impressions: Number(row.impressions || 0),
+    clicks: Number(row.clicks || 0),
+    leads: Number(row.leads || 0),
+    lastActivityAt: row.last_activity_at ? String(row.last_activity_at).slice(0, 10) : '',
+  }));
 }
 
 async function sendMsg91Otp(mobile) {
@@ -7170,7 +7260,7 @@ async function resolveHomepageForContext(context, preloaded = {}) {
     sections,
     sectionBusinessIdsBySection,
     heroBanners: resolveCampaignPayloads(state, effectiveContext, 'hero_banner').map((campaign) => campaign.payload),
-    listingAds: resolveCampaignPayloads(state, effectiveContext, 'listing_ad').map((campaign) => campaign.payload),
+    listingAds: resolveCampaignPayloads(state, effectiveContext, 'listing_ad').map(toDeliverableListingAd),
     sponsoredListings,
     sponsoredCampaigns: sponsoredCampaigns.map((campaign) => campaign.payload),
     offers: resolveCampaignPayloads(state, effectiveContext, 'offer').map((campaign) => campaign.payload),
@@ -7737,6 +7827,35 @@ async function getPgClient() {
         device_id TEXT NOT NULL,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
+    `);
+    // Banner delivery counters.
+    //
+    // Impressions and clicks used to be fields on the ListingAd record,
+    // incremented in the VISITOR'S browser and written back with
+    // `PUT /api/homepage-config/listing-ads/:adId` — a route behind
+    // requirePrivilegedWriteAccess. Every real visitor's write was rejected, so
+    // the numbers only ever moved when someone with an admin token browsed the
+    // public site, and the admin panel reported those frozen counters as
+    // performance.
+    //
+    // One row per ad per day per placement keeps the table small while still
+    // allowing a date range, and the increment is a single atomic UPSERT rather
+    // than the read-modify-write that made the old counters lossy under
+    // concurrent traffic.
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS ad_metric_daily (
+        ad_id TEXT NOT NULL,
+        metric_date DATE NOT NULL,
+        placement_key TEXT NOT NULL DEFAULT '',
+        impressions BIGINT NOT NULL DEFAULT 0,
+        clicks BIGINT NOT NULL DEFAULT 0,
+        leads BIGINT NOT NULL DEFAULT 0,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (ad_id, metric_date, placement_key)
+      )
+    `);
+    await pgPool.query(`
+      CREATE INDEX IF NOT EXISTS ad_metric_daily_date_idx ON ad_metric_daily (metric_date DESC)
     `);
     await pgPool.query(`
       CREATE TABLE IF NOT EXISTS app_state (
@@ -11564,6 +11683,61 @@ app.post('/api/contact-unlock/verify-otp', async (req, res) => {
   } catch (err) {
     console.error('Failed to verify contact unlock OTP:', err);
     res.status(401).json({ ok: false, error: err?.message || 'Invalid OTP' });
+  }
+});
+
+// Banner delivery tracking — the one write path a public visitor is allowed.
+//
+// This is what makes banner performance exist. Before it, the only way to
+// increment a counter was PUT /api/homepage-config/listing-ads/:adId behind
+// requirePrivilegedWriteAccess, so a visitor's tracking call was rejected and
+// every "performance" number in the admin console was frozen.
+//
+// Batched on purpose: a page load reports every banner it painted in one
+// request, which keeps the throttle meaningful and the request count flat.
+// Always answers 202 with a count — tracking must never surface as a failure on
+// the public site, so a bad event is skipped rather than rejected.
+app.post('/api/ad-metrics/track', async (req, res) => {
+  if (!enforcePublicWriteThrottle(req, res, {
+    bucket: 'ad-metrics:track',
+    // A visitor's homepage paints a handful of banners; this caps a scripted
+    // flood without touching real browsing. Shared across ads on purpose, so
+    // inventing ad ids does not buy a bigger allowance.
+    limit: 240,
+    windowMs: 10 * 60 * 1000,
+  })) {
+    return;
+  }
+
+  const body = req.body && typeof req.body === 'object' ? req.body : {};
+  const events = (Array.isArray(body.events)
+    ? body.events
+    : [{ adId: body.adId, type: body.type, placementKey: body.placementKey }]
+  ).slice(0, AD_METRIC_MAX_EVENTS_PER_REQUEST);
+
+  try {
+    const recorded = await recordAdMetricEvents(events);
+    res.status(202).json({ ok: true, recorded });
+  } catch (err) {
+    console.error('Failed to record ad metrics:', err);
+    // Still 202: the visitor's page is not broken because a counter missed.
+    res.status(202).json({ ok: true, recorded: 0 });
+  }
+});
+
+// Totals the Banners screen reads. Keyed by ad id, which for a campaign-created
+// banner is the campaign id (see shared/homepageDelivery.js).
+app.get('/api/admin/ad-metrics', async (req, res) => {
+  const access = requirePrivilegedReadAccess(req, res);
+  if (!access) return;
+
+  try {
+    const days = Number(req.query?.days || 30);
+    const metrics = await readAdMetricTotals({ days });
+    res.json({ ok: true, days: Math.min(365, Math.max(1, days || 30)), metrics });
+  } catch (err) {
+    console.error('Failed to read ad metrics:', err);
+    res.status(500).json({ ok: false, error: 'Failed to read ad metrics' });
   }
 });
 

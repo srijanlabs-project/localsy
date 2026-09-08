@@ -3741,7 +3741,38 @@ export default function App() {
     logAuditEvent('data_entry', `Updated listing ad banner`, `Ad ID: ${ad.id}`);
   };
 
+  /**
+   * Records a banner impression, click or lead.
+   *
+   * This used to start with `listingAds.find(...)` and return when the ad was
+   * not in that collection — which is EVERY campaign-created banner, since a
+   * campaign-sourced ad carries the campaign's id. So nothing about the banners
+   * the site actually serves was ever counted.
+   *
+   * It also wrote the counter back through
+   * `PUT /api/homepage-config/listing-ads/:adId`, a route behind
+   * requirePrivilegedWriteAccess: a real visitor's write was rejected outright,
+   * so even the legacy ads' numbers only moved when an admin browsed the public
+   * site. The counters the admin console reported as performance were frozen.
+   *
+   * Events now go to the public tracking endpoint, which folds them into daily
+   * per-ad rows with an atomic UPSERT. The legacy record is still updated when
+   * the ad happens to live in that collection, so nothing that worked before
+   * stops working.
+   */
   const handleTrackListingAdInteraction = (payload: { adId: string; type: 'impression' | 'click' | 'lead'; context?: string }) => {
+    if (!payload?.adId) return;
+
+    // Fire and forget. A counter that cannot be written must never surface on
+    // the public site, so this deliberately swallows its own failures.
+    void fetch('/api/ad-metrics/track', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        events: [{ adId: payload.adId, type: payload.type, placementKey: payload.context || '' }],
+      }),
+    }).catch(() => {});
+
     const targetAd = listingAds.find((ad) => ad.id === payload.adId);
     if (!targetAd) return;
     const nextAd = normalizeStoredListingAd({
@@ -3757,11 +3788,16 @@ export default function App() {
         : targetAd.workflowStatus
     });
     handleUpdateListingAd(nextAd);
-    logAuditEvent(
-      'data_entry',
-      `Tracked ad ${payload.type}`,
-      `Ad ID: ${payload.adId}${payload.context ? ` | Context: ${payload.context}` : ''}`
-    );
+    // Only leads are worth an audit entry. Auditing impressions would write one
+    // row per banner per visitor — the audit log would become the traffic log,
+    // which only went unnoticed because tracking never fired for real visitors.
+    if (payload.type === 'lead') {
+      logAuditEvent(
+        'data_entry',
+        'Tracked ad lead',
+        `Ad ID: ${payload.adId}${payload.context ? ` | Context: ${payload.context}` : ''}`
+      );
+    }
   };
 
   const handleDeleteListingAd = (adId: string) => {

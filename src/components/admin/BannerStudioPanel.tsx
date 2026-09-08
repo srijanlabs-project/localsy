@@ -10,20 +10,24 @@
 // The table's "Live" column is the point of the screen: it runs the same
 // conditions the server does, so a banner that cannot render says why here
 // rather than being hunted for on the public site.
-import React, { useMemo, useRef, useState } from 'react';
-import { AlertTriangle, CheckCircle2, ImagePlus, Loader2, Trash2 } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AlertTriangle, CheckCircle2, ImagePlus, Loader2, Pause, Play, Trash2 } from 'lucide-react';
 import type { Business, Locality, ScalableCampaign, ScalableHomepageConfigState, UserSession } from '../../types';
 import { uploadAdminMediaImage } from '../../services/admin/adminConsoleUtils';
 import {
   BANNER_SLOTS,
   type BannerDraft,
+  type BannerMetrics,
   bannerDraftFromCampaign,
   buildBannerCampaign,
+  describeBannerCtr,
   describeBannerAssetAdvice,
   describeBannerSlotSize,
   emptyBannerDraft,
   evaluateBannerDelivery,
   findBannerSlot,
+  loadBannerMetrics,
+  withBannerStatus,
 } from '../../services/admin/bannerStudio';
 
 type BannerStudioPanelProps = {
@@ -56,7 +60,14 @@ export default function BannerStudioPanel({
   canManage,
 }: BannerStudioPanelProps) {
   const [draft, setDraft] = useState<BannerDraft>(() => emptyBannerDraft(localities[0]?.id || ''));
-  const [busy, setBusy] = useState<'' | 'upload' | 'save' | 'delete'>('');
+  const [busy, setBusy] = useState<'' | 'upload' | 'save' | 'delete' | 'status'>('');
+  // Delivery counters, read once per mount. An empty map just means the
+  // performance columns show dashes.
+  const [metrics, setMetrics] = useState<Map<string, BannerMetrics>>(() => new Map());
+  const refreshMetrics = useCallback(() => {
+    void loadBannerMetrics(userSession?.authToken).then(setMetrics);
+  }, [userSession?.authToken]);
+  useEffect(() => { refreshMetrics(); }, [refreshMetrics]);
   const [notice, setNotice] = useState<{ tone: 'ok' | 'bad'; text: string } | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
@@ -121,6 +132,24 @@ export default function BannerStudioPanel({
       setDraft(emptyBannerDraft(localities[0]?.id || ''));
     } catch (error) {
       setNotice({ tone: 'bad', text: (error as Error)?.message || 'Save failed.' });
+    } finally { setBusy(''); }
+  };
+
+  // Pause and Make live, which the retired ops panel had and the form-only
+  // screen did not: changing status meant opening Edit and finding a dropdown.
+  const setStatus = async (campaign: ScalableCampaign, status: ScalableCampaign['status']) => {
+    if (!onSaveScalableCampaign) return;
+    setBusy('status'); setNotice(null);
+    try {
+      await onSaveScalableCampaign(withBannerStatus(campaign, status));
+      setNotice({
+        tone: 'ok',
+        text: status === 'active'
+          ? `"${campaign.name}" is live. The snapshot for its localities was refreshed.`
+          : `"${campaign.name}" is paused and will stop showing.`,
+      });
+    } catch (error) {
+      setNotice({ tone: 'bad', text: (error as Error)?.message || 'Status change failed.' });
     } finally { setBusy(''); }
   };
 
@@ -345,15 +374,21 @@ export default function BannerStudioPanel({
       </div>
 
       <div className="rounded-2xl border border-slate-200 bg-white p-4">
-        <h3 className="text-sm font-bold text-slate-900">All banners ({banners.length})</h3>
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h3 className="text-sm font-bold text-slate-900">All banners ({banners.length})</h3>
+          <span className="text-[11px] text-slate-500">
+            Impressions, clicks and leads: last 30 days.
+            <button type="button" onClick={refreshMetrics} className="ml-1.5 font-bold text-indigo-600 underline">Refresh</button>
+          </span>
+        </div>
         {banners.length === 0 ? (
           <p className="mt-2 text-xs text-slate-500">No banners yet.</p>
         ) : (
           <div className="mt-2 overflow-x-auto">
-            <table className="w-full min-w-[860px] text-left text-[11px]">
+            <table className="w-full min-w-[1080px] text-left text-[11px]">
               <thead className="text-slate-500">
                 <tr>
-                  {['', 'Name', 'Placement', 'Locality', 'Dates', 'Live', ''].map((heading, index) => (
+                  {['', 'Name', 'Placement', 'Locality', 'Dates', 'Live', 'Impr.', 'Clicks', 'CTR', 'Leads', ''].map((heading, index) => (
                     <th key={`${heading}-${index}`} className="px-2 py-1.5 font-bold uppercase tracking-wide">{heading}</th>
                   ))}
                 </tr>
@@ -368,7 +403,12 @@ export default function BannerStudioPanel({
                     </td>
                     <td className="px-2 py-2">
                       <div className="font-bold text-slate-900">{campaign.name}</div>
-                      <div className="text-slate-500">{campaign.campaignType === 'hero_banner' ? 'Hero carousel' : 'Placed banner'} · p{campaign.priority}</div>
+                      <div className="text-slate-500">
+                        {campaign.campaignType === 'hero_banner' ? 'Hero carousel' : 'Placed banner'} · p{campaign.priority}
+                        {campaign.status !== 'active' && (
+                          <span className="ml-1 font-bold uppercase tracking-wide text-amber-700">{campaign.status}</span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-2 py-2 text-slate-600">
                       {findBannerSlot(row.placementKey, row.campaignType)?.label || row.placementKey || '—'}
@@ -388,8 +428,36 @@ export default function BannerStudioPanel({
                           </div>
                         )}
                     </td>
+                    {/* Counters come from ad_metric_daily, keyed by campaign id.
+                        A dash means nothing recorded yet, which is different from
+                        zero and should look different. */}
+                    <td className="px-2 py-2 tabular-nums text-slate-700">
+                      {metrics.get(campaign.id)?.impressions?.toLocaleString() ?? '—'}
+                    </td>
+                    <td className="px-2 py-2 tabular-nums text-slate-700">
+                      {metrics.get(campaign.id)?.clicks?.toLocaleString() ?? '—'}
+                    </td>
+                    <td className="px-2 py-2 tabular-nums font-bold text-slate-800">
+                      {describeBannerCtr(metrics.get(campaign.id))}
+                    </td>
+                    <td className="px-2 py-2 tabular-nums text-slate-700">
+                      {metrics.get(campaign.id)?.leads?.toLocaleString() ?? '—'}
+                    </td>
                     <td className="px-2 py-2">
-                      <div className="flex gap-1">
+                      <div className="flex flex-wrap gap-1">
+                        {campaign.status === 'active' ? (
+                          <button type="button" onClick={() => void setStatus(campaign, 'inactive')}
+                            disabled={!canManage || busy === 'status'}
+                            className="inline-flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-2 py-1 font-bold text-amber-800 disabled:opacity-50">
+                            <Pause className="h-3 w-3" /> Pause
+                          </button>
+                        ) : (
+                          <button type="button" onClick={() => void setStatus(campaign, 'active')}
+                            disabled={!canManage || busy === 'status'}
+                            className="inline-flex items-center gap-1 rounded border border-emerald-200 bg-emerald-50 px-2 py-1 font-bold text-emerald-800 disabled:opacity-50">
+                            <Play className="h-3 w-3" /> Make live
+                          </button>
+                        )}
                         <button type="button" onClick={() => setDraft(row)} disabled={!canManage}
                           className="rounded border border-slate-200 px-2 py-1 font-bold text-slate-700 disabled:opacity-50">Edit</button>
                         <button type="button" onClick={() => void remove(campaign.id)} disabled={!canManage}

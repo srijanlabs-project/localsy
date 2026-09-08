@@ -9,9 +9,12 @@ import {
   buildBannerCampaign,
   describeBannerSlotSize,
   emptyBannerDraft,
+  describeBannerCtr,
   evaluateBannerDelivery,
   findBannerSlot,
+  withBannerStatus,
 } from '../src/services/admin/bannerStudio.ts';
+import { foldAdMetricEvents, normalizeAdMetricEvent, toDeliverableListingAd } from '../shared/homepageDelivery.js';
 
 let passed = 0;
 const failures = [];
@@ -140,6 +143,47 @@ check('a saved campaign reads back into the same image', roundTripped.imageUrl =
 check('a saved campaign reads back into the same window', roundTripped.startDate === '2026-09-07' && roundTripped.endDate === '2026-10-07');
 check('a saved campaign reads back live', verdict(roundTripped).live);
 
+// --- delivery: what the client's own filter requires ---------------------
+//
+// WebPortal drops a listing ad unless `isActive` is true AND
+// `workflowStatus || 'draft'` is in ['approved', 'live'], and it keys and tracks
+// ads by `id`. A campaign payload carries none of those, so the resolver shapes
+// them on the way out. These checks are the coupling; if the client's filter
+// changes, they are what should be updated with it.
+
+const delivered = toDeliverableListingAd({ ...campaign, id: 'camp_rrwa_1' });
+
+check(
+  'a shaped payload passes the client\'s workflowStatus filter',
+  ['approved', 'live'].includes(delivered.workflowStatus || 'draft'),
+  'without this the client reads "draft" and the banner never renders',
+);
+check('a shaped payload is active', delivered.isActive === true);
+check('a shaped payload carries an id for keying and click tracking', delivered.id === 'camp_rrwa_1');
+check('a shaped payload keeps its placement key', delivered.placementKey === 'homepage_hero_primary');
+check('a shaped payload keeps its image', delivered.imageUrl === 'https://cdn.example/rrwa.png');
+check('a shaped payload keeps its targeting', delivered.pincodes.join() === '410218');
+
+check(
+  'an explicit workflowStatus from an operator is not overwritten',
+  toDeliverableListingAd({ id: 'c1', payload: { workflowStatus: 'paused' } }).workflowStatus === 'paused',
+);
+check(
+  'an explicit isActive:false still deactivates',
+  toDeliverableListingAd({ id: 'c1', payload: { isActive: false } }).isActive === false,
+);
+check(
+  'campaign-level dates fill in when the payload has none',
+  (() => {
+    const shaped = toDeliverableListingAd({ id: 'c1', startDate: '2026-09-01', endDate: '2026-10-01', payload: {} });
+    return shaped.startDate === '2026-09-01' && shaped.endDate === '2026-10-01';
+  })(),
+);
+check(
+  'a campaign with no payload at all does not throw',
+  toDeliverableListingAd({ id: 'c1' }).id === 'c1',
+);
+
 // --- the slot catalogue ---------------------------------------------------
 
 check('every slot has a size', BANNER_SLOTS.every((slot) => slot.width > 0 && slot.height > 0));
@@ -156,6 +200,66 @@ check(
   'a placement key from a different banner type falls back rather than returning nothing',
   findBannerSlot('homepage_hero_primary', 'hero_banner')?.campaignType === 'hero_banner',
 );
+
+// --- pause / make live ----------------------------------------------------
+//
+// The retired ops panel had these; the form-only screen did not, so pausing
+// meant opening Edit and hunting for a dropdown. Both flags have to move
+// together: the resolver filters on campaign.status, the client filters on
+// payload.isActive, and setting one leaves the banner paused on the server and
+// live in a published snapshot.
+
+const paused = withBannerStatus(campaign, 'inactive');
+check('pausing sets the campaign status the resolver filters on', paused.status === 'inactive');
+check('pausing also clears payload.isActive, which the client filters on', paused.payload.isActive === false);
+check('a paused banner does not deliver', !verdict(bannerDraftFromCampaign(paused)).live);
+
+const relived = withBannerStatus(paused, 'active');
+check('making it live restores both flags', relived.status === 'active' && relived.payload.isActive === true);
+check('making it live delivers again', verdict(bannerDraftFromCampaign(relived)).live);
+check('the status change keeps everything else', relived.payload.imageUrl === 'https://cdn.example/rrwa.png');
+
+// --- performance counters -------------------------------------------------
+
+check('an event with no ad id is dropped', normalizeAdMetricEvent({ type: 'click' }) === null);
+check('an unknown metric type is dropped', normalizeAdMetricEvent({ adId: 'a1', type: 'hover' }) === null);
+check('a valid event survives', normalizeAdMetricEvent({ adId: 'a1', type: 'click' })?.type === 'click');
+
+const folded = foldAdMetricEvents([
+  { adId: 'a1', type: 'impression', placementKey: 'homepage_hero_primary' },
+  { adId: 'a1', type: 'impression', placementKey: 'homepage_hero_primary' },
+  { adId: 'a1', type: 'click', placementKey: 'homepage_hero_primary' },
+  { adId: 'a2', type: 'impression', placementKey: 'mobile_inline' },
+  { adId: '', type: 'impression' },
+  { adId: 'a3', type: 'nonsense' },
+], '2026-09-08');
+
+check('one row per ad per day per placement', folded.rows.length === 2, `got ${folded.rows.length}`);
+check(
+  'repeat impressions add up inside one row',
+  folded.rows.find((row) => row.adId === 'a1')?.impressions === 2,
+);
+check('clicks are counted separately from impressions', folded.rows.find((row) => row.adId === 'a1')?.clicks === 1);
+check('a second ad keeps its own row', folded.rows.find((row) => row.adId === 'a2')?.impressions === 1);
+check('junk events are dropped, not counted', folded.accepted === 4, `accepted ${folded.accepted}`);
+check(
+  'the same ad in two placements stays two rows, so per-slot performance is readable',
+  foldAdMetricEvents([
+    { adId: 'a1', type: 'impression', placementKey: 'homepage_hero_primary' },
+    { adId: 'a1', type: 'impression', placementKey: 'mobile_inline' },
+  ], '2026-09-08').rows.length === 2,
+);
+check('an empty batch produces no rows', foldAdMetricEvents([], '2026-09-08').rows.length === 0);
+check('a batch is capped so one request cannot write unbounded rows',
+  foldAdMetricEvents(Array.from({ length: 200 }, (_, index) => ({ adId: `ad${index}`, type: 'impression' })), '2026-09-08').rows.length === 25);
+
+check('CTR reads as a percentage', describeBannerCtr({ adId: 'a', impressions: 1000, clicks: 25, leads: 0 }) === '2.5%');
+check(
+  'no impressions reads as a dash, not 0%',
+  describeBannerCtr({ adId: 'a', impressions: 0, clicks: 0, leads: 0 }) === '—',
+  'a banner nobody has seen has no click-through rate, and showing 0% implies it failed',
+);
+check('a banner with no row at all reads as a dash', describeBannerCtr(undefined) === '—');
 
 console.log(`${passed} checks passed, ${failures.length} failed`);
 failures.forEach((failure) => console.log(`  FAIL ${failure}`));

@@ -24,6 +24,13 @@ type LocalityLandingUiV1Props = {
   businesses: Business[];
   categories: Category[];
   heroBanners?: HeroBanner[];
+  /**
+   * True while the resolved-homepage payload is still in flight. The hero has a
+   * three-level fallback (booked ad -> configured hero banner -> a listing), and
+   * without this it paints the bottom level first and swaps up as data arrives,
+   * showing two or three different banners in the first second of a page load.
+   */
+  isHeroPending?: boolean;
   listingAds?: ListingAd[];
   localities: Locality[];
   recentSearches: string[];
@@ -211,6 +218,7 @@ export default function LocalityLandingUiV1({
   businesses,
   categories,
   heroBanners = [],
+  isHeroPending = false,
   listingAds = [],
   localities,
   recentSearches,
@@ -829,6 +837,7 @@ export default function LocalityLandingUiV1({
           isAccountActive={isAccountActive}
           onOpenLivePortal={onOpenLivePortal}
           onOpenPlatform={onOpenPlatform}
+          isHeroPending={isHeroPending}
           rotatingPrimaryHeroAd={rotatingPrimaryHeroAd}
           rotatingSecondaryHeroAd={rotatingSecondaryHeroAd}
           rotatingPrimaryHeroCount={primaryHeroImageAds.length}
@@ -883,11 +892,19 @@ export default function LocalityLandingUiV1({
         <div className="px-4 pt-4 lg:hidden">
           <div className="flex items-center justify-between pb-1.5">
             <span className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-[#C46A00]">Sponsored</span>
-            <span className="text-[10px] font-semibold text-[#98A2B3]">
-              {mobileSponsoredIndex + 1} / {mobileSponsoredSlides.length}
-            </span>
+            {isHeroPending ? null : (
+              <span className="text-[10px] font-semibold text-[#98A2B3]">
+                {mobileSponsoredIndex + 1} / {mobileSponsoredSlides.length}
+              </span>
+            )}
           </div>
 
+          {isHeroPending ? (
+            <div className="flex items-stretch gap-2">
+              <div className="h-[132px] w-[70%] shrink-0 overflow-hidden rounded-[14px]"><HeroHoldCard /></div>
+              <div className="h-[132px] w-[30%] shrink-0 overflow-hidden rounded-[14px]"><HeroHoldCard /></div>
+            </div>
+          ) : (
           <div className="flex items-stretch gap-2">
             <button
               type="button"
@@ -941,8 +958,9 @@ export default function LocalityLandingUiV1({
               </span>
             </button>
           </div>
+          )}
 
-          {mobileSponsoredSlides.length > 1 ? (
+          {!isHeroPending && mobileSponsoredSlides.length > 1 ? (
             <div className="mt-2 flex justify-center gap-1.5">
               {mobileSponsoredSlides.map((slide, dotIndex) => (
                 <span
@@ -1431,6 +1449,7 @@ function DesktopHomeShell({
   isAccountActive,
   onOpenLivePortal,
   onOpenPlatform,
+  isHeroPending,
   rotatingPrimaryHeroAd,
   rotatingSecondaryHeroAd,
   rotatingPrimaryHeroCount,
@@ -1467,6 +1486,7 @@ function DesktopHomeShell({
   isAccountActive: boolean;
   onOpenLivePortal: () => void;
   onOpenPlatform?: () => void;
+  isHeroPending?: boolean;
   rotatingPrimaryHeroAd: ListingAd | null;
   rotatingSecondaryHeroAd: ListingAd | null;
   rotatingPrimaryHeroCount: number;
@@ -1601,7 +1621,9 @@ function DesktopHomeShell({
         <div className="mx-auto max-w-[1280px]">
           <div className="flex items-stretch gap-4">
             <div className="relative min-h-[360px] flex-[3.8] overflow-hidden rounded-[24px] shadow-[0_16px_40px_rgba(15,23,42,0.12)]">
-              {rotatingPrimaryHeroAd ? (
+              {isHeroPending ? (
+                <HeroHoldCard />
+              ) : rotatingPrimaryHeroAd ? (
                 <ImageAdPromoCard listingAd={rotatingPrimaryHeroAd} onOpenListingAd={onOpenListingAd} onOpenLivePortal={onOpenLivePortal} />
               ) : (
                 <PromoCard
@@ -1613,18 +1635,24 @@ function DesktopHomeShell({
                   onClick={primaryPromo.onClick}
                 />
               )}
-              <div className="absolute bottom-5 left-8 z-10 flex gap-2">
-                {Array.from({ length: Math.max(rotatingPrimaryHeroCount || 0, 1) }).map((_, index) => (
-                  <span
-                    key={`hero-dot-${index}`}
-                    className={`h-2 w-2 rounded-full ${index === rotatingPrimaryHeroIndex ? 'bg-[#FFD54F]' : 'bg-white/40'}`}
-                  />
-                ))}
-              </div>
+              {/* Dots would otherwise show a single dot over the held card and
+                  then jump to the real count. */}
+              {isHeroPending ? null : (
+                <div className="absolute bottom-5 left-8 z-10 flex gap-2">
+                  {Array.from({ length: Math.max(rotatingPrimaryHeroCount || 0, 1) }).map((_, index) => (
+                    <span
+                      key={`hero-dot-${index}`}
+                      className={`h-2 w-2 rounded-full ${index === rotatingPrimaryHeroIndex ? 'bg-[#FFD54F]' : 'bg-white/40'}`}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="relative min-h-[360px] flex-1 overflow-hidden rounded-[20px] shadow-[0_8px_24px_rgba(15,23,42,0.08)]">
-              {rotatingSecondaryHeroAd ? (
+              {isHeroPending ? (
+                <HeroHoldCard />
+              ) : rotatingSecondaryHeroAd ? (
                 <ImageAdPromoCard listingAd={rotatingSecondaryHeroAd} compact onOpenListingAd={onOpenListingAd} onOpenLivePortal={onOpenLivePortal} />
               ) : (
                 <PromoCard
@@ -1658,6 +1686,29 @@ function DesktopHomeShell({
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * The hero's held state: the shape the banner will occupy, with no content.
+ *
+ * The alternative is what the page did before — paint the bottom of the hero's
+ * three-level fallback immediately and replace it as each source arrives. That
+ * showed a stale hero banner, then a listing, then the booked campaign, in the
+ * first second of every load. A visitor reads three banners as three ads; they
+ * read one held frame as the page loading, which is what is actually happening.
+ *
+ * Deliberately not a spinner: the hero is a large block and a spinner inside it
+ * draws more attention than the wait deserves.
+ */
+function HeroHoldCard() {
+  // Fills its container, which already carries the slot's height
+  // (min-h-[360px] on desktop, h-[132px] on mobile).
+  return (
+    <div
+      aria-hidden="true"
+      className="h-full w-full animate-pulse bg-gradient-to-br from-[#E7EDF5] via-[#F2F6FA] to-[#E7EDF5]"
+    />
   );
 }
 

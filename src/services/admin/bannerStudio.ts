@@ -342,3 +342,67 @@ export const bannerDraftFromCampaign = (campaign: ScalableCampaign): BannerDraft
     priority: campaign.priority,
   };
 };
+
+export type BannerMetrics = {
+  adId: string;
+  impressions: number;
+  clicks: number;
+  leads: number;
+  lastActivityAt?: string;
+};
+
+/**
+ * Reads the delivery counters for the Banners table.
+ *
+ * Keyed by ad id, which for a campaign-created banner IS the campaign id — see
+ * `toDeliverableListingAd` in shared/homepageDelivery.js, which stamps it on the
+ * way out. That is the whole reason performance can be attributed to a campaign
+ * at all.
+ *
+ * Returns an empty map rather than throwing: a missing performance column is a
+ * far better failure than a Banners screen that will not load.
+ */
+export const loadBannerMetrics = async (authToken?: string, days = 30): Promise<Map<string, BannerMetrics>> => {
+  try {
+    const response = await fetch(`/api/admin/ad-metrics?days=${encodeURIComponent(String(days))}`, {
+      headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+    });
+    if (!response.ok) return new Map();
+    const body = await response.json();
+    const rows: BannerMetrics[] = Array.isArray(body?.metrics) ? body.metrics : [];
+    return new Map(rows.map((row) => [String(row.adId), {
+      adId: String(row.adId),
+      impressions: Number(row.impressions || 0),
+      clicks: Number(row.clicks || 0),
+      leads: Number(row.leads || 0),
+      lastActivityAt: row.lastActivityAt || '',
+    }]));
+  } catch {
+    return new Map();
+  }
+};
+
+/** Click-through rate as a display string. Zero impressions is "—", not "0%". */
+export const describeBannerCtr = (metrics?: BannerMetrics | null) => {
+  if (!metrics || metrics.impressions <= 0) return '—';
+  return `${((metrics.clicks / metrics.impressions) * 100).toFixed(1)}%`;
+};
+
+/**
+ * The campaign a Pause / Make live button writes.
+ *
+ * Pausing is `status: 'inactive'`, which `resolveCampaignPayloads` filters on
+ * (`campaign.status === 'active'`), and `payload.isActive` is kept in step
+ * because the client filters listing ads on that too. Setting only one of them
+ * leaves a banner that is paused on the server and live in a snapshot, or the
+ * reverse.
+ */
+export const withBannerStatus = (campaign: ScalableCampaign, status: ScalableCampaign['status']): ScalableCampaign => ({
+  ...campaign,
+  status,
+  payload: {
+    ...(campaign.payload || {}),
+    isActive: status === 'active',
+  },
+  updatedAt: new Date().toISOString(),
+});

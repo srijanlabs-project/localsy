@@ -31,6 +31,8 @@ const throttledPublicRoutes = [
   ['/api/auth/platform/request-otp', 'platform OTP request throttle'],
   ['/api/auth/verify-otp', 'shared OTP verify throttle'],
   ['/api/audit-events', 'audit write throttle'],
+  // The one write a visitor's browser is allowed to make on the public site.
+  ['/api/ad-metrics/track', 'banner tracking throttle'],
 ];
 
 for (const [route, label] of throttledPublicRoutes) {
