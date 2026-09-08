@@ -119,7 +119,17 @@ export default function BannerStudioPanel({
   };
 
   const save = async () => {
-    if (!onSaveScalableCampaign) return;
+    // Both of these used to be silent returns — the button appeared to work and
+    // nothing reached the server, which is indistinguishable from a save that
+    // succeeded and then failed to deliver. Every refusal now says so.
+    if (!onSaveScalableCampaign) {
+      setNotice({ tone: 'bad', text: 'This screen has no save handler wired, so nothing can be saved. That is a wiring fault, not something you can fix here.' });
+      return;
+    }
+    if (!canManage) {
+      setNotice({ tone: 'bad', text: 'Your role cannot manage campaigns, so this will not save.' });
+      return;
+    }
     if (!draft.name.trim()) { setNotice({ tone: 'bad', text: 'Give the banner a name.' }); return; }
     setBusy('save'); setNotice(null);
     try {
@@ -171,6 +181,15 @@ export default function BannerStudioPanel({
           {!canManage && <span className="ml-1 font-semibold text-amber-700">(view-only for your role)</span>}
         </p>
       </div>
+
+      {/* A disabled screen looked almost identical to a working one: one small
+          parenthetical in the subtitle. If nothing here can save, say it once,
+          loudly, above the form. */}
+      {!canManage && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
+          Your role cannot manage campaigns. You can read this screen, but nothing on it will save.
+        </div>
+      )}
 
       {notice && (
         <div className={`rounded-lg border px-3 py-2 text-xs font-semibold ${notice.tone === 'ok'
@@ -375,11 +394,23 @@ export default function BannerStudioPanel({
           {verdict.warnings.map((warning) => <div key={warning} className="mt-0.5 text-amber-800">• {warning}</div>)}
         </div>
 
-        <button type="button" onClick={() => void save()} disabled={!canManage || busy === 'save'}
-          className="mt-3 inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-bold text-white disabled:opacity-60">
-          {busy === 'save' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImagePlus className="h-3.5 w-3.5" />}
-          {draft.id ? 'Update banner' : 'Create banner'}
-        </button>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button type="button" onClick={() => void save()} disabled={!canManage || busy === 'save'}
+            title={canManage ? undefined : 'Your role cannot manage campaigns'}
+            className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-bold text-white disabled:opacity-60">
+            {busy === 'save' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImagePlus className="h-3.5 w-3.5" />}
+            {draft.id ? 'Update banner' : 'Create banner'}
+          </button>
+          {draft.id && (
+            <button type="button" onClick={() => setDraft(emptyBannerDraft(localities[0]?.id || ''))}
+              className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600">
+              Cancel edit
+            </button>
+          )}
+          {draft.id && (
+            <span className="text-[11px] text-slate-500">Editing <code className="rounded bg-slate-100 px-1">{draft.id}</code></span>
+          )}
+        </div>
       </div>
 
       <div className="rounded-2xl border border-slate-200 bg-white p-4">
