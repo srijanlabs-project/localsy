@@ -19,6 +19,8 @@ import { buildSeoCategoryCopyIndex, buildSeoGrowthSnapshot } from './shared/seoG
 import {
   AD_METRIC_MAX_EVENTS_PER_REQUEST,
   foldAdMetricEvents,
+  getNewestCmsContentTimestamp,
+  isPublishedSnapshotStale,
   toDeliverableListingAd,
 } from './shared/homepageDelivery.js';
 import {
@@ -7344,32 +7346,58 @@ function calculatePublishedSnapshotScore(snapshot, context) {
   return score;
 }
 
+/**
+ * Finds the published snapshot to serve, and says when it can no longer be
+ * trusted.
+ *
+ * A snapshot is served in PREFERENCE to live resolution, and nothing expired it.
+ * So a snapshot published at 18:47 kept being served unchanged while campaigns
+ * were created, edited and activated afterwards — the site showing one thing,
+ * the console showing another, and the resolved-homepage response looking
+ * byte-identical every time it was checked. The only thing that refreshed it was
+ * someone happening to save a campaign for that same locality.
+ *
+ * A snapshot older than the newest campaign/template/assignment edit is
+ * therefore reported as stale, and the caller resolves live instead. Serving
+ * live is what happens on a cache miss anyway, so the cost is small and the
+ * system heals itself: the next publish makes snapshots authoritative again.
+ */
 function findPublishedSnapshotMatch(state, context) {
   const snapshotId = buildSnapshotId(context);
-  const exactSnapshot = (state.publishedSnapshots || []).find((snapshot) => snapshot.id === snapshotId);
-  if (exactSnapshot) {
+  const legacySnapshotId = buildLegacySnapshotId(context);
+  const snapshots = state.publishedSnapshots || [];
+
+  const annotate = (match) => {
+    if (!match?.snapshot) return null;
+    const newestContentAt = getNewestCmsContentTimestamp(state);
     return {
+      ...match,
+      requestedSnapshotId: snapshotId,
+      legacySnapshotId,
+      stale: isPublishedSnapshotStale(match.snapshot, newestContentAt),
+      newestContentAt: newestContentAt ? new Date(newestContentAt).toISOString() : '',
+    };
+  };
+
+  const exactSnapshot = snapshots.find((snapshot) => snapshot.id === snapshotId);
+  if (exactSnapshot) {
+    return annotate({
       snapshot: exactSnapshot,
       strategy: 'exact_snapshot_id',
       score: calculatePublishedSnapshotScore(exactSnapshot, context),
-      requestedSnapshotId: snapshotId,
-      legacySnapshotId: buildLegacySnapshotId(context),
-    };
+    });
   }
 
-  const legacySnapshotId = buildLegacySnapshotId(context);
-  const legacySnapshot = (state.publishedSnapshots || []).find((snapshot) => snapshot.id === legacySnapshotId);
+  const legacySnapshot = snapshots.find((snapshot) => snapshot.id === legacySnapshotId);
   if (legacySnapshot) {
-    return {
+    return annotate({
       snapshot: legacySnapshot,
       strategy: 'legacy_snapshot_id',
       score: calculatePublishedSnapshotScore(legacySnapshot, context),
-      requestedSnapshotId: snapshotId,
-      legacySnapshotId,
-    };
+    });
   }
 
-  const matchingSnapshot = (state.publishedSnapshots || [])
+  const matchingSnapshot = snapshots
     .map((snapshot) => ({
       snapshot,
       score: calculatePublishedSnapshotScore(snapshot, context),
@@ -7382,13 +7410,11 @@ function findPublishedSnapshotMatch(state, context) {
     })[0];
 
   if (!matchingSnapshot?.snapshot) return null;
-  return {
+  return annotate({
     snapshot: matchingSnapshot.snapshot,
     strategy: 'best_matching_snapshot',
     score: matchingSnapshot.score,
-    requestedSnapshotId: snapshotId,
-    legacySnapshotId,
-  };
+  });
 }
 
 function buildPublishContexts(input, localityIds) {
@@ -11266,7 +11292,11 @@ app.get('/api/resolved-homepage', async (req, res) => {
     }
 
     const cmsState = await readScalableCmsState();
-    const publishedSnapshotMatch = usePublished ? findPublishedSnapshotMatch(cmsState, context) : null;
+    // A snapshot older than the newest campaign edit is ignored: it would serve
+    // content the console has already changed, indefinitely, with no way for
+    // anyone looking at the site to tell.
+    const snapshotMatch = usePublished ? findPublishedSnapshotMatch(cmsState, context) : null;
+    const publishedSnapshotMatch = snapshotMatch && !snapshotMatch.stale ? snapshotMatch : null;
     const payload = publishedSnapshotMatch?.snapshot?.payload || await resolveHomepageForContext(context, { state: cmsState });
     const resolution = {
       source: publishedSnapshotMatch ? 'published_snapshot' : 'live_resolver',
@@ -11287,6 +11317,15 @@ app.get('/api/resolved-homepage', async (req, res) => {
         publishedAt: publishedSnapshotMatch.snapshot.publishedAt || '',
         updatedAt: publishedSnapshotMatch.snapshot.updatedAt || '',
         score: publishedSnapshotMatch.score,
+      } : null,
+      // Present only when a snapshot matched but was passed over. Says so out
+      // loud, because "the site is serving something I already changed" was
+      // invisible in this response before.
+      staleSnapshot: snapshotMatch?.stale ? {
+        id: snapshotMatch.snapshot.id,
+        updatedAt: snapshotMatch.snapshot.updatedAt || '',
+        newestContentAt: snapshotMatch.newestContentAt,
+        note: 'Snapshot is older than the newest campaign edit; resolved live instead. Publish to make it authoritative again.',
       } : null,
       template: payload?.template || null,
       resolvedAt: payload?.resolvedAt || new Date().toISOString(),

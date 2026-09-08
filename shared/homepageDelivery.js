@@ -87,3 +87,37 @@ export function foldAdMetricEvents(events, metricDate) {
   }
   return { rows: [...folded.values()], accepted: normalized.length };
 }
+
+/**
+ * The newest edit to anything a published snapshot is built FROM.
+ *
+ * Deliberately NOT `state.metadata.updatedAt`: publishing writes the snapshots
+ * into that same state and bumps the field, so comparing against it would mark
+ * every snapshot stale the instant it was published and the snapshot layer would
+ * never be used again.
+ */
+export function getNewestCmsContentTimestamp(state) {
+  let newest = 0;
+  for (const collection of [state?.campaigns, state?.templates, state?.assignments]) {
+    if (!Array.isArray(collection)) continue;
+    for (const entity of collection) {
+      const parsed = Date.parse(entity?.updatedAt || '');
+      if (Number.isFinite(parsed) && parsed > newest) newest = parsed;
+    }
+  }
+  return newest;
+}
+
+/**
+ * True when a snapshot predates the newest content edit and must not be served.
+ *
+ * Nothing used to expire a snapshot, and a snapshot wins over live resolution —
+ * so one published before a campaign was created kept serving the old homepage
+ * indefinitely, identical on every check, with no way to tell from the site.
+ */
+export function isPublishedSnapshotStale(snapshot, newestContentAt) {
+  if (!snapshot) return false;
+  if (!newestContentAt) return false;
+  const snapshotAt = Date.parse(snapshot.updatedAt || snapshot.publishedAt || '') || 0;
+  return newestContentAt > snapshotAt;
+}

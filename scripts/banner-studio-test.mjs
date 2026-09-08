@@ -14,7 +14,13 @@ import {
   findBannerSlot,
   withBannerStatus,
 } from '../src/services/admin/bannerStudio.ts';
-import { foldAdMetricEvents, normalizeAdMetricEvent, toDeliverableListingAd } from '../shared/homepageDelivery.js';
+import {
+  foldAdMetricEvents,
+  getNewestCmsContentTimestamp,
+  isPublishedSnapshotStale,
+  normalizeAdMetricEvent,
+  toDeliverableListingAd,
+} from '../shared/homepageDelivery.js';
 
 let passed = 0;
 const failures = [];
@@ -349,6 +355,56 @@ check(
   'a banner nobody has seen has no click-through rate, and showing 0% implies it failed',
 );
 check('a banner with no row at all reads as a dash', describeBannerCtr(undefined) === '—');
+
+// --- stale published snapshots --------------------------------------------
+//
+// A snapshot beats live resolution and nothing expired it, so one published
+// before a banner was created kept serving the old homepage indefinitely — the
+// same response byte for byte on every check, with no way to tell from the site
+// that the console had moved on.
+
+const SNAP = { id: 's1', updatedAt: '2026-09-08T18:47:48.064Z' };
+
+check(
+  'a snapshot older than the newest campaign edit is stale',
+  isPublishedSnapshotStale(SNAP, Date.parse('2026-09-08T19:10:00.000Z')),
+);
+check(
+  'a snapshot published after the newest edit is fresh',
+  !isPublishedSnapshotStale(SNAP, Date.parse('2026-09-08T18:00:00.000Z')),
+);
+check(
+  'a snapshot published at the same instant is fresh',
+  !isPublishedSnapshotStale(SNAP, Date.parse('2026-09-08T18:47:48.064Z')),
+  'publishing writes the snapshot from that very state; equal is not stale',
+);
+check('with no content at all nothing is stale', !isPublishedSnapshotStale(SNAP, 0));
+check('a missing snapshot is not stale', !isPublishedSnapshotStale(null, Date.now()));
+check(
+  'publishedAt stands in when updatedAt is missing',
+  isPublishedSnapshotStale({ id: 's2', publishedAt: '2026-09-01T00:00:00.000Z' }, Date.parse('2026-09-08T00:00:00.000Z')),
+);
+
+check(
+  'the newest timestamp spans campaigns, templates and assignments',
+  getNewestCmsContentTimestamp({
+    campaigns: [{ updatedAt: '2026-09-01T00:00:00.000Z' }],
+    templates: [{ updatedAt: '2026-09-05T00:00:00.000Z' }],
+    assignments: [{ updatedAt: '2026-09-03T00:00:00.000Z' }],
+  }) === Date.parse('2026-09-05T00:00:00.000Z'),
+);
+check(
+  'state.metadata.updatedAt is deliberately ignored',
+  getNewestCmsContentTimestamp({
+    campaigns: [{ updatedAt: '2026-09-01T00:00:00.000Z' }],
+    metadata: { updatedAt: '2027-01-01T00:00:00.000Z' },
+  }) === Date.parse('2026-09-01T00:00:00.000Z'),
+  'publishing bumps metadata.updatedAt, which would mark every snapshot stale on publish',
+);
+check('an empty state has no newest timestamp', getNewestCmsContentTimestamp({}) === 0);
+check('a malformed updatedAt is skipped rather than throwing',
+  getNewestCmsContentTimestamp({ campaigns: [{ updatedAt: 'not a date' }, { updatedAt: '2026-09-02T00:00:00.000Z' }] })
+  === Date.parse('2026-09-02T00:00:00.000Z'));
 
 console.log(`${passed} checks passed, ${failures.length} failed`);
 failures.forEach((failure) => console.log(`  FAIL ${failure}`));

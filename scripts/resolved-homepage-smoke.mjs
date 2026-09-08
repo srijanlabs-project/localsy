@@ -36,9 +36,32 @@ mustContain(
 );
 mustContain(
   serverText,
-  /const publishedSnapshotMatch = usePublished \? findPublishedSnapshotMatch\(cmsState, context\) : null;/,
+  /const snapshotMatch = usePublished \? findPublishedSnapshotMatch\(cmsState, context\) : null;/,
   'published snapshot selection before live resolve',
   'server.js',
+);
+// A snapshot is served in preference to live resolution and nothing expired it,
+// so one published before a campaign edit kept serving the old homepage forever.
+mustContain(
+  serverText,
+  /const publishedSnapshotMatch = snapshotMatch && !snapshotMatch\.stale \? snapshotMatch : null;/,
+  'stale snapshots passed over in favour of live resolution',
+  'server.js',
+);
+// Staleness must be measured against content edits, NOT state.metadata.updatedAt
+// — publishing writes snapshots into the same state and bumps that field, which
+// would mark every snapshot stale the moment it was published.
+mustContain(
+  serverText,
+  /stale: isPublishedSnapshotStale\(match\.snapshot, newestContentAt\)/,
+  'staleness computed from the shared helper',
+  'server.js',
+);
+mustContain(
+  readFile('shared/homepageDelivery.js'),
+  /for \(const collection of \[state\?\.campaigns, state\?\.templates, state\?\.assignments\]\)/,
+  'staleness measured from campaign/template/assignment edits, not state.metadata',
+  'shared/homepageDelivery.js',
 );
 mustContain(
   serverText,
