@@ -14,7 +14,6 @@ import AdminPincodeRoutingPage from '../../pages/admin/AdminPincodeRoutingPage';
 import AdminCategoryUrlsPage from '../../pages/admin/AdminCategoryUrlsPage';
 import AdminGeographyMasterPage from '../../pages/admin/AdminGeographyMasterPage';
 import AdminHomepageLayoutPage from '../../pages/admin/AdminHomepageLayoutPage';
-import AdminHeroBannersPage from '../../pages/admin/AdminHeroBannersPage';
 import AdminHomepageTemplatesPage from '../../pages/admin/AdminHomepageTemplatesPage';
 import AdminHomepageAssignmentsPage from '../../pages/admin/AdminHomepageAssignmentsPage';
 import AdminHomepageCampaignsPage from '../../pages/admin/AdminHomepageCampaignsPage';
@@ -304,22 +303,11 @@ export default function AdminApp(props: AdminConsoleProps) {
                 </RequireAccess>
               )}
             />
-            <Route
-              path="homepage/hero"
-              element={(
-                <RequireAccess allowed={canManageHomepage}>
-                  <AdminHeroBannersPage
-                    localities={localities}
-                    heroBanners={heroBanners}
-                    homepageDefaultsConfig={homepageDefaultsConfig}
-                    userSession={userSession}
-                    onCreateHeroBanner={onCreateHeroBanner}
-                    onUpdateHeroBanner={onUpdateHeroBanner}
-                    onDeleteHeroBanner={onDeleteHeroBanner}
-                  />
-                </RequireAccess>
-              )}
-            />
+            {/* Hero Banners was a third banner screen writing to `homepage_hero_banners`,
+                a store that only ever survived in localStorage. Hero banners are now
+                created as campaigns on the one Banners screen, so the old path redirects
+                there rather than 404ing anyone with it bookmarked. */}
+            <Route path="homepage/hero" element={<Navigate to="/campaigns/ad-banners" replace />} />
             <Route
               path="homepage/templates"
               element={(
@@ -415,9 +403,11 @@ export default function AdminApp(props: AdminConsoleProps) {
                     listingAds={listingAds}
                     adLeads={adLeads}
                     userSession={userSession}
-                    onCreateListingAd={onCreateListingAd}
-                    onUpdateListingAd={onUpdateListingAd}
+                    scalableHomepageConfig={scalableHomepageConfig}
+                    onSaveScalableCampaign={onSaveScalableCampaign}
+                    onDeleteScalableCampaign={onDeleteScalableCampaign}
                     onDeleteListingAd={onDeleteListingAd}
+                    canManage={canManageCampaignsGroup}
                   />
                 </RequireAccess>
               )}

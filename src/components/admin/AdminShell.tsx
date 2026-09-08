@@ -15,7 +15,6 @@ import {
   FolderTree,
   GitBranch,
   Globe2,
-  Image,
   Inbox,
   KeyRound,
   Layers,
@@ -235,10 +234,6 @@ export default function AdminShell({ userSession, pendingModerationCount, duplic
                   <LayoutTemplate className="h-4 w-4 flex-shrink-0" />
                   {!sidebarCollapsed && <span>Layout Builder</span>}
                 </NavLink>
-                <NavLink to="/homepage/hero" className={navLinkClass} title="Hero Banners">
-                  <Image className="h-4 w-4 flex-shrink-0" />
-                  {!sidebarCollapsed && <span>Hero Banners</span>}
-                </NavLink>
                 <NavLink to="/homepage/templates" className={navLinkClass} title="Templates">
                   <Layers className="h-4 w-4 flex-shrink-0" />
                   {!sidebarCollapsed && <span>Templates</span>}
@@ -267,9 +262,9 @@ export default function AdminShell({ userSession, pendingModerationCount, duplic
                   <BadgePercent className="h-4 w-4 flex-shrink-0" />
                   {!sidebarCollapsed && <span>Offers</span>}
                 </NavLink>
-                <NavLink to="/campaigns/ad-banners" className={navLinkClass} title="Ad Banners">
+                <NavLink to="/campaigns/ad-banners" className={navLinkClass} title="Banners">
                   <Presentation className="h-4 w-4 flex-shrink-0" />
-                  {!sidebarCollapsed && <span>Ad Banners</span>}
+                  {!sidebarCollapsed && <span>Banners</span>}
                 </NavLink>
                 <NavLink to="/campaigns/lead-inbox" className={navLinkClass} title="Lead Inbox">
                   <Inbox className="h-4 w-4 flex-shrink-0" />

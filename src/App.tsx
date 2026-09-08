@@ -4560,6 +4560,41 @@ export default function App() {
     return payload;
   };
 
+  /**
+   * Re-publishes the resolved-homepage snapshots a campaign affects.
+   *
+   * `/api/resolved-homepage` prefers a matching published snapshot over the live
+   * resolver, so a snapshot that predates a campaign silently overrides it. Called
+   * after every campaign write; failures are swallowed on purpose, because a
+   * snapshot refresh problem must not surface as "your campaign did not save".
+   *
+   * A campaign with no locality targets is global, so every known locality is
+   * refreshed — otherwise the one snapshot that happens to match would go stale.
+   *
+   * NOTE: this reads `handlePublishResolvedHomepages`, which is declared ~350
+   * lines BELOW. That is safe only because the read happens inside this function
+   * body, which runs from a save handler after render has completed — by then the
+   * const is assigned. Do not hoist a call to this into render or an effect body
+   * without moving the declarations: the same forward-reference shape, read during
+   * render instead, is what produced `ReferenceError: Cannot access 'm' before
+   * initialization` and a blank page in the map-preview block, and neither `tsc`
+   * nor `vite build` flags it.
+   */
+  const republishSnapshotsForCampaign = async (campaign?: ScalableCampaign | null) => {
+    if (!apiConfiguration.publishResolvedHomepageEndpoint) return;
+    const targeted = campaign?.targets?.localityIds || [];
+    const localityIds = targeted.length > 0
+      ? targeted
+      : localities.map((locality) => locality.id);
+    const scoped = Array.from(new Set(localityIds.filter(Boolean)));
+    if (scoped.length === 0) return;
+    try {
+      await handlePublishResolvedHomepages(scoped);
+    } catch (error) {
+      console.warn('[homepage] snapshot refresh after campaign write failed:', error);
+    }
+  };
+
   const handleSaveScalableCampaign = async (campaign: ScalableCampaign) => {
     const response = await fetch(
       campaign.id ? getScalableHomepageEntityEndpoint('campaigns', campaign.id) : getScalableHomepageEntityEndpoint('campaigns'),
@@ -4585,10 +4620,26 @@ export default function App() {
       campaign.id ? 'Updated scalable homepage campaign' : 'Created scalable homepage campaign',
       `Campaign: ${campaign.name} | Type: ${campaign.campaignType}`
     );
+    // Refresh the published snapshot for every locality this campaign targets.
+    //
+    // Without this a campaign save was invisible on the site. `/api/resolved-homepage`
+    // serves a matching published snapshot in preference to the live resolver, and a
+    // snapshot published by some earlier CMS action therefore kept overriding every
+    // campaign created afterwards — which is why nine localities carried
+    // `listingAds: []` while listing-ad campaigns existed. Nothing in the console said
+    // so, and deleting the snapshot only helped until the next unrelated save.
+    //
+    // Deliberately AFTER the write and deliberately non-fatal: a snapshot refresh
+    // failing must not make a saved campaign look unsaved.
+    await republishSnapshotsForCampaign(campaign);
     return payload?.campaign as ScalableCampaign | undefined;
   };
 
   const handleDeleteScalableCampaign = async (campaignId: string) => {
+    // Read before the delete: afterwards there is nothing left to tell us which
+    // localities need their snapshot refreshed.
+    const removedCampaign = (scalableHomepageConfig?.campaigns || [])
+      .find((entry) => entry.id === campaignId) || null;
     const response = await fetch(getScalableHomepageEntityEndpoint('campaigns', campaignId), {
       method: 'DELETE',
       headers: {
@@ -4608,6 +4659,9 @@ export default function App() {
       'Deleted scalable homepage campaign',
       `Campaign ID: ${campaignId}`
     );
+    // Same reason as the save path: a stale snapshot would keep serving the
+    // campaign that was just deleted.
+    await republishSnapshotsForCampaign(removedCampaign);
     return payload;
   };
 
