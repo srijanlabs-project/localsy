@@ -996,6 +996,9 @@ export default function LocalityLandingUiV1({
               onClick={mobilePrimaryPromo.onClick}
               className={`relative block h-[198px] shrink-0 overflow-hidden rounded-[14px] bg-[#0D1B2A] text-left ${hasSecondaryHero ? 'w-[70%]' : 'w-full'}`}
             >
+              {/* The mobile creative, as supplied. The scrim and the headline
+                  below are the no-image fallback: drawing them over a designed
+                  358x198 banner covered the advertiser's own artwork. */}
               {mobilePrimaryPromo.image ? (
                 <img
                   src={mobilePrimaryPromo.image}
@@ -1003,23 +1006,26 @@ export default function LocalityLandingUiV1({
                   loading="lazy"
                   className="absolute inset-0 h-full w-full object-cover"
                 />
-              ) : null}
-              <span className="absolute inset-0 bg-[linear-gradient(90deg,rgba(13,27,42,0.92)_0%,rgba(13,27,42,0.45)_100%)]" />
-              <span className="relative z-10 flex h-full flex-col justify-end p-3 text-white">
-                {mobilePrimaryPromo.badge ? (
-                  <span className="mb-1.5 inline-flex w-fit rounded-[6px] bg-[#F59E0B] px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-[0.08em] text-[#111827]">
-                    {mobilePrimaryPromo.badge}
+              ) : (
+                <>
+                  <span className="absolute inset-0 bg-[linear-gradient(90deg,rgba(13,27,42,0.92)_0%,rgba(13,27,42,0.45)_100%)]" />
+                  <span className="relative z-10 flex h-full flex-col justify-end p-3 text-white">
+                    {mobilePrimaryPromo.badge ? (
+                      <span className="mb-1.5 inline-flex w-fit rounded-[6px] bg-[#F59E0B] px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-[0.08em] text-[#111827]">
+                        {mobilePrimaryPromo.badge}
+                      </span>
+                    ) : null}
+                    <span className="line-clamp-2 text-[14px] font-extrabold leading-[1.25] tracking-[-0.02em]">
+                      {mobilePrimaryPromo.title}
+                    </span>
+                    {mobilePrimaryPromo.subtitle ? (
+                      <span className="mt-0.5 line-clamp-2 text-[10.5px] leading-[1.3] text-white/80">
+                        {mobilePrimaryPromo.subtitle}
+                      </span>
+                    ) : null}
                   </span>
-                ) : null}
-                <span className="line-clamp-2 text-[14px] font-extrabold leading-[1.25] tracking-[-0.02em]">
-                  {mobilePrimaryPromo.title}
-                </span>
-                {mobilePrimaryPromo.subtitle ? (
-                  <span className="mt-0.5 line-clamp-2 text-[10.5px] leading-[1.3] text-white/80">
-                    {mobilePrimaryPromo.subtitle}
-                  </span>
-                ) : null}
-              </span>
+                </>
+              )}
             </button>
 
             {hasSecondaryHero && (
@@ -1035,13 +1041,16 @@ export default function LocalityLandingUiV1({
                   loading="lazy"
                   className="absolute inset-0 h-full w-full object-cover"
                 />
-              ) : null}
-              <span className="absolute inset-0 bg-[linear-gradient(180deg,rgba(15,23,42,0.25)_0%,rgba(15,23,42,0.9)_100%)]" />
-              <span className="relative z-10 flex h-full flex-col justify-end p-2.5 text-white">
-                <span className="line-clamp-3 text-[11px] font-bold leading-[1.25]">
-                  {secondaryPromo.title}
-                </span>
-              </span>
+              ) : (
+                <>
+                  <span className="absolute inset-0 bg-[linear-gradient(180deg,rgba(15,23,42,0.25)_0%,rgba(15,23,42,0.9)_100%)]" />
+                  <span className="relative z-10 flex h-full flex-col justify-end p-2.5 text-white">
+                    <span className="line-clamp-3 text-[11px] font-bold leading-[1.25]">
+                      {secondaryPromo.title}
+                    </span>
+                  </span>
+                </>
+              )}
             </button>
             )}
           </div>
@@ -1361,7 +1370,6 @@ export default function LocalityLandingUiV1({
                       listingAd={bannerAd}
                       onOpenListingAd={onOpenListingAd}
                       onOpenLivePortal={onOpenLivePortal}
-                      imageOnly={bannerAd !== houseAd}
                       device="mobile"
                     />
                   ) : null}
@@ -1454,10 +1462,6 @@ export default function LocalityLandingUiV1({
                 listingAd={stripBannerAd || houseAdForStrip}
                 onOpenListingAd={onOpenListingAd}
                 onOpenLivePortal={onOpenLivePortal}
-                /* imageOnly renders a bare <img>, so it is only right for a
-                   booked creative. The house ad carries no image on purpose and
-                   needs the text branch. */
-                imageOnly={Boolean(stripBannerAd)}
               />
             </div>
           ) : null}
@@ -1495,7 +1499,6 @@ export default function LocalityLandingUiV1({
                       listingAd={bannerAd}
                       onOpenListingAd={onOpenListingAd}
                       onOpenLivePortal={onOpenLivePortal}
-                      imageOnly={bannerAd !== houseAd}
                     />
                   ) : null}
                 </React.Fragment>
@@ -1834,10 +1837,11 @@ function ImageAdPromoCard({
       onClick={() => onOpenListingAd ? onOpenListingAd(listingAd) : onOpenLivePortal()}
       className="relative block h-full w-full min-h-[360px] text-left"
     >
+      {/* The creative, as supplied. The white "Sponsored" pill that used to sit
+          over the top-left corner covered whatever the advertiser put there —
+          usually the logo — and it could not be turned off: the badge fell back
+          to the literal word when left blank. */}
       <img src={adImage} alt={listingAd.title} className="absolute inset-0 h-full w-full object-cover" />
-      <div className="absolute left-4 top-4 z-10 inline-flex rounded-full bg-white/85 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-[#0D1B2A]">
-        {listingAd.badge || 'Sponsored'}
-      </div>
     </button>
   );
 }
@@ -2149,11 +2153,18 @@ function PromoCard({
       onClick={onClick}
       className="relative block h-full w-full min-h-[360px] text-left text-white"
     >
-      {/* No stock stand-in: a listing with no photo gets the gradient panel
-          only, rather than an unrelated Unsplash picture presented as its own. */}
+      {/* A supplied creative is shown AS IT IS.
+          This card used to lay a navy scrim over every image and draw the title,
+          subtitle and CTA on top — so a designed 1000x360 banner arrived on the
+          page dimmed, with a second headline across it. The scrim and the text
+          are what a slot with NO creative falls back to.
+          No stock stand-in either: a listing with no photo gets the gradient
+          panel only, never an unrelated picture presented as its own. */}
       {image ? (
         <img src={image} alt={title} className="absolute inset-0 h-full w-full object-cover" />
       ) : null}
+      {image ? null : (
+      <>
       <div className="absolute inset-0 bg-[linear-gradient(100deg,rgba(13,27,42,0.78),rgba(13,27,42,0.34))]" />
       {compact ? (
         <div className="relative z-10 flex h-full flex-col justify-between px-6 py-6">
@@ -2172,6 +2183,8 @@ function PromoCard({
             <span className="mt-6 inline-flex rounded-xl bg-[#FFD54F] px-6 py-3.5 text-[15px] font-semibold text-[#0D1B2A]">{cta}</span>
           </div>
         </div>
+      )}
+      </>
       )}
     </button>
   );
@@ -2493,19 +2506,20 @@ function InFeedAdStrip({
   listingAd,
   onOpenListingAd,
   onOpenLivePortal,
-  imageOnly = false,
   device = 'desktop',
 }: {
   listingAd: ListingAd | null;
   onOpenListingAd?: (ad: ListingAd) => void;
   onOpenLivePortal: () => void;
-  imageOnly?: boolean;
   /** Which creative to draw; the strip is 1000x200 on desktop, 358 wide on a phone. */
   device?: 'desktop' | 'mobile';
 }) {
   if (listingAd) {
     const adImage = getMediaProxyUrl(pickBannerCreative(listingAd, device));
-    if (imageOnly && adImage) {
+    // A creative is shown as supplied. The text branch below is what a banner
+    // with NO image falls back to — it used to render the artwork at opacity-30
+    // under a near-opaque gradient with our own headline across it.
+    if (adImage) {
       return (
         <button
           type="button"
@@ -2524,7 +2538,6 @@ function InFeedAdStrip({
         className="relative block w-full overflow-hidden rounded-[18px] text-left"
         style={{ backgroundColor: listingAd.backgroundColor || '#111827' }}
       >
-        {adImage ? <img src={adImage} alt={listingAd.title} className="absolute inset-0 h-full w-full object-cover opacity-30" /> : null}
         <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(15,23,42,0.92)_0%,rgba(15,23,42,0.78)_52%,rgba(15,23,42,0.52)_100%)]" />
         <div className="relative z-10 flex items-center justify-between gap-6 px-6 py-5 text-white">
           <div className="min-w-0">

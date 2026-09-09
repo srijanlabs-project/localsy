@@ -41,7 +41,7 @@ import {
   type SearchSuggestion,
 } from '../services/webportal/businessDiscovery';
 import { getBusinessDirectionsUrl } from '../services/webportal/publicExperience';
-import { canDeliverOnDevice, pickBannerCreative } from '../utils/bannerCreative';
+import { canDeliverOnDevice, needsLightText, pickBannerCreative } from '../utils/bannerCreative';
 import {
   BUSINESS_CATEGORIES,
   BUSINESS_SUBCATEGORIES,
@@ -148,8 +148,11 @@ function MobileAdCarousel({ ads, onAdClick }: MobileAdCarouselProps) {
         className="no-scrollbar flex snap-x snap-mandatory gap-3 overflow-x-auto pb-1"
       >
         {ads.map((ad, index) => {
-          const isDark = index % 4 === 1 || ad.backgroundColor === '#064e3b';
-          const adImage = getMediaProxyUrl(ad.imageUrl);
+          // Same defect as the desktop rail: contrast was chosen by position in
+          // the carousel, so a dark card in the wrong slot got near-black text.
+          const cardBg = ad.backgroundColor || '#EDE9FE';
+          const isDark = needsLightText(cardBg);
+          const adImage = getMediaProxyUrl(pickBannerCreative(ad, 'mobile'));
           return (
             <button
               key={`${ad.id}-mobile-${index}`}
@@ -158,7 +161,7 @@ function MobileAdCarousel({ ads, onAdClick }: MobileAdCarouselProps) {
               className={`relative min-h-[220px] w-[200px] min-w-[200px] snap-start overflow-hidden rounded-2xl text-left shadow-sm ${
                 isDark ? 'text-white' : 'text-indigo-950'
               }`}
-              style={{ backgroundColor: ad.backgroundColor || (isDark ? '#064e3b' : '#ede9fe') }}
+              style={{ backgroundColor: cardBg }}
             >
               {adImage ? (
                 <img
@@ -176,7 +179,7 @@ function MobileAdCarousel({ ads, onAdClick }: MobileAdCarouselProps) {
                 {ad.description}
               </p>
               <span className={`mt-4 inline-flex rounded-xl px-4 py-2 text-xs font-bold ${
-                isDark ? 'bg-white text-emerald-950' : 'bg-indigo-600 text-white'
+                isDark ? 'bg-white text-slate-900' : 'bg-indigo-600 text-white'
               }`}>
                 {ad.ctaText}
               </span>
@@ -4199,24 +4202,26 @@ export default function WebPortal({
           className="relative block h-full min-h-[220px] w-full overflow-hidden rounded-[26px] text-left text-white shadow-sm md:min-h-[400px]"
           style={{ backgroundColor: ad.backgroundColor || '#0D1B2A' }}
         >
+          {/* A creative is shown AS SUPPLIED: no scrim, no badge, no title over
+              it. The advertiser designed a 256x400 banner; drawing our own
+              headline across it covered their artwork with a second message. The
+              text card is what a banner WITHOUT an image falls back to. */}
           {adImage ? (
-            <>
-              <img src={adImage} alt={ad.title} className="absolute inset-0 h-full w-full object-cover" />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/30 to-transparent" />
-            </>
-          ) : null}
-          <div className="relative z-10 flex h-full min-h-[220px] flex-col justify-end p-5 md:min-h-[400px]">
-            <span className="inline-flex w-fit rounded-full bg-white/90 px-2.5 py-1 text-[9px] font-bold uppercase tracking-wide text-slate-900">
-              {ad.badge || 'Ad'}
-            </span>
-            <h4 className="mt-3 text-base font-extrabold leading-tight">{ad.title}</h4>
-            {ad.description && (
-              <p className="mt-1.5 line-clamp-2 text-xs text-white/75">{ad.description}</p>
-            )}
-            <span className="mt-3 text-xs font-bold text-white underline underline-offset-2">
-              {ad.ctaText || 'Learn more'} →
-            </span>
-          </div>
+            <img src={adImage} alt={ad.title} className="absolute inset-0 h-full w-full object-cover" />
+          ) : (
+            <div className="relative z-10 flex h-full min-h-[220px] flex-col justify-end p-5 md:min-h-[400px]">
+              <span className="inline-flex w-fit rounded-full bg-white/90 px-2.5 py-1 text-[9px] font-bold uppercase tracking-wide text-slate-900">
+                {ad.badge || 'Ad'}
+              </span>
+              <h4 className="mt-3 text-base font-extrabold leading-tight">{ad.title}</h4>
+              {ad.description && (
+                <p className="mt-1.5 line-clamp-2 text-xs text-white/75">{ad.description}</p>
+              )}
+              <span className="mt-3 text-xs font-bold text-white underline underline-offset-2">
+                {ad.ctaText || 'Learn more'} →
+              </span>
+            </div>
+          )}
           {homepageHeroJuniorAds.length > 1 && (
             <div className="absolute bottom-3 left-5 z-10 flex gap-1.5">
               {homepageHeroJuniorAds.map((_, dotIndex) => (
@@ -4383,7 +4388,12 @@ export default function WebPortal({
     return renderedSections;
   };
   const renderSidebarAdCard = (ad: ListingAd, index: number) => {
-    const isDark = index === 1 || ad.backgroundColor === '#064e3b';
+    // Contrast from the actual background, not from the card's position in the
+    // list. `index === 1 || backgroundColor === '#064e3b'` meant a dark card
+    // anywhere else got near-black text: the navy house ad rendered in dark
+    // indigo on dark navy, unreadable.
+    const cardBg = ad.backgroundColor || '#EDE9FE';
+    const isDark = needsLightText(cardBg);
     // 290x220 rail card, so the desktop creative.
     const adImage = getMediaProxyUrl(pickBannerCreative(ad, 'desktop'));
     return (
@@ -4394,7 +4404,7 @@ export default function WebPortal({
         className={`relative min-h-[220px] overflow-hidden rounded-2xl text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${
           isDark ? 'text-white' : 'text-indigo-950'
         }`}
-        style={{ backgroundColor: ad.backgroundColor || (isDark ? '#064e3b' : '#ede9fe') }}
+        style={{ backgroundColor: cardBg }}
       >
         {adImage ? (
           <img
@@ -4410,19 +4420,14 @@ export default function WebPortal({
         <h4 className="mt-5 max-w-[190px] text-2xl font-extrabold leading-tight">{ad.title}</h4>
         <p className={`mt-3 max-w-[190px] text-sm font-medium ${isDark ? 'text-white/85' : 'text-indigo-900/70'}`}>{ad.description}</p>
         <span className={`mt-5 inline-flex rounded-xl px-4 py-2 text-xs font-bold ${
-          isDark ? 'bg-white text-emerald-950' : 'bg-indigo-600 text-white'
+          isDark ? 'bg-white text-slate-900' : 'bg-indigo-600 text-white'
         }`}>
           {ad.ctaText}
         </span>
-        {index === 1 ? (
-          <img
-            src="https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?auto=format&fit=crop&w=420&q=80"
-            alt=""
-            className="absolute -bottom-8 -right-12 h-36 w-36 rounded-full object-cover shadow-2xl"
-          />
-        ) : (
-          <Megaphone className={`absolute bottom-5 right-5 h-24 w-24 rotate-[-12deg] ${isDark ? 'text-white/15' : 'text-indigo-400/25'}`} />
-        )}
+        {/* The second card used to inject a hard-coded Unsplash photograph into
+            an advertiser slot — a stock image sitting inside what reads as a
+            paid ad. Every card gets the same neutral mark instead. */}
+        <Megaphone className={`absolute bottom-5 right-5 h-24 w-24 rotate-[-12deg] ${isDark ? 'text-white/15' : 'text-indigo-400/25'}`} />
         </div>
         )}
       </button>
@@ -4446,9 +4451,13 @@ export default function WebPortal({
         className="relative block w-full overflow-hidden rounded-[16px] border border-[#E6EBF2] text-left"
         style={{ backgroundColor: ad.backgroundColor || '#EDE9FE' }}
       >
-        <span className="absolute right-2 top-2 z-10 rounded-md bg-black/45 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-white">
-          Ad
-        </span>
+        {/* The "Ad" chip sat on top of the creative. It stays only on the text
+            card, where there is no artwork for it to cover. */}
+        {adImage ? null : (
+          <span className="absolute right-2 top-2 z-10 rounded-md bg-black/45 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-white">
+            Ad
+          </span>
+        )}
         {adImage ? (
           <img src={adImage} alt={ad.title} loading="lazy" className="block h-[120px] w-full object-cover" />
         ) : (
@@ -4703,7 +4712,24 @@ export default function WebPortal({
   };
 
   const renderDesktopInlineResultAd = (ad: ListingAd) => {
-    const adImage = getMediaProxyUrl(ad.imageUrl);
+    const adImage = getMediaProxyUrl(pickBannerCreative(ad, 'desktop'));
+    // A supplied creative is the whole banner.
+    //
+    // This slot used to render the artwork at `opacity-25` behind a near-opaque
+    // gradient and our own headline — an advertiser's 1000x240 banner reduced to
+    // faint texture under someone else's text.
+    if (adImage) {
+      return (
+        <button
+          key={ad.id}
+          type="button"
+          onClick={() => handleListingAdAction(ad)}
+          className="relative block w-full overflow-hidden rounded-[24px] text-left shadow-sm"
+        >
+          <img src={adImage} alt={ad.title} className="block h-auto w-full" />
+        </button>
+      );
+    }
     return (
       <button
         key={ad.id}
@@ -4711,12 +4737,6 @@ export default function WebPortal({
         onClick={() => handleListingAdAction(ad)}
         className="relative block w-full overflow-hidden rounded-[24px] bg-[#111827] text-left text-white shadow-sm"
       >
-        {adImage ? (
-          <>
-            <img src={adImage} alt={ad.title} className="absolute inset-0 h-full w-full object-cover opacity-25" />
-            <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(15,23,42,0.95)_0%,rgba(15,23,42,0.82)_100%)]" />
-          </>
-        ) : null}
         <div className="relative z-10 flex items-center justify-between gap-6 px-7 py-7">
           <div className="min-w-0">
             <span className="inline-flex rounded-md bg-[#F59E0B] px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[#111827]">

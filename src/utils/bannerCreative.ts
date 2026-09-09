@@ -62,3 +62,28 @@ export const canDeliverOnDevice = (
 
   return Boolean(pickBannerCreative(ad, device));
 };
+
+/**
+ * Whether a card background needs light text on it.
+ *
+ * Rail cards used to decide this from their POSITION in the list —
+ * `isDark = index === 1 || backgroundColor === '#064e3b'` — so any card with a
+ * dark background anywhere other than slot two got near-black text on it. The
+ * house ad is navy and sits first, which rendered "Add your business" in dark
+ * indigo on dark navy: present, clickable, and unreadable.
+ *
+ * Rec. 709 relative luminance, thresholded where the two text colours cross over
+ * in practice. An unparseable or missing colour is treated as light, matching the
+ * pale default the cards fall back to.
+ */
+export const needsLightText = (backgroundColor?: string): boolean => {
+  const hex = String(backgroundColor || '').trim().replace('#', '');
+  const full = hex.length === 3
+    ? hex.split('').map((c) => c + c).join('')
+    : hex;
+  if (!/^[0-9a-fA-F]{6}$/.test(full)) return false;
+  const r = parseInt(full.slice(0, 2), 16);
+  const g = parseInt(full.slice(2, 4), 16);
+  const b = parseInt(full.slice(4, 6), 16);
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) < 140;
+};
