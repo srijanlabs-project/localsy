@@ -41,6 +41,7 @@ import {
   type SearchSuggestion,
 } from '../services/webportal/businessDiscovery';
 import { getBusinessDirectionsUrl } from '../services/webportal/publicExperience';
+import { canDeliverOnDevice, pickBannerCreative } from '../utils/bannerCreative';
 import {
   BUSINESS_CATEGORIES,
   BUSINESS_SUBCATEGORIES,
@@ -4134,18 +4135,21 @@ export default function WebPortal({
     deliverableHouseAd ? [...activeListingAds, deliverableHouseAd] : activeListingAds,
     isResultsPage ? 'listing_results' : 'homepage'
   );
+  // Every device-scoped list below also checks that the creative for that device
+  // exists. A banner targeting both devices with only a desktop image is no
+  // longer delivered to phones — it used to be, centre-cropped to 358px.
   const desktopSidebarAds = rankAdsForDelivery(homepageAdInventory, 'homepage_sidebar')
-    .filter((ad) => (ad.deviceTarget || 'all') !== 'mobile')
+    .filter((ad) => canDeliverOnDevice(ad, 'desktop'))
     .slice(0, 4);
   // Junior hero: companion banner beside the main hero carousel, rotates through up to 6 slides.
   const homepageHeroJuniorAds = rankAdsForDelivery(homepageAdInventory, 'homepage_hero_junior')
-    .filter((ad) => (ad.deviceTarget || 'all') !== 'mobile')
+    .filter((ad) => canDeliverOnDevice(ad, 'desktop'))
     .slice(0, 6);
   const contextualListingAds = rankAdsForDelivery(getAdsForBusinessContext(sortedBusinesses, homepageAdInventory), 'listing_results');
-  const desktopResultAds = contextualListingAds.filter((ad) => (ad.deviceTarget || 'all') !== 'mobile');
-  const mobileResultAds = contextualListingAds.filter((ad) => (ad.deviceTarget || 'all') !== 'desktop');
+  const desktopResultAds = contextualListingAds.filter((ad) => canDeliverOnDevice(ad, 'desktop'));
+  const mobileResultAds = contextualListingAds.filter((ad) => canDeliverOnDevice(ad, 'mobile'));
   const mobileInlineAds = rankAdsForDelivery(homepageAdInventory, 'mobile_inline')
-    .filter((ad) => (ad.deviceTarget || 'all') !== 'desktop')
+    .filter((ad) => canDeliverOnDevice(ad, 'mobile'))
     .filter((ad) => (ad.mobileRowPosition || 0) > 0)
     .sort((a, b) => (a.mobileRowPosition || 0) - (b.mobileRowPosition || 0) || (getAdDeliveryScore(b, 'mobile_inline') - getAdDeliveryScore(a, 'mobile_inline')));
   const juniorBannerCount = homepageHeroJuniorAds.length;
@@ -4218,8 +4222,9 @@ export default function WebPortal({
       // it. Counting those as impressions would inflate exactly the number an
       // advertiser is being shown, so an ad whose device target cannot match
       // this viewport is skipped.
-      const deviceTarget = ad.deviceTarget || 'all';
-      if (deviceTarget !== 'all' && deviceTarget !== currentDeviceTarget) return;
+      // Also skips a banner whose creative for THIS device was never uploaded,
+      // for the same reason: it will not be painted, so it is not an impression.
+      if (!canDeliverOnDevice(ad, currentDeviceTarget)) return;
       trackedAdImpressionIdsRef.current.add(ad.id);
       onTrackListingAdInteraction({
         adId: ad.id,
@@ -4403,7 +4408,8 @@ export default function WebPortal({
   const MOBILE_RESULT_AD_INTERVAL = 5;
 
   const renderMobileInlineAd = (ad: ListingAd, key: string) => {
-    const adImage = getMediaProxyUrl(ad.imageUrl);
+    // The phone creative, falling back to the desktop one when none was uploaded.
+    const adImage = getMediaProxyUrl(pickBannerCreative(ad, 'mobile'));
     return (
       <button
         key={key}

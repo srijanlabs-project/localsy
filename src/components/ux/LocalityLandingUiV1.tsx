@@ -16,6 +16,7 @@ import { Business, Category, HeroBanner, ListingAd, Locality, MarketingCoupon, U
 import { getAreaById } from '../../geographyMaster';
 import { getCategoryById, getSubcategoryById } from '../../categoryMaster';
 import { getMediaProxyUrl, getDisplayableImageUrl } from '../../utils/mediaUrl';
+import { canDeliverOnDevice, pickBannerCreative } from '../../utils/bannerCreative';
 import happyBusinessLogo from '../../assets/happy-business-logo.png';
 import { CategoryChip, formatRating, getCategoryPresentation } from './localisyPublicPrimitives';
 
@@ -124,9 +125,14 @@ const CATEGORY_ACCENTS = [
   '#E879F9',
 ];
 
+// One booking, two boxes: the mobile shell must draw the phone creative.
 const HERO_PRIMARY_PLACEMENT_KEY = 'homepage_hero_primary';
 const HERO_SECONDARY_PLACEMENT_KEY = 'homepage_hero_secondary';
 const CATEGORY_STRIP_PLACEMENT_KEY = 'homepage_strip_between_categories_and_listings';
+
+/** How many hero banners the carousel will cycle. Beyond this a slide is never
+ *  seen for long enough to read, so the extras are simply not rotated in. */
+export const HERO_CAROUSEL_MAX = 10;
 
 const matchesPlacementTarget = (
   ad: ListingAd,
@@ -135,8 +141,11 @@ const matchesPlacementTarget = (
 ) => {
   if (String(ad.placementKey || '').trim() !== placementKey) return false;
   const target = ad.deviceTarget || 'all';
-  if (device === 'desktop') return target !== 'mobile';
-  if (device === 'mobile') return target !== 'desktop';
+  // A banner targeting both devices with only a desktop creative is NOT
+  // delivered on mobile. It used to be, cropped to a 358px box — the left and
+  // right thirds of the artwork discarded, under the advertiser's name.
+  if (device === 'desktop') return target !== 'mobile' && canDeliverOnDevice(ad, 'desktop');
+  if (device === 'mobile') return target !== 'desktop' && canDeliverOnDevice(ad, 'mobile');
   return true;
 };
 
@@ -459,12 +468,35 @@ export default function LocalityLandingUiV1({
     () => homepageListingAds.find((ad) => matchesPlacementTarget(ad, CATEGORY_STRIP_PLACEMENT_KEY)) || null,
     [homepageListingAds],
   );
-  // Full inventory for the between-categories strip, so the every-3rd-row
-  // banner can rotate rather than repeating one creative down the page.
   const interCategoryAds = useMemo(
     () => homepageListingAds.filter((ad) => matchesPlacementTarget(ad, CATEGORY_STRIP_PLACEMENT_KEY)),
     [homepageListingAds],
   );
+  // Each in-feed banner sits at the position it was booked for.
+  //
+  // The feed used to drop a banner after every third row and cycle the whole
+  // inventory through those slots — so an operator could not say where their
+  // banner would appear, and two banners could not hold two chosen places. A
+  // banner now names its row: `feedPosition` 1 means after the first category
+  // row. Two bookings on the same position: the first one wins, deterministically.
+  const feedBannerByPosition = useMemo(() => {
+    const byPosition = new Map<number, ListingAd>();
+    for (const ad of interCategoryAds) {
+      const raw = Number(ad.feedPosition ?? ad.mobileRowPosition ?? 3);
+      const position = Number.isFinite(raw) ? Math.min(20, Math.max(1, Math.round(raw))) : 3;
+      if (!byPosition.has(position)) byPosition.set(position, ad);
+    }
+    return byPosition;
+  }, [interCategoryAds]);
+  // The house ad takes the lowest position nobody booked, so it never displaces
+  // a paying banner and never repeats down the page.
+  const houseAdFeedPosition = useMemo(() => {
+    if (!houseAd) return 0;
+    for (let position = 3; position <= 20; position += 1) {
+      if (!feedBannerByPosition.has(position)) return position;
+    }
+    return 0;
+  }, [houseAd, feedBannerByPosition]);
   const rotatingPrimaryHeroAd = primaryHeroImageAds.length > 0
     ? primaryHeroImageAds[heroRotationTick % primaryHeroImageAds.length]
     : null;
@@ -474,8 +506,20 @@ export default function LocalityLandingUiV1({
   const rotatingSecondaryHeroAd = secondaryHeroImageAds.length > 0
     ? secondaryHeroImageAds[heroRotationTick % secondaryHeroImageAds.length]
     : null;
-  const primaryHeroBanner = heroBanners[0] || null;
-  const secondaryHeroBanner = heroBanners[1] || null;
+  // Every active hero banner rotates through the ONE main hero.
+  //
+  // This used to be `heroBanners[0]` for the main slot and `heroBanners[1]` for
+  // the side slot — so activating a second hero banner did not extend the
+  // carousel, it silently occupied a different, differently-shaped placement
+  // (263x360 portrait) that nobody had designed a creative for. Two bookings for
+  // the same slot must take turns in it, not spill into the slot next door.
+  const heroCarouselBanners = heroBanners.slice(0, HERO_CAROUSEL_MAX);
+  const primaryHeroBanner = heroCarouselBanners.length > 0
+    ? heroCarouselBanners[heroRotationTick % heroCarouselBanners.length]
+    : null;
+  // The side slot is its own placement (`homepage_hero_secondary`) and is filled
+  // only by a banner booked against it.
+  const secondaryHeroBanner = null;
   // The side hero renders only when something is actually booked there.
   //
   // It used to fall back to secondaryHeroBusiness — a second free promotion of
@@ -483,7 +527,7 @@ export default function LocalityLandingUiV1({
   // page, so two identical "Add Your Business" panels side by side is exactly
   // what to avoid. With nothing booked the row collapses and the main hero takes
   // the full width, which reads as a designed layout rather than a gap.
-  const hasSecondaryHero = Boolean(rotatingSecondaryHeroAd || secondaryHeroBanner);
+  const hasSecondaryHero = Boolean(rotatingSecondaryHeroAd);
 
   // Slides for the mobile sponsored slot: booked inventory first, with a house
   // "promote your business" creative as the fallback so the slot always has
@@ -769,7 +813,7 @@ export default function LocalityLandingUiV1({
   const mobilePrimaryPromo = useMemo<PromoCardContent>(() => {
     if (rotatingMobilePrimaryHeroAd) {
       return {
-        image: getMediaProxyUrl(rotatingMobilePrimaryHeroAd.imageUrl || ''),
+        image: getMediaProxyUrl(pickBannerCreative(rotatingMobilePrimaryHeroAd, 'mobile')),
         badge: rotatingMobilePrimaryHeroAd.badge || 'Sponsored placement',
         title: rotatingMobilePrimaryHeroAd.title,
         subtitle: rotatingMobilePrimaryHeroAd.description,
@@ -784,8 +828,18 @@ export default function LocalityLandingUiV1({
       };
     }
 
+    // A hero-banner carousel slide has its own phone creative too. `primaryPromo`
+    // is built for the 1000x360 desktop box, so the image is swapped for the
+    // 358x198 one here rather than letting the phone crop a landscape creative.
+    if (primaryHeroBanner) {
+      return {
+        ...primaryPromo,
+        image: getMediaProxyUrl(primaryHeroBanner.mobileImageUrl || primaryHeroBanner.imageUrl),
+      };
+    }
+
     return primaryPromo;
-  }, [onOpenListingAd, onOpenLivePortal, primaryPromo, rotatingMobilePrimaryHeroAd]);
+  }, [onOpenListingAd, onOpenLivePortal, primaryHeroBanner, primaryPromo, rotatingMobilePrimaryHeroAd]);
 
   const secondaryPromo = useMemo<PromoCardContent>(() => {
     if (rotatingSecondaryHeroAd) {
@@ -866,8 +920,13 @@ export default function LocalityLandingUiV1({
           hasSecondaryHero={hasSecondaryHero}
           rotatingPrimaryHeroAd={rotatingPrimaryHeroAd}
           rotatingSecondaryHeroAd={rotatingSecondaryHeroAd}
-          rotatingPrimaryHeroCount={primaryHeroImageAds.length}
-          rotatingPrimaryHeroIndex={primaryHeroImageAds.length > 0 ? heroRotationTick % primaryHeroImageAds.length : 0}
+          /* Dots follow whichever source is driving the hero: booked ads first,
+             otherwise the hero-banner carousel. They used to count only ads, so
+             a three-banner carousel showed a single dot. */
+          rotatingPrimaryHeroCount={primaryHeroImageAds.length || heroCarouselBanners.length}
+          rotatingPrimaryHeroIndex={(primaryHeroImageAds.length || heroCarouselBanners.length) > 0
+            ? heroRotationTick % (primaryHeroImageAds.length || heroCarouselBanners.length)
+            : 0}
           onOpenListingAd={onOpenListingAd}
           onOpenCityPage={() => onOpenCityPage(activeLocality?.id || activeLocalityId)}
           primaryPromo={primaryPromo}
@@ -1197,7 +1256,8 @@ export default function LocalityLandingUiV1({
 
           <div className="mt-5 space-y-5">
             {sectionGroups.map((section, index) => {
-              const isBannerSlot = (index + 1) % 3 === 0 && index !== sectionGroups.length - 1;
+              // A row carries a banner when one was booked for that position.
+              const isBannerSlot = index !== sectionGroups.length - 1;
               // A booked strip ad rotates through the inventory; when none is
               // booked the slot takes the house ad rather than collapsing, so
               // there is a banner after every third category row either way.
@@ -1206,9 +1266,8 @@ export default function LocalityLandingUiV1({
               // the mobile feed — a long homepage will repeat the invitation
               // every third row. That is the trade for never having an empty
               // banner slot; if it reads as too much, cap it to the first slot.
-              const bannerAd = interCategoryAds.length > 0
-                ? interCategoryAds[Math.floor(index / 3) % interCategoryAds.length]
-                : houseAd;
+              const bannerAd = feedBannerByPosition.get(index + 1)
+                || (houseAdFeedPosition === index + 1 ? houseAd : null);
               return (
                 <React.Fragment key={`m-${section.category.id}`}>
                   <section>
@@ -1302,7 +1361,8 @@ export default function LocalityLandingUiV1({
                       listingAd={bannerAd}
                       onOpenListingAd={onOpenListingAd}
                       onOpenLivePortal={onOpenLivePortal}
-                      imageOnly={interCategoryAds.length > 0}
+                      imageOnly={bannerAd !== houseAd}
+                      device="mobile"
                     />
                   ) : null}
                 </React.Fragment>
@@ -1413,10 +1473,10 @@ export default function LocalityLandingUiV1({
               // A banner slots in after every 3rd category row (never trailing
               // after the last one). Ads rotate through whatever inventory is
               // booked for the between-categories strip placement.
-              const isBannerSlot = (index + 1) % 3 === 0 && index !== sectionGroups.length - 1;
-              const bannerAd = interCategoryAds.length > 0
-                ? interCategoryAds[Math.floor(index / 3) % interCategoryAds.length]
-                : null;
+              // A row carries a banner when one was booked for that position.
+              const isBannerSlot = index !== sectionGroups.length - 1;
+              const bannerAd = feedBannerByPosition.get(index + 1)
+                || (houseAdFeedPosition === index + 1 ? houseAd : null);
               return (
                 <React.Fragment key={section.category.id}>
                   <DirectorySectionPanel
@@ -1435,7 +1495,7 @@ export default function LocalityLandingUiV1({
                       listingAd={bannerAd}
                       onOpenListingAd={onOpenListingAd}
                       onOpenLivePortal={onOpenLivePortal}
-                      imageOnly
+                      imageOnly={bannerAd !== houseAd}
                     />
                   ) : null}
                 </React.Fragment>
@@ -2434,14 +2494,17 @@ function InFeedAdStrip({
   onOpenListingAd,
   onOpenLivePortal,
   imageOnly = false,
+  device = 'desktop',
 }: {
   listingAd: ListingAd | null;
   onOpenListingAd?: (ad: ListingAd) => void;
   onOpenLivePortal: () => void;
   imageOnly?: boolean;
+  /** Which creative to draw; the strip is 1000x200 on desktop, 358 wide on a phone. */
+  device?: 'desktop' | 'mobile';
 }) {
   if (listingAd) {
-    const adImage = getMediaProxyUrl(listingAd.imageUrl || '');
+    const adImage = getMediaProxyUrl(pickBannerCreative(listingAd, device));
     if (imageOnly && adImage) {
       return (
         <button

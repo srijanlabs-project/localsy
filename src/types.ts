@@ -202,6 +202,24 @@ export interface ListingAd {
   tags?: string[];
   placementKey?: string;
   deviceTarget?: 'all' | 'desktop' | 'mobile';
+  /**
+   * A creative sized for a phone.
+   *
+   * The desktop hero is 1000x360 and the mobile hero 390x360 — one image cannot
+   * serve both without being cropped to nonsense in one of them. `imageUrl` is
+   * the desktop creative; this is the phone one, and the mobile render path
+   * falls back to `imageUrl` when it is absent.
+   */
+  mobileImageUrl?: string;
+  /**
+   * Which position in a repeating feed this banner occupies: 1 means after the
+   * first category row or result, 2 after the second, up to 20.
+   *
+   * The feed used to place a banner after every third row and cycle inventory
+   * through those slots, so an operator could not say where their banner went
+   * and two banners could not sit in chosen places.
+   */
+  feedPosition?: number;
   mobileRowPosition?: number;
   workflowStatus?: 'draft' | 'submitted' | 'under_review' | 'approved' | 'scheduled' | 'live' | 'paused' | 'rejected' | 'archived';
   billingModel?: 'fixed' | 'cpc' | 'lead';
@@ -254,6 +272,8 @@ export interface HeroBanner {
   title: string;
   subtitle: string;
   imageUrl: string;
+  /** Phone creative; the mobile hero falls back to `imageUrl` without it. */
+  mobileImageUrl?: string;
   startDate: string;
   endDate: string;
   ctaLabel?: string;

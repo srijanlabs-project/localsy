@@ -22,6 +22,8 @@ import {
   buildBannerCampaign,
   describeBannerCtr,
   describeBannerAssetAdvice,
+  FEED_POSITION_MAX,
+  FEED_POSITION_MIN,
   describeBannerSlotSize,
   emptyBannerDraft,
   evaluateBannerDelivery,
@@ -39,6 +41,8 @@ type BannerStudioPanelProps = {
   userSession?: UserSession;
   scalableHomepageConfig?: ScalableHomepageConfigState | null;
   publishedSnapshotLocalityIds?: string[];
+  /** localityId -> its pincodes, so a redundant pincode target is not written. */
+  localityPincodes?: Record<string, string[]>;
   onSaveScalableCampaign?: (campaign: ScalableCampaign) => Promise<unknown> | void;
   onDeleteScalableCampaign?: (campaignId: string) => Promise<unknown> | void;
   canManage: boolean;
@@ -56,6 +60,7 @@ export default function BannerStudioPanel({
   userSession,
   scalableHomepageConfig,
   publishedSnapshotLocalityIds = [],
+  localityPincodes = {},
   onSaveScalableCampaign,
   onDeleteScalableCampaign,
   canManage,
@@ -84,6 +89,7 @@ export default function BannerStudioPanel({
   const slot = findBannerSlot(draft.placementKey, draft.campaignType);
   const verdict = evaluateBannerDelivery(draft, {
     hasSnapshotForLocality: draft.localityIds.some((id) => publishedSnapshotLocalityIds.includes(id)),
+    localityPincodes,
   });
 
   const banners = useMemo(() => (scalableHomepageConfig?.campaigns || [])
@@ -95,21 +101,23 @@ export default function BannerStudioPanel({
         draft: asDraft,
         verdict: evaluateBannerDelivery(asDraft, {
           hasSnapshotForLocality: asDraft.localityIds.some((id) => publishedSnapshotLocalityIds.includes(id)),
+          localityPincodes,
         }),
       };
     })
     .sort((left, right) => right.campaign.priority - left.campaign.priority
       || left.campaign.name.localeCompare(right.campaign.name)),
-  [scalableHomepageConfig, publishedSnapshotLocalityIds]);
+  [scalableHomepageConfig, publishedSnapshotLocalityIds, localityPincodes]);
 
-  const pickImage = async (file: File | null) => {
+  const pickImage = async (file: File | null, field: 'imageUrl' | 'mobileImageUrl' = 'imageUrl') => {
     if (!file) return;
     setBusy('upload'); setNotice(null);
     try {
-      const folder = `homepage-banners/${draft.campaignType}/${draft.placementKey || 'hero'}`;
+      const variant = field === 'mobileImageUrl' ? 'mobile' : 'desktop';
+      const folder = `homepage-banners/${draft.campaignType}/${draft.placementKey || 'hero'}/${variant}`;
       const url = await uploadAdminMediaImage(file, folder, userSession?.authToken);
-      set('imageUrl', typeof url === 'string' ? url : String((url as { url?: string })?.url || ''));
-      setNotice({ tone: 'ok', text: 'Image uploaded.' });
+      set(field, typeof url === 'string' ? url : String((url as { url?: string })?.url || ''));
+      setNotice({ tone: 'ok', text: `${variant === 'mobile' ? 'Mobile' : 'Desktop'} image uploaded.` });
     } catch (error) {
       setNotice({ tone: 'bad', text: (error as Error)?.message || 'Upload failed.' });
     } finally {
@@ -163,7 +171,7 @@ export default function BannerStudioPanel({
     }
     setBusy('save'); setNotice(null);
     try {
-      const campaign = buildBannerCampaign(draft);
+      const campaign = buildBannerCampaign(draft, { localityPincodes });
       logSave('sending', { id: campaign.id, status: campaign.status, targets: campaign.targets });
       await onSaveScalableCampaign(campaign);
       logSave('SAVED', { id: campaign.id, willRender: verdict.live, reasons: verdict.reasons });
@@ -320,19 +328,48 @@ export default function BannerStudioPanel({
             </p>
           </div>
 
+          {/* Two creatives, because one slot is two boxes.
+              The main hero is 1000x360 on desktop and 358x198 on a phone from the
+              SAME booking — a single landscape image loses its left and right
+              thirds to the phone crop, logo included. The mobile field appears
+              only when the banner actually targets both. */}
           <div className="md:col-span-2">
-            <label className={LABEL}>5. Image</label>
+            <label className={LABEL}>
+              5. Image {slot?.mobileWidth && draft.deviceTarget === 'all' ? '— desktop' : ''}
+              {slot ? <span className="ml-1 font-semibold normal-case tracking-normal text-slate-400">{slot.width} x {slot.height}</span> : null}
+            </label>
             <div className="flex items-center gap-2">
               <input ref={fileRef} type="file" accept="image/*" disabled={!canManage || busy === 'upload'}
-                onChange={(event) => void pickImage(event.target.files?.[0] || null)}
+                onChange={(event) => void pickImage(event.target.files?.[0] || null, 'imageUrl')}
                 className="block w-full text-[11px] text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-3 file:py-2 file:text-[11px] file:font-bold file:text-indigo-700" />
               {busy === 'upload' && <Loader2 className="h-4 w-4 shrink-0 animate-spin text-indigo-500" />}
             </div>
             {draft.imageUrl && (
               <div className="mt-2 overflow-hidden rounded-lg border border-slate-200">
-                <img src={draft.imageUrl} alt="Banner preview" className="block max-h-[130px] w-full object-cover" />
+                <img src={draft.imageUrl} alt="Desktop banner preview" className="block max-h-[130px] w-full object-cover" />
               </div>
             )}
+
+            {slot?.mobileWidth && draft.deviceTarget === 'all' ? (
+              <div className="mt-3">
+                <label className={LABEL}>
+                  Image — mobile
+                  <span className="ml-1 font-semibold normal-case tracking-normal text-slate-400">{slot.mobileWidth} x {slot.mobileHeight}</span>
+                </label>
+                <input type="file" accept="image/*" disabled={!canManage || busy === 'upload'}
+                  onChange={(event) => void pickImage(event.target.files?.[0] || null, 'mobileImageUrl')}
+                  className="block w-full text-[11px] text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-3 file:py-2 file:text-[11px] file:font-bold file:text-indigo-700" />
+                {draft.mobileImageUrl ? (
+                  <div className="mt-2 w-[160px] overflow-hidden rounded-lg border border-slate-200">
+                    <img src={draft.mobileImageUrl} alt="Mobile banner preview" className="block w-full object-cover" />
+                  </div>
+                ) : (
+                  <p className="mt-1 text-[10px] font-semibold text-amber-700">
+                    Leave this blank and the banner runs on desktop only — it will not be shown on phones.
+                  </p>
+                )}
+              </div>
+            ) : null}
           </div>
 
           <div>
@@ -370,6 +407,19 @@ export default function BannerStudioPanel({
                 onChange={(event) => set('targetUrl', event.target.value)} placeholder="https://…" />
             )}
           </div>
+
+          {slot?.supportsPosition ? (
+            <div>
+              <label className={LABEL}>Position in feed</label>
+              <input type="number" min={FEED_POSITION_MIN} max={FEED_POSITION_MAX} className={FIELD}
+                value={draft.position} disabled={!canManage}
+                onChange={(event) => set('position', Number(event.target.value))} />
+              <p className="mt-1 text-[10px] leading-tight text-slate-500">
+                Shows after this many category rows or results ({FEED_POSITION_MIN}-{FEED_POSITION_MAX}).
+                Two banners can hold different positions.
+              </p>
+            </div>
+          ) : null}
 
           <div>
             <label className={LABEL}>7. Start date</label>

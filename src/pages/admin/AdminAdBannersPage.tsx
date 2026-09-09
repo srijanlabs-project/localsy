@@ -9,6 +9,7 @@ type AdminAdBannersPageProps = {
   listingAds?: ListingAd[];
   adLeads?: AdLead[];
   userSession?: UserSession;
+  pincodeMappings?: Array<{ pincode: string; localityId: string }>;
   scalableHomepageConfig?: ScalableHomepageConfigState | null;
   onSaveScalableCampaign?: (campaign: ScalableCampaign) => Promise<unknown> | void;
   onDeleteScalableCampaign?: (campaignId: string) => Promise<unknown> | void;
@@ -44,6 +45,7 @@ export default function AdminAdBannersPage({
   businesses,
   listingAds = [],
   userSession,
+  pincodeMappings = [],
   scalableHomepageConfig,
   onSaveScalableCampaign,
   onDeleteScalableCampaign,
@@ -60,6 +62,23 @@ export default function AdminAdBannersPage({
     (scalableHomepageConfig?.publishedSnapshots || []).map((snapshot) => snapshot.localityId).filter(Boolean)
   )), [scalableHomepageConfig?.publishedSnapshots]);
 
+  // localityId -> its pincodes. The form uses this to refuse to store a pincode
+  // target that is simply the locality restated: Roadpali IS 410218, so storing
+  // both changes nothing except vetoing every visitor who has not picked an
+  // area — which is what made "Ruby Kitchen" and the Roadpali strip ad invisible
+  // while both were active, in-window and correctly imaged.
+  const localityPincodes = useMemo(() => {
+    const map: Record<string, string[]> = {};
+    for (const mapping of pincodeMappings) {
+      const localityId = String(mapping?.localityId || '');
+      const pincode = String(mapping?.pincode || '');
+      if (!localityId || !pincode) continue;
+      if (!map[localityId]) map[localityId] = [];
+      if (!map[localityId].includes(pincode)) map[localityId].push(pincode);
+    }
+    return map;
+  }, [pincodeMappings]);
+
   return (
     <div className="space-y-4">
       <BannerStudioPanel
@@ -69,6 +88,7 @@ export default function AdminAdBannersPage({
         userSession={userSession}
         scalableHomepageConfig={scalableHomepageConfig}
         publishedSnapshotLocalityIds={publishedSnapshotLocalityIds}
+        localityPincodes={localityPincodes}
         onSaveScalableCampaign={onSaveScalableCampaign}
         onDeleteScalableCampaign={onDeleteScalableCampaign}
         canManage={canManage}

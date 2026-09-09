@@ -35,6 +35,18 @@ export type BannerSlot = {
   height: number;
   /** `cover` centre-crops to the box; `auto` renders at the creative's own ratio. */
   fit: 'cover' | 'auto';
+  /**
+   * The same placement's box on a phone, when it serves both.
+   *
+   * `homepage_hero_primary` is filtered per device — `matchesPlacementTarget(ad,
+   * KEY, 'desktop')` and `…, 'mobile')` — so ONE booking renders in a 1000x360
+   * landscape box and a 358x198 one. A single creative cannot survive both, so
+   * the form asks for two.
+   */
+  mobileWidth?: number;
+  mobileHeight?: number;
+  /** True for a slot that repeats down a feed and therefore needs a position. */
+  supportsPosition?: boolean;
   /** What an operator needs to know before choosing this slot. */
   note?: string;
   /** True when the slot ALSO needs a homepage layout section carrying this key. */
@@ -52,9 +64,13 @@ export const BANNER_SLOTS: BannerSlot[] = [
     label: 'Homepage hero — main',
     campaignType: 'listing_ad',
     pageType: 'homepage',
-    device: 'desktop',
+    // Serves BOTH devices: the landing page filters this key per device. It was
+    // marked desktop-only, which made the form wrongly refuse a mobile booking.
+    device: 'all',
     width: 1000,
     height: 360,
+    mobileWidth: 358,
+    mobileHeight: 198,
     fit: 'cover',
     note: 'Shown bare with only a small badge. Best slot for a designed banner.',
   },
@@ -88,7 +104,10 @@ export const BANNER_SLOTS: BannerSlot[] = [
     device: 'all',
     width: 1000,
     height: 200,
+    mobileWidth: 358,
+    mobileHeight: 72,
     fit: 'auto',
+    supportsPosition: true,
     note: 'No crop — renders at the creative’s own ratio, so pick one ratio and keep to it.',
   },
   {
@@ -100,6 +119,7 @@ export const BANNER_SLOTS: BannerSlot[] = [
     width: 358,
     height: 120,
     fit: 'cover',
+    supportsPosition: true,
     note: 'The only slot with a fixed height. Room for one line and a short CTA.',
   },
   {
@@ -122,7 +142,10 @@ export const BANNER_SLOTS: BannerSlot[] = [
     device: 'all',
     width: 1000,
     height: 240,
+    mobileWidth: 358,
+    mobileHeight: 86,
     fit: 'cover',
+    supportsPosition: true,
     note: 'Desktop renders the image at 25% opacity behind text. Not a slot for a designed banner.',
   },
   {
@@ -133,6 +156,8 @@ export const BANNER_SLOTS: BannerSlot[] = [
     device: 'all',
     width: 1000,
     height: 360,
+    mobileWidth: 358,
+    mobileHeight: 198,
     fit: 'cover',
     note: 'Needs no placement key. A navy scrim and the title/subtitle are drawn OVER the image — leave those blank for a designed banner, or supply a plain photo.',
   },
@@ -147,8 +172,23 @@ export const findBannerSlot = (placementKey: string, campaignType: ScalableCampa
 export const describeBannerSlotSize = (slot: BannerSlot | null) => {
   if (!slot) return '';
   const crop = slot.fit === 'cover' ? 'crops to fit' : 'no crop';
+  if (slot.mobileWidth && slot.mobileHeight) {
+    return `Desktop ${slot.width} x ${slot.height} · Mobile ${slot.mobileWidth} x ${slot.mobileHeight} · ${crop}`;
+  }
   const device = slot.device === 'all' ? 'desktop + mobile' : slot.device;
   return `${slot.width} x ${slot.height} · ${crop} · ${device}`;
+};
+
+/** How many hero banners the carousel cycles; extras never get screen time. */
+export const HERO_CAROUSEL_MAX = 10;
+/** A feed position is "after the Nth row", so 1 is the first useful slot. */
+export const FEED_POSITION_MIN = 1;
+export const FEED_POSITION_MAX = 20;
+
+export const clampFeedPosition = (value: unknown) => {
+  const numeric = Math.round(Number(value));
+  if (!Number.isFinite(numeric)) return 3;
+  return Math.min(FEED_POSITION_MAX, Math.max(FEED_POSITION_MIN, numeric));
 };
 
 /** Retina asset size for the slots that crop; the `auto` ones are ratio-driven. */
@@ -169,6 +209,10 @@ export type BannerDraft = {
   subcategoryIds: string[];
   deviceTarget: 'all' | 'desktop' | 'mobile';
   imageUrl: string;
+  /** The phone creative. Empty means the desktop one is reused and cropped. */
+  mobileImageUrl: string;
+  /** Which row of a repeating feed this sits after, 1-20. */
+  position: number;
   title: string;
   description: string;
   badge: string;
@@ -194,6 +238,8 @@ export const emptyBannerDraft = (localityId = ''): BannerDraft => ({
   subcategoryIds: [],
   deviceTarget: 'all',
   imageUrl: '',
+  mobileImageUrl: '',
+  position: 3,
   title: '',
   description: '',
   badge: '',
@@ -210,13 +256,58 @@ export const emptyBannerDraft = (localityId = ''): BannerDraft => ({
   priority: 100,
 });
 
+/**
+ * Strips a pincode target that narrows nothing.
+ *
+ * Roadpali IS 410218. So `localityIds: ['roadpali']` plus `pincodes: ['410218']`
+ * selects exactly the same audience as the locality alone — except that
+ * `calculateTargetScore` VETOES any request carrying no pincode, and the
+ * homepage carries none until a visitor picks an area. The field reads like a
+ * helpful filter and its only effect is to hide the banner from most visitors.
+ *
+ * Two live banners were lost to this: "Ruby Kitchen" and the Roadpali strip ad,
+ * both `pincodes: ['410218']`, both invisible, both otherwise perfect.
+ *
+ * A pincode that genuinely narrows — one of several in the locality — is kept,
+ * and `evaluateBannerDelivery` warns about it.
+ */
+export const dropRedundantPincodes = (
+  pincodes: string[],
+  localityIds: string[],
+  localityPincodes: Record<string, string[]> = {},
+): string[] => {
+  const chosen = pincodes.map((pincode) => pincode.trim()).filter(Boolean);
+  if (chosen.length === 0 || localityIds.length === 0) return chosen;
+
+  const covered = new Set<string>();
+  for (const localityId of localityIds) {
+    for (const pincode of localityPincodes[localityId] || []) covered.add(String(pincode));
+  }
+  if (covered.size === 0) return chosen;
+
+  // Redundant only when the selection is the locality's WHOLE pincode set.
+  // Picking one of a locality's three pincodes is a real narrowing.
+  const selectsEverything = covered.size === chosen.length
+    && [...covered].every((pincode) => chosen.includes(pincode));
+  return selectsEverything ? [] : chosen;
+};
+
+export type BuildBannerCampaignOptions = {
+  /** localityId -> every pincode routed to it, used to spot a redundant target. */
+  localityPincodes?: Record<string, string[]>;
+};
+
 /** Builds the campaign the resolver will actually read. */
-export const buildBannerCampaign = (draft: BannerDraft): ScalableCampaign => {
+export const buildBannerCampaign = (
+  draft: BannerDraft,
+  options: BuildBannerCampaignOptions = {},
+): ScalableCampaign => {
+  const effectivePincodes = dropRedundantPincodes(draft.pincodes, draft.localityIds, options.localityPincodes);
   const targets: TargetingRule = {
     localityIds: draft.localityIds,
     categoryIds: draft.categoryIds,
     subcategoryIds: draft.subcategoryIds,
-    pincodes: draft.pincodes,
+    pincodes: effectivePincodes,
     devices: draft.deviceTarget === 'all' ? [] : [draft.deviceTarget],
     pageTypes: [draft.pageType],
     // Kept out of `targets` deliberately: the resolver scores
@@ -233,11 +324,12 @@ export const buildBannerCampaign = (draft: BannerDraft): ScalableCampaign => {
     ctaText: draft.ctaText || undefined,
     ctaLabel: draft.ctaText || undefined,
     imageUrl: draft.imageUrl || undefined,
+    mobileImageUrl: draft.mobileImageUrl || undefined,
     startDate: draft.startDate || undefined,
     endDate: draft.endDate || undefined,
     isActive: draft.status === 'active',
     localityIds: draft.localityIds,
-    pincodes: draft.pincodes,
+    pincodes: effectivePincodes,
     categoryIds: draft.categoryIds,
     deviceTarget: draft.deviceTarget,
     actionType: draft.actionType,
@@ -245,7 +337,17 @@ export const buildBannerCampaign = (draft: BannerDraft): ScalableCampaign => {
     targetBusinessId: draft.actionType === 'landing_listing' ? draft.targetBusinessId || undefined : undefined,
   };
   // A hero banner carries no placement key; a listing ad is matched on it.
-  if (draft.campaignType === 'listing_ad') payload.placementKey = draft.placementKey || undefined;
+  if (draft.campaignType === 'listing_ad') {
+    payload.placementKey = draft.placementKey || undefined;
+    const slot = findBannerSlot(draft.placementKey, 'listing_ad');
+    if (slot?.supportsPosition) {
+      const position = clampFeedPosition(draft.position);
+      payload.feedPosition = position;
+      // `mobileRowPosition` is the field the existing mobile-inline consumer
+      // already reads; kept in step so nothing has to know about both.
+      payload.mobileRowPosition = position;
+    }
+  }
   if (draft.campaignType === 'hero_banner') {
     payload.localityId = draft.localityIds[0] || undefined;
     // The hero click path is `handleConfiguredCta(banner.ctaType, banner.ctaTarget)`,
@@ -303,7 +405,11 @@ export type BannerDeliveryVerdict = {
  */
 export const evaluateBannerDelivery = (
   draft: BannerDraft,
-  options: { todayIso?: string; hasSnapshotForLocality?: boolean } = {},
+  options: {
+    todayIso?: string;
+    hasSnapshotForLocality?: boolean;
+    localityPincodes?: Record<string, string[]>;
+  } = {},
 ): BannerDeliveryVerdict => {
   const today = options.todayIso || new Date().toISOString().slice(0, 10);
   const reasons: string[] = [];
@@ -338,12 +444,46 @@ export const evaluateBannerDelivery = (
     reasons.push('A category target can never match the homepage — a homepage request carries no category. Clear the category, or set Page to "Search results".');
   }
   if (draft.pincodes.length > 0) {
-    warnings.push(`Pincode target ${draft.pincodes.join(', ')}: only visitors who have SET that pincode will see this. Anyone who has not chosen one sends no pincode and is skipped. Leave it blank to reach the whole locality.`);
+    const effective = dropRedundantPincodes(draft.pincodes, draft.localityIds, options.localityPincodes);
+    if (effective.length === 0) {
+      // Saved as no pincode at all, so it delivers. Said out loud rather than
+      // done quietly: an operator who typed a pincode should be told why it is
+      // not being stored.
+      warnings.push(`Pincode ${draft.pincodes.join(', ')} is the whole of this locality, so it narrows nothing and will not be saved — that keeps the banner visible to visitors who have not picked an area.`);
+    } else {
+      warnings.push(`Pincode target ${effective.join(', ')}: only visitors who have SET that pincode will see this. Anyone who has not chosen one sends no pincode and is skipped.`);
+    }
   }
 
   const slot = findBannerSlot(draft.placementKey, draft.campaignType);
   if (draft.campaignType === 'listing_ad' && !draft.placementKey) {
     reasons.push('A listing ad needs a placement.');
+  }
+
+  // One creative cannot serve two boxes.
+  //
+  // `homepage_hero_primary` renders in a 1000x360 landscape box on desktop and a
+  // 358x198 one on a phone, from the SAME booking. With one image the phone got
+  // a centre-crop of a landscape creative — the left and right thirds of the
+  // artwork simply gone, usually including the logo.
+  if (slot?.mobileWidth && draft.deviceTarget === 'all' && draft.imageUrl && !draft.mobileImageUrl) {
+    // Not a blocker — it still runs on desktop. But it is NOT cropped onto
+    // phones any more: `canDeliverOnDevice` withholds it from mobile entirely,
+    // because a banner cropped to a third of its artwork goes out under the
+    // advertiser's name.
+    warnings.push(`No mobile creative, so this will run on DESKTOP ONLY. Upload a ${slot.mobileWidth} x ${slot.mobileHeight} version to reach phones.`);
+  }
+  if (draft.deviceTarget === 'mobile' && !draft.imageUrl && draft.mobileImageUrl) {
+    warnings.push('Mobile-only banner: the mobile creative is used and the desktop field is ignored.');
+  }
+
+  if (slot?.supportsPosition) {
+    const position = clampFeedPosition(draft.position);
+    if (position !== Number(draft.position)) {
+      reasons.push(`Position must be between ${FEED_POSITION_MIN} and ${FEED_POSITION_MAX}.`);
+    } else {
+      warnings.push(`Shows after row ${position} of the feed. A page with fewer than ${position} rows will not show it.`);
+    }
   }
   if (slot && slot.device !== 'all' && draft.deviceTarget !== 'all' && draft.deviceTarget !== slot.device) {
     // The slot's own CSS breakpoint and the campaign's device target have to
@@ -382,6 +522,8 @@ export const bannerDraftFromCampaign = (campaign: ScalableCampaign): BannerDraft
     subcategoryIds: campaign.targets?.subcategoryIds || [],
     deviceTarget: campaign.deviceTarget || 'all',
     imageUrl: str(payload.imageUrl),
+    mobileImageUrl: str(payload.mobileImageUrl),
+    position: clampFeedPosition(payload.feedPosition ?? payload.mobileRowPosition ?? 3),
     title: str(payload.title),
     description: str(payload.description),
     badge: str(payload.badge),

@@ -403,6 +403,7 @@ export default function AdminApp(props: AdminConsoleProps) {
                     listingAds={listingAds}
                     adLeads={adLeads}
                     userSession={userSession}
+                    pincodeMappings={pincodeMappings}
                     scalableHomepageConfig={scalableHomepageConfig}
                     onSaveScalableCampaign={onSaveScalableCampaign}
                     onDeleteScalableCampaign={onDeleteScalableCampaign}

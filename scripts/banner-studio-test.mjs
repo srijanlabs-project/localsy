@@ -9,12 +9,16 @@ import {
   buildBannerCampaign,
   describeBannerSlotSize,
   emptyBannerDraft,
+  HERO_CAROUSEL_MAX,
+  clampFeedPosition,
   describeBannerCtr,
+  dropRedundantPincodes,
   evaluateBannerDelivery,
   findBannerSlot,
   withBannerStatus,
 } from '../src/services/admin/bannerStudio.ts';
 import { HOUSE_AD_SLOT_PRIORITY, buildHouseAd, isHouseAd, pickHouseAdPlacement } from '../src/services/houseAds.ts';
+import { canDeliverOnDevice, pickBannerCreative } from '../src/utils/bannerCreative.ts';
 import {
   foldAdMetricEvents,
   getNewestCmsContentTimestamp,
@@ -72,7 +76,13 @@ check(
 );
 check(
   'a mobile-targeted ad in a desktop-only slot can never render',
-  !verdict(ready({ placementKey: 'homepage_hero_primary', deviceTarget: 'mobile' })).live,
+  !verdict(ready({ placementKey: 'homepage_hero_secondary', deviceTarget: 'mobile' })).live,
+  'the side hero is a 263x360 desktop rail; the main hero is NOT desktop-only',
+);
+check(
+  'the main hero accepts a mobile booking, because it serves both devices',
+  verdict(ready({ placementKey: 'homepage_hero_primary', deviceTarget: 'mobile' })).live,
+  'the landing page filters that key per device: matchesPlacementTarget(ad, KEY, "mobile")',
 );
 check(
   'device "all" matches a device-restricted slot',
@@ -464,6 +474,18 @@ check(
   'a pincode is what made every real banner invisible today',
 );
 check('the house ad is identifiable', isHouseAd(house) && !isHouseAd({ id: 'banner_x' }));
+check(
+  'a short slot gets short copy',
+  (() => {
+    const small = buildHouseAd({ localityLabel: 'Roadpali', placementKey: 'mobile_inline' });
+    return small.title.length < house.title.length && small.ctaText === 'List free';
+  })(),
+  'the hero copy is a cramped mess in a 120px strip',
+);
+check(
+  'the hero keeps the full copy',
+  buildHouseAd({ localityLabel: 'Roadpali', placementKey: 'homepage_hero_primary' }).title === 'Add Your Hyper Local Business',
+);
 check('it survives having no locality label', buildHouseAd().description.includes('nearby'));
 
 check(
@@ -484,6 +506,176 @@ check(
   typeof pickHouseAdPlacement(['homepage_hero_primary']) === 'string',
   'filling every empty slot would put five identical invitations on one homepage',
 );
+
+// --- a pincode that narrows nothing ---------------------------------------
+//
+// Roadpali IS 410218. Storing both the locality and that pincode selects the
+// same audience — except calculateTargetScore vetoes any request carrying no
+// pincode, and the homepage carries none until a visitor picks an area. Two live
+// banners were lost to it: "Ruby Kitchen" and the Roadpali strip ad, both
+// active, in-window, correctly imaged, both `pincodes: ['410218']`.
+
+const LOCALITY_PINS = { roadpali: ['410218'], panvel: ['410206'], nerul: ['400706', '400705'] };
+
+check(
+  'a pincode covering the whole locality is dropped',
+  dropRedundantPincodes(['410218'], ['roadpali'], LOCALITY_PINS).length === 0,
+);
+check(
+  'one pincode out of several is a real narrowing and is kept',
+  dropRedundantPincodes(['400706'], ['nerul'], LOCALITY_PINS).join() === '400706',
+);
+check(
+  'all of a multi-pincode locality is dropped',
+  dropRedundantPincodes(['400706', '400705'], ['nerul'], LOCALITY_PINS).length === 0,
+);
+check(
+  'a pincode outside the locality is kept, so the warning still fires',
+  dropRedundantPincodes(['999999'], ['roadpali'], LOCALITY_PINS).join() === '999999',
+);
+check('no mapping known means nothing is dropped', dropRedundantPincodes(['410218'], ['roadpali'], {}).join() === '410218');
+check('no locality selected means nothing is dropped', dropRedundantPincodes(['410218'], [], LOCALITY_PINS).join() === '410218');
+check('an empty selection stays empty', dropRedundantPincodes([], ['roadpali'], LOCALITY_PINS).length === 0);
+
+const redundant = buildBannerCampaign(
+  ready({ localityIds: ['roadpali'], pincodes: ['410218'] }),
+  { localityPincodes: LOCALITY_PINS },
+);
+check('the campaign is saved with no pincode target', redundant.targets.pincodes.length === 0);
+check('and the payload agrees with the targets', redundant.payload.pincodes.length === 0,
+  'a mismatch would let the server deliver it and the client filter it out');
+check(
+  'so it delivers to a visitor who has not picked an area',
+  evaluateBannerDelivery(bannerDraftFromCampaign(redundant), { todayIso: TODAY }).live,
+);
+check(
+  'and the operator is told the pincode was not stored',
+  evaluateBannerDelivery(ready({ localityIds: ['roadpali'], pincodes: ['410218'] }), {
+    todayIso: TODAY, localityPincodes: LOCALITY_PINS,
+  }).warnings.some((warning) => warning.includes('narrows nothing')),
+);
+check(
+  'a genuinely narrowing pincode is still stored and still warned about',
+  (() => {
+    const built = buildBannerCampaign(ready({ localityIds: ['nerul'], pincodes: ['400706'] }), { localityPincodes: LOCALITY_PINS });
+    const result = evaluateBannerDelivery(ready({ localityIds: ['nerul'], pincodes: ['400706'] }), {
+      todayIso: TODAY, localityPincodes: LOCALITY_PINS,
+    });
+    return built.targets.pincodes.join() === '400706'
+      && result.warnings.some((warning) => warning.includes('only visitors who have SET'));
+  })(),
+);
+
+// --- two devices, two creatives ------------------------------------------
+
+check(
+  'the main hero states both boxes',
+  describeBannerSlotSize(findBannerSlot('homepage_hero_primary', 'listing_ad')).includes('Mobile 358 x 198'),
+);
+check(
+  'targeting both devices with one image warns, and says desktop only',
+  (() => {
+    const result = verdict(ready({ deviceTarget: 'all', imageUrl: 'https://cdn/x.png', mobileImageUrl: '' }));
+    return result.live && result.warnings.some((warning) => warning.includes('DESKTOP ONLY'));
+  })(),
+  'it still runs — just not on phones',
+);
+
+// --- no mobile creative means no mobile delivery --------------------------
+//
+// A cropped banner goes out under an advertiser's name, so a missing phone
+// creative withholds the banner from phones rather than cropping the desktop one
+// into a 358px box.
+
+const bothNoMobile = { deviceTarget: 'all', imageUrl: 'https://cdn/d.png' };
+check('it delivers on desktop', canDeliverOnDevice(bothNoMobile, 'desktop'));
+check('it does NOT deliver on mobile', !canDeliverOnDevice(bothNoMobile, 'mobile'));
+check('and there is no mobile creative to draw', pickBannerCreative(bothNoMobile, 'mobile') === '');
+
+const bothWithMobile = { deviceTarget: 'all', imageUrl: 'https://cdn/d.png', mobileImageUrl: 'https://cdn/m.png' };
+check('with both creatives it delivers on both', canDeliverOnDevice(bothWithMobile, 'desktop') && canDeliverOnDevice(bothWithMobile, 'mobile'));
+check('and each device gets its own artwork',
+  pickBannerCreative(bothWithMobile, 'desktop') === 'https://cdn/d.png'
+  && pickBannerCreative(bothWithMobile, 'mobile') === 'https://cdn/m.png');
+
+check(
+  'a MOBILE-ONLY banner uses its single upload as the phone creative',
+  (() => {
+    const mobileOnly = { deviceTarget: 'mobile', imageUrl: 'https://cdn/m.png' };
+    return canDeliverOnDevice(mobileOnly, 'mobile')
+      && pickBannerCreative(mobileOnly, 'mobile') === 'https://cdn/m.png'
+      && !canDeliverOnDevice(mobileOnly, 'desktop');
+  })(),
+  'the form only offers the second field when both devices are targeted',
+);
+check(
+  'a desktop-only banner never reaches a phone',
+  !canDeliverOnDevice({ deviceTarget: 'desktop', imageUrl: 'https://cdn/d.png' }, 'mobile'),
+);
+check(
+  'the house ad has no image and is unaffected',
+  canDeliverOnDevice({ deviceTarget: 'all' }, 'mobile') && canDeliverOnDevice({ deviceTarget: 'all' }, 'desktop'),
+  'it is drawn from its text, so there is no creative to be missing',
+);
+check('a missing ad delivers nowhere', !canDeliverOnDevice(null, 'mobile'));
+check(
+  'supplying both creatives clears the warning',
+  !verdict(ready({ deviceTarget: 'all', imageUrl: 'https://cdn/d.png', mobileImageUrl: 'https://cdn/m.png' }))
+    .warnings.some((warning) => warning.includes('No mobile creative')),
+);
+check(
+  'a single-device banner is not asked for a second creative',
+  !verdict(ready({ deviceTarget: 'desktop', imageUrl: 'https://cdn/d.png' }))
+    .warnings.some((warning) => warning.includes('No mobile creative')),
+);
+check(
+  'both creatives survive a save and a read-back',
+  (() => {
+    const built = buildBannerCampaign(ready({ imageUrl: 'https://cdn/d.png', mobileImageUrl: 'https://cdn/m.png' }));
+    return built.payload.mobileImageUrl === 'https://cdn/m.png'
+      && bannerDraftFromCampaign(built).mobileImageUrl === 'https://cdn/m.png';
+  })(),
+);
+
+// --- feed position --------------------------------------------------------
+//
+// The feed used to drop a banner after every third row and cycle inventory
+// through those slots, so an operator could not say where a banner went.
+
+check('a position is stored for a feed slot', (() => {
+  const built = buildBannerCampaign(ready({
+    placementKey: 'homepage_strip_between_categories_and_listings', position: 5,
+  }));
+  return built.payload.feedPosition === 5 && built.payload.mobileRowPosition === 5;
+})());
+check(
+  'a hero booking carries no position, because the hero does not repeat',
+  buildBannerCampaign(ready({ placementKey: 'homepage_hero_primary', position: 5 })).payload.feedPosition === undefined,
+);
+check('a position below 1 is clamped', clampFeedPosition(0) === 1);
+check('a position above 20 is clamped', clampFeedPosition(99) === 20);
+check('a non-numeric position falls back to 3', clampFeedPosition('abc') === 3);
+check('a fractional position rounds', clampFeedPosition(4.6) === 5);
+check(
+  'an out-of-range position blocks the save',
+  !verdict(ready({ placementKey: 'homepage_strip_between_categories_and_listings', position: 44 })).live,
+);
+check(
+  'an in-range position says where it will appear',
+  verdict(ready({ placementKey: 'homepage_strip_between_categories_and_listings', position: 4 }))
+    .warnings.some((warning) => warning.includes('after row 4')),
+);
+check(
+  'a position read back from a legacy mobileRowPosition still works',
+  bannerDraftFromCampaign({
+    id: 'c1', name: 'x', campaignType: 'listing_ad', status: 'active', priority: 100,
+    isFallback: false, deviceTarget: 'all', placementKeys: [], targets: {},
+    payload: { placementKey: 'mobile_inline', mobileRowPosition: 7 }, updatedAt: '',
+  }).position === 7,
+);
+
+// --- the carousel cap ----------------------------------------------------
+check('the hero carousel is capped at ten slides', HERO_CAROUSEL_MAX === 10);
 
 console.log(`${passed} checks passed, ${failures.length} failed`);
 failures.forEach((failure) => console.log(`  FAIL ${failure}`));

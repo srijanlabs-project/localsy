@@ -42,6 +42,20 @@ export const HOUSE_AD_SLOT_PRIORITY = [
   'listing_results',
 ] as const;
 
+/**
+ * Slots whose box is too short for a headline plus a benefit line.
+ *
+ * The house ad is drawn from text, so it fills whatever container it is given —
+ * but the same three-line copy that reads well in a 360px hero is a cramped mess
+ * in a 120px mobile strip. These get the short form.
+ */
+const COMPACT_HOUSE_AD_SLOTS = new Set([
+  'mobile_inline',
+  'homepage_hero_junior',
+  'homepage_inline_primary',
+  'homepage_strip_between_categories_and_listings',
+]);
+
 export type HouseAdContext = {
   /** "Roadpali", used so the benefit line names the reader's own area. */
   localityLabel?: string;
@@ -74,14 +88,19 @@ export const pickHouseAdPlacement = (filledPlacementKeys: string[] = []): string
  */
 export const buildHouseAd = (context: HouseAdContext = {}): ListingAd => {
   const area = String(context.localityLabel || '').trim();
+  const compact = COMPACT_HOUSE_AD_SLOTS.has(String(context.placementKey || ''));
   return {
     id: HOUSE_AD_ID,
-    title: 'Add Your Hyper Local Business',
-    description: area
-      ? `Free to list, and found by neighbours searching in ${area}.`
-      : 'Free to list, and found by neighbours searching nearby.',
+    title: compact
+      ? 'Add your business — free'
+      : 'Add Your Hyper Local Business',
+    description: compact
+      ? (area ? `Found by neighbours in ${area}.` : 'Found by neighbours nearby.')
+      : (area
+        ? `Free to list, and found by neighbours searching in ${area}.`
+        : 'Free to list, and found by neighbours searching nearby.'),
     badge: 'Localisy',
-    ctaText: 'List my business - free',
+    ctaText: compact ? 'List free' : 'List my business - free',
     backgroundColor: '#0D1B2A',
     startDate: '',
     endDate: '',
