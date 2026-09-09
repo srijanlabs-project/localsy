@@ -118,22 +118,55 @@ export default function BannerStudioPanel({
     }
   };
 
+  // One line per save attempt, always, naming the outcome.
+  //
+  // A banner that never reached the server was indistinguishable from one that
+  // saved and then failed to deliver: the console showed a click handler
+  // running, the screen showed nothing, and only the Network tab could tell them
+  // apart. The outcome is now readable from the console alone.
+  const logSave = (outcome: string, detail?: unknown) => {
+    console.info(`[banners] save -> ${outcome}`, detail ?? '');
+  };
+
   const save = async () => {
+    logSave('clicked', {
+      name: draft.name,
+      id: draft.id || '(new)',
+      type: draft.campaignType,
+      placement: draft.placementKey,
+      localities: draft.localityIds,
+      pincodes: draft.pincodes,
+      categories: draft.categoryIds,
+      status: draft.status,
+      hasImage: Boolean(draft.imageUrl),
+      canManage,
+      hasHandler: Boolean(onSaveScalableCampaign),
+    });
+
     // Both of these used to be silent returns — the button appeared to work and
     // nothing reached the server, which is indistinguishable from a save that
     // succeeded and then failed to deliver. Every refusal now says so.
     if (!onSaveScalableCampaign) {
+      logSave('BLOCKED: no save handler wired');
       setNotice({ tone: 'bad', text: 'This screen has no save handler wired, so nothing can be saved. That is a wiring fault, not something you can fix here.' });
       return;
     }
     if (!canManage) {
+      logSave('BLOCKED: role cannot manage campaigns');
       setNotice({ tone: 'bad', text: 'Your role cannot manage campaigns, so this will not save.' });
       return;
     }
-    if (!draft.name.trim()) { setNotice({ tone: 'bad', text: 'Give the banner a name.' }); return; }
+    if (!draft.name.trim()) {
+      logSave('BLOCKED: banner has no name');
+      setNotice({ tone: 'bad', text: 'Give the banner a name.' });
+      return;
+    }
     setBusy('save'); setNotice(null);
     try {
-      await onSaveScalableCampaign(buildBannerCampaign(draft));
+      const campaign = buildBannerCampaign(draft);
+      logSave('sending', { id: campaign.id, status: campaign.status, targets: campaign.targets });
+      await onSaveScalableCampaign(campaign);
+      logSave('SAVED', { id: campaign.id, willRender: verdict.live, reasons: verdict.reasons });
       setNotice({
         tone: verdict.live ? 'ok' : 'bad',
         text: verdict.live
@@ -142,6 +175,7 @@ export default function BannerStudioPanel({
       });
       setDraft(emptyBannerDraft(localities[0]?.id || ''));
     } catch (error) {
+      logSave('FAILED', (error as Error)?.message || error);
       setNotice({ tone: 'bad', text: (error as Error)?.message || 'Save failed.' });
     } finally { setBusy(''); }
   };

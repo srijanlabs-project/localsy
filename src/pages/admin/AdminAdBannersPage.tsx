@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import type { AdLead, Business, ListingAd, Locality, ScalableCampaign, ScalableHomepageConfigState, UserSession } from '../../types';
 import BannerStudioPanel from '../../components/admin/BannerStudioPanel';
 import { BUSINESS_CATEGORIES } from '../../categoryMaster';
@@ -52,9 +52,13 @@ export default function AdminAdBannersPage({
 }: AdminAdBannersPageProps) {
   // A snapshot is served in preference to the live resolver, so the form has to know which
   // localities have one before it can tell the operator what will happen on save.
-  const publishedSnapshotLocalityIds = Array.from(new Set(
+  //
+  // Memoized because it is a prop: rebuilding the array on every render made the panel's own
+  // `banners` useMemo recompute every render too, which is the kind of thing that turns into a
+  // 200ms click handler on a console holding 26,000 listings.
+  const publishedSnapshotLocalityIds = useMemo(() => Array.from(new Set(
     (scalableHomepageConfig?.publishedSnapshots || []).map((snapshot) => snapshot.localityId).filter(Boolean)
-  ));
+  )), [scalableHomepageConfig?.publishedSnapshots]);
 
   return (
     <div className="space-y-4">

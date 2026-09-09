@@ -50,6 +50,8 @@ import {
   resolveDefaultSubcategoryId
 } from '../categoryMaster';
 
+import { buildHouseAd, pickHouseAdPlacement } from '../services/houseAds';
+
 type PortalIcon = React.ComponentType<{ className?: string }>;
 
 const HOMEPAGE_DEFAULTS_BOOTSTRAP = homepageDefaultsBootstrap as Partial<HomepageDefaultsConfigState>;
@@ -4089,29 +4091,26 @@ export default function WebPortal({
           localityIds: [currentLocality.id],
         }
       ];
-  const shouldUseFallbackAds = !shouldDeferResolvedListingAds && resolvedHomepageSource === 'legacy_fallback' && activeListingAds.length === 0;
-  const fallbackSidebarAds: ListingAd[] = (homepageDefaultsConfig?.fallbackListingAds || (Array.isArray(HOMEPAGE_DEFAULTS_BOOTSTRAP.fallbackListingAds) ? HOMEPAGE_DEFAULTS_BOOTSTRAP.fallbackListingAds : []) as unknown as Array<Record<string, unknown>>).map((ad, index) => ({
-    id: String(ad.id || `fallback_ad_${index + 1}`),
-    title: String(ad.title || 'Fallback Ad'),
-    description: String(ad.description || ''),
-    badge: String(ad.badge || 'Advertisement'),
-    ctaText: String(ad.ctaText || 'Learn More'),
-    backgroundColor: String(ad.backgroundColor || '#eef2ff'),
-    imageUrl: ad.imageUrl ? String(ad.imageUrl) : undefined,
-    startDate: todayIso,
-    endDate: todayIso,
-    actionType: (ad.actionType === 'lead_form' || ad.actionType === 'landing_listing' ? ad.actionType : 'landing_page') as ListingAd['actionType'],
-    targetUrl: ad.targetUrl
-      ? String(ad.targetUrl)
-      : (ad.targetCategoryId ? buildCategoryRoutePath(String(ad.targetCategoryId)) : undefined),
-    localityIds: [currentLocality.id],
-    categoryIds: Array.isArray(ad.categoryIds) ? ad.categoryIds.map((categoryId) => String(categoryId)) : [],
-    tags: Array.isArray(ad.tags) ? ad.tags.map((tag) => String(tag)) : [],
-    placementKey: ad.placementKey ? String(ad.placementKey) : undefined,
-    deviceTarget: ad.deviceTarget === 'desktop' || ad.deviceTarget === 'mobile' ? ad.deviceTarget : 'all',
-    mobileRowPosition: Number.isFinite(Number(ad.mobileRowPosition)) ? Number(ad.mobileRowPosition) : 3,
-    isActive: true
-  }));
+  // The house ad fills exactly ONE empty slot, in priority order.
+  //
+  // This replaces `fallbackSidebarAds`, which was built from
+  // homepage-defaults-config.json's `fallbackListingAds` — three of whose four
+  // entries were invented businesses with invented offers. They only ever stayed
+  // off the site because their gate required
+  // `resolvedHomepageSource === 'legacy_fallback'`, which stops holding the
+  // moment the resolver is configured. Fabricated advertiser creatives must not
+  // be one config flag away from a live directory.
+  const bookedPlacementKeys = activeListingAds
+    .map((ad) => String(ad.placementKey || ''))
+    .filter(Boolean);
+  const houseAdPlacementKey = pickHouseAdPlacement(bookedPlacementKeys);
+  const houseAd = houseAdPlacementKey
+    ? buildHouseAd({ localityLabel: currentLocalityLabel, placementKey: houseAdPlacementKey })
+    : null;
+  // Held back for the same beat as the booked inventory: showing the invitation
+  // and then replacing it with a real banner is the flicker we just removed.
+  const deliverableHouseAd = shouldDeferResolvedListingAds ? null : houseAd;
+
   const getAdCtr = (ad: ListingAd) => getAdCtrService(ad);
   const getAdDeliveryScore = (ad: ListingAd, contextKey: string) => (
     getAdDeliveryScoreService(ad, {
@@ -4132,7 +4131,7 @@ export default function WebPortal({
     })
   );
   const homepageAdInventory = rankAdsForDelivery(
-    shouldUseFallbackAds ? [...activeListingAds, ...fallbackSidebarAds] : activeListingAds,
+    deliverableHouseAd ? [...activeListingAds, deliverableHouseAd] : activeListingAds,
     isResultsPage ? 'listing_results' : 'homepage'
   );
   const desktopSidebarAds = rankAdsForDelivery(homepageAdInventory, 'homepage_sidebar')
@@ -4985,6 +4984,9 @@ export default function WebPortal({
             categories={categories.filter((category) => category.id !== 'all')}
             heroBanners={activeHeroBanners}
             listingAds={activeListingAds}
+            /* The hero's bottom fallback. It used to promote approvedBusinesses[0]
+               — one listing out of 26,000, in a paid slot, for free. */
+            houseAd={deliverableHouseAd}
             /* Holds the hero for the one beat before the resolved payload lands,
                instead of painting the business-level fallback and then replacing
                it. Same signal that already holds back legacy listing-ad

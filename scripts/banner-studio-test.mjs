@@ -14,6 +14,7 @@ import {
   findBannerSlot,
   withBannerStatus,
 } from '../src/services/admin/bannerStudio.ts';
+import { HOUSE_AD_SLOT_PRIORITY, buildHouseAd, isHouseAd, pickHouseAdPlacement } from '../src/services/houseAds.ts';
 import {
   foldAdMetricEvents,
   getNewestCmsContentTimestamp,
@@ -405,6 +406,84 @@ check('an empty state has no newest timestamp', getNewestCmsContentTimestamp({})
 check('a malformed updatedAt is skipped rather than throwing',
   getNewestCmsContentTimestamp({ campaigns: [{ updatedAt: 'not a date' }, { updatedAt: '2026-09-02T00:00:00.000Z' }] })
   === Date.parse('2026-09-02T00:00:00.000Z'));
+
+// --- the hero CTA that did nothing ---------------------------------------
+//
+// The hero click path is handleConfiguredCta(banner.ctaType, banner.ctaTarget),
+// which returns immediately when ctaType is missing. A listing ad uses
+// actionType/targetUrl instead, so a hero banner built here rendered fine and
+// its button was dead.
+
+const heroCta = buildBannerCampaign(ready({
+  campaignType: 'hero_banner',
+  placementKey: '',
+  actionType: 'landing_page',
+  targetUrl: 'https://localisy.in/advertise',
+}));
+check('a hero banner carries ctaType', heroCta.payload.ctaType === 'landing_page');
+check('a hero banner carries ctaTarget', heroCta.payload.ctaTarget === 'https://localisy.in/advertise');
+check(
+  'a listing-target hero points at the business, not a URL',
+  (() => {
+    const built = buildBannerCampaign(ready({
+      campaignType: 'hero_banner',
+      placementKey: '',
+      actionType: 'landing_listing',
+      targetBusinessId: 'localisy015177',
+      targetUrl: 'https://ignored.example',
+    }));
+    return built.payload.ctaTarget === 'localisy015177';
+  })(),
+);
+check(
+  'a listing ad is untouched by the hero CTA mapping',
+  campaign.payload.ctaType === undefined,
+  'listing ads go through actionType/targetUrl, which already worked',
+);
+
+// --- the house ad ---------------------------------------------------------
+//
+// Every empty slot used to backfill with something misleading: a business
+// listing promoted for free in a paid slot, a stock photo of another city, or —
+// worst — homepage-defaults-config.json's `fallbackListingAds`, three of whose
+// four entries were invented businesses with invented offers.
+
+const house = buildHouseAd({ localityLabel: 'Roadpali', placementKey: 'homepage_hero_primary' });
+check('the house ad names the reader\'s own area', house.description.includes('Roadpali'));
+check('the house ad reads as an invitation', house.title === 'Add Your Hyper Local Business');
+check(
+  'the house ad carries no image',
+  house.imageUrl === undefined,
+  'an image means an upload and a slot that renders blank the day that path 404s',
+);
+check('a click opens the advertise lead form', house.actionType === 'lead_form');
+check('the house ad targets no locality, so it fits every one', house.localityIds.length === 0);
+check(
+  'the house ad carries no pincode',
+  house.pincodes.length === 0,
+  'a pincode is what made every real banner invisible today',
+);
+check('the house ad is identifiable', isHouseAd(house) && !isHouseAd({ id: 'banner_x' }));
+check('it survives having no locality label', buildHouseAd().description.includes('nearby'));
+
+check(
+  'with nothing booked it takes the hero',
+  pickHouseAdPlacement([]) === 'homepage_hero_primary',
+);
+check(
+  'with the hero booked it falls to the strip',
+  pickHouseAdPlacement(['homepage_hero_primary']) === 'homepage_strip_between_categories_and_listings',
+  'so a page never loses its invitation just because one banner sold',
+);
+check(
+  'with every slot booked it takes none',
+  pickHouseAdPlacement([...HOUSE_AD_SLOT_PRIORITY]) === '',
+);
+check(
+  'it picks exactly one slot, never several',
+  typeof pickHouseAdPlacement(['homepage_hero_primary']) === 'string',
+  'filling every empty slot would put five identical invitations on one homepage',
+);
 
 console.log(`${passed} checks passed, ${failures.length} failed`);
 failures.forEach((failure) => console.log(`  FAIL ${failure}`));

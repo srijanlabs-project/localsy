@@ -246,7 +246,17 @@ export const buildBannerCampaign = (draft: BannerDraft): ScalableCampaign => {
   };
   // A hero banner carries no placement key; a listing ad is matched on it.
   if (draft.campaignType === 'listing_ad') payload.placementKey = draft.placementKey || undefined;
-  if (draft.campaignType === 'hero_banner') payload.localityId = draft.localityIds[0] || undefined;
+  if (draft.campaignType === 'hero_banner') {
+    payload.localityId = draft.localityIds[0] || undefined;
+    // The hero click path is `handleConfiguredCta(banner.ctaType, banner.ctaTarget)`,
+    // which returns immediately on a missing ctaType — NOT actionType/targetUrl,
+    // which is what a listing ad uses. Without these two fields a hero banner
+    // created here rendered correctly and its button did nothing at all.
+    payload.ctaType = draft.actionType;
+    payload.ctaTarget = draft.actionType === 'landing_listing'
+      ? draft.targetBusinessId || undefined
+      : draft.targetUrl || undefined;
+  }
 
   return {
     // A NEW banner must arrive with an id of its own.

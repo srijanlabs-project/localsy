@@ -25,6 +25,12 @@ type LocalityLandingUiV1Props = {
   categories: Category[];
   heroBanners?: HeroBanner[];
   /**
+   * The banner shown when a slot has nothing booked in it: "Add Your Hyper Local
+   * Business". Built in services/houseAds.ts, chosen for exactly one slot per
+   * page so the homepage does not fill with identical invitations.
+   */
+  houseAd?: ListingAd | null;
+  /**
    * True while the resolved-homepage payload is still in flight. The hero has a
    * three-level fallback (booked ad -> configured hero banner -> a listing), and
    * without this it paints the bottom level first and swaps up as data arrives,
@@ -218,6 +224,7 @@ export default function LocalityLandingUiV1({
   businesses,
   categories,
   heroBanners = [],
+  houseAd = null,
   isHeroPending = false,
   listingAds = [],
   localities,
@@ -441,6 +448,13 @@ export default function LocalityLandingUiV1({
       .slice(0, 7),
     [homepageListingAds],
   );
+  // The house ad takes the strip when the hero is already booked.
+  //
+  // `pickHouseAdPlacement` hands it the most prominent EMPTY slot, hero first.
+  // If the hero went to a real banner, the strip is next in line — so the
+  // invitation is still on the page exactly once, rather than the page having no
+  // invitation at all whenever a single banner is sold.
+  const houseAdForStrip = houseAd?.placementKey === CATEGORY_STRIP_PLACEMENT_KEY ? houseAd : null;
   const stripBannerAd = useMemo(
     () => homepageListingAds.find((ad) => matchesPlacementTarget(ad, CATEGORY_STRIP_PLACEMENT_KEY)) || null,
     [homepageListingAds],
@@ -462,6 +476,14 @@ export default function LocalityLandingUiV1({
     : null;
   const primaryHeroBanner = heroBanners[0] || null;
   const secondaryHeroBanner = heroBanners[1] || null;
+  // The side hero renders only when something is actually booked there.
+  //
+  // It used to fall back to secondaryHeroBusiness — a second free promotion of
+  // an arbitrary listing. The house ad cannot fill it either: one invitation per
+  // page, so two identical "Add Your Business" panels side by side is exactly
+  // what to avoid. With nothing booked the row collapses and the main hero takes
+  // the full width, which reads as a designed layout rather than a gap.
+  const hasSecondaryHero = Boolean(rotatingSecondaryHeroAd || secondaryHeroBanner);
 
   // Slides for the mobile sponsored slot: booked inventory first, with a house
   // "promote your business" creative as the fallback so the slot always has
@@ -724,22 +746,25 @@ export default function LocalityLandingUiV1({
       };
     }
 
+    // Nothing is booked in the hero. It used to promote approvedBusinesses[0] —
+    // one listing out of 26,000, chosen by sort order, given a paid slot for
+    // free, and indistinguishable from a booking to a visitor. The slot is empty,
+    // so it now says so and invites the reader to fill it.
     return {
-      image: getMediaProxyUrl(getDisplayableImageUrl(primaryHeroBusiness?.coverImageUrl)
-        || getDisplayableImageUrl(primaryHeroBusiness?.imageUrl)),
-      badge: primaryHeroBusiness?.featured ? 'Featured listing' : 'Popular now',
-      title: buildPromoTitle(primaryHeroBusiness, localityLabel, `Trusted businesses in ${localityLabel}`),
-      subtitle: buildPromoSubtitle(primaryHeroBusiness, categories, localityLabel),
-      cta: 'View listing',
+      image: '',
+      badge: houseAd?.badge || 'Localisy',
+      title: houseAd?.title || 'Add Your Hyper Local Business',
+      subtitle: houseAd?.description || `Free to list, and found by neighbours searching in ${localityLabel}.`,
+      cta: houseAd?.ctaText || 'List my business - free',
       onClick: () => {
-        if (primaryHeroBusiness) {
-          onOpenListingPage(primaryHeroBusiness.id, primaryHeroBusiness.localityId);
+        if (houseAd && onOpenListingAd) {
+          onOpenListingAd(houseAd);
           return;
         }
-        submitSearch(searchQuery);
+        onOpenLivePortal();
       },
     };
-  }, [categories, localityLabel, onOpenHeroCta, onOpenListingAd, onOpenListingPage, onOpenLivePortal, primaryHeroBanner, primaryHeroBusiness, rotatingPrimaryHeroAd, searchQuery]);
+  }, [houseAd, localityLabel, onOpenHeroCta, onOpenListingAd, onOpenLivePortal, primaryHeroBanner, rotatingPrimaryHeroAd]);
 
   const mobilePrimaryPromo = useMemo<PromoCardContent>(() => {
     if (rotatingMobilePrimaryHeroAd) {
@@ -838,6 +863,7 @@ export default function LocalityLandingUiV1({
           onOpenLivePortal={onOpenLivePortal}
           onOpenPlatform={onOpenPlatform}
           isHeroPending={isHeroPending}
+          hasSecondaryHero={hasSecondaryHero}
           rotatingPrimaryHeroAd={rotatingPrimaryHeroAd}
           rotatingSecondaryHeroAd={rotatingSecondaryHeroAd}
           rotatingPrimaryHeroCount={primaryHeroImageAds.length}
@@ -909,7 +935,7 @@ export default function LocalityLandingUiV1({
             <button
               type="button"
               onClick={mobilePrimaryPromo.onClick}
-              className="relative block h-[132px] w-[70%] shrink-0 overflow-hidden rounded-[14px] bg-[#0D1B2A] text-left"
+              className={`relative block h-[132px] shrink-0 overflow-hidden rounded-[14px] bg-[#0D1B2A] text-left ${hasSecondaryHero ? 'w-[70%]' : 'w-full'}`}
             >
               {mobilePrimaryPromo.image ? (
                 <img
@@ -937,6 +963,7 @@ export default function LocalityLandingUiV1({
               </span>
             </button>
 
+            {hasSecondaryHero && (
             <button
               type="button"
               onClick={secondaryPromo.onClick}
@@ -957,6 +984,7 @@ export default function LocalityLandingUiV1({
                 </span>
               </span>
             </button>
+            )}
           </div>
           )}
 
@@ -1352,13 +1380,16 @@ export default function LocalityLandingUiV1({
             </section>
           ) : null}
 
-          {stripBannerAd ? (
+          {stripBannerAd || houseAdForStrip ? (
             <div className="mt-6">
               <InFeedAdStrip
-                listingAd={stripBannerAd}
+                listingAd={stripBannerAd || houseAdForStrip}
                 onOpenListingAd={onOpenListingAd}
                 onOpenLivePortal={onOpenLivePortal}
-                imageOnly
+                /* imageOnly renders a bare <img>, so it is only right for a
+                   booked creative. The house ad carries no image on purpose and
+                   needs the text branch. */
+                imageOnly={Boolean(stripBannerAd)}
               />
             </div>
           ) : null}
@@ -1450,6 +1481,7 @@ function DesktopHomeShell({
   onOpenLivePortal,
   onOpenPlatform,
   isHeroPending,
+  hasSecondaryHero,
   rotatingPrimaryHeroAd,
   rotatingSecondaryHeroAd,
   rotatingPrimaryHeroCount,
@@ -1487,6 +1519,7 @@ function DesktopHomeShell({
   onOpenLivePortal: () => void;
   onOpenPlatform?: () => void;
   isHeroPending?: boolean;
+  hasSecondaryHero?: boolean;
   rotatingPrimaryHeroAd: ListingAd | null;
   rotatingSecondaryHeroAd: ListingAd | null;
   rotatingPrimaryHeroCount: number;
@@ -1649,6 +1682,7 @@ function DesktopHomeShell({
               )}
             </div>
 
+            {(isHeroPending || hasSecondaryHero) && (
             <div className="relative min-h-[360px] flex-1 overflow-hidden rounded-[20px] shadow-[0_8px_24px_rgba(15,23,42,0.08)]">
               {isHeroPending ? (
                 <HeroHoldCard />
@@ -1666,6 +1700,7 @@ function DesktopHomeShell({
                 />
               )}
             </div>
+            )}
           </div>
 
           {quickSearches.length > 0 ? (
