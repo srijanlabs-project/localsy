@@ -927,15 +927,15 @@ export default function LocalityLandingUiV1({
 
           {isHeroPending ? (
             <div className="flex items-stretch gap-2">
-              <div className="h-[132px] w-[70%] shrink-0 overflow-hidden rounded-[14px]"><HeroHoldCard /></div>
-              <div className="h-[132px] w-[30%] shrink-0 overflow-hidden rounded-[14px]"><HeroHoldCard /></div>
+              <div className="h-[198px] w-[70%] shrink-0 overflow-hidden rounded-[14px]"><HeroHoldCard /></div>
+              <div className="h-[198px] w-[30%] shrink-0 overflow-hidden rounded-[14px]"><HeroHoldCard /></div>
             </div>
           ) : (
           <div className="flex items-stretch gap-2">
             <button
               type="button"
               onClick={mobilePrimaryPromo.onClick}
-              className={`relative block h-[132px] shrink-0 overflow-hidden rounded-[14px] bg-[#0D1B2A] text-left ${hasSecondaryHero ? 'w-[70%]' : 'w-full'}`}
+              className={`relative block h-[198px] shrink-0 overflow-hidden rounded-[14px] bg-[#0D1B2A] text-left ${hasSecondaryHero ? 'w-[70%]' : 'w-full'}`}
             >
               {mobilePrimaryPromo.image ? (
                 <img
@@ -967,7 +967,7 @@ export default function LocalityLandingUiV1({
             <button
               type="button"
               onClick={secondaryPromo.onClick}
-              className="relative block h-[132px] w-[30%] shrink-0 overflow-hidden rounded-[14px] bg-[#1E293B] text-left"
+              className="relative block h-[198px] w-[30%] shrink-0 overflow-hidden rounded-[14px] bg-[#1E293B] text-left"
             >
               {secondaryPromo.image ? (
                 <img
@@ -1198,9 +1198,17 @@ export default function LocalityLandingUiV1({
           <div className="mt-5 space-y-5">
             {sectionGroups.map((section, index) => {
               const isBannerSlot = (index + 1) % 3 === 0 && index !== sectionGroups.length - 1;
+              // A booked strip ad rotates through the inventory; when none is
+              // booked the slot takes the house ad rather than collapsing, so
+              // there is a banner after every third category row either way.
+              //
+              // NOTE: this deliberately breaks the one-house-ad-per-page rule for
+              // the mobile feed — a long homepage will repeat the invitation
+              // every third row. That is the trade for never having an empty
+              // banner slot; if it reads as too much, cap it to the first slot.
               const bannerAd = interCategoryAds.length > 0
                 ? interCategoryAds[Math.floor(index / 3) % interCategoryAds.length]
-                : null;
+                : houseAd;
               return (
                 <React.Fragment key={`m-${section.category.id}`}>
                   <section>
@@ -1294,7 +1302,7 @@ export default function LocalityLandingUiV1({
                       listingAd={bannerAd}
                       onOpenListingAd={onOpenListingAd}
                       onOpenLivePortal={onOpenLivePortal}
-                      imageOnly
+                      imageOnly={interCategoryAds.length > 0}
                     />
                   ) : null}
                 </React.Fragment>
@@ -1738,7 +1746,7 @@ function DesktopHomeShell({
  */
 function HeroHoldCard() {
   // Fills its container, which already carries the slot's height
-  // (min-h-[360px] on desktop, h-[132px] on mobile).
+  // (min-h-[360px] on desktop, h-[198px] on mobile).
   return (
     <div
       aria-hidden="true"
@@ -1895,7 +1903,7 @@ function MobileHomeShell({
       {/* Headline, search and quick chips sit on the white page ground. */}
       <div className="px-4 pt-4">
         <h1 className="text-[1.55rem] font-extrabold leading-[1.15] tracking-[-0.03em] text-[#0D1B2A]">
-          Every trusted business in <span className="text-[#F59E0B]">{localityLabel}.</span>
+          Trusted business in <span className="text-[#F59E0B]">{localityLabel}.</span>
         </h1>
 
         <div className="relative mt-3">
@@ -1946,32 +1954,40 @@ function MobileHomeShell({
         {/* Quick searches never scroll sideways: the first few sit inline and
             anything that would run off the page goes into a "+N" dropdown. */}
         {quickSearches.length > 0 ? (
-          <div className="relative mt-2.5 flex flex-wrap items-center gap-2">
-            {quickSearches.slice(0, 3).map((term) => (
+          /* One row, always. `flex-wrap` let three long chips ("Electrician in
+             Roadpali") run to two or three rows on a 390px screen and push the
+             categories below the fold. Two chips stay inline and truncate; the
+             rest live behind the "+N" dropdown, which never wraps. */
+          /* No `overflow-hidden` here: the "+N" dropdown is absolutely
+             positioned inside this same relative container and would be clipped
+             by it. `flex-nowrap` plus `min-w-0` on the chips is enough — flex
+             shrinks them to fit rather than overflowing. */
+          <div className="relative mt-2.5 flex flex-nowrap items-center gap-2">
+            {quickSearches.slice(0, 2).map((term) => (
               <button
                 key={term}
                 type="button"
                 onClick={() => submitSearch(term)}
-                className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-[#E6EBF2] bg-white px-3 py-1.5 text-[11.5px] font-medium text-[#475467]"
+                className="inline-flex min-w-0 items-center gap-1.5 truncate rounded-full border border-[#E6EBF2] bg-white px-3 py-1.5 text-[11.5px] font-medium text-[#475467]"
               >
-                <Search className="h-3 w-3 text-[#98A2B3]" />
-                {term}
+                <Search className="h-3 w-3 shrink-0 text-[#98A2B3]" />
+                <span className="truncate">{term}</span>
               </button>
             ))}
 
-            {quickSearches.length > 3 ? (
+            {quickSearches.length > 2 ? (
               <>
                 <button
                   type="button"
                   onClick={() => setIsQuickSearchMenuOpen((open) => !open)}
-                  className="inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-[#E6EBF2] bg-white px-3 py-1.5 text-[11.5px] font-semibold text-[#475467]"
+                  className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-[#E6EBF2] bg-white px-3 py-1.5 text-[11.5px] font-semibold text-[#475467]"
                 >
-                  +{quickSearches.length - 3}
+                  +{quickSearches.length - 2}
                   <ChevronDown className={`h-3 w-3 transition ${isQuickSearchMenuOpen ? 'rotate-180' : ''}`} />
                 </button>
                 {isQuickSearchMenuOpen ? (
                   <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-30 max-h-[220px] overflow-y-auto rounded-[14px] border border-[#E2E8F0] bg-white p-1.5 shadow-[0_18px_40px_rgba(15,23,42,0.18)]">
-                    {quickSearches.slice(3).map((term) => (
+                    {quickSearches.slice(2).map((term) => (
                       <button
                         key={term}
                         type="button"

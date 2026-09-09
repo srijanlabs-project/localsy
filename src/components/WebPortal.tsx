@@ -4795,29 +4795,40 @@ export default function WebPortal({
           </div>
         </div>
 
-        {/* No "Send enquiry" fallback: a listing without a phone just shows
-            Directions, so the action grid collapses to one column. */}
-        <div className={`mt-6 grid gap-4 ${showPrimaryButton ? 'grid-cols-[minmax(0,1fr)_178px]' : 'grid-cols-1'}`}>
-          {showPrimaryButton ? (
-            <button
-              type="button"
-              onClick={(event) => handlePrimaryBusinessAction(biz, event)}
-              className="show-number-action rounded-[10px] border border-[#C3D5CD] bg-[#DEE9E4] px-3 py-2 text-[12px] font-semibold text-[#2F4A41] transition hover:bg-[#D2E1DB]"
-            >
-              Show number
-            </button>
-          ) : null}
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              openBusinessDirectionsDirect(biz);
-            }}
-            className="rounded-[10px] border border-[#D0D5DD] bg-white px-3 py-2 text-[12px] font-semibold text-[#344054]"
-          >
-            Directions
-          </button>
-        </div>
+        {/* One action only.
+            Directions is gone: on a phone the map app is a tap away from the
+            address, and pairing it with "Show number" made the primary action
+            compete with a secondary one in a 178px column.
+
+            Two states, in place:
+              not yet revealed -> "Show number", which runs the unlock flow
+              revealed         -> the number itself, and tapping it calls
+
+            The number used to never appear here at all: the second press of
+            "Show number" jumped straight to `tel:`, so the digits were only ever
+            visible in the OS dialer. */}
+        {showPrimaryButton ? (
+          <div className="mt-6">
+            {viewedBusinessIds.includes(biz.id) ? (
+              <a
+                href={`tel:${biz.phone}`}
+                onClick={(event) => event.stopPropagation()}
+                className="flex w-full items-center justify-center gap-2 rounded-[10px] border border-[#C3D5CD] bg-[#DEE9E4] px-3 py-3 text-[17px] font-bold tracking-[0.01em] text-[#2F4A41]"
+              >
+                <Phone className="h-4 w-4" />
+                {biz.phone}
+              </a>
+            ) : (
+              <button
+                type="button"
+                onClick={(event) => handlePrimaryBusinessAction(biz, event)}
+                className="show-number-action w-full rounded-[10px] border border-[#C3D5CD] bg-[#DEE9E4] px-3 py-2.5 text-[13px] font-semibold text-[#2F4A41] transition hover:bg-[#D2E1DB]"
+              >
+                Show number
+              </button>
+            )}
+          </div>
+        ) : null}
       </article>
     );
   };
