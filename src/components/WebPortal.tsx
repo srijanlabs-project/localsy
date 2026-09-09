@@ -42,7 +42,7 @@ import {
 } from '../services/webportal/businessDiscovery';
 import { getBusinessDirectionsUrl } from '../services/webportal/publicExperience';
 import { canDeliverOnDevice, needsLightText, pickBannerCreative } from '../utils/bannerCreative';
-import { isSiteCaptureDueFor, markSiteCaptureSeen } from '../utils/siteCapture';
+import { isSiteCaptureDueWithOverride, markSiteCaptureSeen, readSiteCaptureOverride } from '../utils/siteCapture';
 import SiteCaptureModal from './ux/SiteCaptureModal';
 import {
   BUSINESS_CATEGORIES,
@@ -4493,7 +4493,8 @@ export default function WebPortal({
   //   device; the resolved payload has landed (so it cannot flash the wrong
   //   locality's creative); the visitor is on the homepage or a locality page,
   //   not a search result or a listing; the area picker has finished; and the
-  //   8-hour cooldown for that specific banner has elapsed.
+  //   SITE-WIDE 8-hour cooldown has elapsed — one takeover per visitor per eight
+  //   hours, whichever banner it is.
   const [siteCaptureClosed, setSiteCaptureClosed] = useState(false);
   const siteCaptureImpressionRef = useRef<string>('');
 
@@ -4509,15 +4510,24 @@ export default function WebPortal({
     && !isResultsPage
     && !selectedBiz
     && !isPincodeModalOpen
-    && isSiteCaptureDueFor(bookedSiteCaptureAd.id)
+    && isSiteCaptureDueWithOverride(typeof window === 'undefined' ? '' : window.location.search)
   ) ? bookedSiteCaptureAd : null;
 
   const dismissSiteCapture = (adId: string) => {
     // Every exit starts the cooldown, including the 15-second timeout: a visitor
-    // who ignored it has answered as clearly as one who closed it.
+    // who ignored it has answered as clearly as one who closed it. The banner id
+    // is recorded for diagnostics only — the window itself is site-wide.
     markSiteCaptureSeen(adId);
     setSiteCaptureClosed(true);
   };
+
+  // Says so out loud when the override is on, so nobody spends an afternoon
+  // wondering why the cooldown "isn't working".
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (readSiteCaptureOverride(window.location.search) !== 'always') return;
+    console.info('[site-capture] ?siteCapture=always — cooldown bypassed, this banner reopens on every load.');
+  }, []);
 
   useEffect(() => {
     if (!siteCaptureAd) return;

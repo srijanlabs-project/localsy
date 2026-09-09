@@ -21,7 +21,12 @@ import {
 } from '../src/services/admin/bannerStudio.ts';
 import { HOUSE_AD_SLOT_PRIORITY, buildHouseAd, isHouseAd, pickHouseAdPlacement } from '../src/services/houseAds.ts';
 import { canDeliverOnDevice, pickBannerCreative } from '../src/utils/bannerCreative.ts';
-import { SITE_CAPTURE_COOLDOWN_MS, isSiteCaptureDue } from '../src/utils/siteCapture.ts';
+import {
+  SITE_CAPTURE_COOLDOWN_MS,
+  SITE_CAPTURE_STORAGE_KEY,
+  isSiteCaptureDue,
+  readSiteCaptureOverride,
+} from '../src/utils/siteCapture.ts';
 import {
   foldAdMetricEvents,
   getNewestCmsContentTimestamp,
@@ -761,6 +766,11 @@ const HOUR = 60 * 60 * 1000;
 const NOW = Date.parse('2026-09-09T12:00:00.000Z');
 
 check('the cooldown is eight hours', SITE_CAPTURE_COOLDOWN_MS === 8 * HOUR);
+check(
+  'one key for the whole site, not one per banner',
+  SITE_CAPTURE_STORAGE_KEY === 'localisy:site-capture' && !SITE_CAPTURE_STORAGE_KEY.includes('{'),
+  'per-banner keys let three booked advertisers stage three takeovers in one day',
+);
 check('a visitor who has never seen it gets it', isSiteCaptureDue(0, NOW));
 check('one hour later it stays hidden', !isSiteCaptureDue(NOW - 1 * HOUR, NOW));
 check('seven hours fifty-nine, still hidden', !isSiteCaptureDue(NOW - (8 * HOUR - 60_000), NOW));
@@ -771,6 +781,24 @@ check(
   isSiteCaptureDue(NOW + 3 * HOUR, NOW),
   'a clock moved backwards would otherwise hide the banner for up to eight hours',
 );
+
+// --- the development override ---------------------------------------------
+//
+// A query parameter, not a build flag: an env var needs a rebuild to toggle,
+// cannot be pointed at production, and can be left switched ON in a production
+// build — where every visitor then gets a takeover on every page load.
+
+check("'?siteCapture=always' turns the override on", readSiteCaptureOverride('?siteCapture=always') === 'always');
+check("'?siteCapture=reset' clears the window", readSiteCaptureOverride('?siteCapture=reset') === 'reset');
+check('it survives other parameters', readSiteCaptureOverride('?q=salon&siteCapture=always&page=2') === 'always');
+check('no parameter means no override', readSiteCaptureOverride('') === '');
+check('an unrelated query means no override', readSiteCaptureOverride('?q=salon') === '');
+check(
+  'an unknown value is ignored rather than treated as on',
+  readSiteCaptureOverride('?siteCapture=yes') === '',
+  'a typo must not leave a takeover running on every load for real visitors',
+);
+check('a malformed query does not throw', readSiteCaptureOverride('%%%') === '');
 
 // --- and the slot itself ---------------------------------------------------
 
