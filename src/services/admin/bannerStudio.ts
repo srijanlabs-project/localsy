@@ -140,13 +140,16 @@ export const BANNER_SLOTS: BannerSlot[] = [
     campaignType: 'listing_ad',
     pageType: 'homepage',
     device: 'all',
-    // Portrait, contained rather than cropped, so ONE file serves both desktop
-    // and phone — which is why no mobile size is declared here: requiring a
-    // second creative would be asking for a file that is never needed.
-    width: 1080,
-    height: 1350,
+    // TWO creatives: a landscape one for a desktop window and a portrait one for
+    // a phone. One portrait file did serve both — contained, never cropped — but
+    // on a 1440x900 desktop a 4:5 image is a tall sliver with dead space either
+    // side, and it wastes the slot an advertiser paid for.
+    width: 1200,
+    height: 750,
+    mobileWidth: 1080,
+    mobileHeight: 1350,
     fit: 'auto',
-    note: 'Opens once on arrival, after the area picker, on the homepage and locality pages only. Closes on the X (visible immediately), a click, Escape, the backdrop, or 15 seconds — then hides for 8 hours.',
+    note: 'Opens once on arrival, after the area picker, on the homepage and locality pages only. Landscape on desktop, vertical on mobile — both shown whole, never cropped. Closes on the X (visible immediately), a click, Escape, the backdrop, or 15 seconds, then hides site-wide for 8 hours.',
   },
   {
     placementKey: 'homepage_sidebar',

@@ -804,21 +804,33 @@ check('a malformed query does not throw', readSiteCaptureOverride('%%%') === '')
 
 const capture = findBannerSlot('site_interstitial', 'listing_ad');
 check('site capture is a bookable slot', Boolean(capture));
-check('it is portrait, 1080 x 1350', capture?.width === 1080 && capture?.height === 1350);
+check('the desktop creative is landscape', (capture?.width || 0) > (capture?.height || 0));
+check('the mobile creative is vertical', (capture?.mobileHeight || 0) > (capture?.mobileWidth || 0));
+check('desktop is 1200 x 750', capture?.width === 1200 && capture?.height === 750);
+check('mobile is 1080 x 1350', capture?.mobileWidth === 1080 && capture?.mobileHeight === 1350);
+check('neither is cropped', capture?.fit === 'auto');
 check(
-  'it asks for ONE creative, not a desktop and a mobile pair',
-  capture?.mobileWidth === undefined,
-  'the image is contained rather than cropped, so one portrait file serves both',
+  'the form states both boxes',
+  describeBannerSlotSize(capture).includes('Desktop 1200 x 750')
+  && describeBannerSlotSize(capture).includes('Mobile 1080 x 1350'),
 );
-check('it is not cropped', capture?.fit === 'auto');
 check(
-  'a booked site-capture banner delivers on both devices from one image',
-  canDeliverOnDevice({ deviceTarget: 'all', imageUrl: 'https://cdn/x.png', placementKey: 'site_interstitial' }, 'mobile'),
+  'a desktop-only creative does NOT reach phones',
+  !canDeliverOnDevice({ deviceTarget: 'all', imageUrl: 'https://cdn/d.png', placementKey: 'site_interstitial' }, 'mobile'),
+  'a landscape creative letterboxed into a portrait phone is the thing this avoids',
 );
 check(
-  'a hero booking still needs its two creatives',
+  'with both creatives it reaches both, each getting its own',
+  (() => {
+    const ad = { deviceTarget: 'all', imageUrl: 'https://cdn/d.png', mobileImageUrl: 'https://cdn/m.png', placementKey: 'site_interstitial' };
+    return canDeliverOnDevice(ad, 'desktop') && canDeliverOnDevice(ad, 'mobile')
+      && pickBannerCreative(ad, 'mobile') === 'https://cdn/m.png'
+      && pickBannerCreative(ad, 'desktop') === 'https://cdn/d.png';
+  })(),
+);
+check(
+  'the hero still needs its two creatives too',
   !canDeliverOnDevice({ deviceTarget: 'all', imageUrl: 'https://cdn/x.png', placementKey: 'homepage_hero_primary' }, 'mobile'),
-  'the single-creative exemption must not leak to slots with two different boxes',
 );
 check(
   'the house ad never takes over the whole screen',

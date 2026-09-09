@@ -21,14 +21,14 @@ type BannerCreativeSource = {
 /**
  * Placements where ONE creative genuinely serves both devices.
  *
- * The dual-creative rule exists because most slots have two different boxes — a
- * 1000x360 hero and a 358x198 one — and a single image can only fit one of them.
- * The arrival interstitial is different: it is CONTAINED rather than cropped, so
- * a portrait file is shown whole on a phone and whole on a desktop. Demanding a
- * second upload there would be asking for a file that is never used, and worse,
- * silently withholding the banner from mobile until it arrived.
+ * Empty, and worth keeping as a named idea rather than deleting: the arrival
+ * interstitial was here on the reasoning that a contained image is never
+ * cropped, so one portrait file works everywhere. True, but not good enough —
+ * on a 1440x900 desktop a 4:5 creative is a tall sliver with dead space either
+ * side. It now takes a landscape desktop creative and a vertical mobile one,
+ * like every other slot with two different boxes.
  */
-const SINGLE_CREATIVE_PLACEMENTS = new Set(['site_interstitial']);
+const SINGLE_CREATIVE_PLACEMENTS = new Set<string>();
 
 /**
  * The creative for this device, or '' when there is none.
