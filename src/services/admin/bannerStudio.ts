@@ -135,6 +135,19 @@ export const BANNER_SLOTS: BannerSlot[] = [
     note: 'Hidden at 1280px and above. ALSO needs a homepage layout section with this key.',
   },
   {
+    placementKey: 'homepage_sidebar',
+    label: 'Search results — right rail',
+    campaignType: 'listing_ad',
+    pageType: 'listing_results',
+    // The results page grid is grid-cols-[280px_minmax(0,1fr)_290px]: the rail
+    // is 290px wide and each card is min-h-[220px], desktop layout only.
+    device: 'desktop',
+    width: 290,
+    height: 220,
+    fit: 'cover',
+    note: 'Up to four booked cards stack here, with the "Add your business" invitation last. Portrait-ish; a wide hero creative loses its sides.',
+  },
+  {
     placementKey: 'listing_results',
     label: 'Search results — inline (texture only)',
     campaignType: 'listing_ad',

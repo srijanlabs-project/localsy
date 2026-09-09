@@ -4104,7 +4104,9 @@ export default function WebPortal({
   const bookedPlacementKeys = activeListingAds
     .map((ad) => String(ad.placementKey || ''))
     .filter(Boolean);
-  const houseAdPlacementKey = pickHouseAdPlacement(bookedPlacementKeys);
+  // On the results page the hero slots do not exist, so the invitation belongs to
+  // the results surface rather than whichever homepage slot happened to be free.
+  const houseAdPlacementKey = isResultsPage ? 'listing_results' : pickHouseAdPlacement(bookedPlacementKeys);
   const houseAd = houseAdPlacementKey
     ? buildHouseAd({ localityLabel: currentLocalityLabel, placementKey: houseAdPlacementKey })
     : null;
@@ -4131,16 +4133,41 @@ export default function WebPortal({
       todayIso
     })
   );
+  // Booked inventory only.
+  //
+  // The house ad used to be merged in here, which is how the search results
+  // ended up with FOUR identical "Add Your Hyper Local Business" panels: the
+  // in-feed stream inserts an ad after every fifth listing and cycles whatever
+  // is in this array, so a one-item array repeated itself down the page. It is
+  // now placed explicitly, once per surface, below.
   const homepageAdInventory = rankAdsForDelivery(
-    deliverableHouseAd ? [...activeListingAds, deliverableHouseAd] : activeListingAds,
+    activeListingAds,
     isResultsPage ? 'listing_results' : 'homepage'
   );
   // Every device-scoped list below also checks that the creative for that device
   // exists. A banner targeting both devices with only a desktop image is no
   // longer delivered to phones — it used to be, centre-cropped to 358px.
-  const desktopSidebarAds = rankAdsForDelivery(homepageAdInventory, 'homepage_sidebar')
+  // The right rail is a real placement now.
+  //
+  // `rankAdsForDelivery` only SORTS — it never filtered by placement — so this
+  // list used to be "the four highest-scoring ads on the page", whatever they
+  // were booked for. A 1000x360 hero creative would be cropped into a 290x220
+  // rail card, and the same booking rendered in the hero, the feed and the rail
+  // at once. An operator had no way to book the rail, and no way not to.
+  const bookedSidebarAds = rankAdsForDelivery(homepageAdInventory, 'homepage_sidebar')
+    .filter((ad) => String(ad.placementKey || '') === 'homepage_sidebar')
     .filter((ad) => canDeliverOnDevice(ad, 'desktop'))
     .slice(0, 4);
+  // The right rail always ends with the invitation: after every booked banner,
+  // or on its own at the top when none is booked.
+  // Its own copy: the rail is narrow, so it gets the short form rather than the
+  // hero's three lines.
+  const railHouseAd = deliverableHouseAd
+    ? buildHouseAd({ localityLabel: currentLocalityLabel, placementKey: 'homepage_sidebar' })
+    : null;
+  const desktopSidebarAds = railHouseAd
+    ? [...bookedSidebarAds, railHouseAd]
+    : bookedSidebarAds;
   // Junior hero: companion banner beside the main hero carousel, rotates through up to 6 slides.
   const homepageHeroJuniorAds = rankAdsForDelivery(homepageAdInventory, 'homepage_hero_junior')
     .filter((ad) => canDeliverOnDevice(ad, 'desktop'))
@@ -4357,7 +4384,8 @@ export default function WebPortal({
   };
   const renderSidebarAdCard = (ad: ListingAd, index: number) => {
     const isDark = index === 1 || ad.backgroundColor === '#064e3b';
-    const adImage = getMediaProxyUrl(ad.imageUrl);
+    // 290x220 rail card, so the desktop creative.
+    const adImage = getMediaProxyUrl(pickBannerCreative(ad, 'desktop'));
     return (
       <button
         key={`${ad.id}-${index}`}
@@ -4440,25 +4468,26 @@ export default function WebPortal({
     );
   };
 
-  const desktopResultsSidebarAds = useMemo(() => {
-    const merged = [...desktopResultAds, ...desktopSidebarAds];
-    const seen = new Set<string>();
-    return merged.filter((ad) => {
-      if (seen.has(ad.id)) return false;
-      seen.add(ad.id);
-      return true;
-    }).slice(0, 6);
-  }, [desktopResultAds, desktopSidebarAds]);
+  // The rail carries what was booked FOR the rail, then the invitation last.
+  // It used to merge in the in-feed result ads too, which is why one booking
+  // could appear three times on one page.
+  const desktopResultsSidebarAds = useMemo(
+    () => desktopSidebarAds.slice(0, 6),
+    [desktopSidebarAds],
+  );
 
   const desktopResultsInlineAds = useMemo(() => {
-    const merged = [...desktopResultAds, ...desktopSidebarAds];
+    // `bookedSidebarAds`, NOT `desktopSidebarAds` — the latter now ends with the
+    // house ad, and merging it here would put the invitation back into the
+    // every-fifth-listing rotation, which is what stacked four of them.
+    const merged = [...desktopResultAds, ...bookedSidebarAds];
     const seen = new Set<string>();
     return merged.filter((ad) => {
       if (seen.has(ad.id)) return false;
       seen.add(ad.id);
       return true;
     });
-  }, [desktopResultAds, desktopSidebarAds]);
+  }, [desktopResultAds, bookedSidebarAds]);
 
   // Category facets built from the actual result set rather than a fixed list:
   // every category genuinely present gets an entry, ordered by how many results
@@ -4504,6 +4533,17 @@ export default function WebPortal({
       .sort((left, right) => right.count - left.count || left.name.localeCompare(right.name));
   }, [businessesBeforeTaxonomyFilter, selectedCategory]);
 
+  /**
+   * The one invitation shown between listings, or null.
+   *
+   * Booked inventory always wins the in-feed slots; the invitation appears there
+   * only when there is nothing to rotate, and then exactly once. The right rail
+   * carries it the rest of the time.
+   */
+  const inFeedHouseAd = desktopResultsInlineAds.length === 0 ? deliverableHouseAd : null;
+  /** After which listing the single in-feed invitation sits. */
+  const IN_FEED_HOUSE_AD_AFTER = 5;
+
   const desktopResultsStream = useMemo(() => {
     const rows: Array<
       | { type: 'listing'; id: string; business: Business }
@@ -4511,14 +4551,23 @@ export default function WebPortal({
     > = [];
     pagedSearchResultBusinesses.forEach((business, index) => {
       rows.push({ type: 'listing', id: business.id, business });
-      const shouldInsertAd = desktopResultsInlineAds.length > 0 && (index + 1) % 5 === 0 && index !== pagedSearchResultBusinesses.length - 1;
-      if (shouldInsertAd) {
+      const isLast = index === pagedSearchResultBusinesses.length - 1;
+      if (isLast) return;
+
+      if (desktopResultsInlineAds.length > 0) {
+        if ((index + 1) % 5 !== 0) return;
         const ad = desktopResultsInlineAds[Math.floor(index / 5) % desktopResultsInlineAds.length];
         rows.push({ type: 'ad', id: `${ad.id}-inline-${index}`, ad });
+        return;
+      }
+
+      // Nothing booked: one invitation, once, and never again down the page.
+      if (inFeedHouseAd && index + 1 === IN_FEED_HOUSE_AD_AFTER) {
+        rows.push({ type: 'ad', id: `${inFeedHouseAd.id}-inline`, ad: inFeedHouseAd });
       }
     });
     return rows;
-  }, [desktopResultsInlineAds, pagedSearchResultBusinesses]);
+  }, [desktopResultsInlineAds, inFeedHouseAd, pagedSearchResultBusinesses]);
 
   const desktopActiveFilterSummary = useMemo(() => {
     const parts: string[] = [];
@@ -5499,12 +5548,14 @@ export default function WebPortal({
                 // A banner after every fifth card, never as the last element,
                 // and only while there are ads to rotate through.
                 const slot = index + 1;
+                const notLast = slot !== pagedSearchResultBusinesses.length;
                 const isAdSlot = slot % MOBILE_RESULT_AD_INTERVAL === 0
-                  && slot !== pagedSearchResultBusinesses.length
+                  && notLast
                   && desktopResultsInlineAds.length > 0;
                 const inlineAd = isAdSlot
                   ? desktopResultsInlineAds[(Math.floor(slot / MOBILE_RESULT_AD_INTERVAL) - 1) % desktopResultsInlineAds.length]
-                  : null;
+                  // Nothing booked: the invitation once, after the fifth card.
+                  : (inFeedHouseAd && notLast && slot === IN_FEED_HOUSE_AD_AFTER ? inFeedHouseAd : null);
                 return (
                   <React.Fragment key={`mobile-result-${biz.id}`}>
                     {renderMobileSearchResultRow(biz)}
@@ -6224,10 +6275,16 @@ export default function WebPortal({
                     {pagedSearchResultBusinesses.map((biz, index) => {
                       const hasViewed = viewedBusinessIds.includes(biz.id);
                       const resultAds = desktopResultAds.length > 0 ? desktopResultAds : mobileResultAds;
-                      const injectAd = resultAds.length > 0 && (index + 1) % 5 === 0;
+                      // Booked ads rotate through every fifth cell. With none
+                      // booked, one invitation in one cell — this grid used to
+                      // repeat whatever single ad it was given down the page.
+                      const usesHouseAd = resultAds.length === 0 && Boolean(inFeedHouseAd);
+                      const injectAd = resultAds.length > 0
+                        ? (index + 1) % 5 === 0
+                        : (usesHouseAd && index + 1 === IN_FEED_HOUSE_AD_AFTER);
                       const ad = resultAds.length > 0
                         ? resultAds[Math.floor(index / 5) % resultAds.length]
-                        : null;
+                        : (usesHouseAd ? inFeedHouseAd : null);
 
                       return (
                         <React.Fragment key={biz.id}>

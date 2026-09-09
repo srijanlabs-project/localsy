@@ -290,6 +290,31 @@ check(
   toDeliverableListingAd({ id: 'c1' }).id === 'c1',
 );
 
+// --- the right rail is bookable -------------------------------------------
+//
+// `rankAdsForDelivery` only sorts; it never filtered by placement. So the rail
+// showed the highest-scoring ads on the page whatever they were booked for, a
+// hero creative got cropped into a 290x220 card, and there was no slot in the
+// catalogue for an operator to book.
+
+check('the right rail is a slot an operator can pick', Boolean(findBannerSlot('homepage_sidebar', 'listing_ad')));
+check(
+  'and it is offered on the search-results page, not the homepage',
+  findBannerSlot('homepage_sidebar', 'listing_ad')?.pageType === 'listing_results',
+);
+check(
+  'a rail booking states the 290x220 card',
+  describeBannerSlotSize(findBannerSlot('homepage_sidebar', 'listing_ad')).startsWith('290 x 220'),
+);
+check(
+  'a rail banner delivers when targeted at search results',
+  verdict(ready({ pageType: 'listing_results', placementKey: 'homepage_sidebar', deviceTarget: 'desktop' })).live,
+);
+check(
+  'a mobile-targeted rail banner cannot render, since the rail is desktop layout',
+  !verdict(ready({ pageType: 'listing_results', placementKey: 'homepage_sidebar', deviceTarget: 'mobile' })).live,
+);
+
 // --- the slot catalogue ---------------------------------------------------
 
 check('every slot has a size', BANNER_SLOTS.every((slot) => slot.width > 0 && slot.height > 0));

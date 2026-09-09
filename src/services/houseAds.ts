@@ -50,6 +50,7 @@ export const HOUSE_AD_SLOT_PRIORITY = [
  * in a 120px mobile strip. These get the short form.
  */
 const COMPACT_HOUSE_AD_SLOTS = new Set([
+  'homepage_sidebar',
   'mobile_inline',
   'homepage_hero_junior',
   'homepage_inline_primary',
