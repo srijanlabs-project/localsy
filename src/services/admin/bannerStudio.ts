@@ -135,6 +135,20 @@ export const BANNER_SLOTS: BannerSlot[] = [
     note: 'Hidden at 1280px and above. ALSO needs a homepage layout section with this key.',
   },
   {
+    placementKey: 'site_interstitial',
+    label: 'Site capture — full screen on arrival',
+    campaignType: 'listing_ad',
+    pageType: 'homepage',
+    device: 'all',
+    // Portrait, contained rather than cropped, so ONE file serves both desktop
+    // and phone — which is why no mobile size is declared here: requiring a
+    // second creative would be asking for a file that is never needed.
+    width: 1080,
+    height: 1350,
+    fit: 'auto',
+    note: 'Opens once on arrival, after the area picker, on the homepage and locality pages only. Closes on the X (visible immediately), a click, Escape, the backdrop, or 15 seconds — then hides for 8 hours.',
+  },
+  {
     placementKey: 'homepage_sidebar',
     label: 'Search results — right rail',
     campaignType: 'listing_ad',

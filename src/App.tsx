@@ -7593,6 +7593,9 @@ export default function App() {
                 apiConfiguration={apiConfiguration}
                 onSubmitAdLead={handleSubmitAdLead}
                 onTrackListingAdInteraction={handleTrackListingAdInteraction}
+                /* The arrival banner waits for the area picker rather than
+                   stacking a second dialog on top of it. */
+                isPincodeModalOpen={showPincodeModal}
                 urlCategoryFilter={urlCategoryFilter}
                 urlSubcategoryFilter={urlSubcategoryFilter}
                 urlFilterNonce={urlFilterNonce}

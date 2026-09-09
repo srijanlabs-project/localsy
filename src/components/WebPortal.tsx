@@ -42,6 +42,8 @@ import {
 } from '../services/webportal/businessDiscovery';
 import { getBusinessDirectionsUrl } from '../services/webportal/publicExperience';
 import { canDeliverOnDevice, needsLightText, pickBannerCreative } from '../utils/bannerCreative';
+import { isSiteCaptureDueFor, markSiteCaptureSeen } from '../utils/siteCapture';
+import SiteCaptureModal from './ux/SiteCaptureModal';
 import {
   BUSINESS_CATEGORIES,
   BUSINESS_SUBCATEGORIES,
@@ -290,6 +292,9 @@ interface WebPortalProps {
   onAddCoupon: (coupon: Omit<MarketingCoupon, 'id' | 'usageCount'>) => void;
   onLogAuditEvent?: (actionType: 'search' | 'contact_view' | 'data_entry', description: string, details: string) => void;
   onOpenPincodeModal?: () => void;
+  /** True while the "Select your area" dialog is up: the arrival banner waits
+   *  for it rather than stacking a second dialog on top. */
+  isPincodeModalOpen?: boolean;
   onRequestAuth?: () => void;
   onLogout?: () => void;
   isAccountActive?: boolean;
@@ -348,6 +353,7 @@ export default function WebPortal({
   onAddCoupon,
   onLogAuditEvent,
   onOpenPincodeModal,
+  isPincodeModalOpen = false,
   onRequestAuth,
   onLogout,
   isAccountActive = false,
@@ -4480,6 +4486,50 @@ export default function WebPortal({
   // The rail carries what was booked FOR the rail, then the invitation last.
   // It used to merge in the in-feed result ads too, which is why one booking
   // could appear three times on one page.
+  // --- Site capture: the full-screen banner shown once on arrival ----------
+  //
+  // Conditions, all of which must hold:
+  //   a banner is booked for `site_interstitial` and has a creative for THIS
+  //   device; the resolved payload has landed (so it cannot flash the wrong
+  //   locality's creative); the visitor is on the homepage or a locality page,
+  //   not a search result or a listing; the area picker has finished; and the
+  //   8-hour cooldown for that specific banner has elapsed.
+  const [siteCaptureClosed, setSiteCaptureClosed] = useState(false);
+  const siteCaptureImpressionRef = useRef<string>('');
+
+  const bookedSiteCaptureAd = activeListingAds.find((ad) => (
+    String(ad.placementKey || '') === 'site_interstitial'
+    && canDeliverOnDevice(ad, currentDeviceTarget)
+  )) || null;
+
+  const siteCaptureAd = (
+    bookedSiteCaptureAd
+    && !siteCaptureClosed
+    && !shouldDeferResolvedListingAds
+    && !isResultsPage
+    && !selectedBiz
+    && !isPincodeModalOpen
+    && isSiteCaptureDueFor(bookedSiteCaptureAd.id)
+  ) ? bookedSiteCaptureAd : null;
+
+  const dismissSiteCapture = (adId: string) => {
+    // Every exit starts the cooldown, including the 15-second timeout: a visitor
+    // who ignored it has answered as clearly as one who closed it.
+    markSiteCaptureSeen(adId);
+    setSiteCaptureClosed(true);
+  };
+
+  useEffect(() => {
+    if (!siteCaptureAd) return;
+    if (siteCaptureImpressionRef.current === siteCaptureAd.id) return;
+    siteCaptureImpressionRef.current = siteCaptureAd.id;
+    onTrackListingAdInteraction?.({
+      adId: siteCaptureAd.id,
+      type: 'impression',
+      context: 'site_interstitial',
+    });
+  }, [onTrackListingAdInteraction, siteCaptureAd]);
+
   const desktopResultsSidebarAds = useMemo(
     () => desktopSidebarAds.slice(0, 6),
     [desktopSidebarAds],
@@ -4910,6 +4960,14 @@ export default function WebPortal({
 
   return (
     <div id="web-portal-root" className="localisy-public-page w-full max-w-full space-y-6 overflow-x-hidden pb-28 md:pb-10">
+      {siteCaptureAd ? (
+        <SiteCaptureModal
+          ad={siteCaptureAd}
+          device={currentDeviceTarget}
+          onDismiss={() => dismissSiteCapture(siteCaptureAd.id)}
+          onActivate={(ad) => handleListingAdAction(ad)}
+        />
+      ) : null}
       
       {/* Dynamic Subdomain Navigator Router Header */}
       {showSubdomainLocationMapping && <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-2xl p-4 md:p-5 border border-indigo-500/10 shadow-md flex flex-col md:flex-row md:items-center justify-between gap-4">

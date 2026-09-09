@@ -15,7 +15,20 @@ type BannerCreativeSource = {
   imageUrl?: string;
   mobileImageUrl?: string;
   deviceTarget?: 'all' | 'desktop' | 'mobile';
+  placementKey?: string;
 };
+
+/**
+ * Placements where ONE creative genuinely serves both devices.
+ *
+ * The dual-creative rule exists because most slots have two different boxes — a
+ * 1000x360 hero and a 358x198 one — and a single image can only fit one of them.
+ * The arrival interstitial is different: it is CONTAINED rather than cropped, so
+ * a portrait file is shown whole on a phone and whole on a desktop. Demanding a
+ * second upload there would be asking for a file that is never used, and worse,
+ * silently withholding the banner from mobile until it arrived.
+ */
+const SINGLE_CREATIVE_PLACEMENTS = new Set(['site_interstitial']);
 
 /**
  * The creative for this device, or '' when there is none.
@@ -32,8 +45,9 @@ export const pickBannerCreative = (
 ): string => {
   if (!ad) return '';
   const target = ad.deviceTarget || 'all';
+  const singleCreative = SINGLE_CREATIVE_PLACEMENTS.has(String(ad.placementKey || ''));
   if (device === 'mobile') {
-    if (target === 'mobile') return ad.mobileImageUrl || ad.imageUrl || '';
+    if (target === 'mobile' || singleCreative) return ad.mobileImageUrl || ad.imageUrl || '';
     return ad.mobileImageUrl || '';
   }
   return ad.imageUrl || '';

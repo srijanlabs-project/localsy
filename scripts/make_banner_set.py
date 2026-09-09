@@ -47,6 +47,8 @@ SLOTS = [
     ('search-rail', 290, 220),
     ('results-desktop', 1000, 240),
     ('results-mobile', 358, 86),
+    # Contained, not cropped, so one portrait file serves desktop and phone.
+    ('site-capture', 1080, 1350),
 ]
 
 

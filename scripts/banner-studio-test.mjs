@@ -21,6 +21,7 @@ import {
 } from '../src/services/admin/bannerStudio.ts';
 import { HOUSE_AD_SLOT_PRIORITY, buildHouseAd, isHouseAd, pickHouseAdPlacement } from '../src/services/houseAds.ts';
 import { canDeliverOnDevice, pickBannerCreative } from '../src/utils/bannerCreative.ts';
+import { SITE_CAPTURE_COOLDOWN_MS, isSiteCaptureDue } from '../src/utils/siteCapture.ts';
 import {
   foldAdMetricEvents,
   getNewestCmsContentTimestamp,
@@ -749,6 +750,56 @@ check(
 check(
   'the matching pair still delivers',
   verdict(ready({ pageType: 'listing_results', placementKey: 'homepage_sidebar', deviceTarget: 'desktop' })).live,
+);
+
+// --- site capture: the arrival interstitial --------------------------------
+//
+// An interstitial that reopens on every page view is the fastest way to make a
+// directory feel hostile, so the cooldown is tested rather than clicked at.
+
+const HOUR = 60 * 60 * 1000;
+const NOW = Date.parse('2026-09-09T12:00:00.000Z');
+
+check('the cooldown is eight hours', SITE_CAPTURE_COOLDOWN_MS === 8 * HOUR);
+check('a visitor who has never seen it gets it', isSiteCaptureDue(0, NOW));
+check('one hour later it stays hidden', !isSiteCaptureDue(NOW - 1 * HOUR, NOW));
+check('seven hours fifty-nine, still hidden', !isSiteCaptureDue(NOW - (8 * HOUR - 60_000), NOW));
+check('exactly eight hours, due again', isSiteCaptureDue(NOW - 8 * HOUR, NOW));
+check('nine hours, due', isSiteCaptureDue(NOW - 9 * HOUR, NOW));
+check(
+  'a timestamp in the future does not lock it out',
+  isSiteCaptureDue(NOW + 3 * HOUR, NOW),
+  'a clock moved backwards would otherwise hide the banner for up to eight hours',
+);
+
+// --- and the slot itself ---------------------------------------------------
+
+const capture = findBannerSlot('site_interstitial', 'listing_ad');
+check('site capture is a bookable slot', Boolean(capture));
+check('it is portrait, 1080 x 1350', capture?.width === 1080 && capture?.height === 1350);
+check(
+  'it asks for ONE creative, not a desktop and a mobile pair',
+  capture?.mobileWidth === undefined,
+  'the image is contained rather than cropped, so one portrait file serves both',
+);
+check('it is not cropped', capture?.fit === 'auto');
+check(
+  'a booked site-capture banner delivers on both devices from one image',
+  canDeliverOnDevice({ deviceTarget: 'all', imageUrl: 'https://cdn/x.png', placementKey: 'site_interstitial' }, 'mobile'),
+);
+check(
+  'a hero booking still needs its two creatives',
+  !canDeliverOnDevice({ deviceTarget: 'all', imageUrl: 'https://cdn/x.png', placementKey: 'homepage_hero_primary' }, 'mobile'),
+  'the single-creative exemption must not leak to slots with two different boxes',
+);
+check(
+  'the house ad never takes over the whole screen',
+  !HOUSE_AD_SLOT_PRIORITY.includes('site_interstitial'),
+  'the backfill invitation belongs in a slot, not in a full-screen takeover',
+);
+check(
+  'it is offered on the homepage, where arrivals land',
+  findExactBannerSlot('site_interstitial', 'listing_ad', 'homepage')?.label.includes('Site capture'),
 );
 
 console.log(`${passed} checks passed, ${failures.length} failed`);
