@@ -1,6 +1,6 @@
-# Cutz N Curlz — banner set
+# Cutz N Curlz — banner set (blush / Garamond, reference-matched)
 
-Two full sets, every slot Localisy serves, at 1x and @2x.
+Two complete sets, every slot Localisy serves, at 1x and @2x.
 
 | File | Size | Where it goes |
 | --- | --- | --- |
@@ -20,33 +20,48 @@ Upload the `-desktop` file to the Image field and the matching `-mobile` file to
 the mobile field. A banner targeting both devices with only a desktop creative
 runs on desktop only — it is not cropped onto phones.
 
+## Design
+
+Follows the salon-poster reference: blush diagonal wash with a top-left glow, an
+inset rounded card holding the type, line-art botanical branches reaching in from
+the edges, EB Garamond display serif with letter-spacing, a quoted italic
+tagline, a stacked offer, and a solid brown small-caps CTA.
+
+The type stack is measured and then SCALED to fit each card, so the CTA and the
+address survive on a 290x220 rail card as well as on a 1000x360 hero. Rows are
+only dropped once the type would be too small to read — the quoted tagline goes
+first, below 9px, because an illegible line is worse than none.
+
 ## The two sets
 
-- **`cutz-n-curlz/`** — brand, services, Book Now. No price claim. Safe to
-  activate as-is.
+- **`cutz-n-curlz/`** — brand, tagline, services, Book Now. No price claim. Safe
+  to activate as-is.
 - **`cutz-n-curlz-with-offer/`** — the same set carrying **FLAT 20% OFF, on your
   first visit**. That number is a SAMPLE. Confirm it with the salon before
   activating: a discount on a live banner is an offer a customer can turn up and
   ask for.
 
-## Re-rendering with different copy
+## Re-rendering
 
     python3 scripts/make_banner_set.py \
       --out banners/cutz-n-curlz \
       --brand "CUTZ N CURLZ" \
-      --tagline "Unisex Salon & Academy" \
+      --tagline "Where Style Meets You" \
       --offer "FLAT 25% OFF" \
       --sub "on your first visit" \
-      --cta "BOOK NOW" \
+      --cta "Book Now" \
       --footer "Roadpali, Navi Mumbai"
 
+`--lead` sets the small line above the offer ("Up To"). It is suppressed
+automatically when the offer already qualifies itself — "Up To FLAT 20% OFF"
+reads as a mistake.
+
 Sizes come from `BANNER_SLOTS` in `src/services/admin/bannerStudio.ts`, which
-comes from the render CSS — so anything produced here fits its slot without
-being cropped.
+comes from the render CSS, so nothing here needs cropping.
 
-## What these are not
+## The one thing that is not matched
 
-No photographs. There is no image-generation model in the tooling that produced
-them, so the artwork is typographic: blush ground, marigold and rose blooms,
-plum type. If you want the reference look with a portrait, send photos and they
-can be composited into every size.
+No photograph. There is no image-generation model in the tooling that produced
+these, so the model portrait in the reference has no equivalent here — the
+botanicals and the type carry the composition instead. Send 2-3 photos with clear
+space on one side and they can be composited into all eleven sizes.

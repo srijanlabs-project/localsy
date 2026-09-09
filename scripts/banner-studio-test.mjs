@@ -11,10 +11,12 @@ import {
   emptyBannerDraft,
   HERO_CAROUSEL_MAX,
   clampFeedPosition,
+  defaultPlacementFor,
   describeBannerCtr,
   dropRedundantPincodes,
   evaluateBannerDelivery,
   findBannerSlot,
+  findExactBannerSlot,
   withBannerStatus,
 } from '../src/services/admin/bannerStudio.ts';
 import { HOUSE_AD_SLOT_PRIORITY, buildHouseAd, isHouseAd, pickHouseAdPlacement } from '../src/services/houseAds.ts';
@@ -701,6 +703,53 @@ check(
 
 // --- the carousel cap ----------------------------------------------------
 check('the hero carousel is capped at ten slides', HERO_CAROUSEL_MAX === 10);
+
+// --- a placement that belongs to another page -----------------------------
+//
+// Switching Page re-filtered the placement dropdown but never re-derived the
+// stored key. The form listed the search-results slots while the draft still
+// held `homepage_hero_primary`, so the banner saved with a homepage hero
+// placement on the results page — a combination that can render nowhere. The
+// verdict said "will render" because findBannerSlot falls back to the first slot
+// of the campaign type when the key does not match.
+
+check(
+  'switching to search results gives the rail as the default placement',
+  defaultPlacementFor('listing_ad', 'listing_results') === 'homepage_sidebar',
+);
+check(
+  'switching back to the homepage gives a homepage placement',
+  defaultPlacementFor('listing_ad', 'homepage') === 'homepage_hero_primary',
+);
+check(
+  'a hero banner has no placement on either page',
+  defaultPlacementFor('hero_banner', 'homepage') === '',
+);
+
+check(
+  'an exact lookup does NOT fall back to another slot',
+  findExactBannerSlot('homepage_hero_primary', 'listing_ad', 'listing_results') === null,
+  'the fallback is right for describing a size, wrong for validating a save',
+);
+check(
+  'and it finds the slot when page, type and key all agree',
+  findExactBannerSlot('homepage_sidebar', 'listing_ad', 'listing_results')?.width === 290,
+);
+check(
+  'a homepage placement on the results page is now BLOCKED',
+  (() => {
+    const result = verdict(ready({ pageType: 'listing_results', placementKey: 'homepage_hero_primary' }));
+    return !result.live && result.reasons.some((r) => r.includes('does not exist on the search results page'));
+  })(),
+);
+check(
+  'a results placement on the homepage is blocked too',
+  !verdict(ready({ pageType: 'homepage', placementKey: 'homepage_sidebar' })).live,
+);
+check(
+  'the matching pair still delivers',
+  verdict(ready({ pageType: 'listing_results', placementKey: 'homepage_sidebar', deviceTarget: 'desktop' })).live,
+);
 
 console.log(`${passed} checks passed, ${failures.length} failed`);
 failures.forEach((failure) => console.log(`  FAIL ${failure}`));

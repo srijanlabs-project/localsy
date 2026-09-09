@@ -1,41 +1,40 @@
 #!/usr/bin/env python3
 """Render one advertiser's creative in every banner slot Localisy serves.
 
-Every size here comes from BANNER_SLOTS in src/services/admin/bannerStudio.ts,
-which in turn comes from the render CSS — so a file produced here drops into the
-Banners screen without being cropped into nonsense.
+Sizes come from BANNER_SLOTS in src/services/admin/bannerStudio.ts, which comes
+from the render CSS — so a file produced here drops into the Banners screen
+without being cropped into nonsense.
+
+The look follows the salon-poster convention the brief asked for: a blush ground,
+an inset card, line-art botanicals, a high-contrast Garamond display face,
+letter-spaced small caps, and a stacked offer.
 
 The offer line is a PARAMETER, deliberately. A discount printed on a real
-business's banner is a commercial claim that a customer can act on, so it is not
-something to invent: pass --offer with whatever the advertiser has agreed.
-
-    python3 scripts/make_banner_set.py --out banners/cutz-n-curlz \
-        --brand "CUTZ N CURLZ" --tagline "Unisex Salon & Academy" \
-        --offer "FLAT 20% OFF" --sub "on your first visit" --cta "BOOK NOW" \
-        --footer "Roadpali, Navi Mumbai"
+business's banner is a claim a customer can act on, so it is not something to
+invent: pass --offer with whatever the advertiser has agreed.
 """
 import argparse
 import math
 import os
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
-SERIF_BOLD = '/usr/share/fonts/truetype/crosextra/Caladea-Bold.ttf'
-SERIF_ITALIC = '/usr/share/fonts/truetype/crosextra/Caladea-Italic.ttf'
-SANS_BOLD = '/usr/share/fonts/truetype/crosextra/Carlito-Bold.ttf'
-SANS = '/usr/share/fonts/truetype/crosextra/Carlito-Regular.ttf'
+# EB Garamond: old-style figures, real small caps, enough stroke contrast to read
+# as a display serif at poster sizes. Installed via fonts-ebgaramond.
+DISPLAY = '/usr/share/fonts/truetype/ebgaramond/EBGaramond12-Regular.ttf'
+DISPLAY_BOLD = '/usr/share/fonts/truetype/ebgaramond/EBGaramond12-Bold.ttf'
+ITALIC = '/usr/share/fonts/truetype/ebgaramond/EBGaramond12-Italic.ttf'
+SMALLCAPS = '/usr/share/fonts/opentype/ebgaramond/EBGaramondSC12-Regular.otf'
+FALLBACK = '/usr/share/fonts/truetype/crosextra/Caladea-Regular.ttf'
 
-# Bright, not dark: a blush/cream ground like the reference, with plum type and
-# marigold + rose accents doing the shouting.
-BLUSH_TOP = (255, 236, 224)
-BLUSH_BOTTOM = (250, 214, 199)
-PLUM = (74, 25, 66)
-MARIGOLD = (243, 156, 18)
-MARIGOLD_DEEP = (214, 122, 12)
-ROSE = (229, 50, 107)
-CREAM = (255, 249, 242)
-LEAF = (168, 96, 60)
+BG_LIGHT = (253, 238, 230)
+BG_DEEP = (243, 211, 194)
+CARD = (252, 230, 218)
+INK = (93, 58, 44)
+INK_SOFT = (139, 90, 68)
+LINE = (238, 199, 178)
+CTA_BG = (138, 90, 69)
+CTA_INK = (255, 247, 240)
 
-# name, width, height  — mirrors BANNER_SLOTS
 SLOTS = [
     ('hero-desktop', 1000, 360),
     ('hero-mobile', 358, 198),
@@ -52,183 +51,225 @@ SLOTS = [
 
 
 def font(path, size):
-    return ImageFont.truetype(path, max(6, int(size)))
+    try:
+        return ImageFont.truetype(path, max(6, int(size)))
+    except Exception:
+        return ImageFont.truetype(FALLBACK, max(6, int(size)))
 
 
-def text_w(draw, s, f):
-    return draw.textbbox((0, 0), s, font=f)[2]
+def tracked_width(draw, text, f, tracking):
+    """PIL has no letter-spacing, and the reference leans on it heavily."""
+    return sum(draw.textlength(c, font=f) for c in text) + tracking * max(0, len(text) - 1)
 
 
-def fit_font(draw, s, path, start, max_w, floor=7):
-    """Largest size at which `s` fits `max_w`. Banner type that overflows its box
-    is worse than banner type that is a point smaller."""
+def draw_tracked(draw, xy, text, f, fill, tracking):
+    x, y = xy
+    for ch in text:
+        draw.text((x, y), ch, font=f, fill=fill)
+        x += draw.textlength(ch, font=f) + tracking
+
+
+def fit_tracked(draw, text, path, start, max_w, tracking_ratio=0.06, floor=7):
     size = start
-    while size > floor and text_w(draw, s, font(path, size)) > max_w:
+    while size > floor:
+        f = font(path, size)
+        if tracked_width(draw, text, f, size * tracking_ratio) <= max_w:
+            return f
         size -= 1
-    return font(path, size)
+    return font(path, floor)
 
 
-def gradient(size, top, bottom, horizontal=False):
+def diagonal_wash(size, light, deep):
+    """Warmer toward the bottom-right, with a glow at the top-left, as in the
+    reference — a flat fill reads as a web page, not a poster."""
     w, h = size
-    img = Image.new('RGB', (1, max(h, 2)) if not horizontal else (max(w, 2), 1))
-    px = img.load()
-    n = (h if not horizontal else w)
-    for i in range(n):
-        t = i / max(1, n - 1)
-        px[(0, i) if not horizontal else (i, 0)] = (
-            int(top[0] + (bottom[0] - top[0]) * t),
-            int(top[1] + (bottom[1] - top[1]) * t),
-            int(top[2] + (bottom[2] - top[2]) * t),
-        )
-    return img.resize((w, h), Image.BILINEAR)
+    small = Image.new('RGB', (64, 64))
+    px = small.load()
+    for yy in range(64):
+        for xx in range(64):
+            t = min(1.0, (xx / 63 * 0.55 + yy / 63 * 0.65))
+            px[xx, yy] = (
+                int(light[0] + (deep[0] - light[0]) * t),
+                int(light[1] + (deep[1] - light[1]) * t),
+                int(light[2] + (deep[2] - light[2]) * t),
+            )
+    img = small.resize((w, h), Image.BICUBIC)
+    glow = Image.new('L', (64, 64), 0)
+    ImageDraw.Draw(glow).ellipse([-24, -30, 34, 26], fill=110)
+    glow = glow.resize((w, h), Image.BICUBIC).filter(ImageFilter.GaussianBlur(w * 0.02))
+    img.paste(Image.new('RGB', (w, h), (255, 250, 246)), (0, 0), glow)
+    return img.convert('RGBA')
 
 
-def bloom(base, cx, cy, r, petal_rgb, petals=8, alpha=90, ring=True):
-    """A filled-petal flower, drawn on its own layer so petals can overlap softly.
+def leaf(draw, cx, cy, length, angle, colour, width):
+    """One outlined almond leaf. Outline only: the reference's botanicals are
+    line art, and filled shapes turn the corner ornament into a blob."""
+    half = length / 2
+    pts = []
+    for side in (1, -1):
+        for i in range(21):
+            t = i / 20
+            u = (t * 2 - 1) * half
+            v = side * (length * 0.22) * math.cos(t * math.pi - math.pi / 2) ** 0.9
+            pts.append((u, v))
+    ca, sa = math.cos(angle), math.sin(angle)
+    pts = [(cx + u * ca - v * sa, cy + u * sa + v * ca) for u, v in pts]
+    draw.line(pts + [pts[0]], fill=colour, width=width, joint='curve')
 
-    The first version drew each petal as an open sine curve; at 2px and low alpha
-    that renders as scratches, not botany. Filled, rotated ellipses read as a
-    bloom at every size down to the 290px rail card.
-    """
+
+def sprig(base, x0, y0, x1, y1, bend, scale, colour, width, leaves=7):
+    """A stem with paired leaves, drawn on its own layer so strokes stay even."""
     layer = Image.new('RGBA', base.size, (0, 0, 0, 0))
-    ld = ImageDraw.Draw(layer, 'RGBA')
-    petal_w, petal_h = r * 0.52, r * 1.5
-    for p in range(petals):
-        petal = Image.new('RGBA', (int(petal_w * 2), int(petal_h * 2)), (0, 0, 0, 0))
-        pd = ImageDraw.Draw(petal)
-        pd.ellipse([petal_w * 0.5, 0, petal_w * 1.5, petal_h * 2],
-                   fill=(petal_rgb[0], petal_rgb[1], petal_rgb[2], alpha))
-        rot = petal.rotate(p * (360 / petals), resample=Image.BICUBIC, expand=True)
-        layer.alpha_composite(rot, (int(cx - rot.width / 2), int(cy - rot.height / 2)))
-    if ring:
-        ld.ellipse([cx - r * 0.16, cy - r * 0.16, cx + r * 0.16, cy + r * 0.16],
-                   fill=(petal_rgb[0], petal_rgb[1], petal_rgb[2], min(255, alpha + 70)))
-    base.alpha_composite(layer)
-
-
-def arc_fan(base, cx, cy, r, rgb, count=5, alpha=70, width_ratio=0.055):
-    """Concentric arcs — the visual weight the reference got from a portrait."""
-    layer = Image.new('RGBA', base.size, (0, 0, 0, 0))
-    ld = ImageDraw.Draw(layer)
-    for i in range(count):
-        rr = r * (1 - i * 0.16)
-        ld.arc([cx - rr, cy - rr, cx + rr, cy + rr], start=200, end=340,
-               fill=(rgb[0], rgb[1], rgb[2], alpha), width=max(1, int(r * width_ratio)))
+    d = ImageDraw.Draw(layer)
+    mx, my = (x0 + x1) / 2 + bend[0], (y0 + y1) / 2 + bend[1]
+    stem = []
+    for i in range(41):
+        t = i / 40
+        stem.append((
+            (1 - t) ** 2 * x0 + 2 * (1 - t) * t * mx + t ** 2 * x1,
+            (1 - t) ** 2 * y0 + 2 * (1 - t) * t * my + t ** 2 * y1,
+        ))
+    d.line(stem, fill=colour, width=width, joint='curve')
+    for i in range(leaves):
+        t = 0.12 + (i / max(1, leaves - 1)) * 0.8
+        idx = int(t * 40)
+        px, py = stem[idx]
+        nx, ny = stem[min(40, idx + 1)]
+        ang = math.atan2(ny - py, nx - px)
+        size = scale * (1.05 - 0.45 * t)
+        for side in (1, -1):
+            lang = ang + side * 0.72
+            leaf(d, px + math.cos(lang) * size * 0.55, py + math.sin(lang) * size * 0.55,
+                 size, lang, colour, width)
     base.alpha_composite(layer)
 
 
 def render(name, w, h, scale, args, out_dir):
     W, H = w * scale, h * scale
     s = scale
-    tiny = h < 100            # 358x72 / 358x86: one line, nothing else fits
-    compact = 100 <= h < 150  # 358x120: brand, one detail line, CTA
-    narrow = (w / h) < 1.05   # portrait rails and the near-square rail card
+    tiny = h < 100
+    compact = 100 <= h < 150
+    narrow = (w / h) < 1.05
 
-    img = gradient((W, H), BLUSH_TOP, BLUSH_BOTTOM).convert('RGBA')
+    img = diagonal_wash((W, H), BG_LIGHT, BG_DEEP)
+    stroke = max(1, int(1.6 * s))
 
-    # The focal composition, where the reference put a portrait. Arcs give the
-    # weight, blooms the warmth, and both survive being cropped.
+    # Botanicals: a large branch reaching in from the right (where the reference
+    # has its portrait) and a cropped sprig at the lower left.
     if not tiny:
-        fx, fy = (W * 0.80, H * 0.52) if not narrow else (W * 0.58, H * 0.78)
-        fr = min(W, H) * (0.62 if not narrow else 0.80)
-        arc_fan(img, fx, fy, fr * 1.05, MARIGOLD, count=5, alpha=78)
-        bloom(img, fx + fr * 0.16, fy - fr * 0.26, fr * 0.50, MARIGOLD, petals=8, alpha=108)
-        bloom(img, fx - fr * 0.36, fy + fr * 0.40, fr * 0.33, ROSE, petals=7, alpha=84)
-        bloom(img, W * 0.03, H * 0.05, min(W, H) * 0.18, ROSE, petals=6, alpha=46)
+        sprig(img, W * 1.02, H * 0.02, W * (0.62 if not narrow else 0.30), H * 0.62,
+              (-W * 0.10, H * 0.30), min(W, H) * (0.30 if not narrow else 0.24),
+              LINE, stroke, leaves=7)
+        sprig(img, W * 0.99, H * 1.04, W * (0.70 if not narrow else 0.42), H * 0.52,
+              (W * 0.06, H * 0.16), min(W, H) * 0.22, LINE, stroke, leaves=5)
+        sprig(img, -W * 0.04, H * 1.06, W * 0.16, H * 0.72,
+              (W * 0.02, H * 0.02), min(W, H) * 0.16, LINE, stroke, leaves=4)
 
     d = ImageDraw.Draw(img, 'RGBA')
-    # A compact banner needs its padding back to keep the CTA: at 358x120 the
-    # button was being dropped by ~4px.
-    pad = int((10 if tiny else 12 if compact else 18) * s)
 
     if tiny:
-        line = f"{args.brand}  ·  {args.offer}" if args.offer else f"{args.brand}  ·  {args.sub or args.cta}"
-        f = fit_font(d, line, SERIF_BOLD, int(H * 0.44), int(W - pad * 2))
-        tw = text_w(d, line, f)
-        d.text(((W - tw) / 2, (H - f.size * 1.3) / 2), line, font=f, fill=PLUM)
-        d.rectangle([0, 0, W - 1, H - 1], outline=(*MARIGOLD, 190), width=max(1, int(s)))
+        line = f"{args.brand}   {args.offer}" if args.offer else f"{args.brand}   {args.sub or args.cta}"
+        f = fit_tracked(d, line, DISPLAY_BOLD, int(H * 0.46), int(W - 24 * s), 0.05)
+        tw = tracked_width(d, line, f, f.size * 0.05)
+        draw_tracked(d, ((W - tw) / 2, (H - f.size * 1.34) / 2), line, f, INK, f.size * 0.05)
         img.convert('RGB').save(os.path.join(out_dir, f'{name}{"@2x" if s == 2 else ""}.png'))
         return
 
-    # Column width: the type never crosses into the ornament on a wide banner,
-    # and takes the full width on a portrait one where the art sits below.
-    col_w = int(W - pad * 2) if narrow else int(W * 0.58 - pad)
-
-    # MEASURE, then draw.
-    #
-    # The first version drew at running offsets with a clamp on the button, which
-    # is how the 358x120 ended up with the tagline, the button and the footer all
-    # on top of each other, and how the 263x360 rail got a full-height card with
-    # three lines at the top of it. Everything below is laid out from real
-    # measured heights, and each size only asks for the lines it can fit.
-    blocks = []  # (text, font, fill, gap_after, kind)
-
-    # With an offer to show, the brand and the offer share the space rather than
-    # both running at their solo size — otherwise the stack overflows and the
-    # CTA, the thing the banner exists for, is the first line dropped.
-    has_offer = bool(args.offer)
-    brand_ratio = (0.14 if has_offer else 0.17) if not (narrow or compact) else (0.10 if narrow else 0.20)
-    brand_f = fit_font(d, args.brand, SERIF_BOLD, int(H * brand_ratio), col_w)
-    blocks.append((args.brand, brand_f, PLUM, int(brand_f.size * 0.16), 'text'))
-
-    if args.tagline and not compact:
-        tag_f = fit_font(d, args.tagline, SERIF_ITALIC, int(brand_f.size * 0.42), col_w)
-        blocks.append((args.tagline, tag_f, MARIGOLD_DEEP, int(tag_f.size * 0.55), 'text'))
-
-    if args.offer:
-        offer_f = fit_font(d, args.offer, SERIF_BOLD,
-                           int(H * (0.165 if not (narrow or compact) else 0.125)), col_w)
-        blocks.append((args.offer, offer_f, ROSE, int(offer_f.size * 0.10), 'text'))
-
-    # At 358x120 with an offer to show, the CTA beats the detail line: a banner
-    # that says what the deal is and how to take it beats one that lists services.
-    if args.sub and not (compact and has_offer):
-        sub_f = fit_font(d, args.sub, SANS,
-                         int(H * (0.072 if not (narrow or compact) else 0.055 if narrow else 0.10)), col_w)
-        blocks.append((args.sub, sub_f, (90, 60, 80, 255), int(sub_f.size * 0.7), 'text'))
-
-    if args.cta:
-        cta_f = font(SANS_BOLD, max(9, int(H * (0.072 if not compact else 0.105))))
-        blocks.append((args.cta, cta_f, CREAM, int(cta_f.size * 0.5), 'cta'))
-
-    if args.footer and not compact:
-        foot_f = font(SANS, max(8, int(H * 0.046)))
-        blocks.append((args.footer, foot_f, (120, 80, 100, 235), 0, 'text'))
-
-    def block_h(entry):
-        _, f, _, gap, kind = entry
-        return int(f.size * (1.95 if kind == 'cta' else 1.22)) + gap
-
-    # Drop trailing blocks until the stack fits. Better a banner with fewer lines
-    # than one with lines sitting on top of each other.
-    while len(blocks) > 2 and sum(block_h(b) for b in blocks) > H - pad * 2:
-        blocks.pop()
-
-    content_h = sum(block_h(b) for b in blocks)
-    card_h = content_h + int(20 * s)
-    card_top = int(pad - 8 * s) if not narrow else int((H - card_h) * 0.10)
-    card_top = max(int(6 * s), card_top)
-
+    # The inset card, as in the reference: a lighter panel floating on the wash,
+    # generous radius, holding all of the type.
+    inset = int((14 if compact else 20) * s)
+    # A portrait card used to span the full width and hide the botanicals it is
+    # supposed to float on.
+    card_w = int(W * (0.90 if narrow else 0.60))
     card = Image.new('RGBA', img.size, (0, 0, 0, 0))
     ImageDraw.Draw(card).rounded_rectangle(
-        [pad - int(10 * s), card_top, pad + col_w + int(12 * s), card_top + card_h],
-        radius=int(14 * s), fill=(255, 249, 242, 210))
+        [inset, inset, min(W - inset, inset + card_w), H - inset],
+        radius=int(22 * s), fill=(*CARD, 214))
     img.alpha_composite(card)
     d = ImageDraw.Draw(img, 'RGBA')
 
-    y = card_top + int(10 * s)
-    for text, f, fill, gap, kind in blocks:
+    pad = inset + int((10 if compact else 20) * s)
+    col_w = min(W - inset, inset + card_w) - pad - int(12 * s)
+
+    # Measured stack, then SHRUNK to fit — not truncated.
+    #
+    # Dropping trailing rows meant the hero lost its CTA and address, which are
+    # the two things a banner exists to carry. Everything is laid out at a scale
+    # factor instead, stepped down until the stack fits its card. Rows only start
+    # disappearing once the type would be too small to read.
+    lead = args.lead
+    if args.offer and lead:
+        first = args.offer.split()[0].upper()
+        # "Up To FLAT 20% OFF" reads as a mistake: the offer already qualifies
+        # itself, so the lead-in is suppressed rather than stacked on top.
+        if first in {'FLAT', 'UP', 'UPTO', 'GET', 'SAVE'}:
+            lead = ''
+
+    def build(k):
+        rows = []
+        brand_ratio = (0.30 if compact else (0.155 if not narrow else 0.10)) * k
+        bf = fit_tracked(d, args.brand, DISPLAY_BOLD, int(H * brand_ratio), col_w, 0.055)
+        rows.append(('tracked', args.brand, bf, INK, 0.055, int(bf.size * 0.24)))
+
+        if args.tagline and not compact:
+            tf = fit_tracked(d, f'"{args.tagline}"', ITALIC,
+                             int(max(bf.size * 0.36, H * 0.055)), col_w, 0.02)
+            # Below ~9px the quoted tagline is a grey smudge. An absent line is
+            # better than an illegible one, so it is dropped rather than shrunk.
+            if tf.size >= 9 * s:
+                rows.append(('tracked', f'"{args.tagline}"', tf, INK_SOFT, 0.02, int(tf.size * 0.70)))
+
+        if args.offer:
+            if lead and not compact:
+                lf = font(DISPLAY, max(9, int(bf.size * 0.30)))
+                rows.append(('plain', lead, lf, INK_SOFT, 0, int(lf.size * 0.12)))
+            of = fit_tracked(d, args.offer, DISPLAY_BOLD,
+                             int(H * (0.30 if compact else 0.19 if not narrow else 0.125) * k), col_w, 0.02)
+            rows.append(('tracked', args.offer, of, INK, 0.02, int(of.size * 0.26)))
+
+        if args.sub and not (compact and args.offer):
+            sf = fit_tracked(d, args.sub, DISPLAY, int(H * (0.072 if not narrow else 0.056) * k), col_w, 0.03)
+            rows.append(('tracked', args.sub, sf, INK_SOFT, 0.03, int(sf.size * 0.70)))
+
+        if args.cta:
+            cf = font(SMALLCAPS, max(9, int(H * (0.10 if compact else 0.068) * k)))
+            rows.append(('cta', args.cta, cf, CTA_INK, 0.14, int(cf.size * 0.42)))
+
+        if args.footer and not compact:
+            ff = font(DISPLAY, max(9, int(H * 0.050 * k)))
+            rows.append(('plain', args.footer, ff, INK_SOFT, 0, 0))
+        return rows
+
+    def row_h(r):
+        kind, _, f, _, _, gap = r
+        return int(f.size * (2.05 if kind == 'cta' else 1.30)) + gap
+
+    available = H - inset * 2 - int(14 * s)
+    k = 1.0
+    rows = build(k)
+    while sum(row_h(r) for r in rows) > available and k > 0.55:
+        k -= 0.04
+        rows = build(k)
+    while len(rows) > 2 and sum(row_h(r) for r in rows) > available:
+        rows.pop()
+
+    total = sum(row_h(r) for r in rows)
+    y = inset + max(int(8 * s), (H - inset * 2 - total) // 2)
+
+    for kind, text, f, fill, track, gap in rows:
         if kind == 'cta':
-            tw, th = text_w(d, text, f), f.size
-            d.rounded_rectangle([pad, y, pad + tw + int(26 * s), y + int(th * 1.85)],
-                                radius=int(7 * s), fill=PLUM)
-            d.text((pad + int(13 * s), y + int(th * 0.38)), text, font=f, fill=CREAM)
-            y += int(th * 1.95) + gap
+            tw = tracked_width(d, text, f, f.size * track)
+            bw, bh = int(tw + 34 * s), int(f.size * 1.95)
+            d.rounded_rectangle([pad, y, pad + bw, y + bh], radius=int(5 * s), fill=CTA_BG)
+            draw_tracked(d, (pad + int(17 * s), y + int(f.size * 0.36)), text, f, CTA_INK, f.size * track)
+            y += int(f.size * 2.05) + gap
+        elif kind == 'tracked':
+            draw_tracked(d, (pad, y), text, f, fill, f.size * track)
+            y += int(f.size * 1.30) + gap
         else:
             d.text((pad, y), text, font=f, fill=fill)
-            y += int(f.size * 1.22) + gap
+            y += int(f.size * 1.30) + gap
 
-    d.rectangle([0, 0, W - 1, H - 1], outline=(*MARIGOLD, 150), width=max(1, int(s)))
     img.convert('RGB').save(os.path.join(out_dir, f'{name}{"@2x" if s == 2 else ""}.png'))
 
 
@@ -237,16 +278,16 @@ def main():
     ap.add_argument('--out', required=True)
     ap.add_argument('--brand', required=True)
     ap.add_argument('--tagline', default='')
+    ap.add_argument('--lead', default='Up To', help='small line above the offer')
     ap.add_argument('--offer', default='')
     ap.add_argument('--sub', default='')
-    ap.add_argument('--cta', default='BOOK NOW')
+    ap.add_argument('--cta', default='Book Now')
     ap.add_argument('--footer', default='')
     args = ap.parse_args()
-
     os.makedirs(args.out, exist_ok=True)
-    for name, w, h in SLOTS:
-        for scale in (1, 2):
-            render(name, w, h, scale, args, args.out)
+    for nm, w, h in SLOTS:
+        for sc in (1, 2):
+            render(nm, w, h, sc, args, args.out)
     print(f'{len(SLOTS) * 2} files in {args.out}')
 
 

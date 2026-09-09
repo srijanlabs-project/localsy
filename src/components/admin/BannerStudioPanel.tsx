@@ -24,6 +24,7 @@ import {
   describeBannerAssetAdvice,
   FEED_POSITION_MAX,
   FEED_POSITION_MIN,
+  defaultPlacementFor,
   describeBannerSlotSize,
   emptyBannerDraft,
   evaluateBannerDelivery,
@@ -258,7 +259,7 @@ export default function BannerStudioPanel({
                 setDraft((prev) => ({
                   ...prev,
                   campaignType: next,
-                  placementKey: BANNER_SLOTS.find((s) => s.campaignType === next && s.pageType === prev.pageType)?.placementKey ?? '',
+                  placementKey: defaultPlacementFor(next, prev.pageType),
                 }));
               }}>
               <option value="listing_ad">Placed banner (choose a slot)</option>
@@ -269,7 +270,19 @@ export default function BannerStudioPanel({
           <div>
             <label className={LABEL}>1. Page</label>
             <select className={FIELD} value={draft.pageType} disabled={!canManage}
-              onChange={(event) => set('pageType', event.target.value as BannerDraft['pageType'])}>
+              onChange={(event) => {
+                // Re-derive the placement, exactly as the banner-type handler
+                // does. Without this the dropdown listed the new page's slots
+                // while the draft still held the old page's key — the form showed
+                // "right rail" and saved a homepage hero placement, which can
+                // never render on either page.
+                const nextPage = event.target.value as BannerDraft['pageType'];
+                setDraft((prev) => ({
+                  ...prev,
+                  pageType: nextPage,
+                  placementKey: defaultPlacementFor(prev.campaignType, nextPage),
+                }));
+              }}>
               <option value="homepage">Homepage / locality</option>
               <option value="listing_results">Search results</option>
             </select>

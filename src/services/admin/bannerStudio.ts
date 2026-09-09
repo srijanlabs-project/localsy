@@ -176,6 +176,33 @@ export const BANNER_SLOTS: BannerSlot[] = [
   },
 ];
 
+/**
+ * The slot that EXACTLY matches a placement, banner type and page.
+ *
+ * `findBannerSlot` falls back to the first slot of the campaign type when the key
+ * does not match, which is right for describing a size but wrong for validating
+ * a save: it made the form show the size and verdict of a slot other than the one
+ * being stored. A homepage hero placement saved against the search-results page
+ * looked correct and could never render anywhere.
+ */
+export const findExactBannerSlot = (
+  placementKey: string,
+  campaignType: ScalableCampaignType,
+  pageType: BannerPageType,
+) => BANNER_SLOTS.find((slot) => (
+  slot.campaignType === campaignType
+  && slot.pageType === pageType
+  && slot.placementKey === placementKey
+)) || null;
+
+/** The first placement that is valid for a banner type on a page. */
+export const defaultPlacementFor = (
+  campaignType: ScalableCampaignType,
+  pageType: BannerPageType,
+) => BANNER_SLOTS.find((slot) => (
+  slot.campaignType === campaignType && slot.pageType === pageType
+))?.placementKey ?? '';
+
 export const findBannerSlot = (placementKey: string, campaignType: ScalableCampaignType) => (
   BANNER_SLOTS.find((slot) => slot.campaignType === campaignType && slot.placementKey === placementKey)
   || BANNER_SLOTS.find((slot) => slot.campaignType === campaignType)
@@ -471,6 +498,13 @@ export const evaluateBannerDelivery = (
   const slot = findBannerSlot(draft.placementKey, draft.campaignType);
   if (draft.campaignType === 'listing_ad' && !draft.placementKey) {
     reasons.push('A listing ad needs a placement.');
+  } else if (draft.campaignType === 'listing_ad'
+    && !findExactBannerSlot(draft.placementKey, 'listing_ad', draft.pageType)) {
+    // The placement belongs to a different page. This is the state the form
+    // could get into by switching Page without re-deriving the placement: the
+    // dropdown showed the new page's slots while the draft still held the old
+    // page's key, and the banner was saved somewhere it can never appear.
+    reasons.push(`Placement "${draft.placementKey}" does not exist on the ${draft.pageType === 'homepage' ? 'homepage' : 'search results'} page. Pick a placement from the list.`);
   }
 
   // One creative cannot serve two boxes.
